@@ -1913,5 +1913,65 @@
     "revision": "51d864a7e0190fa17ab20b063f8a600311021a6f7d02cae07a521db0c1fbb53b",
     "textHash": "86c3482f99a02301caf0fd1d1af62d797d74cde308c5c82956df2d54f1e058a7",
     "model": "manual"
+  },
+  "Choose Remember, Dismiss or Undo.": {
+    "revision": "513ecb9e6bc4d5d78a9189d1670e38f264627a77a3ecbc39f0077e8e3fa6f35a",
+    "textHash": "2a7c4b61209f02aec07b78bc739496e970e3f7d780246d298b1cb8f9db16138b",
+    "model": "gemini-4-argon-medium"
+  },
+  "Choose where to keep this preference.": {
+    "revision": "abb8f9c536b47786cd73b4a65ba6e8d61aaa70f85350fcb8bf13db85ae228cc9",
+    "textHash": "cacff4cf3a28f9e8b5543af23b172996419d38f3b429944faf168ba72039b93f",
+    "model": "gemini-4-argon-medium"
+  },
+  "Choose whether Papilot learns from reviews.": {
+    "revision": "2a544a2cf1bb2e4af19759dc4664cf7c23dc22bea3dea235e8b41a4630dc613c",
+    "textHash": "60d22daf3fef46fd7586bfeaceef09baf6684529085b408e3cf8044405202dfd",
+    "model": "gemini-4-argon-medium"
+  },
+  "Git ignores .papilot/memory.md in this repository, so coauthors would not receive it.": {
+    "revision": "f80b181922a0dd4c9dfbabcfd095dcda145f189aef75252da17caeb1222b360f",
+    "textHash": "6eeb16126949b2e991551940f9bca647a08228be58ccb0c616c67ac072cd86d5",
+    "model": "gemini-4-argon-medium"
+  },
+  "Linked memory files are not used. Replace the link with a regular file.": {
+    "revision": "110b5fd67861391ba00eb9180b255a9f3152d8d55d3805bde19623d440303f13",
+    "textHash": "02e733b4ce50e10a0f40ba8b4834eda69314017bbe7fad5847fa7b158cbc51ba",
+    "model": "gemini-4-argon-medium"
+  },
+  "Memory changed on disk. Reload it before saving.": {
+    "revision": "a2370ca10437ece96e61e06cdfbb2e09f5d5baf1b31ce7bfefaa9629bb180588",
+    "textHash": "fa344ab848deebd0e834fe5bdd958b510fc2b2cd22860cb28cc215bb197e867a",
+    "model": "gemini-4-argon-medium"
+  },
+  "Open a paper to keep preferences for it.": {
+    "revision": "de057c13404477a757cd6a85bcbf7ea6272ae9bae2df77db56b7f806c508ed97",
+    "textHash": "7d4d3475ddf8320c77f994972c4f0ab305fbed590d7fa27ed2d5f2e555f4f421",
+    "model": "gemini-4-argon-medium"
+  },
+  "This preference changed after it was saved. Edit it in Settings → Memory.": {
+    "revision": "3d52f13489eb21f4c33f2978c3d5bee36a5fa16c9266c548b43687d4d0223a8b",
+    "textHash": "e9395423e132eba6a51d5a65190d2a2488fb1d9d16bcaf502512727a88cd1cd4",
+    "model": "gemini-4-argon-medium"
+  },
+  "This preference changed on disk. Reload memory before editing it.": {
+    "revision": "cf671fcd65dcfd8e3b90f8cf475b1ef0abaefe85058c79557587c27617960fa2",
+    "textHash": "c2fc137613c2366a434d10decd43f92c05a50f834b50287634ae00dedbb2a932",
+    "model": "gemini-4-argon-medium"
+  },
+  "This preference changed on disk. Reload memory before moving it.": {
+    "revision": "289031e4071d34876761b792528101ad7142170415c249125adb94ac0551e774",
+    "textHash": "93777b0ecb5d2281b58a3bf9ddfd1fbb7354311b01983466a5c416e10920519b",
+    "model": "gemini-4-argon-medium"
+  },
+  "This suggestion is no longer available.": {
+    "revision": "162495e7b11dfdc6cf793ee1ef39d57bd75eda21d8011c7177448a6672b8a4ae",
+    "textHash": "d3110630d1b8efb3052475b5625b7b4670c8bbc472fb71af45fda4b015a2924d",
+    "model": "gemini-4-argon-medium"
+  },
+  "Write the preference as text.": {
+    "revision": "2f8cd0c2f5f6729a5c0b99a4342ed3cc70059d5c9c9482936ccf60009564f38d",
+    "textHash": "b68fc4fadf16208bdc4ada7c2222b5c4a38405a37cf1201c8e4e79ffaf57b07b",
+    "model": "gemini-4-argon-medium"
   }
 }

@@ -29,6 +29,7 @@ import { captureAnchor, resolveAnchors, isSourceAnchor } from './manuscript-anch
 import { gitOverview } from './git-overview.ts';
 import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import { registerSkillRoutes } from './skill-routes.ts';
+import { registerMemoryRoutes } from './memory-routes.ts';
 import { type Listener, equals, guard } from './access.ts';
 import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type Annotation, type AnnotationBatch, type AnnotationBatchResult, type NoteReturnState, type NoteSummary, type QuickNote, type SourceFile, type Task } from '../shared.ts';
 import type { SourceFileRead } from '../../engine/src/types.ts';
@@ -233,6 +234,7 @@ export async function buildApp(options: AppOptions) {
   await app.register(compress);
   app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
   registerSkillRoutes(app, store);
+  registerMemoryRoutes(app, store, () => workspace.memory, refreshManuscript);
   registerAiReviewRoutes(app, store, manuscripts);
   const project = (param = 'id') => ({ config: { resource: { project: param } } }), task = { config: { resource: { task: 'id' } } };
   registerOverleafRoutes(app, overleaf, () => project(), request => isLocalRequest(request.headers, listener.port));

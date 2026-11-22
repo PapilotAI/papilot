@@ -474,5 +474,17 @@
   "The selected commit-message agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.": "L’agent sélectionné pour les messages de commit est indisponible. Connectez-le dans Paramètres → Agents ou choisissez-en un autre dans Paramètres → Git.",
   "Invalid agent.": "Agent non valide.",
   "The selected conflict-resolution agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.": "L’agent choisi pour résoudre les conflits est indisponible. Connectez-le dans Paramètres → Agents ou choisissez-en un autre dans Paramètres → Git.",
-  "Choose a supported agent.": "Choisissez un agent pris en charge."
+  "Choose a supported agent.": "Choisissez un agent pris en charge.",
+  "Choose Remember, Dismiss or Undo.": "Choisissez Mémoriser, Ignorer ou Annuler.",
+  "Choose where to keep this preference.": "Choisissez où conserver cette préférence.",
+  "Choose whether Papilot learns from reviews.": "Choisissez si Papilot apprend à partir des révisions.",
+  "Git ignores .papilot/memory.md in this repository, so coauthors would not receive it.": "Git ignore .papilot/memory.md dans ce dépôt ; les coauteurs ne le recevront donc pas.",
+  "Linked memory files are not used. Replace the link with a regular file.": "Les fichiers de mémoire liés ne sont pas utilisés. Remplacez le lien par un fichier standard.",
+  "Memory changed on disk. Reload it before saving.": "La mémoire a été modifiée sur le disque. Rechargez-la avant d’enregistrer.",
+  "Open a paper to keep preferences for it.": "Ouvrez un article pour y associer des préférences.",
+  "This preference changed after it was saved. Edit it in Settings → Memory.": "Cette préférence a été modifiée après son enregistrement. Modifiez-la dans Paramètres → Mémoire.",
+  "This preference changed on disk. Reload memory before editing it.": "Cette préférence a été modifiée sur le disque. Rechargez la mémoire avant de la modifier.",
+  "This preference changed on disk. Reload memory before moving it.": "Cette préférence a été modifiée sur le disque. Rechargez la mémoire avant de la déplacer.",
+  "This suggestion is no longer available.": "Cette suggestion n’est plus disponible.",
+  "Write the preference as text.": "Rédigez la préférence sous forme de texte."
 }

@@ -42,6 +42,8 @@ import { noteOptionsSummary, preparedNoteOptionsInstructions, readPreparedNoteOp
 import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../notes.ts';
 import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type GroupInstructions } from '../note-groups.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress, recentCommitSubjects } from './manuscript.ts';
+import { Memory, memoryDigest, memoryUpdate } from './memory.ts';
+import { MEMORY_EVIDENCE, MEMORY_LEARNING, MEMORY_SINCE, acceptedSuggestions, dismissedKey, evidenceHash, hasEvidence, learningPrompt, memoryLearningInstructions, taskEvidence, type EvidenceRecord, type MemoryEvidence } from './memory-learning.ts';
 import { AGENT_IDS, usesCodex, isTaskReviewNote, collaborationRoutes, type CollaborationRole, type CollaborationRoutes, type CollaborationSettings } from '../shared.ts';
 import type { Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, PendingBuild, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview, PageView, ToolPlace } from '../shared.ts';
 
@@ -252,6 +254,12 @@ export class Workspace extends EventEmitter {
   private messages = new Map<string, Promise<{ message: string; agent: AgentId }>>();
   private titles = new Map<string, Promise<Task | null>>();
   private helperStops = new Set<() => void>();
+  /** The author's writing memory; tests point it at a temporary home. */
+  memory = new Memory();
+  // Tasks whose finished review is being learned from (true: look again
+  // afterwards), and the queue that runs one learning helper at a time.
+  private learning = new Map<string, boolean>();
+  private learningQueue: Promise<void> = Promise.resolve();
   // Set when Codex refuses the view_pdf tool, so later threads start without it.
   private noViewPdf = false;
   private projectChanges = new Set<string>();
@@ -265,6 +273,7 @@ export class Workspace extends EventEmitter {
   constructor(public store: Store, public codex: AgentRuntime = new Codex(), private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
     super();
     this.attachments = new Attachments(store);
+    if (store.preference<number>(MEMORY_SINCE) === undefined) store.savePreference(MEMORY_SINCE, Date.now());
     this.agents = { papilot: others.papilot || new WriterAgent(), pi: others.pi || new PiAgent(), codex, claude: others.claude || new ClaudeAgent(), cursor: others.cursor || new CursorAgent(), copilot: others.copilot || new AcpAgent(ACP_PROFILES.copilot), grok: others.grok || new GrokAgent(), antigravity: others.antigravity || new AntigravityAgent(),
       kimi: others.kimi || new AcpAgent(ACP_PROFILES.kimi), glm: others.glm || new GlmAgent(), deepseek: others.deepseek || new AcpAgent(ACP_PROFILES.deepseek),
       qwen: others.qwen || new AcpAgent(ACP_PROFILES.qwen), opencode: others.opencode || new AcpAgent(ACP_PROFILES.opencode),
@@ -821,8 +830,15 @@ export class Workspace extends EventEmitter {
       return files.some(file => file === '' || file === '.') ? [] : files;
     } catch { return []; }
   }
-  private instructions(task: Task, scope: string[] = [], viewPdf = false) {
-    if (task.mode === 'review') return aiReviewInstructions + `\nYour task worktree is ${task.worktree}. Use it for any temporary analysis files. Never edit the manuscript checkout, other task worktrees, or Papilot's state.\n\nOriginal review skill and request:\n` + task.instructions;
+  // The author's saved preferences for this task's paper, read from the
+  // manuscript checkout: the local file is never in a task's worktree.
+  private memoryPrompt(task: Task) {
+    try { return this.memory.prompt(this.store.project(task.projectId).path); }
+    catch (error) { console.warn('Could not read writing memory:', errorText(error)); return ''; }
+  }
+  private instructions(task: Task, scope: string[] = [], viewPdf = false, memory = '') {
+    const remembered = memory ? '\n\n' + memory : '';
+    if (task.mode === 'review') return aiReviewInstructions + `\nYour task worktree is ${task.worktree}. Use it for any temporary analysis files. Never edit the manuscript checkout, other task worktrees, or Papilot's state.\n\nOriginal review skill and request:\n` + task.instructions + remembered;
     // Keep authorization instructions stable; the runtime enforces access per turn.
     const permissionScope = taskAccessInstructions;
     return `You are ${usesCodex(this.agentOf(task)) ? 'the official Codex agent' : AGENT_NAMES[this.agentOf(task)]} running inside Papilot, a paper editing and review workspace.
@@ -835,7 +851,7 @@ ${permissionScope} Never edit other task worktrees or Papilot's own source/state
 ${scope.length ? `The review covers only ${scope.join(', ')} in this worktree, and an edit to any other file stops the PDF build. Leave other files unchanged even when project instructions ask for a matching update; mention that update in your summary instead.\n` : ''}Papilot owns the LaTeX review lifecycle: it compiles and publishes automatically AFTER your turn finishes, and delivers review feedback in a new turn. Do not create another review task, invoke publish, or wait on feedback --wait. This workflow replaces the publish-and-wait loop of any review skill you have. End your turn with a direct answer or, when you made edits, a concise summary of what changed and why; do not describe Papilot's review workflow.
 Preserve meaning and mathematical correctness. Read relevant project instructions. Treat reviewer comments as instructions tied to their round, file and changes. Rejected edits must not be reintroduced unless explicitly requested. If there is a conflict with accepted text, explain it and propose a revision for a new review round; do not overwrite accepted manuscript content unless the user explicitly requests that replacement.
 Never invent a bibliography entry or any of its details. Add a .bib entry only for a work you can identify, take its authors, title, year and venue from the published record, and include its doi or arXiv eprint when it has one. Papilot looks up every added or changed entry in Crossref, DBLP and arXiv and shows the author any it cannot confirm. Name the entries you added or changed in your summary.
-${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. Shell commands follow the current native permission policy; requests needing interactive approval are refused in this headless session.' : this.agentOf(task) === 'papilot' ? 'Use your paper tools to inspect and validate your changes, and view_pages when the look of the pages matters.' : 'You may run tools in the task worktree to inspect and validate your changes.'} ${viewPdf ? `When the look of the pages matters, such as line breaks, spacing, figures, tables or displayed formulas, use the ${VIEW_PDF} tool and open the pages it draws with your image viewer to see them as the author does. It compiles the paper, so do not call it for wording alone. ` : ''}If a decision requires the user, ask through the available user-input tool or explain it in your final response. Use English for your progress updates, questions, and final summaries unless the user explicitly requests another language. Preserve the manuscript language unless asked to translate it.`;
+${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. Shell commands follow the current native permission policy; requests needing interactive approval are refused in this headless session.' : this.agentOf(task) === 'papilot' ? 'Use your paper tools to inspect and validate your changes, and view_pages when the look of the pages matters.' : 'You may run tools in the task worktree to inspect and validate your changes.'} ${viewPdf ? `When the look of the pages matters, such as line breaks, spacing, figures, tables or displayed formulas, use the ${VIEW_PDF} tool and open the pages it draws with your image viewer to see them as the author does. It compiles the paper, so do not call it for wording alone. ` : ''}If a decision requires the user, ask through the available user-input tool or explain it in your final response. Use English for your progress updates, questions, and final summaries unless the user explicitly requests another language. Preserve the manuscript language unless asked to translate it.` + remembered;
   }
   private async approvalReviewer(task: Task): Promise<{ approvalsReviewer?: 'user' | 'auto_review' | 'guardian_subagent' }> {
     if (!usesCodex(this.agentOf(task))) return {};
@@ -866,11 +882,15 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const reviewer = await this.approvalReviewer(task);
     const permissions = task.mode !== 'review' ? await agent.taskPermissionConfig?.(task.permissions || 'workspace', task.worktree) : undefined;
     if (this.active.get(task.id)?.id !== run.id) return;
+    // A new thread hears the author's memory in its instructions. Resumed
+    // threads keep their first instructions under most agents, so a change
+    // since then reaches them at the start of the next turn instead.
+    const memory = this.memoryPrompt(task);
     if (!task.threadId || !this.loaded.has(task.threadId)) {
       // Codex threads get the view_pdf tool when they start, and keep it when resumed.
       const scope = task.mode === 'review' ? [] : await this.reviewScope(task), codex = usesCodex(this.agentOf(task));
       let viewPdf = task.mode !== 'review' && codex && (task.threadId ? Boolean(task.viewPdf) : !this.noViewPdf);
-      const options = (tool: boolean) => ({ cwd: task.worktree, approvalPolicy: 'on-request', sandbox: 'workspace-write', ...permissions?.thread, ...reviewer, config: { web_search: 'live', 'sandbox_workspace_write.network_access': true }, developerInstructions: this.instructions(task, scope, tool) + (this.agentOf(task) === 'collaboration' ? '\n\n' + workflowInstructions(this.collaborationRoutes) : ''), ...(task.model ? { model: task.model } : {}) });
+      const options = (tool: boolean) => ({ cwd: task.worktree, approvalPolicy: 'on-request', sandbox: 'workspace-write', ...permissions?.thread, ...reviewer, config: { web_search: 'live', 'sandbox_workspace_write.network_access': true }, developerInstructions: this.instructions(task, scope, tool, memory) + (this.agentOf(task) === 'collaboration' ? '\n\n' + workflowInstructions(this.collaborationRoutes) : ''), ...(task.model ? { model: task.model } : {}) });
       let result;
       if (task.threadId) result = await agent.request('thread/resume', { ...options(viewPdf), threadId: task.threadId, excludeTurns: true });
       else {
@@ -886,8 +906,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       // Settings can change while the agent loads. Keep this turn's snapshot,
       // and never overwrite a newer choice with the thread's resolved model.
       const current = this.store.task(task.id);
-      this.store.updateTask(task.id, { threadId: result.thread.id, ...(current.model === task.model ? { model: result.model || task.model } : {}), ...(task.threadId ? {} : { viewPdf }) });
-      task = { ...task, threadId: result.thread.id, model: result.model || task.model };
+      const started = task.threadId ? {} : { viewPdf, memoryDigest: memoryDigest(memory) };
+      this.store.updateTask(task.id, { threadId: result.thread.id, ...(current.model === task.model ? { model: result.model || task.model } : {}), ...started });
+      task = { ...task, threadId: result.thread.id, model: result.model || task.model, ...started };
       this.loaded.add(result.thread.id);
     }
     this.store.updateTask(task.id, { pendingRunId: run.id });
@@ -896,9 +917,10 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     // "file tools only" conversation can use newly selected permissions.
     const permissionMode = task.mode !== 'review' && !['codex', 'collaboration', 'claude', 'glm', 'papilot'].includes(this.agentOf(task))
       ? agent.permissionOptions?.().find(option => option.value === (task.permissions || 'workspace')) : undefined;
-    const prompt = permissionMode
+    const remembered = (task.memoryDigest ?? '') === memoryDigest(memory) ? '' : memoryUpdate(memory) + '\n\n';
+    const prompt = remembered + (permissionMode
       ? `Papilot settings update: current permissions are ${permissionMode.label}. This supersedes earlier Papilot messages fixing the access mode, including claims that shell commands are unavailable. ${taskAccessInstructions}\n\n${run.prompt}`
-      : run.prompt;
+      : run.prompt);
     let paperInstructions = '';
     if (this.paperTools && task.mode !== 'review' && !(this.agentOf(task) === 'cursor' && task.permissions !== 'full')) {
       const epoch = this.connectionEpochs.get(this.agentOf(task));
@@ -932,7 +954,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     // A cancelled queued message has not delivered its comments. Advance only
     // after Codex acknowledges starting the turn that contains that feedback.
     if (run.feedbackCursor !== undefined) this.store.updateTask(task.id, { feedbackCursor: Math.max(this.store.task(task.id).feedbackCursor, run.feedbackCursor) });
-    this.store.updateTask(task.id, { turnId: result.turn.id, pendingRunId: null });
+    this.store.updateTask(task.id, { turnId: result.turn.id, pendingRunId: null, memoryDigest: memoryDigest(memory) });
     const requests = this.earlyRequests.get(task.id) || [];
     const completion = this.earlyCompletions.get(task.id)?.get(result.turn.id);
     this.earlyRequests.delete(task.id); this.earlyCompletions.delete(task.id);
@@ -1199,8 +1221,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         const signal = AbortSignal.any([controller.signal, own.signal]), live = () => Boolean(current()) && !signal.aborted;
         const progress = parent ? { step: (step: WorkflowStep) => { if (live()) this.workerStep(task, parent, step); }, changes: (changes: WorkflowChange[]) => { if (live()) this.workerChanges(task, parent, changes); }, integrated: finished } : {};
         const result = tool === 'workflow_delegate'
-          ? await delegateWorkflow(task.worktree, notes, args, this.workflowGenerate, signal, () => Boolean(current()), role => this.workflowWorker(task, role), progress)
-          : await auditWorkflow(task.worktree, notes, args, this.workflowGenerate, controller.signal, this.coordinator(task), this.workflowRequestsFor(task, run));
+          ? await delegateWorkflow(task.worktree, notes, args, this.workflowGenerate, signal, () => Boolean(current()), role => this.workflowWorker(task, role), progress, this.memoryPrompt(task))
+          : await auditWorkflow(task.worktree, notes, args, this.workflowGenerate, controller.signal, this.coordinator(task), this.workflowRequestsFor(task, run), this.memoryPrompt(task));
         if (!current() || controller.signal.aborted) return;
         if ('fingerprint' in result && result.verified && result.fingerprint) {
           const saved = this.store.runByKey(run.requestKey)!;
@@ -1705,6 +1727,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       const review = { state: summary.state, round: summary.round, counts: summary.counts, ready: summary.ready, job: current.review?.job, unsent, comments, files };
       this.store.updateTask(taskId, { deferred, delivery, reconciliation, review });
       this.announceSelection(current, review);
+      if (learnable(this.store.task(taskId))) this.learnFrom(taskId);
       // Recover an application interrupted after the engine prepared its
       // proposal but before Papilot persisted the agent run.
       if (reconciliation?.ready && (summary.round ?? 0) <= reconciliation.round && current.status === 'reviewing' && !this.committing.has(task.projectId) && !this.reviewWrites.has(taskId)
@@ -1713,6 +1736,56 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         await this.queueMergeSuggestion(taskId, reconciliation);
     } catch { /* The task remains visible even if its project is temporarily unavailable. */ }
     finally { release?.(); }
+  }
+  // Once the author is through with a task's result, look at what they wrote
+  // and decided there, and offer to remember any lasting preference. One
+  // read-only turn of the task's own agent; the author's feedback never goes
+  // to another provider, and without a read-only helper nothing is learned.
+  // Learning is background work: helpers run one after another, and a review
+  // that changes while its task is being learned from is looked at again.
+  private learnFrom(taskId: string) {
+    if (this.closing) return;
+    if (this.learning.has(taskId)) { this.learning.set(taskId, true); return; }
+    this.learning.set(taskId, false);
+    const run = this.learningQueue.then(() => this.learnMemory(taskId)).catch(error => { if (!this.closing) console.warn('Could not learn writing preferences:', errorText(error)); })
+      .finally(() => {
+        const again = this.learning.get(taskId);
+        this.learning.delete(taskId);
+        if (again && !this.closing) { const task = this.store.findTask(taskId); if (task && learnable(task)) this.learnFrom(taskId); }
+      });
+    this.learningQueue = run;
+  }
+  private async learnMemory(taskId: string) {
+    const task = this.store.findTask(taskId);
+    if (!task || this.closing || !learnable(task) || this.store.preference<boolean>(MEMORY_LEARNING) === false) return;
+    const id: AgentId = this.agentOf(task) === 'collaboration' ? 'codex' : this.agentOf(task), runtime = this.agents[id];
+    if (!runtime.ready || !this.runtimes[id].authenticated || runtime.supportsReadOnlyTasks === false) return;
+    const since = this.store.preference<number>(MEMORY_SINCE) ?? 0;
+    if (!this.store.runs().some(run => run.taskId === task.id && (run.finishedAt ?? 0) >= since)) return;
+    const project = this.store.project(task.projectId), client = await this.connectReview(project.path);
+    const feedback = await client.get(`${taskRoute(task.name)}/feedback?after=0`);
+    const evidence = taskEvidence(task.id, this.store.items(task.id), this.store.runs().filter(run => run.taskId === task.id), feedback);
+    const hash = evidenceHash(evidence), key = MEMORY_EVIDENCE + task.id;
+    if (this.store.preference<EvidenceRecord>(key)?.hash === hash || !this.store.findTask(taskId)) return;
+    // Kept before the helper runs: later tasks count this one even if the
+    // helper fails, and the same review is not sent again.
+    this.store.savePreference(key, { projectId: task.projectId, hash, at: Date.now(), evidence } satisfies EvidenceRecord);
+    if (!hasEvidence(evidence)) return;
+    const catalog = await this.memory.catalog(project.path, true);
+    const shown = this.store.items(task.id).flatMap(item => item.type === 'memory' ? item.memory || [] : []);
+    const input = {
+      memory: catalog.files.map(({ scope, rules }) => ({ scope, rules })),
+      dismissed: [...this.store.preference<string[]>(dismissedKey(task.projectId)) || [], ...this.store.preference<string[]>(dismissedKey()) || []],
+      pending: shown.map(suggestion => suggestion.text), current: evidence,
+      earlier: this.store.memoryEvidence(task.projectId).map(record => record.evidence as MemoryEvidence).filter(other => other.task !== task.id),
+    };
+    const models = this.runtimes[id].models, model = lightModel(models) || models.find(item => item.id === task.model) || models.find(item => item.isDefault);
+    // A helper holds back app updates while it runs, so it cannot wait forever.
+    const reply = await this.oneOff(id, { cwd: project.path, sandbox: 'read-only', instructions: memoryLearningInstructions, prompt: learningPrompt(input), model, effort: model?.efforts[0], timeout: 120000, what: 'learn writing preferences' });
+    const current = this.store.findTask(taskId);
+    if (this.closing || !current || current.status === 'deleting') return;
+    const suggestions = acceptedSuggestions(reply, input, index => `${hash.slice(0, 12)}-${index}`);
+    if (suggestions.length) this.store.saveItem({ id: `${task.id}:memory:${hash.slice(0, 12)}`, taskId: task.id, type: 'memory', text: suggestions.map(suggestion => suggestion.text).join('\n'), createdAt: Date.now(), memory: suggestions });
   }
   // Announces a task's final selection once: its last pending change was
   // just decided, or the decisions changed with none pending. What applying
@@ -2109,6 +2182,14 @@ async function releaseThread(agent: AgentRuntime, threadId: string) {
 // one it started from; their difference is what the task put in the
 // manuscript, and the difference from the accepted text at the task's last
 // commit is what it has added since. A rename counts as both of its paths.
+// A result the author has finished deciding: nothing pending, no comment
+// waiting to go back, and no build or review action in flight. An answer
+// without manuscript changes qualifies too.
+function learnable(task: Task) {
+  const review = task.review;
+  return task.mode !== 'review' && task.status === 'reviewing' && Boolean(review) && !review!.counts?.pending && !review!.comments
+    && review!.state !== 'build_failed' && !task.pendingReview && !task.pendingBuild && !task.reconciliation && !task.delivery?.pending;
+}
 /** A summary's final selection, when none of its changes is pending. */
 function finalSelection(review?: Task['review'] | null) {
   return review?.counts?.pending === 0 && Object.values(review.counts).some(n => Number(n) > 0)

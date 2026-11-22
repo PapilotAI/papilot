@@ -474,5 +474,17 @@
   "The selected commit-message agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.": "선택한 커밋 메시지 에이전트를 사용할 수 없습니다. 설정 → 에이전트에서 연결하거나 설정 → Git에서 다른 에이전트를 선택하세요.",
   "Invalid agent.": "유효하지 않은 에이전트입니다.",
   "The selected conflict-resolution agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.": "선택한 충돌 해결 에이전트를 사용할 수 없습니다. 설정 → 에이전트에서 연결하거나 설정 → Git에서 다른 에이전트를 선택하세요.",
-  "Choose a supported agent.": "지원되는 에이전트를 선택하세요."
+  "Choose a supported agent.": "지원되는 에이전트를 선택하세요.",
+  "Choose Remember, Dismiss or Undo.": "기억하기, 무시 또는 실행 취소를 선택하세요.",
+  "Choose where to keep this preference.": "이 선호 사항을 보관할 위치를 선택하세요.",
+  "Choose whether Papilot learns from reviews.": "Papilot이 검토에서 학습할지 선택하세요.",
+  "Git ignores .papilot/memory.md in this repository, so coauthors would not receive it.": "이 저장소에서 Git이 .papilot/memory.md를 무시하므로 공동 저자에게 전달되지 않습니다.",
+  "Linked memory files are not used. Replace the link with a regular file.": "연결된 메모리 파일은 사용되지 않습니다. 링크를 일반 파일로 바꾸세요.",
+  "Memory changed on disk. Reload it before saving.": "디스크의 메모리가 변경되었습니다. 저장하기 전에 다시 불러오세요.",
+  "Open a paper to keep preferences for it.": "해당 논문의 선호 사항을 보관하려면 논문을 여세요.",
+  "This preference changed after it was saved. Edit it in Settings → Memory.": "이 선호 사항은 저장된 후 변경되었습니다. 설정 → 메모리에서 수정하세요.",
+  "This preference changed on disk. Reload memory before editing it.": "디스크에서 이 선호 사항이 변경되었습니다. 수정하기 전에 메모리를 다시 불러오세요.",
+  "This preference changed on disk. Reload memory before moving it.": "디스크에서 이 선호 사항이 변경되었습니다. 이동하기 전에 메모리를 다시 불러오세요.",
+  "This suggestion is no longer available.": "이 제안은 더 이상 사용할 수 없습니다.",
+  "Write the preference as text.": "선호 사항을 텍스트로 작성하세요."
 }

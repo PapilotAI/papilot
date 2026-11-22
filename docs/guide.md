@@ -409,6 +409,22 @@ Omit it to use the default icon; unknown values also fall back to the default.
 
 Papilot reads the skills again when you return to its window, so a new skill file appears without a restart.
 
+## Writing memory
+
+Papilot keeps the writing preferences you want every agent to follow in later tasks, such as heading case, spelling or terminology. They are plain Markdown lists you can read and edit; each `-` line is one preference, and any other text you write in the file is kept and sent along.
+
+| Scope | File | Who receives it |
+| --- | --- | --- |
+| **This paper** | `<paper>/.papilot/memory.local.md` | Only this checkout. Papilot lists the file in the repository's `.git/info/exclude` before creating it, so Git never shows or commits it. |
+| **Shared with coauthors** | `<paper>/.papilot/memory.md` | Everyone with the repository, once you commit the file. Overleaf sync skips it. |
+| **All papers** | `~/.papilot/memory.md` | Every paper you open. `PAPILOT_MEMORY` names another file. |
+
+The agent of every editing task and AI review receives the saved preferences with its instructions, and so do Collaboration mode workers and their audit, so a review does not flag a deliberate convention. Conflict resolution and import repair do not use them, since they keep the text as it is. Your current request, PDF notes and review feedback take precedence, and a preference for this paper takes precedence over one for all papers. When memory changes during a task, the agent receives the new version with your next message. Preferences describe writing only; they never widen what an agent may do. Saving shared memory does not rebuild the PDF.
+
+**Learning from reviews.** When you finish reviewing a task (no pending changes and no comments waiting to go back), Papilot asks the task's own agent, read-only and with its light model, whether your messages, PDF notes, comments and rejected edits show a lasting preference. It suggests one only when you said so in your own words, such as "Remember to use sentence case for headings in this paper", or when the same correction appears in at least two tasks of the paper. The suggestion appears as a card at the end of the chat: edit its wording, choose **This paper**, **All papers** or **Shared**, and select **Remember** or **Dismiss**. Nothing is saved until you choose **Remember**, and a dismissed suggestion is not proposed again. **Undo** reverses what **Remember** did: it takes the new preference back out and restores one it replaced. Agents that cannot run read-only tasks do not learn, and no other agent receives your feedback instead. Turn learning off in **Settings → Memory**; turning it back on starts again from the next finished review.
+
+**Settings → Memory** lists the preferences for this paper and for all papers. Edit one in place, add one, delete one, or use its menu to move it between this paper, all papers and shared. Shared preferences carry a **Shared** tag; commit `.papilot/memory.md` from the Git panel to send them to coauthors. Deleting a task deletes what Papilot noted from its review.
+
 ## Remote access with Tailscale
 
 Papilot binds **only to 127.0.0.1**. Configure a private Tailscale Serve endpoint and the exact owner login shown by your tailnet. The server verifies the remote Host, browser Origin, and Tailscale identity supplied by the local proxy.
@@ -473,6 +489,7 @@ If installation or its initial startup check fails, the existing server keeps ru
 | --- | --- | --- |
 | `PAPILOT_PORT` | `7274` | Local HTTP port; the server binds to `127.0.0.1`. |
 | `PAPILOT_DATA` | `~/.papilot` for the `papilot` command, `.papilot` in a source checkout | SQLite state and generated example project. |
+| `PAPILOT_MEMORY` | `~/.papilot/memory.md` | Personal writing memory file, followed in every paper (see [Writing memory](#writing-memory)). |
 | `PAPILOT_CODEX_BIN` | `papilot`: `codex` on `PATH` (0.164.0 or newer), else one installed into the data folder. Desktop app: the first `codex` on `PATH` that runs | Codex executable used by the backend. |
 | `PAPILOT_SERVICE_PATH` | Unset | Absolute tool directories to prioritize in the macOS service; retained across service reinstalls. |
 | `PAPILOT_INSTALL_METHOD` | Unset | `managed` for an installation that pins Papilot's version, such as a container image or system package: no in-app updates and no runtime downloads of Codex or agent SDKs (see [Updates](#updates)). The Nix package sets `nix`. |

@@ -70,6 +70,21 @@ test('the ledger carries color-group directions and the author\'s own requests t
     assert.deepEqual(audited.requests, requests); assert.equal(audited.annotations[0].instruction, 'Translate the red passages into French.');
   } finally { f.close(); }
 });
+test('workers and the audit receive the author\'s writing memory', async () => {
+  const f = paper(), memory = '<author-memory>\n- Use sentence case for headings.\n</author-memory>';
+  try {
+    let delegated = '', audited = '';
+    await delegateTo(f.root, notes, delegateArgs, async (_worker, prompt, _signal, edit) => { delegated = prompt; fs.writeFileSync(path.join(edit!.cwd, 'main.tex'), 'First paragraph, polished.\n\nSecond paragraph.\n'); return 'Done.'; }, signal(), () => true, role => routes[role], {}, memory);
+    assert.match(delegated.slice(0, delegated.indexOf('\n')), /Follow the author's saved writing preferences in authorMemory\./);
+    assert.equal(JSON.parse(delegated.slice(delegated.indexOf('\n') + 1)).authorMemory, memory);
+    await auditWorkflow(f.root, notes, { outcomes: outcomes() }, async (worker, prompt, abort) => { audited = prompt; return verified(worker, prompt, abort); }, signal(), auditor, [], memory);
+    assert.match(audited.slice(0, audited.indexOf('\n')), /Edits that follow the author's saved writing preferences in authorMemory are expected/);
+    assert.equal(JSON.parse(audited.slice(audited.indexOf('\n') + 1)).authorMemory, memory);
+    // Without memory nothing changes for them.
+    await delegateTo(f.root, notes, delegateArgs, async (_worker, prompt, _signal, edit) => { delegated = prompt; fs.writeFileSync(path.join(edit!.cwd, 'main.tex'), 'First paragraph, again.\n\nSecond paragraph.\n'); return 'Done.'; }, signal(), () => true, role => routes[role]);
+    assert.equal(JSON.parse(delegated.slice(delegated.indexOf('\n') + 1)).authorMemory, undefined);
+  } finally { f.close(); }
+});
 test('annotation ledger retains repeated notes separately and provides a request for plain tasks', () => {
   assert.deepEqual(notes.map(note => note.id), ['message:1', 'message:2']);
   assert.equal(workflowNotes([], 'Explain')[0].comment, 'Explain');

@@ -474,5 +474,17 @@
   "The selected commit-message agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.": "O agente selecionado para mensagens de commit está indisponível. Conecte-o em Configurações → Agentes ou escolha outro em Configurações → Git.",
   "Invalid agent.": "Agente inválido.",
   "The selected conflict-resolution agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.": "O agente selecionado para resolver conflitos está indisponível. Conecte-o em Configurações → Agentes ou escolha outro em Configurações → Git.",
-  "Choose a supported agent.": "Escolha um agente compatível."
+  "Choose a supported agent.": "Escolha um agente compatível.",
+  "Choose Remember, Dismiss or Undo.": "Escolha Lembrar, Dispensar ou Desfazer.",
+  "Choose where to keep this preference.": "Escolha onde manter esta preferência.",
+  "Choose whether Papilot learns from reviews.": "Escolha se o Papilot aprende com as revisões.",
+  "Git ignores .papilot/memory.md in this repository, so coauthors would not receive it.": "O Git ignora .papilot/memory.md neste repositório, portanto os coautores não o receberiam.",
+  "Linked memory files are not used. Replace the link with a regular file.": "Arquivos de memória vinculados não são usados. Substitua o link por um arquivo comum.",
+  "Memory changed on disk. Reload it before saving.": "A memória foi alterada no disco. Recarregue-a antes de salvar.",
+  "Open a paper to keep preferences for it.": "Abra um artigo para manter preferências para ele.",
+  "This preference changed after it was saved. Edit it in Settings → Memory.": "Esta preferência foi alterada após ser salva. Edite-a em Configurações → Memória.",
+  "This preference changed on disk. Reload memory before editing it.": "Esta preferência foi alterada no disco. Recarregue a memória antes de editá-la.",
+  "This preference changed on disk. Reload memory before moving it.": "Esta preferência foi alterada no disco. Recarregue a memória antes de movê-la.",
+  "This suggestion is no longer available.": "Esta sugestão não está mais disponível.",
+  "Write the preference as text.": "Escreva a preferência como texto."
 }

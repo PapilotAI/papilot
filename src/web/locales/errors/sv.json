@@ -474,5 +474,17 @@
   "The selected commit-message agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.": "Den valda agenten för commit-meddelanden är inte tillgänglig. Anslut den under Inställningar → Agenter eller välj en annan under Inställningar → Git.",
   "Invalid agent.": "Ogiltig agent.",
   "The selected conflict-resolution agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.": "Den valda konfliktagenten är inte tillgänglig. Anslut den under Inställningar → Agenter eller välj en annan under Inställningar → Git.",
-  "Choose a supported agent.": "Välj en agent som stöds."
+  "Choose a supported agent.": "Välj en agent som stöds.",
+  "Choose Remember, Dismiss or Undo.": "Välj Kom ihåg, Avfärda eller Ångra.",
+  "Choose where to keep this preference.": "Välj var den här inställningen ska sparas.",
+  "Choose whether Papilot learns from reviews.": "Välj om Papilot ska lära sig av granskningar.",
+  "Git ignores .papilot/memory.md in this repository, so coauthors would not receive it.": "Git ignorerar .papilot/memory.md i det här arkivet, så medförfattare får den inte.",
+  "Linked memory files are not used. Replace the link with a regular file.": "Länkade minnesfiler används inte. Ersätt länken med en vanlig fil.",
+  "Memory changed on disk. Reload it before saving.": "Minnet har ändrats på disk. Läs in det igen innan du sparar.",
+  "Open a paper to keep preferences for it.": "Öppna en artikel för att spara inställningar för den.",
+  "This preference changed after it was saved. Edit it in Settings → Memory.": "Den här inställningen ändrades efter att den sparades. Redigera den i Inställningar → Minne.",
+  "This preference changed on disk. Reload memory before editing it.": "Den här inställningen har ändrats på disk. Läs in minnet igen innan du redigerar den.",
+  "This preference changed on disk. Reload memory before moving it.": "Den här inställningen har ändrats på disk. Läs in minnet igen innan du flyttar den.",
+  "This suggestion is no longer available.": "Det här förslaget är inte längre tillgängligt.",
+  "Write the preference as text.": "Skriv inställningen som text."
 }

@@ -474,5 +474,17 @@
   "The selected commit-message agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.": "Der gewählte Agent für Commit-Nachrichten ist nicht verfügbar. Verbinden Sie ihn unter Einstellungen → Agenten oder wählen Sie unter Einstellungen → Git einen anderen.",
   "Invalid agent.": "Ungültiger Agent.",
   "The selected conflict-resolution agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.": "Der ausgewählte Agent zur Konfliktlösung ist nicht verfügbar. Verbinde ihn unter Einstellungen → Agenten oder wähle unter Einstellungen → Git einen anderen.",
-  "Choose a supported agent.": "Wähle einen unterstützten Agenten."
+  "Choose a supported agent.": "Wähle einen unterstützten Agenten.",
+  "Choose Remember, Dismiss or Undo.": "Wählen Sie „Merken“, „Verwerfen“ oder „Rückgängig“.",
+  "Choose where to keep this preference.": "Wählen Sie aus, wo diese Präferenz gespeichert werden soll.",
+  "Choose whether Papilot learns from reviews.": "Wählen Sie aus, ob Papilot aus Überprüfungen lernt.",
+  "Git ignores .papilot/memory.md in this repository, so coauthors would not receive it.": "Git ignoriert .papilot/memory.md in diesem Repository, sodass Mitautoren die Datei nicht erhalten.",
+  "Linked memory files are not used. Replace the link with a regular file.": "Verknüpfte Gedächtnisdateien werden nicht verwendet. Ersetzen Sie die Verknüpfung durch eine reguläre Datei.",
+  "Memory changed on disk. Reload it before saving.": "Das Gedächtnis wurde auf dem Datenträger geändert. Laden Sie es vor dem Speichern neu.",
+  "Open a paper to keep preferences for it.": "Öffnen Sie einen Artikel, um Präferenzen dafür zu speichern.",
+  "This preference changed after it was saved. Edit it in Settings → Memory.": "Diese Präferenz wurde nach dem Speichern geändert. Bearbeiten Sie sie unter Einstellungen → Gedächtnis.",
+  "This preference changed on disk. Reload memory before editing it.": "Diese Präferenz wurde auf dem Datenträger geändert. Laden Sie das Gedächtnis vor dem Bearbeiten neu.",
+  "This preference changed on disk. Reload memory before moving it.": "Diese Präferenz wurde auf dem Datenträger geändert. Laden Sie das Gedächtnis vor dem Verschieben neu.",
+  "This suggestion is no longer available.": "Dieser Vorschlag ist nicht mehr verfügbar.",
+  "Write the preference as text.": "Geben Sie die Präferenz als Text ein."
 }

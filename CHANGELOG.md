@@ -4,6 +4,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added
+
+- Remember writing preferences across tasks. When you finish reviewing a task, Papilot suggests a preference if you asked for it in your own words or made the same correction in two tasks; edit it and keep it for this paper, for all papers, or share it with coauthors through `.papilot/memory.md`. Editing agents, AI reviews and Collaboration mode workers follow saved preferences, and **Settings → Memory** lists, edits and moves them. See [Writing memory](docs/guide.md#writing-memory). ([#313](https://github.com/PapilotAI/papilot/issues/313))
+
 ## [0.13.0] - 2026-11-22
 
 Review changes directly in place on the full PDF, decide individual annotations that share a paragraph, sort and organize manuscript notes, and choose a dedicated Git conflict-resolution agent. See the [release notes](docs/releases/0.13.0/release-notes.md) for update instructions.

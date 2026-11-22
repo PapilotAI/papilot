@@ -59,6 +59,8 @@ export interface Task {
   worktree: string; /** The root document the task compiles, as the review engine recorded it. */ document?: string; threadId: string | null; turnId: string | null; agent?: AgentId; model: string | null; effort?: string | null; serviceTier?: string;
   // The agent's thread was started with Papilot's view_pdf tool.
   viewPdf?: boolean;
+  /** The writing memory the agent's conversation last received (memoryDigest), '' or absent for none. */
+  memoryDigest?: string;
   status: TaskStatus; createdAt: number; updatedAt: number; feedbackCursor: number;
   archivedAt?: number | null;
   error: string | null; review: ReviewSummary | null;
@@ -93,7 +95,19 @@ export interface ToolCallInfo { kind: string; target?: string; lines?: string; p
 /** Where a read was in the paper: the sections it covered and the PDF pages they print on. */
 export interface ToolPlace { sections: { number: string; title: string }[]; more?: number; partial?: boolean; pages?: number[] }
 // parent: in Collaboration mode, the delegation whose worker took this step.
-export interface TimelineItem { id: string; taskId: string; type: string; text: string; rawText?: string; detail?: string; status?: string; createdAt: number; meta?: MessageMeta; tool?: ToolCallInfo; pages?: PageView[]; changes?: FileEdit[]; parent?: string }
+export interface TimelineItem { id: string; taskId: string; type: string; text: string; rawText?: string; detail?: string; status?: string; createdAt: number; meta?: MessageMeta; tool?: ToolCallInfo; pages?: PageView[]; changes?: FileEdit[]; parent?: string; memory?: MemorySuggestion[] }
+// Writing memory: lasting preferences agents follow in later tasks. personal
+// is ~/.papilot/memory.md, paper the checkout-only .papilot/memory.local.md,
+// shared the repository's .papilot/memory.md that coauthors receive with Git.
+export type MemoryScope = 'personal' | 'paper' | 'shared';
+export interface MemoryFile { scope: MemoryScope; rules: string[]; revision: string; path: string }
+export interface MemoryCatalog { files: MemoryFile[]; shareable: boolean; learning: boolean }
+// A preference Papilot proposes after a task's review: the author's own words
+// asked for it (quote), or the same correction recurred in several tasks.
+// replaces names a rule the suggestion refines; scope starts where that rule is.
+// saved records what Remember did, so Undo reverses exactly that: existing
+// when the rule was already there, replaced and its scope when one went away.
+export interface MemorySuggestion { id: string; text: string; scope: MemoryScope; quote?: string; tasks?: number; replaces?: string; status: 'pending' | 'saved' | 'dismissed'; saved?: { scope: MemoryScope; text: string; existing?: true; replaced?: string; replacedScope?: MemoryScope } }
 /** A file an agent changed: its diff, and where in the paper the changes are. */
 export interface FileEdit { path: string; diff?: string; added: number; removed: number; places?: EditPlace[] }
 /** Changes within one part of the paper: its sections (innermost last), the page it starts on, and the lines changed. */

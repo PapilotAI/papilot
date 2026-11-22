@@ -474,5 +474,17 @@
   "The selected commit-message agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.": "選択したコミットメッセージのエージェントは利用できません。設定 → エージェントで接続するか、設定 → Git で別のエージェントを選択してください。",
   "Invalid agent.": "無効なエージェントです。",
   "The selected conflict-resolution agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.": "選択した競合解決エージェントは利用できません。設定 → エージェントで接続するか、設定 → Git で別のエージェントを選んでください。",
-  "Choose a supported agent.": "対応しているエージェントを選んでください。"
+  "Choose a supported agent.": "対応しているエージェントを選んでください。",
+  "Choose Remember, Dismiss or Undo.": "「記憶する」、「却下」、または「元に戻す」を選択してください。",
+  "Choose where to keep this preference.": "この設定の保存先を選択してください。",
+  "Choose whether Papilot learns from reviews.": "Papilotがレビューから学習するかどうかを選択してください。",
+  "Git ignores .papilot/memory.md in this repository, so coauthors would not receive it.": "このリポジトリでは .papilot/memory.md が Git の無視対象になっているため、共著者には共有されません。",
+  "Linked memory files are not used. Replace the link with a regular file.": "リンクされたメモリファイルは使用されません。リンクを通常のファイルに置き換えてください。",
+  "Memory changed on disk. Reload it before saving.": "ディスク上のメモリが変更されました。保存する前に再読み込みしてください。",
+  "Open a paper to keep preferences for it.": "論文の設定を保存するには、対象の論文を開いてください。",
+  "This preference changed after it was saved. Edit it in Settings → Memory.": "この設定は保存後に変更されました。「設定 → メモリ」で編集してください。",
+  "This preference changed on disk. Reload memory before editing it.": "ディスク上のこの設定が変更されました。編集する前にメモリを再読み込みしてください。",
+  "This preference changed on disk. Reload memory before moving it.": "ディスク上のこの設定が変更されました。移動する前にメモリを再読み込みしてください。",
+  "This suggestion is no longer available.": "この提案は現在利用できません。",
+  "Write the preference as text.": "設定をテキストで入力してください。"
 }

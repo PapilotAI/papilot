@@ -27,19 +27,20 @@ import { LatexSettings } from './latex-settings.tsx';
 import { ExperimentSettings } from './experiment-settings.tsx';
 import { UpdateSettings, versionLabel, type UpdateApi } from './update-notice.tsx';
 import { SkillLibraryPanel, type SkillLibraryControls, type SkillLibraryOptions } from './skill-library.tsx';
+import { MemorySettings, type MemorySettingsOptions } from './memory-settings.tsx';
 import type { CollaborationSettingsProps } from './collaboration-settings.tsx';
 import { ModelDefaultSettings, type ModelDefaultSettingsProps } from './model-default-settings.tsx';
 import { OverleafAccounts } from './overleaf.tsx';
 import type { OverleafState } from '../shared.ts';
 
-type SettingsPage = 'general' | 'appearance' | 'notifications' | 'review' | 'quickNotes' | 'shortcuts' | 'about' | 'licenses' | 'agents' | 'git' | 'latex' | 'skills' | 'updates' | 'overleaf' | 'experiments';
-export type SettingsInitialPage = 'general' | 'shortcuts' | 'quickNotes' | 'git' | 'git-conflicts' | 'latex' | 'agents';
+type SettingsPage = 'general' | 'appearance' | 'notifications' | 'review' | 'quickNotes' | 'shortcuts' | 'about' | 'licenses' | 'agents' | 'git' | 'latex' | 'skills' | 'memory' | 'updates' | 'overleaf' | 'experiments';
+export type SettingsInitialPage = 'general' | 'shortcuts' | 'quickNotes' | 'git' | 'git-conflicts' | 'latex' | 'agents' | 'memory';
 type SettingsEntry = { page: SettingsPage; label: string; icon: string; keywords?: string };
 
 // Shared with the review page's bibliography checks.
 const REFERENCE_CHECKS = 'papilot:review:references';
 
-export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppearance, onClose, diagnostics, requirements, skills, updates, modelDefaults, workflow, overleaf, commitWriter, conflictWriter, refreshUsage, initialPage = 'general' }: AppearanceSettingsProps & { onClose: () => void; diagnostics?: DiagnosticsSettingsProps; requirements?: { state: RequirementsState; online: boolean }; skills?: SkillLibraryOptions; updates?: UpdateApi; modelDefaults: ModelDefaultSettingsProps; commitWriter: CommitMessageChoice; conflictWriter: CommitMessageChoice; refreshUsage?: RefreshUsage; workflow?: CollaborationSettingsProps; overleaf?: { api: UpdateApi; state: OverleafState | undefined }; initialPage?: SettingsInitialPage }) {
+export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppearance, onClose, diagnostics, requirements, skills, updates, modelDefaults, workflow, overleaf, commitWriter, conflictWriter, refreshUsage, memory, initialPage = 'general' }: AppearanceSettingsProps & { onClose: () => void; diagnostics?: DiagnosticsSettingsProps; requirements?: { state: RequirementsState; online: boolean }; skills?: SkillLibraryOptions; memory?: MemorySettingsOptions; updates?: UpdateApi; modelDefaults: ModelDefaultSettingsProps; commitWriter: CommitMessageChoice; conflictWriter: CommitMessageChoice; refreshUsage?: RefreshUsage; workflow?: CollaborationSettingsProps; overleaf?: { api: UpdateApi; state: OverleafState | undefined }; initialPage?: SettingsInitialPage }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const skillControls = useRef<SkillLibraryControls>(null);
   const focusConflictAgent = useRef(initialPage === 'git-conflicts');
@@ -96,6 +97,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
     ] },
     { label: t('Workspace'), entries: [
       ...(skills ? [{ page: 'skills' as const, label: t('Skills'), icon: 'spark' }] : []),
+      ...(memory ? [{ page: 'memory' as const, label: t('Memory'), icon: 'brain', keywords: `${t('Learn from reviews')} ${t('Writing memory')} ${t('Shared with coauthors')}` }] : []),
       ...(overleaf ? [{ page: 'overleaf' as const, label: 'Overleaf', icon: 'overleaf', keywords: `${t('Sync with Overleaf…')} ${t('Sign in')} ${t('Sign out')}` }] : []),
     ] },
     { label: t('Runtime'), entries: [
@@ -200,6 +202,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
         {page === 'updates' && updates && <UpdateSettings api={updates}/>}
         {page === 'overleaf' && overleaf && <div className="settings-page"><OverleafAccounts api={overleaf.api} overleaf={overleaf.state}/></div>}
         {page === 'skills' && skills && <SkillLibraryPanel {...skills} controls={skillControls} onClose={onClose}/>}
+        {page === 'memory' && memory && <MemorySettings {...memory}/>}
       </div>
     </section>
   </dialog>;

@@ -325,6 +325,9 @@ jobs:
       - name: skill-library
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-skill-library.mjs
+      - name: memory
+        if: ${{ !cancelled() }}
+        run: node --import tsx scripts/check-memory.mjs
       - name: skills
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-skills.mjs

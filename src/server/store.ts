@@ -86,7 +86,8 @@ export class Store extends EventEmitter {
       // Only Papilot records are removed. Never finish review tasks or touch their files.
       this.db.prepare('INSERT OR IGNORE INTO deleted_tasks SELECT id, ? FROM tasks WHERE project_id=?').run(Date.now(), id);
       for (const table of ['items', 'runs', 'ai_review_inputs', 'task_pins']) this.db.prepare(`DELETE FROM ${table} WHERE task_id IN (SELECT id FROM tasks WHERE project_id=?)`).run(id);
-      for (const task of tasks) { const prefix = `note-options:${task}:`; this.db.prepare('DELETE FROM settings WHERE substr(key,1,?)=?').run(prefix.length, prefix); }
+      for (const task of tasks) { const prefix = `note-options:${task}:`; this.db.prepare('DELETE FROM settings WHERE substr(key,1,?)=?').run(prefix.length, prefix); this.db.prepare('DELETE FROM settings WHERE key=?').run(`memory-evidence:${task}`); }
+      this.db.prepare('DELETE FROM settings WHERE key=?').run(`memory-dismissed:${id}`);
       const clearPrefix = `annotation-clear:${id}:`;
       this.db.prepare('DELETE FROM settings WHERE substr(key,1,?)=?').run(clearPrefix.length, clearPrefix);
       for (const table of ['tasks', 'annotations', 'anchor_sources']) this.db.prepare(`DELETE FROM ${table} WHERE project_id=?`).run(id);
@@ -94,6 +95,10 @@ export class Store extends EventEmitter {
     });
     for (const task of tasks) this.itemRevisions.delete(task);
     this.emit('change');
+  }
+  // What the author wrote and decided in a paper's other tasks, newest first (see memory-learning.ts).
+  memoryEvidence(projectId: string): { at: number; evidence: unknown }[] {
+    return (this.db.prepare("SELECT data FROM settings WHERE substr(key,1,16)='memory-evidence:' AND json_extract(data,'$.projectId')=? ORDER BY json_extract(data,'$.at') DESC").all(projectId) as { data: string }[]).map(row => JSON.parse(row.data));
   }
   preference<T>(key: string) { const row = this.db.prepare('SELECT data FROM settings WHERE key=?').get(key) as { data: string } | undefined; return row ? JSON.parse(row.data) as T : undefined; }
   // One durable copy per revision, shared by all anchors made in that file.
@@ -191,6 +196,7 @@ export class Store extends EventEmitter {
       this.db.prepare('DELETE FROM task_pins WHERE task_id=?').run(id);
       this.db.prepare('DELETE FROM tasks WHERE id=?').run(id);
       const prefix = `note-options:${id}:`; this.db.prepare('DELETE FROM settings WHERE substr(key,1,?)=?').run(prefix.length, prefix);
+      this.db.prepare('DELETE FROM settings WHERE key=?').run(`memory-evidence:${id}`);
     });
     this.itemRevisions.delete(id);
     this.emit('change');

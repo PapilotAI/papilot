@@ -474,5 +474,17 @@
   "The selected commit-message agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.": "所選提交訊息代理無法使用。請在設定 → 代理中連線，或在設定 → Git 中選擇其他代理。",
   "Invalid agent.": "無效的代理。",
   "The selected conflict-resolution agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.": "所選衝突解決代理無法使用。請在「設定 → 代理」中連線，或在「設定 → Git」中更換。",
-  "Choose a supported agent.": "請選擇受支援的代理。"
+  "Choose a supported agent.": "請選擇受支援的代理。",
+  "Choose Remember, Dismiss or Undo.": "請選擇「記住」、「略過」或「復原」。",
+  "Choose where to keep this preference.": "請選擇此偏好設定的儲存位置。",
+  "Choose whether Papilot learns from reviews.": "請選擇是否讓 Papilot 從審閱中學習。",
+  "Git ignores .papilot/memory.md in this repository, so coauthors would not receive it.": "Git 在此儲存庫中會忽略 .papilot/memory.md，因此共同作者將不會收到此檔案。",
+  "Linked memory files are not used. Replace the link with a regular file.": "系統不會使用已連結的記憶檔案。請將連結替換為一般檔案。",
+  "Memory changed on disk. Reload it before saving.": "磁碟上的記憶已變更。請先重新載入再儲存。",
+  "Open a paper to keep preferences for it.": "請開啟論文以保存其偏好設定。",
+  "This preference changed after it was saved. Edit it in Settings → Memory.": "此偏好設定在儲存後已變更。請至「設定」→「記憶」中編輯。",
+  "This preference changed on disk. Reload memory before editing it.": "磁碟上的此偏好設定已變更。請先重新載入記憶再進行編輯。",
+  "This preference changed on disk. Reload memory before moving it.": "磁碟上的此偏好設定已變更。請先重新載入記憶再進行移動。",
+  "This suggestion is no longer available.": "此建議已不再提供。",
+  "Write the preference as text.": "請以文字撰寫偏好設定。"
 }
