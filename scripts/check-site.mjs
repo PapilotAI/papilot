@@ -344,7 +344,7 @@ try {
       await page.evaluate(() => document.fonts.ready);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${locale}/${width}: no sideways scroll`);
       await page.locator('#download-button').click();
-      for (const selector of ['.topbar-inner', '.topbar .brand', '.nav', '.topbar-universe', '.topbar-demo', '.topbar .github-link', '.hero-universe', '.hero-star', '#download-button', '#download-list', '.agent-grid', '.agent-grid li', '.app-window', '.sync-stage', '.sync-points li', '.more-card', '.tpl-shelf']) {
+      for (const selector of ['.topbar-inner', '.topbar .brand', '.nav', '.topbar-universe', '.topbar-demo', '.topbar .github-link', '.hero-overleaf', '.hero-universe', '.hero-star', '#download-button', '#download-list', '.agent-grid', '.agent-grid li', '.app-window', '.sync-stage', '.sync-points li', '.more-card', '.tpl-shelf']) {
         const boxes = await page.locator(selector).evaluateAll(nodes => nodes.map(el => ({ width: el.clientWidth, scroll: el.scrollWidth, left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right })));
         for (const box of boxes) {
           assert.ok(box.scroll <= box.width + 1, `${locale}/${width}: ${selector} contents fit`);
@@ -352,6 +352,9 @@ try {
         }
       }
       await page.keyboard.press('Escape');
+      // The hero note's links wrap inside it rather than spilling over its
+      // sides, which fonts wider than this machine's would push off screen.
+      assert.ok(await page.locator('.hero-note').evaluate(note => { const box = note.getBoundingClientRect(); return [...note.children].every(link => { const r = link.getBoundingClientRect(); return r.left >= box.left - 1 && r.right <= box.right + 1; }); }), `${locale}/${width}: the hero note's links fit inside it`);
       const panels = await page.locator('.scene').evaluateAll(apps => apps.map(app => {
         const [paneSelector, targetSelector] = { notes: ['.app-pdf', '.scene-figure'], revise: ['.app-pdf', '.review-change'], models: ['.app-chat', '.chat-composer'], record: ['.app-history', '.git-new'] }[app.dataset.scene];
         const pane = app.querySelector(paneSelector).getBoundingClientRect(), target = app.querySelector(targetSelector).getBoundingClientRect();

@@ -680,7 +680,7 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .section-links{margin-top:40px;text-align:center}
 /* Overleaf's mark, tinted like the app's brand icons. */
 .leaf{display:inline-block;flex:none;width:16px;height:16px;background:var(--leaf);-webkit-mask:url("assets/agents/overleaf.svg") center/contain no-repeat;mask:url("assets/agents/overleaf.svg") center/contain no-repeat}
-.hero-overleaf{display:inline-flex;align-items:center;gap:6px;padding-block:3px;white-space:nowrap}
+.hero-overleaf{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding-block:3px;text-wrap:balance}
 .hero-overleaf .leaf{width:14px;height:14px}
 
 /* Live sync with Overleaf. The section's backdrop runs from Papilot's blue
@@ -891,7 +891,7 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .cv-row i:first-child{background:var(--accent-line)}
 .tpl-cv b{margin-left:0;width:56%}
 .tpl-cv .t-line{margin-left:0}
-.tpl-venues{display:inline-flex;align-items:baseline;gap:8px;padding:7px 16px;border-radius:999px;background:var(--bg);box-shadow:0 0 0 1px var(--line),0 8px 20px -12px rgb(15 23 42/.25);font-size:13.5px;color:var(--text-2);white-space:nowrap}
+.tpl-venues{display:inline-flex;align-items:baseline;gap:8px;max-width:100%;padding:7px 16px;border-radius:18px;text-align:center;text-wrap:balance;background:var(--bg);box-shadow:0 0 0 1px var(--line),0 8px 20px -12px rgb(15 23 42/.25);font-size:13.5px;color:var(--text-2)}
 .tpl-venues b{font:400 19px/1 var(--serif);color:var(--accent)}
 /* The phone app, as on the opening window at phone width: the frosted
    navigation bar, a change on the page, and Accept, Reject and Comment in
