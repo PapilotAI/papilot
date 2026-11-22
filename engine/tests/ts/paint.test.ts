@@ -8,6 +8,12 @@ import { afterEach, expect, it } from "vitest";
 import { mupdf, PdfDocument } from "../../src/render/pdf.ts";
 import { paintChanges } from "../../src/render/paint.ts";
 const documents: PdfDocument[] = [];
+function collectPdfObjects(value: unknown, out = new Set<mupdf.PDFObject>()) {
+  if (value instanceof mupdf.PDFObject) out.add(value);
+  else if (value && typeof value === "object")
+    for (const child of Object.values(value)) collectPdfObjects(child, out);
+  return out;
+}
 function pdf(
   content: string,
   resources:
@@ -17,12 +23,13 @@ function pdf(
   const doc = new mupdf.PDFDocument(),
     font = new mupdf.Font("Helvetica"),
     ref = doc.addSimpleFont(font),
+    extra = typeof resources === "function" ? resources(doc) : resources,
     page = doc.addPage(
       [0, 0, 300, 300],
       0,
       {
         Font: { F: ref },
-        ...(typeof resources === "function" ? resources(doc) : resources),
+        ...extra,
       },
       content,
     );
@@ -31,6 +38,7 @@ function pdf(
   const buffer = doc.saveToBuffer("");
   const value = new PdfDocument(buffer.asUint8Array());
   buffer.destroy();
+  for (const obj of collectPdfObjects(extra)) obj.destroy();
   ref.destroy();
   font.destroy();
   doc.destroy();
