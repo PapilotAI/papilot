@@ -76,6 +76,10 @@ try {
           totals: { ...days[0], tokens: { input: 420000, cached: 1280000, cacheWrite: 40000, output: 115000, reasoning: 32000, total: 1855000 }, costUsd: 4.82, reportedCostUsd: 2.1, estimatedCostUsd: 2.72, activeDays: 30 },
           hours, turnHours: hours, tokenHours: hours.map(v => v * 120000),
           days,
+          calendar: Array.from({ length: 371 }, (_, idx) => {
+            const date = new Date(Date.UTC(2026, 10, 30 - idx)).toISOString().slice(0, 10);
+            return { date, tokens: (idx % 9) * 61000, costUsd: idx % 4 ? 0.37 : null, reportedCostUsd: 0, estimatedCostUsd: idx % 4 ? 0.37 : 0, turns: idx % 7, accepted: idx % 5, rejected: idx % 3, commented: 0, annotationsCreated: idx % 6 };
+          }).filter(day => day.turns > 0).reverse(),
           agents: [
             { agent: 'codex', tasksStarted: 10, turns: 30, tokens: { input: 300000, cached: 1000000, cacheWrite: 0, output: 80000, reasoning: 25000, total: 1380000 }, costUsd: 2.72, reportedCostUsd: 0, estimatedCostUsd: 2.72, unpricedTokens: 0 },
             { agent: 'claude', tasksStarted: 8, turns: 20, tokens: { input: 120000, cached: 280000, cacheWrite: 40000, output: 35000, reasoning: 7000, total: 475000 }, costUsd: 2.1, reportedCostUsd: 2.1, estimatedCostUsd: 0, unpricedTokens: 10000 },
@@ -121,7 +125,10 @@ try {
         if (name === 'experiments') await expect(page.locator('.phitex-experiment').getByRole('switch')).toBeChecked();
         if (name === 'updates') await page.locator('.settings-content-updates [role=alert]').waitFor();
         if (name === 'skills') await expect(page.locator('.skill-library-new')).toBeEnabled();
-        if (name === 'statistics') await page.locator('.activity-table').first().waitFor();
+        if (name === 'statistics') {
+          await page.locator('.activity-table').first().waitFor();
+          await expect(page.locator('.activity-heatmap .activity-heat-cell:not([data-level="0"])').first()).toBeVisible();
+        }
         if (name === 'quickNotes') await page.locator('.quick-note-text strong').getByText('Literaturverzeichnis', { exact: true }).waitFor();
         await page.evaluate(() => document.fonts.ready);
         if (width > 760) {

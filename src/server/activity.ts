@@ -1,9 +1,11 @@
 import { getModels, getProviders, type Api, type KnownProvider, type Model } from '@mariozechner/pi-ai';
 import {
+  ACTIVITY_CALENDAR_DAYS,
   ACTIVITY_RANGES,
   isAgentId,
   isTaskReviewNote,
   type ActivityAgentSummary,
+  type ActivityCalendarDay,
   type ActivityCostSource,
   type ActivityDay,
   type ActivityMetrics,
@@ -504,12 +506,6 @@ function shiftCalendarDate(date: string, deltaDays: number): string {
   return utc.toISOString().slice(0, 10);
 }
 
-function calendarSpanDays(startDate: string, endDate: string): number {
-  const [sy, sm, sd] = startDate.split('-').map(Number);
-  const [ey, em, ed] = endDate.split('-').map(Number);
-  return Math.round((Date.UTC(ey, em - 1, ed) - Date.UTC(sy, sm - 1, sd)) / 86_400_000);
-}
-
 function blankMetrics(): ActivityMetrics {
   return {
     tokens: zeroTokens(),
@@ -549,6 +545,18 @@ function blankDay(date: string): ActivityDay {
     turnHours: Array(24).fill(0),
     tokenHours: Array(24).fill(0),
   };
+}
+
+type CountedMetric = { [K in keyof ActivityMetrics]: ActivityMetrics[K] extends number ? K : never }[keyof ActivityMetrics];
+const COUNTED_METRICS = Object.entries(blankMetrics())
+  .filter(([, value]) => typeof value === 'number')
+  .map(([key]) => key as CountedMetric);
+
+// Totals are the sum of the selected range's days; costUsd is settled by the caller.
+function addMetrics(target: ActivityMetrics, source: ActivityMetrics) {
+  addTokens(target.tokens, source.tokens);
+  for (const role of Object.keys(target.turnsByRole) as ActivityTurnRole[]) target.turnsByRole[role] += source.turnsByRole[role];
+  for (const key of COUNTED_METRICS) target[key] += source[key];
 }
 
 const hasDayActivity = (day: ActivityDay) =>
@@ -599,11 +607,6 @@ export function buildActivityReport(
   const selectedProject = options.projectId && options.projectId.trim() ? options.projectId.trim() : null;
   const events = store.activityEvents();
 
-  const totals: ActivityTotals = { ...blankMetrics(), activeDays: 0 };
-  let totalHasCost = false;
-  const hours = Array<number>(24).fill(0);
-  const turnHours = Array<number>(24).fill(0);
-  const tokenHours = Array<number>(24).fill(0);
   const daysByDate = new Map<string, ActivityDay>();
   const dayHasCost = new Set<string>();
 
@@ -657,20 +660,20 @@ export function buildActivityReport(
     return entry;
   };
 
+  // Days in the selected range feed the totals, papers, agents and models; days
+  // of the past-year calendar feed the heatmap whatever the range.
   const inRange = (date: string) => !startDate || (date >= startDate && date <= today);
+  const calendarStart = shiftCalendarDate(today, -(ACTIVITY_CALENDAR_DAYS - 1));
+  const inCalendar = (date: string) => date >= calendarStart && date <= today;
 
   for (const event of events) {
     const { date, hour } = localDateHour(event.at, timezone);
-    if (!inRange(date)) {
+    const counted = inRange(date);
+    if (!counted && !inCalendar(date)) {
       // Still track undone events whose undo happened inside the selected range.
       if (event.kind === 'review_decision' && event.undoneAt !== null && (!selectedProject || event.projectId === selectedProject)) {
         const undoneSlot = localDateHour(event.undoneAt, timezone);
-        if (inRange(undoneSlot.date)) {
-          const count = Math.max(1, safeInt(event.data.count) || 1);
-          const undoneDay = getDay(undoneSlot.date);
-          undoneDay.undone += count;
-          totals.undone += count;
-        }
+        if (inRange(undoneSlot.date)) getDay(undoneSlot.date).undone += Math.max(1, safeInt(event.data.count) || 1);
       }
       continue;
     }
@@ -708,7 +711,7 @@ export function buildActivityReport(
     }
 
     // Populate per-paper summaries across all papers in the chosen date range so the paper selector stays complete.
-    if (event.projectId) {
+    if (counted && event.projectId) {
       let projectSummary = projectMap.get(event.projectId);
       if (!projectSummary) {
         projectSummary = {
@@ -747,58 +750,43 @@ export function buildActivityReport(
     if (selectedProject && event.projectId !== selectedProject) continue;
 
     const day = getDay(date);
+    const agent = counted ? agentId : null;
 
     if (event.kind === 'task_started') {
-      const reviewMode = event.data.mode === 'review';
       day.tasksStarted++;
-      totals.tasksStarted++;
-      if (reviewMode) { day.reviewTasksStarted++; totals.reviewTasksStarted++; }
-      else { day.editTasksStarted++; totals.editTasksStarted++; }
-      if (agentId) getAgent(agentId).tasksStarted++;
+      if (event.data.mode === 'review') day.reviewTasksStarted++;
+      else day.editTasksStarted++;
+      if (agent) getAgent(agent).tasksStarted++;
     } else if (event.kind === 'agent_turn') {
       const role: ActivityTurnRole = ['edit', 'review', 'worker', 'helper'].includes(event.data.role) ? event.data.role : 'edit';
       const status = event.data.status;
       day.turns++;
-      totals.turns++;
       day.turnsByRole[role]++;
-      totals.turnsByRole[role]++;
-      if (status === 'completed') { day.completedTurns++; totals.completedTurns++; }
-      else if (status === 'failed') { day.failedTurns++; totals.failedTurns++; }
-      else if (status === 'interrupted') { day.interruptedTurns++; totals.interruptedTurns++; }
+      if (status === 'completed') day.completedTurns++;
+      else if (status === 'failed') day.failedTurns++;
+      else if (status === 'interrupted') day.interruptedTurns++;
       day.hours[hour]++;
-      hours[hour]++;
       day.turnHours[hour]++;
-      turnHours[hour]++;
-      if (agentId) {
-        getAgent(agentId).turns++;
-        if (modelName) getModel(agentId, modelName).turns++;
+      if (agent) {
+        getAgent(agent).turns++;
+        if (modelName) getModel(agent, modelName).turns++;
       }
     } else if (event.kind === 'token_usage' && resolvedUsage) {
       const { delta, costUsd, costSource } = resolvedUsage;
       addTokens(day.tokens, delta);
-      addTokens(totals.tokens, delta);
       day.tokenHours[hour] += delta.total;
-      tokenHours[hour] += delta.total;
 
       if (costUsd !== null) {
         dayHasCost.add(date);
-        totalHasCost = true;
         day.pricedTokens += delta.total;
-        totals.pricedTokens += delta.total;
-        if (costSource === 'reported') {
-          day.reportedCostUsd += costUsd;
-          totals.reportedCostUsd += costUsd;
-        } else {
-          day.estimatedCostUsd += costUsd;
-          totals.estimatedCostUsd += costUsd;
-        }
+        if (costSource === 'reported') day.reportedCostUsd += costUsd;
+        else day.estimatedCostUsd += costUsd;
       } else {
         day.unpricedTokens += delta.total;
-        totals.unpricedTokens += delta.total;
       }
 
-      if (agentId) {
-        const agentEntry = getAgent(agentId);
+      if (agent) {
+        const agentEntry = getAgent(agent);
         addTokens(agentEntry.tokens, delta);
         if (costUsd !== null) {
           agentEntry.hasCost = true;
@@ -808,7 +796,7 @@ export function buildActivityReport(
           agentEntry.unpricedTokens += delta.total;
         }
         if (modelName) {
-          const modelEntry = getModel(agentId, modelName);
+          const modelEntry = getModel(agent, modelName);
           addTokens(modelEntry.tokens, delta);
           if (costUsd !== null) {
             modelEntry.costUsd = (modelEntry.costUsd ?? 0) + costUsd;
@@ -821,80 +809,71 @@ export function buildActivityReport(
       const count = Math.max(1, safeInt(event.data.count) || 1);
       if (event.undoneAt !== null) {
         const undoneSlot = localDateHour(event.undoneAt, timezone);
-        if (inRange(undoneSlot.date)) {
-          const undoneDay = getDay(undoneSlot.date);
-          undoneDay.undone += count;
-          totals.undone += count;
-        }
+        if (inRange(undoneSlot.date)) getDay(undoneSlot.date).undone += count;
         continue;
       }
       const action = event.data.action;
-      if (action === 'accept') { day.accepted += count; totals.accepted += count; }
-      else if (action === 'reject') { day.rejected += count; totals.rejected += count; }
-      else if (action === 'comment') { day.commented += count; totals.commented += count; }
+      if (action === 'accept') day.accepted += count;
+      else if (action === 'reject') day.rejected += count;
+      else if (action === 'comment') day.commented += count;
       day.hours[hour]++;
-      hours[hour]++;
     } else if (event.kind === 'annotation_created') {
       const source = event.data.source;
       day.annotationsCreated++;
-      totals.annotationsCreated++;
-      if (source === 'ai-review') { day.aiReviewAnnotations++; totals.aiReviewAnnotations++; }
-      else if (source === 'agent') { day.agentAnnotations++; totals.agentAnnotations++; }
+      if (source === 'ai-review') day.aiReviewAnnotations++;
+      else if (source === 'agent') day.agentAnnotations++;
       else {
         day.authorAnnotations++;
-        totals.authorAnnotations++;
         day.hours[hour]++;
-        hours[hour]++;
       }
     } else if (event.kind === 'annotations_sent') {
-      const count = Math.max(1, safeInt(event.data.count) || 1);
-      day.annotationsSent += count;
-      totals.annotationsSent += count;
+      day.annotationsSent += Math.max(1, safeInt(event.data.count) || 1);
     } else if (event.kind === 'task_delivered') {
-      if (event.data.mode === 'commit') { day.tasksCommitted++; totals.tasksCommitted++; }
-      else { day.tasksApplied++; totals.tasksApplied++; }
+      if (event.data.mode === 'commit') day.tasksCommitted++;
+      else day.tasksApplied++;
       day.hours[hour]++;
-      hours[hour]++;
     } else if (event.kind === 'git_commit') {
       day.gitCommits++;
-      totals.gitCommits++;
       day.hours[hour]++;
-      hours[hour]++;
     }
   }
 
+  const totals: ActivityTotals = { ...blankMetrics(), activeDays: 0 };
+  const hours = Array<number>(24).fill(0);
+  const turnHours = Array<number>(24).fill(0);
+  const tokenHours = Array<number>(24).fill(0);
+  let totalHasCost = false;
   for (const [date, day] of daysByDate) {
     day.costUsd = dayHasCost.has(date) ? day.reportedCostUsd + day.estimatedCostUsd : null;
+    if (!inRange(date)) continue;
+    addMetrics(totals, day);
+    for (let h = 0; h < 24; h++) {
+      hours[h] += day.hours[h];
+      turnHours[h] += day.turnHours[h];
+      tokenHours[h] += day.tokenHours[h];
+    }
+    if (day.costUsd !== null) totalHasCost = true;
   }
   totals.costUsd = totalHasCost ? totals.reportedCostUsd + totals.estimatedCostUsd : null;
 
-  const days: ActivityDay[] = [];
-  if (windowDays > 0 && startDate) {
-    for (let i = 0; i < windowDays; i++) {
-      const date = shiftCalendarDate(startDate, i);
-      days.push(daysByDate.get(date) || blankDay(date));
-    }
-  } else {
-    const activeDates = [...daysByDate.entries()].filter(([, day]) => hasDayActivity(day)).map(([date]) => date).sort();
-    if (!activeDates.length) {
-      for (let i = 13; i >= 0; i--) days.push(blankDay(shiftCalendarDate(today, -i)));
-    } else {
-      const earliest = activeDates[0] < shiftCalendarDate(today, -13) ? activeDates[0] : shiftCalendarDate(today, -13);
-      const latest = activeDates.at(-1)! > today ? activeDates.at(-1)! : today;
-      const span = calendarSpanDays(earliest, latest);
-      if (span <= 366) {
-        for (let i = 0; i <= span; i++) {
-          const date = shiftCalendarDate(earliest, i);
-          days.push(daysByDate.get(date) || blankDay(date));
-        }
-      } else {
-        for (const date of activeDates) days.push(daysByDate.get(date)!);
-        if (days.at(-1)?.date !== today) days.push(daysByDate.get(today) || blankDay(today));
-      }
-    }
-  }
+  const activeDays = [...daysByDate.values()].filter(hasDayActivity).sort((a, b) => a.date.localeCompare(b.date));
+  const days = activeDays.filter(day => inRange(day.date));
+  totals.activeDays = days.length;
 
-  totals.activeDays = [...daysByDate.values()].filter(hasDayActivity).length;
+  const calendar: ActivityCalendarDay[] = activeDays
+    .filter(day => inCalendar(day.date))
+    .map(day => ({
+      date: day.date,
+      tokens: day.tokens.total,
+      costUsd: day.costUsd,
+      reportedCostUsd: day.reportedCostUsd,
+      estimatedCostUsd: day.estimatedCostUsd,
+      turns: day.turns,
+      accepted: day.accepted,
+      rejected: day.rejected,
+      commented: day.commented,
+      annotationsCreated: day.annotationsCreated,
+    }));
 
   const agents: ActivityAgentSummary[] = [...agentsMap.values()]
     .map(({ hasCost, ...entry }) => ({
@@ -935,6 +914,7 @@ export function buildActivityReport(
     turnHours,
     tokenHours,
     days,
+    calendar,
     agents,
     models,
   };

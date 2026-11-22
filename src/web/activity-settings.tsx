@@ -1,8 +1,11 @@
-import { type CSSProperties, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, Fragment, type KeyboardEvent, type PointerEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ACTIVITY_CALENDAR_DAYS,
   ACTIVITY_RANGES,
   type ActivityAgentSummary,
+  type ActivityCalendarDay,
   type ActivityDay,
+  type ActivityMetrics,
   type ActivityModelSummary,
   type ActivityProjectSummary,
   type ActivityRange,
@@ -115,6 +118,18 @@ function normalizeReport(raw: Partial<ActivityReport> | undefined | null, fallba
     turnHours: safeHours(raw?.turnHours),
     tokenHours: safeHours(raw?.tokenHours),
     days,
+    calendar: Array.isArray(raw?.calendar) ? raw.calendar.filter(day => day && typeof day.date === 'string').map(day => ({
+      date: day.date,
+      tokens: Number(day.tokens) || 0,
+      costUsd: typeof day.costUsd === 'number' && Number.isFinite(day.costUsd) ? day.costUsd : null,
+      reportedCostUsd: Number(day.reportedCostUsd) || 0,
+      estimatedCostUsd: Number(day.estimatedCostUsd) || 0,
+      turns: Number(day.turns) || 0,
+      accepted: Number(day.accepted) || 0,
+      rejected: Number(day.rejected) || 0,
+      commented: Number(day.commented) || 0,
+      annotationsCreated: Number(day.annotationsCreated) || 0,
+    })) : [],
     agents: Array.isArray(raw?.agents) ? raw.agents.map(entry => ({ ...entry, tokens: safeTokens(entry.tokens) })) : [],
     models: Array.isArray(raw?.models) ? raw.models.map(entry => ({ ...entry, tokens: safeTokens(entry.tokens) })) : [],
   };
@@ -180,11 +195,315 @@ function hasAnyActivity(day: ActivityDay): boolean {
     day.annotationsSent > 0;
 }
 
-function metricValue(day: ActivityDay, metric: TrendMetric): number {
-  if (metric === 'tokens') return day.tokens.total;
+function spendPrefix(figures: Pick<ActivityMetrics, 'costUsd' | 'reportedCostUsd' | 'estimatedCostUsd'>): string {
+  return figures.costUsd !== null && figures.reportedCostUsd === 0 && figures.estimatedCostUsd > 0 ? '~' : '';
+}
+
+function metricValue(day: ActivityCalendarDay, metric: TrendMetric): number {
+  if (metric === 'tokens') return day.tokens;
   if (metric === 'spend') return day.costUsd ?? 0;
   if (metric === 'turns') return day.turns;
   return day.accepted + day.rejected + day.commented + day.annotationsCreated;
+}
+
+function metricParts(day: ActivityCalendarDay, metric: TrendMetric): string[] {
+  if (metric === 'tokens') return [t('{tokens} tokens', { tokens: formatCompactTokens(day.tokens) })];
+  if (metric === 'spend') return [formatUsd(day.costUsd, spendPrefix(day))];
+  if (metric === 'turns') return [tn(day.turns, '{n} run', '{n} runs')];
+  return [
+    `+${formatExactNumber(day.accepted)} / −${formatExactNumber(day.rejected)}`,
+    ...(day.commented > 0 ? [tn(day.commented, '{n} comment', '{n} comments')] : []),
+    tn(day.annotationsCreated, '{n} annotation', '{n} annotations'),
+  ];
+}
+
+// Calendar dates are plain YYYY-MM-DD days, counted in whole UTC days so no
+// time zone or daylight saving shift can move a cell.
+const DAY_MS = 86_400_000;
+const WEEKS = ACTIVITY_CALENDAR_DAYS / 7;
+const dayNumber = (date: string) => {
+  const [y, m, d] = date.split('-').map(Number);
+  return Math.round(Date.UTC(y, m - 1, d) / DAY_MS);
+};
+const dayDate = (day: number) => new Date(day * DAY_MS);
+const weekday = (day: number) => dayDate(day).getUTCDay();
+
+function blankCalendarDay(date: string): ActivityCalendarDay {
+  return { date, tokens: 0, costUsd: null, reportedCostUsd: 0, estimatedCostUsd: 0, turns: 0, accepted: 0, rejected: 0, commented: 0, annotationsCreated: 0 };
+}
+
+// The locale's first day of the week (0 = Sunday). Intl.Locale week info is
+// not in every browser yet, so weeks start on Monday without it.
+function firstDayOfWeek(language: string): number {
+  try {
+    const tag = new Intl.Locale(language) as Intl.Locale & { getWeekInfo?: () => { firstDay: number }; weekInfo?: { firstDay: number } };
+    const firstDay = (tag.getWeekInfo?.() ?? tag.weekInfo)?.firstDay;
+    if (firstDay) return firstDay % 7;
+  } catch {
+    // An unknown language tag keeps the default.
+  }
+  return 1;
+}
+
+function weekdayName(dow: number): string {
+  return new Intl.DateTimeFormat(locale(), { weekday: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 0, 4 + dow)));
+}
+
+// Shades rank the distinct nonzero values, like GitHub's quartiles, so one very
+// large day does not wash every other day out to the palest shade, equal days
+// share a shade, and a lone active day gets the darkest.
+function heatLevels(values: number[]): (value: number) => number {
+  const sorted = [...new Set(values.filter(value => value > 0))].sort((a, b) => a - b);
+  return value => {
+    if (value <= 0 || !sorted.length) return 0;
+    let lo = 0, hi = sorted.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (sorted[mid] <= value) lo = mid + 1;
+      else hi = mid;
+    }
+    return Math.max(1, Math.ceil((4 * lo) / sorted.length));
+  };
+}
+
+function streaks(activeDays: number[], today: number): { longest: number; current: number } {
+  const active = new Set(activeDays);
+  let longest = 0, run = 0;
+  for (const day of activeDays) {
+    run = active.has(day - 1) ? run + 1 : 1;
+    longest = Math.max(longest, run);
+  }
+  // A streak that reached yesterday still counts until today is over.
+  let day = active.has(today) ? today : today - 1, current = 0;
+  while (active.has(day)) { current++; day--; }
+  return { longest, current };
+}
+
+type HeatTip = { x: number; y: number; align: 'start' | 'center' | 'end'; title: string[]; detail: string };
+
+function placeTip(card: HTMLElement | null, cell: Element, title: string[], detail: string): HeatTip | null {
+  if (!card) return null;
+  const box = card.getBoundingClientRect();
+  const rect = cell.getBoundingClientRect();
+  const x = rect.left + rect.width / 2 - box.left;
+  return { x, y: rect.top - box.top, align: x < box.width * 0.2 ? 'start' : x > box.width * 0.8 ? 'end' : 'center', title, detail };
+}
+
+function HeatTooltip({ tip }: { tip: HeatTip | null }) {
+  if (!tip) return null;
+  return <div className="activity-heat-tip" data-align={tip.align} aria-hidden="true" style={{ '--tip-x': `${tip.x}px`, '--tip-y': `${tip.y}px` } as CSSProperties}>
+    <strong>{tip.title.map((part, index) => <span key={index}>{part}</span>)}</strong>
+    <span>{tip.detail}</span>
+  </div>;
+}
+
+function HeatLegend() {
+  return <div className="activity-heat-legend" aria-hidden="true">
+    {/* i18n: Heatmap legend, read as "Less [five shades] More" (paler cells mean less activity); pair it with the existing "More". */}
+    <span>{t('Less')}</span>
+    {[0, 1, 2, 3, 4].map(level => <i key={level} className="activity-heat-swatch" data-level={level}/>)}
+    <span>{t('More')}</span>
+  </div>;
+}
+
+function YearHeatmap({ calendar, today, metric, selectedDate, onSelect, children }: {
+  calendar: ActivityCalendarDay[];
+  today: string;
+  metric: TrendMetric;
+  selectedDate: string | null;
+  onSelect: (date: string) => void;
+  children?: ReactNode;
+}) {
+  const language = locale();
+  const weekStart = useMemo(() => firstDayOfWeek(language), [language]);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [tip, setTip] = useState<HeatTip | null>(null);
+
+  const end = dayNumber(today);
+  const first = end - ((weekday(end) - weekStart + 7) % 7) - 7 * (WEEKS - 1);
+  const byDay = useMemo(() => new Map(calendar.map(day => [dayNumber(day.date), day])), [calendar]);
+  const visible = useMemo(() => [...byDay.keys()].filter(day => day >= first && day <= end).sort((a, b) => a - b), [byDay, end, first]);
+  const level = useMemo(() => heatLevels(visible.map(day => metricValue(byDay.get(day)!, metric))), [byDay, metric, visible]);
+  const { longest, current } = useMemo(() => streaks(visible, end), [end, visible]);
+  const selected = selectedDate ? dayNumber(selectedDate) : null;
+  const tabStop = selected !== null && selected >= first && selected <= end ? selected : end;
+
+  // Month labels head the first week column that starts in a new month; a
+  // label with less than three columns of room before the next is left out.
+  const months = useMemo(() => {
+    const format = new Intl.DateTimeFormat(language, { month: 'short', timeZone: 'UTC' });
+    const starts: { column: number; label: string }[] = [];
+    let previous = -1;
+    for (let column = 0; column < WEEKS; column++) {
+      const month = dayDate(first + column * 7).getUTCMonth();
+      if (month !== previous) starts.push({ column, label: format.format(dayDate(first + column * 7)) });
+      previous = month;
+    }
+    return starts.map((start, index) => {
+      const span = (starts[index + 1]?.column ?? WEEKS) - start.column;
+      return { ...start, span, label: span >= 3 ? start.label : '' };
+    });
+  }, [first, language]);
+
+  const dayOf = (day: number) => byDay.get(day) ?? blankCalendarDay(dayDate(day).toISOString().slice(0, 10));
+  const cellLabel = (day: number) => `${formatDateLabel(dayOf(day).date)}: ${metricParts(dayOf(day), metric).join(', ')}`;
+  const showTip = (cell: Element | null) => {
+    const date = cell instanceof HTMLElement ? cell.dataset.date : undefined;
+    if (!cell || !date) return setTip(null);
+    const entry = dayOf(dayNumber(date));
+    setTip(placeTip(cardRef.current, cell, metricParts(entry, metric), formatDateLabel(entry.date)));
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLTableElement>) => {
+    if (event.key === 'Escape' && tip) {
+      event.preventDefault();
+      event.stopPropagation();
+      setTip(null);
+      return;
+    }
+    const focused = event.target instanceof HTMLElement ? event.target.dataset.date : undefined;
+    if (!focused || event.altKey || event.ctrlKey || event.metaKey) return;
+    const day = dayNumber(focused);
+    const row = (day - first) % 7;
+    const lastInRow = first + row + 7 * Math.floor((end - first - row) / 7);
+    const target = event.key === 'ArrowUp' ? (row > 0 ? day - 1 : null)
+      : event.key === 'ArrowDown' ? (row < 6 && day < end ? day + 1 : null)
+      : event.key === 'ArrowLeft' ? (day - 7 >= first ? day - 7 : null)
+      : event.key === 'ArrowRight' ? (day + 7 <= end ? day + 7 : null)
+      : event.key === 'Home' ? first + row
+      : event.key === 'End' ? lastInRow
+      : null;
+    // Leave keys with nowhere to go to the browser, so it can still scroll.
+    if (target === null || target === day) return;
+    event.preventDefault();
+    const date = dayDate(target).toISOString().slice(0, 10);
+    onSelect(date);
+    const cell = event.currentTarget.querySelector<HTMLElement>(`[data-date="${date}"]`);
+    cell?.focus();
+    cell?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    showTip(cell);
+  };
+
+  return <div ref={cardRef} className="activity-chart-box activity-year">
+    <div className="activity-heatmap-scroll">
+      <table
+        className="activity-heatmap"
+        role="grid"
+        aria-label={t('Past year')}
+        aria-readonly="true"
+        onKeyDown={onKeyDown}
+        onPointerOver={(event: PointerEvent<HTMLTableElement>) => { if (event.pointerType === 'mouse') showTip((event.target as Element).closest('[data-date]')); }}
+        onPointerLeave={() => setTip(null)}
+        onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setTip(null); }}
+      >
+        <colgroup>
+          <col className="activity-heatmap-label-column"/>
+          {Array.from({ length: WEEKS }, (_, column) => <col key={column}/>)}
+        </colgroup>
+        <thead>
+          <tr>
+            <td/>
+            {months.map(month => <th key={month.column} scope="colgroup" colSpan={month.span}><span>{month.label}</span></th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: 7 }, (_, row) => {
+            const dow = (weekStart + row) % 7;
+            return <tr key={row}>
+              <th scope="row"><span className={dow === 1 || dow === 3 || dow === 5 ? undefined : 'sr-only'}>{weekdayName(dow)}</span></th>
+              {Array.from({ length: WEEKS }, (_, column) => {
+                const day = first + column * 7 + row;
+                if (day > end) return <td key={column} className="activity-heat-future"/>;
+                const entry = dayOf(day);
+                return <td
+                  key={column}
+                  className="activity-heat-cell"
+                  data-date={entry.date}
+                  data-level={level(metricValue(entry, metric))}
+                  tabIndex={day === tabStop ? 0 : -1}
+                  aria-selected={day === selected}
+                  aria-label={cellLabel(day)}
+                  onClick={() => onSelect(entry.date)}
+                  onFocus={event => { if (event.currentTarget.matches(':focus-visible')) showTip(event.currentTarget); }}
+                />;
+              })}
+            </tr>;
+          })}
+        </tbody>
+      </table>
+    </div>
+    <div className="activity-year-footer">
+      <dl className="activity-streaks">
+        {/* i18n: The most consecutive active days in the past year, shown above a length such as "12 days". */}
+        <div><dt>{t('Longest streak')}</dt><dd>{tn(longest, '{n} day', '{n} days')}</dd></div>
+        {/* i18n: Consecutive active days up to today or yesterday, shown above a length such as "3 days". */}
+        <div><dt>{t('Current streak')}</dt><dd>{tn(current, '{n} day', '{n} days')}</dd></div>
+      </dl>
+      <HeatLegend/>
+    </div>
+    {children}
+    <HeatTooltip tip={tip}/>
+  </div>;
+}
+
+// Weekday by hour of the selected range, in local time: when the author
+// works, folded over every week of the range.
+function HourHeatmap({ days, summary }: { days: ActivityDay[]; summary: string }) {
+  const language = locale();
+  const weekStart = useMemo(() => firstDayOfWeek(language), [language]);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [tip, setTip] = useState<HeatTip | null>(null);
+  const grid = useMemo(() => {
+    const blank = () => Array.from({ length: 7 }, () => Array<number>(24).fill(0));
+    const events = blank(), turns = blank(), tokens = blank();
+    for (const day of days) {
+      const dow = weekday(dayNumber(day.date));
+      for (let hour = 0; hour < 24; hour++) {
+        events[dow][hour] += day.hours[hour];
+        turns[dow][hour] += day.turnHours[hour];
+        tokens[dow][hour] += day.tokenHours[hour];
+      }
+    }
+    return { events, turns, tokens, level: heatLevels(events.flat()) };
+  }, [days]);
+
+  const showTip = (cell: Element | null) => {
+    const dow = cell instanceof HTMLElement ? Number(cell.dataset.dow) : NaN;
+    const hour = cell instanceof HTMLElement ? Number(cell.dataset.hour) : NaN;
+    if (!cell || Number.isNaN(dow) || Number.isNaN(hour)) return setTip(null);
+    setTip(placeTip(
+      cardRef.current,
+      cell,
+      [
+        // i18n: Things done in one hour of the week: agent runs, review decisions, your annotations, saved tasks and commits.
+        tn(grid.events[dow][hour], '{n} action', '{n} actions'),
+        tn(grid.turns[dow][hour], '{n} run', '{n} runs'),
+        t('{tokens} tokens', { tokens: formatCompactTokens(grid.tokens[dow][hour]) }),
+      ],
+      `${weekdayName(dow)} ${hourLabel(hour)}–${hourLabel((hour + 1) % 24)}`,
+    ));
+  };
+
+  return <div ref={cardRef} className="activity-chart-box activity-hours">
+    <div
+      className="activity-hour-grid"
+      role="img"
+      aria-label={summary}
+      onPointerOver={event => { if (event.pointerType === 'mouse') showTip((event.target as Element).closest('[data-hour]')); }}
+      onPointerLeave={() => setTip(null)}
+    >
+      {Array.from({ length: 7 }, (_, row) => {
+        const dow = (weekStart + row) % 7;
+        return <Fragment key={dow}>
+          <span className="activity-hour-day">{weekdayName(dow)}</span>
+          {grid.events[dow].map((count, hour) => <span key={hour} className="activity-heat-cell" data-dow={dow} data-hour={hour} data-level={grid.level(count)}/>)}
+        </Fragment>;
+      })}
+      <span/>
+      {[0, 3, 6, 9, 12, 15, 18, 21].map(hour => <span key={hour} className="activity-hour-tick">{hourLabel(hour)}</span>)}
+    </div>
+    <HeatTooltip tip={tip}/>
+  </div>;
 }
 
 function AgentAvatar({ agent }: { agent: AgentId }) {
@@ -197,7 +516,6 @@ function DayRows({ days }: { days: ActivityDay[] }) {
   return <>
     {days.map(day => {
       const peak = peakHourIndex(day.hours);
-      const spendPrefix = day.costUsd !== null && day.reportedCostUsd === 0 && day.estimatedCostUsd > 0 ? '~' : '';
       return <tr key={day.date}>
         <th scope="row">
           {formatDateLabel(day.date, true)}
@@ -215,7 +533,7 @@ function DayRows({ days }: { days: ActivityDay[] }) {
           </span>}
         </td>
         <td className="num" data-label={t('Spend')}>
-          {formatUsd(day.costUsd, spendPrefix)}
+          {formatUsd(day.costUsd, spendPrefix(day))}
           {day.unpricedTokens > 0 && <span className="activity-cell-sub">{t('{tokens} unpriced', { tokens: formatCompactTokens(day.unpricedTokens) })}</span>}
         </td>
         <td className="num" data-label={t('Agent runs')}>
@@ -257,7 +575,6 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const requestSeq = useRef(0);
-  const barsRef = useRef<HTMLDivElement | null>(null);
 
   const refresh = useCallback((chosenRange = range, chosenProject = projectId) => {
     const id = ++requestSeq.current;
@@ -293,23 +610,6 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
     [current.days],
   );
 
-  const focusedDay = useMemo(() => {
-    if (selectedDate) {
-      const exact = current.days.find(day => day.date === selectedDate);
-      if (exact) return exact;
-    }
-    return activeDaysDesc[0] || current.days.at(-1) || null;
-  }, [activeDaysDesc, current.days, selectedDate]);
-
-  const maxTrend = useMemo(
-    () => Math.max(0, ...current.days.map(day => metricValue(day, metric))),
-    [current.days, metric],
-  );
-
-  const maxHour = useMemo(
-    () => Math.max(0, ...current.hours),
-    [current.hours],
-  );
   const peakHour = useMemo(() => peakHourIndex(current.hours), [current.hours]);
 
   const rangeLabels: Record<ActivityRange, string> = {
@@ -327,31 +627,16 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
     return [{ value: 'all', label: t('All papers') }, ...items];
   }, [current.projects]);
 
-  const spendEstimateOnly = totals.costUsd !== null && totals.reportedCostUsd === 0 && totals.estimatedCostUsd > 0;
+  const spendEstimateOnly = spendPrefix(totals) === '~';
   const spendMixed = totals.reportedCostUsd > 0 && totals.estimatedCostUsd > 0;
   const decisionTotal = totals.accepted + totals.rejected;
   const acceptRate = decisionTotal > 0 ? Math.round((totals.accepted / decisionTotal) * 100) : null;
   const emptyWorkspace = totals.activeDays === 0 && totals.tokens.total === 0 && totals.turns === 0 && decisionTotal === 0 && totals.annotationsCreated === 0;
-  const activeSelection = emptyWorkspace && !selectedDate ? null : focusedDay;
-  const tabStopDate = (activeSelection ?? current.days.at(-1))?.date ?? null;
-
-  const onTrendKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!current.days.length) return;
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-    event.preventDefault();
-    const currentIndex = Math.max(0, current.days.findIndex(day => day.date === tabStopDate));
-    const nextIndex = event.key === 'Home'
-      ? 0
-      : event.key === 'End'
-      ? current.days.length - 1
-      : event.key === 'ArrowLeft'
-      ? Math.max(0, currentIndex - 1)
-      : Math.min(current.days.length - 1, currentIndex + 1);
-    const target = current.days[nextIndex];
-    if (!target) return;
-    setSelectedDate(target.date);
-    barsRef.current?.querySelectorAll<HTMLButtonElement>('.activity-day-bar')[nextIndex]?.focus();
-  };
+  // The day readout under the heatmap: the chosen day, else the latest active one.
+  const shownDate = selectedDate ?? current.calendar.at(-1)?.date ?? null;
+  const shownDay = shownDate ? current.calendar.find(day => day.date === shownDate) ?? blankCalendarDay(shownDate) : null;
+  const peakWindow = peakHour !== null ? `${hourLabel(peakHour)}–${hourLabel((peakHour + 1) % 24)}` : null;
+  const calendarActiveDays = current.calendar.filter(day => dayNumber(day.date) > dayNumber(current.today) - 365).length;
 
   const primaryDays = activeDaysDesc.slice(0, 14);
   const olderDays = activeDaysDesc.slice(14);
@@ -366,7 +651,7 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
             className="activity-range-button"
             data-range={option}
             aria-pressed={range === option}
-            onClick={() => { setSelectedDate(null); setRange(option); }}
+            onClick={() => setRange(option)}
           >
             {rangeLabels[option]}
           </button>
@@ -517,9 +802,9 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
     <section className="activity-section">
       <div className="activity-section-head">
         <div className="activity-section-title-group">
-          <h3>{t('Daily trend')}</h3>
+          <h3>{t('Past year')}</h3>
           <p className="activity-section-subtitle">
-            {tn(totals.activeDays, '{n} active day', '{n} active days')}
+            {tn(calendarActiveDays, '{n} active day', '{n} active days')}
           </p>
         </div>
         <div className="activity-metric-tabs" role="group" aria-label={t('Chart metric')}>
@@ -543,63 +828,26 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
         </div>
       </div>
 
-      <div className="activity-chart-box">
-        <div
-          ref={barsRef}
-          className={'activity-bars' + (current.days.length > 35 ? ' dense' : '')}
-          role="group"
-          aria-label={t('Daily trend')}
-          onKeyDown={onTrendKeyDown}
-        >
-          {current.days.map(day => {
-            const value = metricValue(day, metric);
-            const pct = maxTrend > 0 && value > 0 ? Math.max(8, Math.round((value / maxTrend) * 100)) : 3;
-            const style = { '--bar-fill': `${pct}%` } as CSSProperties;
-            const valueText = metric === 'tokens'
-              ? `${formatCompactTokens(day.tokens.total)} ${t('Tokens')}`
-              : metric === 'spend'
-              ? formatUsd(day.costUsd, day.costUsd !== null && day.reportedCostUsd === 0 && day.estimatedCostUsd > 0 ? '~' : '')
-              : metric === 'turns'
-              ? `${formatExactNumber(day.turns)} ${t('Agent runs')}`
-              : `+${day.accepted}/−${day.rejected}, ${day.annotationsCreated} ${t('Annotations')}`;
-            const label = `${formatDateLabel(day.date, true)}: ${valueText}`;
-            return (
-              <button
-                key={day.date}
-                type="button"
-                className="activity-day-bar"
-                data-date={day.date}
-                tabIndex={tabStopDate === day.date ? 0 : -1}
-                aria-label={label}
-                aria-pressed={activeSelection?.date === day.date}
-                title={label}
-                onClick={() => setSelectedDate(day.date)}
-              >
-                <span className={'activity-bar-fill' + (value > 0 ? ' nonzero' : '')} style={style}/>
-              </button>
-            );
-          })}
-        </div>
-        {current.days.length > 0 && (
-          <div className="activity-axis" aria-hidden="true">
-            <span>{formatDateLabel(current.days[0].date, true)}</span>
-            {current.days.length > 4 && <span>{formatDateLabel(current.days[Math.floor(current.days.length / 2)].date, true)}</span>}
-            <span>{formatDateLabel(current.days.at(-1)!.date, true)}</span>
-          </div>
-        )}
-        {activeSelection && (
+      <YearHeatmap
+        calendar={current.calendar}
+        today={current.today}
+        metric={metric}
+        selectedDate={shownDate}
+        onSelect={setSelectedDate}
+      >
+        {shownDay && (
           <div className="activity-selected-day">
-            <strong>{formatDateLabel(activeSelection.date)}</strong>
+            <strong>{formatDateLabel(shownDay.date)}</strong>
             <div className="activity-selected-metrics">
-              <span>{t('Tokens')}: {formatCompactTokens(activeSelection.tokens.total)}</span>
-              <span>{t('Spend')}: {formatUsd(activeSelection.costUsd, activeSelection.costUsd !== null && activeSelection.reportedCostUsd === 0 && activeSelection.estimatedCostUsd > 0 ? '~' : '')}</span>
-              <span>{t('Agent runs')}: {formatExactNumber(activeSelection.turns)}</span>
-              <span>{t('Accept / Reject')}: +{formatExactNumber(activeSelection.accepted)} / −{formatExactNumber(activeSelection.rejected)}</span>
-              <span>{t('Annotations')}: {formatExactNumber(activeSelection.annotationsCreated)}</span>
+              <span>{t('Tokens')}: {formatCompactTokens(shownDay.tokens)}</span>
+              <span>{t('Spend')}: {formatUsd(shownDay.costUsd, spendPrefix(shownDay))}</span>
+              <span>{t('Agent runs')}: {formatExactNumber(shownDay.turns)}</span>
+              <span>{t('Accept / Reject')}: +{formatExactNumber(shownDay.accepted)} / −{formatExactNumber(shownDay.rejected)}</span>
+              <span>{t('Annotations')}: {formatExactNumber(shownDay.annotationsCreated)}</span>
             </div>
           </div>
         )}
-      </div>
+      </YearHeatmap>
     </section>
 
     <section className="activity-section">
@@ -609,38 +857,15 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
           <p className="activity-section-subtitle">
             {[
               t('Local time ({timezone})', { timezone: current.timezone }),
-              peakHour !== null ? t('Peak {window}', { window: `${hourLabel(peakHour)}–${hourLabel((peakHour + 1) % 24)}` }) : '',
+              peakWindow ? t('Peak {window}', { window: peakWindow }) : '',
             ].filter(Boolean).join(' · ')}
           </p>
         </div>
       </div>
-
-      <div className="activity-chart-box">
-        <div className="activity-bars" role="img" aria-label={peakHour !== null ? t('Active hours, peak {window}', { window: `${hourLabel(peakHour)}–${hourLabel((peakHour + 1) % 24)}` }) : t('Active hours')}>
-          {current.hours.map((count, hour) => {
-            const pct = maxHour > 0 && count > 0 ? Math.max(8, Math.round((count / maxHour) * 100)) : 3;
-            const style = { '--bar-fill': `${pct}%` } as CSSProperties;
-            const detail = `${hourLabel(hour)}–${hourLabel((hour + 1) % 24)}: ${formatExactNumber(current.turnHours[hour])} ${t('Agent runs')}, ${formatCompactTokens(current.tokenHours[hour])} ${t('Tokens')}`;
-            return (
-              <div
-                key={hour}
-                className={'activity-hour-slot' + (peakHour === hour ? ' peak' : '')}
-                data-hour={hour}
-                title={detail}
-              >
-                <span className={'activity-bar-fill' + (count > 0 ? ' nonzero' : '')} style={style}/>
-              </div>
-            );
-          })}
-        </div>
-        <div className="activity-axis" aria-hidden="true">
-          <span>00:00</span>
-          <span>06:00</span>
-          <span>12:00</span>
-          <span>18:00</span>
-          <span>23:00</span>
-        </div>
-      </div>
+      <HourHeatmap
+        days={current.days}
+        summary={peakWindow ? t('Active hours, peak {window}', { window: peakWindow }) : t('Active hours')}
+      />
     </section>
 
     {(current.agents.length > 0 || current.models.length > 0) && (

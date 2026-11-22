@@ -1,10 +1,16 @@
 /* Workspace activity statistics inside Settings.
-   Uses CSS custom properties (--bar-fill) for dynamic bar heights, container
-   queries (@container) for stacked responsive table cards on narrow widths,
-   and CSS single-line overflow with min-inline-size: 0 so full model and paper
-   names remain intact in the DOM without horizontal clipping. */
+   The past-year heatmap is a real grid table whose square cells size from the
+   container width (cqi) and scroll sideways only below 8px cells. Heat shades
+   mix the accent into the panel, so they follow the chosen accent and theme.
+   Container queries stack the daily table into cards on narrow widths, and
+   single-line overflow keeps full model and paper names in the DOM. */
 
 .activity-settings.settings-page {
+  --heat-0: color-mix(in oklab, var(--text) 8%, var(--bg));
+  --heat-1: color-mix(in oklab, var(--accent) 26%, var(--bg));
+  --heat-2: color-mix(in oklab, var(--accent) 55%, var(--bg));
+  --heat-3: var(--accent);
+  --heat-4: color-mix(in oklab, var(--accent), black 32%);
   gap: 0;
   padding-top: 12px;
   font-variant-numeric: tabular-nums;
@@ -49,9 +55,16 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
+:root[data-theme="dark"] .activity-settings.settings-page {
+  --heat-0: color-mix(in oklab, var(--text) 9%, var(--bg));
+  --heat-1: color-mix(in oklab, var(--accent) 24%, var(--bg));
+  --heat-2: color-mix(in oklab, var(--accent) 48%, var(--bg));
+  --heat-3: color-mix(in oklab, var(--accent) 76%, var(--bg));
+  --heat-4: color-mix(in oklab, var(--accent), white 18%);
+}
+
 .activity-range-button:focus-visible,
-.activity-metric-tab:focus-visible,
-.activity-day-bar:focus-visible {
+.activity-metric-tab:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -239,99 +252,262 @@
 }
 
 .activity-chart-box {
-  padding: 12px 12px 8px;
+  position: relative;
+  padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--bg);
   min-inline-size: 0;
 }
 
-.activity-bars {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 92px;
-  min-inline-size: 0;
+.activity-heat-cell,
+.activity-heat-swatch {
+  border-radius: 2px;
+  background: var(--heat-0);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 5%, transparent);
 }
 
-.activity-bars.dense {
+.activity-heat-cell[data-level="1"],
+.activity-heat-swatch[data-level="1"] { background: var(--heat-1); }
+.activity-heat-cell[data-level="2"],
+.activity-heat-swatch[data-level="2"] { background: var(--heat-2); }
+.activity-heat-cell[data-level="3"],
+.activity-heat-swatch[data-level="3"] { background: var(--heat-3); }
+.activity-heat-cell[data-level="4"],
+.activity-heat-swatch[data-level="4"] { background: var(--heat-4); }
+
+/* Outlines paint above neighbouring cells, where a box-shadow ring would be
+   covered by them; the scroller's padding keeps edge rings unclipped. A
+   right-to-left scroller starts at, and stays on, the newest weeks when a
+   narrow pane makes the grid scroll; the table itself reads left to right. */
+.activity-heatmap-scroll {
+  direction: rtl;
+  isolation: isolate;
+  container-type: inline-size;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  margin: -4px;
+  padding: 4px;
+}
+
+.activity-heatmap {
+  direction: ltr;
+  --gap: 2px;
+  --label: 28px;
+  --cell: max(8px, (100cqi - var(--label) - 55 * var(--gap)) / 53);
+  inline-size: 100%;
+  min-inline-size: calc(var(--label) + 53 * 8px + 55 * var(--gap));
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: var(--gap);
+}
+
+.activity-heatmap-label-column {
+  inline-size: var(--label);
+}
+
+.activity-heatmap th,
+.activity-heatmap td {
+  padding: 0;
+}
+
+.activity-heatmap thead th {
+  position: relative;
+  block-size: 14px;
+}
+
+.activity-heatmap th {
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--text-3);
+  text-align: start;
+  white-space: nowrap;
+}
+
+/* Month names sit out of flow, so a long name never widens its columns. */
+.activity-heatmap thead th > span {
+  position: absolute;
+  inset-block-end: 3px;
+  inset-inline-start: 0;
+}
+
+/* Weekday labels stay put while a narrow grid scrolls under them; the
+   scroller's isolation keeps their z-index below the sticky page header. */
+.activity-heatmap tbody th,
+.activity-heatmap thead td {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  overflow: hidden;
+  background: var(--bg);
+  box-shadow: -4px 0 0 var(--bg), var(--gap) 0 0 var(--bg);
+}
+
+.activity-heatmap td {
+  block-size: var(--cell);
+}
+
+.activity-heatmap .activity-heat-cell {
+  cursor: pointer;
+}
+
+.activity-heatmap .activity-heat-cell:hover {
+  outline: 1px solid var(--text-3);
+  outline-offset: 0;
+}
+
+.activity-heatmap .activity-heat-cell[aria-selected="true"] {
+  outline: 1.5px solid var(--text);
+  outline-offset: 1px;
+}
+
+.activity-heatmap .activity-heat-cell:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.activity-year-footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 10px;
+}
+
+.activity-streaks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  margin: 0;
+}
+
+.activity-streaks > div {
+  display: grid;
   gap: 1px;
 }
 
-.activity-day-bar,
-.activity-hour-slot {
-  flex: 1 1 0;
+.activity-streaks dt {
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+.activity-streaks dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.activity-heat-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+.activity-heat-legend > span {
+  margin-inline: 3px;
+}
+
+.activity-heat-swatch {
+  inline-size: 10px;
+  block-size: 10px;
+}
+
+.activity-hour-grid {
+  display: grid;
+  grid-template-columns: 30px repeat(24, minmax(0, 1fr));
+  align-items: center;
+  gap: 3px;
+}
+
+.activity-hour-grid .activity-heat-cell {
+  aspect-ratio: 5 / 4;
+  border-radius: 3px;
+}
+
+.activity-hour-day,
+.activity-hour-tick {
   min-inline-size: 0;
-  height: 100%;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.activity-hour-tick {
+  grid-column: span 3;
+  padding-top: 3px;
+}
+
+.activity-heat-tip {
+  position: absolute;
+  inset-block-start: var(--tip-y);
+  inset-inline-start: var(--tip-x);
+  z-index: 3;
+  display: grid;
+  gap: 1px;
+  padding: 5px 8px;
+  border-radius: var(--r);
+  background: var(--menu-bg);
+  color: var(--menu-text);
+  box-shadow: var(--menu-shadow);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 6px));
+}
+
+.activity-heat-tip[data-align="start"] {
+  transform: translate(-12px, calc(-100% - 6px));
+}
+
+.activity-heat-tip[data-align="end"] {
+  transform: translate(calc(-100% + 12px), calc(-100% - 6px));
+}
+
+.activity-heat-tip strong {
   display: flex;
-  align-items: flex-end;
-  padding: 0;
-  border-radius: 2px;
+  gap: 8px;
+  font-weight: 600;
 }
 
-.activity-day-bar:hover {
-  background: var(--bg-muted);
-}
-
-.activity-day-bar[aria-pressed="true"] {
-  background: var(--accent-soft);
-}
-
-.activity-bar-fill {
-  display: block;
-  width: 100%;
-  height: var(--bar-fill, 0%);
-  min-height: 2px;
-  border-radius: 2px 2px 1px 1px;
-  background: var(--line-hover);
-  transition: height 0.16s var(--ease), background-color 0.12s;
-}
-
-.activity-bar-fill.nonzero {
-  background: color-mix(in srgb, var(--accent) 72%, transparent);
-}
-
-.activity-day-bar:hover .activity-bar-fill.nonzero,
-.activity-day-bar[aria-pressed="true"] .activity-bar-fill.nonzero,
-.activity-hour-slot.peak .activity-bar-fill.nonzero {
-  background: var(--accent);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .activity-bar-fill {
-    transition: none;
-  }
+.activity-heat-tip span {
+  font-size: 10px;
+  color: var(--menu-text-2);
 }
 
 @media (forced-colors: active) {
-  .activity-bar-fill.nonzero {
-    background: Highlight;
-    border: 1px solid ButtonText;
+  .activity-heat-cell,
+  .activity-heat-swatch {
+    forced-color-adjust: none;
+    background: Canvas;
+    box-shadow: inset 0 0 0 1px CanvasText;
   }
 
+  .activity-heat-cell:not([data-level="0"]),
+  .activity-heat-swatch:not([data-level="0"]) {
+    background: Highlight;
+  }
+
+  .activity-heat-cell[data-level="1"],
+  .activity-heat-swatch[data-level="1"] { opacity: 0.4; }
+  .activity-heat-cell[data-level="2"],
+  .activity-heat-swatch[data-level="2"] { opacity: 0.6; }
+  .activity-heat-cell[data-level="3"],
+  .activity-heat-swatch[data-level="3"] { opacity: 0.8; }
+
   .activity-range-button[aria-pressed="true"],
-  .activity-metric-tab[aria-pressed="true"],
-  .activity-day-bar[aria-pressed="true"] {
+  .activity-metric-tab[aria-pressed="true"] {
     outline: 2px solid Highlight;
     outline-offset: -2px;
   }
-}
-
-.activity-axis {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 6px;
-  font-size: 10px;
-  color: var(--text-3);
-  min-inline-size: 0;
-}
-
-.activity-axis > span {
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .activity-selected-day {

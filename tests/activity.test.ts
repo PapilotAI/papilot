@@ -362,7 +362,7 @@ test('activity ledger records tasks, helpers, workers, tokens, reviews, undos an
 
     const shanghaiReport = buildActivityReport(store, { tz: 'Asia/Shanghai', range: '7d', now: baseMs + 3600_000 });
     assert.equal(shanghaiReport.today, '2026-11-23');
-    assert.equal(shanghaiReport.days.length, 7);
+    assert.deepEqual(shanghaiReport.days.map(day => day.date), ['2026-11-22', '2026-11-23'], 'Days list only active days of the range, oldest first');
     assert.equal(shanghaiReport.totals.tokens.total, 42000 + 18500 + 9000);
     assert.equal(shanghaiReport.totals.unpricedTokens, 9000);
     const expectedGptCost = estimateModelCostUsd('codex', 'gpt-5.4', { input: 10000, cached: 30000, cacheWrite: 0, output: 2000, reasoning: 500, total: 42000 })!;
@@ -393,6 +393,51 @@ test('activity ledger records tasks, helpers, workers, tokens, reviews, undos an
     const p2Only = buildActivityReport(store, { tz: 'UTC', range: '30d', projectId: p2.id, now: baseMs });
     assert.equal(p2Only.totals.tokens.total, 18500 + 9000);
     assert.equal(p2Only.totals.annotationsCreated, 1);
+  } finally {
+    store.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the past-year calendar covers 53 weeks of active days whatever the range, while totals, agents and papers follow the range', () => {
+  const dir = tempDir('papilot-activity-calendar-');
+  const store = new Store(path.join(dir, 'papilot.sqlite'));
+  try {
+    const now = Date.UTC(2026, 10, 22, 12, 0, 0);
+    const day = 86_400_000;
+    const p1 = { id: 'paper-1', name: 'Main Paper', path: path.join(dir, 'p1'), createdAt: now };
+    const p2 = { id: 'paper-2', name: 'Side Paper', path: path.join(dir, 'p2'), createdAt: now };
+    store.saveProject(p1);
+    store.saveProject(p2);
+    const turn = (key: string, at: number, projectId: string, agent: string) => store.recordActivity({ key, at, kind: 'agent_turn', projectId, taskId: key, agent, model: `${agent}-model`, data: { role: 'edit', status: 'completed' } }, true);
+    turn('turn:today', now, p1.id, 'codex');
+    store.recordActivity({ key: 'usage:today', at: now, kind: 'token_usage', projectId: p1.id, taskId: 'turn:today', agent: 'claude', model: 'claude-sonnet-4-6', data: { tokens: { input: 100, cached: 0, cacheWrite: 0, output: 50, reasoning: 0, total: 150 }, costUsd: 0.01, costSource: 'reported' } });
+    turn('turn:20d', now - 20 * day, p2.id, 'glm');
+    store.recordActivity({ key: 'decision:20d', at: now - 20 * day, kind: 'review_decision', projectId: p2.id, data: { action: 'accept', count: 3, source: 'task' } });
+    turn('turn:first-column', now - 370 * day, p1.id, 'codex');
+    turn('turn:too-old', now - 371 * day, p1.id, 'codex');
+
+    const week = buildActivityReport(store, { tz: 'UTC', range: '7d', now });
+    assert.deepEqual(week.calendar.map(entry => entry.date), ['2025-11-17', '2026-11-02', '2026-11-22']);
+    assert.deepEqual(week.calendar.at(-1), { date: '2026-11-22', tokens: 150, costUsd: 0.01, reportedCostUsd: 0.01, estimatedCostUsd: 0, turns: 1, accepted: 0, rejected: 0, commented: 0, annotationsCreated: 0 });
+    assert.equal(week.calendar[1].accepted, 3);
+    assert.equal(week.calendar[1].costUsd, null);
+    assert.equal(week.totals.turns, 1);
+    assert.equal(week.totals.accepted, 0);
+    assert.equal(week.totals.activeDays, 1);
+    assert.deepEqual(week.days.map(entry => entry.date), ['2026-11-22']);
+    assert.deepEqual(week.agents.map(entry => entry.agent).sort(), ['claude', 'codex'], 'Calendar-only days add no agents');
+    assert.deepEqual(week.models.map(entry => entry.model).sort(), ['claude-sonnet-4-6', 'codex-model']);
+    assert.equal(week.projects.find(project => project.id === p2.id)?.turns, 0, 'Calendar-only days add nothing to paper summaries');
+    assert.equal(week.hours.reduce((sum, value) => sum + value, 0), 1);
+
+    const sidePaper = buildActivityReport(store, { tz: 'UTC', range: '7d', projectId: p2.id, now });
+    assert.deepEqual(sidePaper.calendar.map(entry => entry.date), ['2026-11-02'], 'The paper filter applies to the calendar');
+
+    const everything = buildActivityReport(store, { tz: 'UTC', range: 'all', now });
+    assert.deepEqual(everything.calendar, week.calendar);
+    assert.equal(everything.totals.turns, 4);
+    assert.equal(everything.totals.activeDays, 4);
   } finally {
     store.close();
     fs.rmSync(dir, { recursive: true, force: true });

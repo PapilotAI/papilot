@@ -296,10 +296,6 @@ export function createPlaygroundData(storage: Store, version: string, pdfKey: st
       const timezone = query.get('tz') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
       const todayDate = new Date(now());
       const today = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}`;
-      const shift = (days: number) => {
-        const d = new Date(Date.UTC(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate() + days));
-        return d.toISOString().slice(0, 10);
-      };
       const visiblePlans = [reviewPlan, ...plans.filter(plan => !plan.preset || local.openedPresets[plan.id])];
       let accepted = Object.keys(local.copied).length, rejected = local.hiddenSuggestions.length, commented = 0;
       for (const id of Object.keys(local.reviews)) {
@@ -316,43 +312,38 @@ export function createPlaygroundData(storage: Store, version: string, pdfKey: st
       hours[10] = 2; hours[14] = turns + accepted + rejected + 1;
       turnHours[10] = 1; turnHours[14] = Math.max(1, turns - 1);
       tokenHours[10] = 36250; tokenHours[14] = Math.max(0, tokens.total - 36250);
-      const countDays = range === '7d' ? 7 : range === '90d' ? 90 : 30;
-      const days: ActivityDay[] = Array.from({ length: countDays }, (_, idx) => {
-        const date = shift(-(countDays - 1 - idx));
-        const isToday = date === today;
-        return {
-          date,
-          tokens: isToday ? tokens : { input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: 0, total: 0 },
-          costUsd: isToday ? estimatedCostUsd : null,
-          reportedCostUsd: 0,
-          estimatedCostUsd: isToday ? estimatedCostUsd : 0,
-          pricedTokens: isToday ? tokens.total : 0,
-          unpricedTokens: 0,
-          tasksStarted: isToday ? turns : 0,
-          editTasksStarted: isToday ? Math.max(0, turns - 1) : 0,
-          reviewTasksStarted: isToday ? 1 : 0,
-          turns: isToday ? turns : 0,
-          completedTurns: isToday ? turns : 0,
-          failedTurns: 0,
-          interruptedTurns: 0,
-          turnsByRole: { edit: isToday ? Math.max(0, turns - 1) : 0, review: isToday ? 1 : 0, worker: 0, helper: 0 },
-          accepted: isToday ? accepted : 0,
-          rejected: isToday ? rejected : 0,
-          commented: isToday ? commented : 0,
-          undone: 0,
-          tasksApplied: 0,
-          tasksCommitted: 0,
-          gitCommits: 0,
-          annotationsCreated: isToday ? authorNotes + aiNotes : 0,
-          authorAnnotations: isToday ? authorNotes : 0,
-          agentAnnotations: 0,
-          aiReviewAnnotations: isToday ? aiNotes : 0,
-          annotationsSent: isToday ? sentNotes : 0,
-          hours: isToday ? [...hours] : Array<number>(24).fill(0),
-          turnHours: isToday ? [...turnHours] : Array<number>(24).fill(0),
-          tokenHours: isToday ? [...tokenHours] : Array<number>(24).fill(0),
-        };
-      });
+      const day: ActivityDay = {
+        date: today,
+        tokens,
+        costUsd: estimatedCostUsd,
+        reportedCostUsd: 0,
+        estimatedCostUsd,
+        pricedTokens: tokens.total,
+        unpricedTokens: 0,
+        tasksStarted: turns,
+        editTasksStarted: Math.max(0, turns - 1),
+        reviewTasksStarted: 1,
+        turns,
+        completedTurns: turns,
+        failedTurns: 0,
+        interruptedTurns: 0,
+        turnsByRole: { edit: Math.max(0, turns - 1), review: 1, worker: 0, helper: 0 },
+        accepted,
+        rejected,
+        commented,
+        undone: 0,
+        tasksApplied: 0,
+        tasksCommitted: 0,
+        gitCommits: 0,
+        annotationsCreated: authorNotes + aiNotes,
+        authorAnnotations: authorNotes,
+        agentAnnotations: 0,
+        aiReviewAnnotations: aiNotes,
+        annotationsSent: sentNotes,
+        hours,
+        turnHours,
+        tokenHours,
+      };
       return {
         timezone,
         today,
@@ -360,11 +351,12 @@ export function createPlaygroundData(storage: Store, version: string, pdfKey: st
         generatedAt: now(),
         projectId: query.get('projectId') || null,
         projects: [{ id: projectId, name: 'Meet Papilot', tasksStarted: turns, turns, tokens: tokens.total, costUsd: estimatedCostUsd, accepted, rejected, annotationsCreated: authorNotes + aiNotes }],
-        totals: { ...days.at(-1)!, activeDays: 1 },
+        totals: { ...day, activeDays: 1 },
         hours,
         turnHours,
         tokenHours,
-        days,
+        days: [day],
+        calendar: [{ date: today, tokens: tokens.total, costUsd: estimatedCostUsd, reportedCostUsd: 0, estimatedCostUsd, turns, accepted, rejected, commented, annotationsCreated: day.annotationsCreated }],
         agents: [{ agent: 'codex', tasksStarted: turns, turns, tokens, costUsd: estimatedCostUsd, reportedCostUsd: 0, estimatedCostUsd, unpricedTokens: 0 }],
         models: [{ agent: 'codex', model: demoRuntimes.codex.models[0]?.id || 'gpt-5.4', turns, tokens, costUsd: estimatedCostUsd, costSource: 'estimated' }],
       } satisfies ActivityReport;

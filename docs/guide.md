@@ -369,7 +369,8 @@ Sending a draft attaches its files to that task. Deleting a task removes its sto
 Open **Settings → Statistics** to review daily workspace activity across all papers or filtered to a single paper over the last **7 days**, **30 days**, **90 days**, or **All time**:
 
 - **Tokens and spend**: input, cached, output, and reasoning tokens, together with provider-reported USD totals and API-equivalent estimates (`~`) for known model IDs when an agent reports tokens without billing totals. Models without known API pricing keep their token counts without guessed prices.
-- **Agents and active hours**: tasks started and agent runs across editing tasks, AI reviews, collaboration workers, and background helpers (task titles, commit messages, build diagnosis, and merge resolution), broken down by agent, model, and local hour of day (`00:00–23:00`).
+- **Past year**: a heatmap of the last 53 weeks, one square per day, shaded by tokens, spend, agent runs, or reviews and notes, with your longest and current streaks of active days. It always covers the past year, whatever range you choose; the paper filter still applies. Hover a day, or click it or move with the arrow keys, to see its totals.
+- **Agents and active hours**: tasks started and agent runs across editing tasks, AI reviews, collaboration workers, and background helpers (task titles, commit messages, build diagnosis, and merge resolution), broken down by agent and model, and a weekday-by-hour heatmap of when you work in local time.
 - **Review decisions and annotations**: accepted, rejected, commented, and undone changes across task reviews, uncommitted manuscript changes, and AI review suggestions, alongside PDF annotations created (yours, agent tools, and AI reviews) and sent to tasks.
 
 Activity events are stored locally in your workspace SQLite database, backfilled once from existing tasks, runs, and annotations when upgrading, and kept even after individual tasks or papers are removed.

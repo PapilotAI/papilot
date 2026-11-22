@@ -111,6 +111,20 @@ for (let dayOffset = 0; dayOffset < 22; dayOffset++) {
     data: { count: 2, projectName: target.name },
   });
 }
+// A year of older history outside the 30-day range gives the past-year heatmap
+// texture: busier weekdays, quieter weekends, and a deterministic spread of runs.
+let seed = 7;
+const random = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
+for (let dayOffset = 31; dayOffset <= 380; dayOffset++) {
+  const at = anchorNow - dayOffset * 86_400_000;
+  const weekend = [0, 6].includes(new Date(at).getUTCDay());
+  if (random() < (weekend ? 0.75 : 0.3)) continue;
+  const runs = 1 + Math.floor(random() * random() * 8);
+  for (let run = 0; run < runs; run++) {
+    store.recordActivity({ key: `history:turn:${dayOffset}:${run}`, at: at - run * 3_600_000, kind: 'agent_turn', projectId: p1.id, taskId: `history-${dayOffset}`, agent: 'codex', model: 'gpt-5.4', data: { role: 'edit', status: 'completed', projectName: p1.name } });
+  }
+  store.recordActivity({ key: `history:usage:${dayOffset}`, at, kind: 'token_usage', projectId: p1.id, taskId: `history-${dayOffset}`, agent: 'codex', model: 'gpt-5.4', data: { role: 'edit', tokens: { input: 9000 * runs, cached: 30000 * runs, cacheWrite: 0, output: 2000 * runs, reasoning: 500 * runs, total: 41500 * runs }, projectName: p1.name } });
+}
 // Remove p2 so the UI exercises historical preservation of removed papers.
 store.removeProject(p2.id);
 
@@ -183,17 +197,67 @@ try {
   await expect(page.locator('.activity-kpi[data-kpi="agents"] .activity-kpi-value')).toHaveText('22');
   await expect(page.locator('.activity-kpi[data-kpi="hours"] .activity-kpi-value')).toContainText(':00');
   await expect(page.getByText('Local time (Asia/Shanghai)')).toBeVisible();
-  await expect(page.locator('.activity-day-bar[tabindex="0"]')).toHaveCount(1);
 
+  // Past-year heatmap: 53 week columns ending today, one tab stop on the latest active day.
+  const heatmap = page.locator('.activity-heatmap');
+  const cells = heatmap.locator('.activity-heat-cell');
+  const cellCount = await cells.count();
+  assert.ok(cellCount >= 365 && cellCount <= 371, `53 weeks of cells, got ${cellCount}`);
+  assert.equal(await cells.evaluateAll(list => list.map(cell => cell.dataset.date).sort().at(-1)), '2026-11-22', 'The newest cell is today');
+  await expect(heatmap.locator('.activity-heat-cell[tabindex="0"]')).toHaveCount(1);
+  await expect(heatmap.locator('.activity-heat-cell[aria-selected="true"]')).toHaveAttribute('data-date', '2026-11-22');
+  const shadedBeforeRange = await cells.evaluateAll(list => list.filter(cell => cell.dataset.date < '2026-10-24' && cell.dataset.level !== '0').length);
+  assert.ok(shadedBeforeRange > 100, 'History older than the 30-day range is shaded');
+  const levels = await cells.evaluateAll(list => new Set(list.map(cell => cell.dataset.level)).size);
+  assert.equal(levels, 5, 'All five shades are used');
+  await expect(page.locator('.activity-streaks dd').first()).toHaveText(/\d+ days?/);
+  await expect(page.locator('.activity-heatmap tbody th:not(:has(.sr-only))')).toHaveCount(3);
+
+  await page.locator('.activity-year').scrollIntoViewIfNeeded();
   await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-desktop-light.png' });
 
-  // Switch chart metrics, select a day bar, and scrub with ArrowLeft
-  await page.locator('.activity-metric-tab[data-metric="spend"]').click();
-  await expect(page.locator('.activity-metric-tab[data-metric="spend"]')).toHaveAttribute('aria-pressed', 'true');
-  await page.locator('.activity-day-bar').nth(25).click();
-  await expect(page.locator('.activity-day-bar').nth(25)).toHaveAttribute('aria-pressed', 'true');
-  await page.locator('.activity-day-bar').nth(25).press('ArrowLeft');
-  await expect(page.locator('.activity-day-bar').nth(24)).toHaveAttribute('aria-pressed', 'true');
+  // Hover shows a tooltip; clicking selects the day; arrows move by week and by day.
+  const target = heatmap.locator('[data-date="2026-11-11"]');
+  await target.hover();
+  await expect(page.locator('.activity-heat-tip')).toContainText('tokens');
+  await expect(page.locator('.activity-heat-tip')).toContainText('Nov 11');
+  await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-heatmap-tooltip.png', clip: await page.locator('.activity-year').boundingBox().then(box => ({ x: box.x - 8, y: box.y - 48, width: box.width + 16, height: box.height + 56 })) });
+  await target.click();
+  await expect(target).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.activity-selected-day strong')).toContainText('Nov 11');
+  await target.press('ArrowLeft');
+  await expect(heatmap.locator('[data-date="2026-11-04"]')).toHaveAttribute('aria-selected', 'true');
+  await expect(heatmap.locator('[data-date="2026-11-04"]')).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(heatmap.locator('[data-date="2026-11-03"]')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.activity-heat-tip')).toContainText('Nov 3');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.activity-heat-tip')).toHaveCount(0);
+  await expect(page.locator('.activity-settings')).toBeVisible();
+
+  // Metrics reshade the same days.
+  const tokenLevels = await cells.evaluateAll(list => list.map(cell => cell.dataset.level).join(''));
+  await page.locator('.activity-metric-tab[data-metric="reviews"]').click();
+  await expect(page.locator('.activity-metric-tab[data-metric="reviews"]')).toHaveAttribute('aria-pressed', 'true');
+  assert.notEqual(await cells.evaluateAll(list => list.map(cell => cell.dataset.level).join('')), tokenLevels);
+  await page.locator('.activity-metric-tab[data-metric="tokens"]').click();
+
+  // Weekday-by-hour heatmap for the range: 7 × 24 cells with the evening peak shaded darkest.
+  const hourCells = page.locator('.activity-hour-grid .activity-heat-cell');
+  await expect(hourCells).toHaveCount(168);
+  assert.ok(await page.locator('.activity-hour-grid .activity-heat-cell[data-level="4"]').count() > 0);
+  await page.locator('.activity-hour-grid').scrollIntoViewIfNeeded();
+  await page.locator('.activity-hour-grid .activity-heat-cell[data-level="4"]').first().hover();
+  await expect(page.locator('.activity-hours .activity-heat-tip')).toContainText(/\d+ actions?.*\d+ runs?.+ tokens/);
+  await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-desktop-hours.png' });
+  // Scrolled away, the sticky weekday labels stay under the sticky page header.
+  const header = await page.locator('.settings-content-header').boundingBox();
+  const label = await page.locator('.activity-heatmap tbody th').first().boundingBox();
+  if (label.y < header.y + header.height) {
+    const topmost = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('.settings-content-header, .activity-heatmap') ?.className, [label.x + 4, label.y + label.height / 2]);
+    assert.equal(topmost, 'settings-content-header', 'The page header covers weekday labels scrolled beneath it');
+  }
+  await page.mouse.move(0, 0);
 
   // Inspect lower sections (Active hours, Agents & models, Daily breakdown table) and expand earlier days
   await page.locator('.activity-breakdown-grid').scrollIntoViewIfNeeded();
@@ -212,9 +276,11 @@ try {
   await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-desktop-dark.png' });
   await page.emulateMedia({ colorScheme: 'light' });
 
-  // Range filter -> 7 days reduces agent runs from 22 to 7
+  // Range filter -> 7 days reduces agent runs from 22 to 7; the past-year heatmap stays the same.
+  const yearShades = await cells.evaluateAll(list => list.map(cell => cell.dataset.level).join(''));
   await page.locator('.activity-range-button[data-range="7d"]').click();
   await expect(page.locator('.activity-kpi[data-kpi="agents"] .activity-kpi-value')).toHaveText('7');
+  assert.equal(await cells.evaluateAll(list => list.map(cell => cell.dataset.level).join('')), yearShades);
   await page.locator('.activity-range-button[data-range="30d"]').click();
   await expect(page.locator('.activity-kpi[data-kpi="agents"] .activity-kpi-value')).toHaveText('22');
 
@@ -222,6 +288,7 @@ try {
   const paperSelect = page.locator('.activity-filter-controls .chip-select');
   await selectOption(paperSelect, p2.id);
   await expect(page.locator('.activity-kpi[data-kpi="agents"] .activity-kpi-value')).toHaveText('6');
+  await expect.poll(() => cells.evaluateAll(list => list.filter(cell => cell.dataset.level !== '0').length)).toBe(6);
   await selectOption(paperSelect, 'all');
   await expect(page.locator('.activity-kpi[data-kpi="agents"] .activity-kpi-value')).toHaveText('22');
 
@@ -238,8 +305,9 @@ try {
   await expect(page.getByText(/No workspace activity recorded in this period yet/)).toBeVisible();
   // Reset any manually clicked bar selection via 7d range switch and confirm empty workspace shows no selected bar
   await page.locator('.activity-range-button[data-range="7d"]').click();
-  // Wait for 7d empty report; note selectedDate stays only if clicked, so open fresh empty check below or verify selectedDate reset:
-  await expect(page.locator('.activity-day-bar[aria-pressed="true"]')).toHaveCount(0);
+  await expect(page.locator('.activity-heat-cell[aria-selected="true"]')).toHaveCount(0);
+  await expect(page.locator('.activity-heat-cell:not([data-level="0"])')).toHaveCount(0);
+  await expect(page.locator('.activity-selected-day')).toHaveCount(0);
   await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-empty.png' });
 
   // Restore populated state & check 390px and 320px mobile in Simplified Chinese
@@ -284,6 +352,16 @@ try {
   await zhPage.locator('.activity-table-container').first().scrollIntoViewIfNeeded();
   await zhPage.emulateMedia({ colorScheme: 'dark' });
   await zhPage.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-mobile-zh-dark-table.png' });
+
+  // The heatmap scrolls sideways on phones and opens on the newest weeks.
+  await zhPage.locator('.activity-year').scrollIntoViewIfNeeded();
+  await expect.poll(() => zhPage.locator('.activity-heatmap-scroll').evaluate(scroller => {
+    const view = scroller.getBoundingClientRect();
+    const today = scroller.querySelector('[data-date="2026-11-22"]').getBoundingClientRect();
+    return scroller.scrollWidth > scroller.clientWidth && today.left >= view.left && today.right <= view.right;
+  })).toBe(true);
+  await zhPage.emulateMedia({ colorScheme: 'light' });
+  await zhPage.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-mobile-zh-heatmap.png' });
 
   // Check zero horizontal overflow at 320px width
   await zhPage.setViewportSize({ width: 320, height: 640 });
