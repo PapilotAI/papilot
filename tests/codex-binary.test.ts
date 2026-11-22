@@ -278,7 +278,12 @@ for (const afterReply of [false, true]) test(`closing Codex ${afterReply ? 'just
   const starts: Promise<void>[] = [], children: NonNullable<Codex['child']>[] = [];
   const disconnected: Error[] = [];
   codex.on('disconnected', error => disconnected.push(error));
-  const received = (): { pid: number; method: string }[] => fs.existsSync(messages) ? fs.readFileSync(messages, 'utf8').trim().split('\n').map(line => JSON.parse(line)) : [];
+  const received = (): { pid: number; method: string }[] => {
+    if (!fs.existsSync(messages)) return [];
+    const raw = fs.readFileSync(messages, 'utf8');
+    const complete = raw.slice(0, raw.lastIndexOf('\n') + 1);
+    return complete ? complete.trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : [];
+  };
   const start = () => { const starting = codex.start(); starts.push(starting); children.push(codex.child!); return starting; };
   const release = (child: NonNullable<Codex['child']>) => fs.writeFileSync(path.join(root, String(child.pid)), '');
   try {
