@@ -298,9 +298,15 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
     })}
     {places.map(place => {
       if (!place.isCurrent) return createPortal(null, place.activeNoteSlot, `active-note:${place.round}:${place.stop}`);
-      const matching = place.activeUnit
+      const focusedUnlinked = place.unlinkedNotes.filter(note => note.key === links.focus?.key);
+      const unitMatched = place.activeUnit
         ? place.notes.filter(note => note.changes.some(change => change.round === place.round && change.units.includes(place.activeUnit!)))
         : place.notes;
+      const matching = focusedUnlinked.length
+        ? focusedUnlinked
+        : unitMatched.length
+          ? unitMatched
+          : place.unlinkedNotes;
       return createPortal(
         matching.length ? <>{matching.map(note => <InlineNoteBar key={note.key} note={note}/>)}</> : null,
         place.activeNoteSlot,

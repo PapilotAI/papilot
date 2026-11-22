@@ -984,11 +984,21 @@ export function ReviewApp({
     const status = stopState(block.units, decisions),
       reviewed = !pendingUnits(stop, decisions).length,
       expanded = browsing || index === linkedChange || block.units.some((id) => again.has(id)),
+      acceptedMixed =
+        !changes && !history && reviewed && block.units.every((id) => decisions[id] === "accepted" || decisions[id] === "rejected")
+          ? block.units.filter((id) => decisions[id] === "accepted").sort()
+          : [],
+      mixedKey =
+        detail && acceptedMixed.length > 0 && acceptedMixed.length < block.units.length
+          ? `${detail.round}:${index}:${acceptedMixed.join(",")}`
+          : null,
+      mixedReady = Boolean(mixedKey && mixedPreviews[mixedKey]?.status === "ready" && mixedPreviews[mixedKey]?.strips?.length),
       resolved = history || index === linkedChange
         ? undefined
         : changes
           ? (status === "rejected" ? "before" : undefined)
-          : resolvedSide(block.units, decisions) || (status === "commented" ? "after" : undefined);
+          : resolvedSide(block.units, decisions) ||
+            (status === "commented" ? "after" : mixedReady ? "mixed" : undefined);
     if (resolved || (reviewed && !expanded)) return null;
     return meta;
   };
@@ -1006,7 +1016,7 @@ export function ReviewApp({
     if (!meta || !meta.subUnits.includes(selectedUnit.unit)) {
       setSelectedUnit(null);
     }
-  }, [selectedUnit, blockUnitStatic, stops, decisions, changes, history, linkedChange]);
+  }, [selectedUnit, blockUnitStatic, stops, decisions, changes, history, linkedChange, mixedPreviews]);
   const unitActionRefs = useRef({ current, composer, select });
   unitActionRefs.current = { current, composer, select };
   selectUnitHandler.current = (stop, unit) => {
@@ -1358,6 +1368,8 @@ export function ReviewApp({
           ),
       );
       if (optionActive && (action === "accept" || action === "reject" || action === "comment")) {
+        const reason = lockOf(snapshot.current.state, action);
+        if (reason) { setToast(t(reason)); return; }
         if (optionPreview?.busy || (action === "accept" && !optionPreview?.detail)) return;
         window.dispatchEvent(new CustomEvent("papilot:option-action", { detail: { key: optionPreview!.key, action } }));
         return;
@@ -1386,7 +1398,7 @@ export function ReviewApp({
     };
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  }, [state, queued, detail, current, busy, composer, draft, help, confirm, history, shortcuts, noteFocus, selectedUnit]);
+  }, [state, queued, detail, current, busy, composer, draft, help, confirm, history, shortcuts, noteFocus, selectedUnit, optionPreview]);
   function onScroll() {
     if (
       !paper.current ||
@@ -1687,11 +1699,7 @@ export function ReviewApp({
             s.blocks.filter((b): b is ChangeBlock => b.kind === "change"),
           ),
           ...blockOptionPreview.loose,
-        ].find((b) =>
-          optionPreview?.units?.length
-            ? b.units.some((id) => optionPreview.units!.includes(id))
-            : b.units.some((id) => block.units.includes(id)),
-        ) ?? null)
+        ].find((b) => b.units.some((id) => block.units.includes(id))) ?? null)
       : null;
     const displayBefore = previewBlock ? previewBlock.before : block.before,
       displayAfter = previewBlock ? previewBlock.after : block.after,

@@ -34,11 +34,6 @@
     "textHash": "7e1982dfe21cbce6f8d541d41dbdfdb2bfa1d0b139a030184b46c1535bbc89c2",
     "model": "gemini-4-argon-high"
   },
-  "Accept": {
-    "revision": "3705e1710db7e63f26a47754aa58b76d45cfb9d2921c432969a6049d14157b4a",
-    "textHash": "329fcec61856d4e5bb012dc9886f911532b0651344a0e1849e170c6198687224",
-    "model": "gemini-4-argon-high"
-  },
   "After": {
     "revision": "be37e65a004c5bbc35bd9fc2cb8cb9cc0c4b8f1f7c04b61cac612c419532e351",
     "textHash": "bda8dcef5b26c7acfd37a82c57aee37171f35182523ae2f74f0b46982bbd9d31",
@@ -87,11 +82,6 @@
   "Checking <span class=\"latex\">L<sup>a</sup>T<sub>e</sub>X</span> Diffs": {
     "revision": "a75840eaf759bf67f23a13ce32b61de6b28f285a615c96c0d567a7a9a8d80257",
     "textHash": "751b73789594e2462658176583398e84bf958d4e980cff5e022d164d62e66fd0",
-    "model": "gemini-4-argon-high"
-  },
-  "Comment": {
-    "revision": "ab158df9efb45d3043d1144bfb30fdd250d49a3f32a3826dfd31890c81f11395",
-    "textHash": "8d8e8bc1ef67dd26699354b3474bd322d40c9cb44a303c34b2a0d9d81bafa7fa",
     "model": "gemini-4-argon-high"
   },
   "Commit": {
@@ -249,11 +239,6 @@
     "textHash": "cbe3f57fe6ca9b60b9d8a58783b1d850ebf7067ad6aa69c9e0834ccede60054c",
     "model": "gemini-4-argon-high"
   },
-  "Reject": {
-    "revision": "639ddf16285ec802346301084832d8ea61e8a87d89257220afff01f2de42eb7e",
-    "textHash": "0f7e826a2f9f0d93c4d93100f1520fa9917c1ac7ca3e0c30df7ff84f2b45e85a",
-    "model": "gemini-4-argon-high"
-  },
   "Review": {
     "revision": "9abd825476f6d0a329904692a9a6844c0a2061c48eeafa8004a5434baf72eb93",
     "textHash": "a2e30e7d2b14e7111cc10163ad488241acb36162bcea58d96cb0280335a00d72",
@@ -292,11 +277,6 @@
   "Setting up an agent": {
     "revision": "8cbb3a7669dcc863cc899de540904b54ac9fa7a988016df425d00c61600e8e41",
     "textHash": "37ebc9788fc5c74170ece188c045d6ceb0793e9b52cb2200b906271cd17c5b05",
-    "model": "gemini-4-argon-high"
-  },
-  "Show LaTeX source": {
-    "revision": "0e642249592c3a2fff8982e601f5eb3b47e554ec43ce313480e9370982913fe8",
-    "textHash": "ac5ee461c29eba51edc98ca0ac90056ec90b498876e20b024acb9ea51f2af264",
     "model": "gemini-4-argon-high"
   },
   "Source on the left, preview on the right, every line typed by hand.": {
