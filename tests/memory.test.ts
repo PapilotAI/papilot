@@ -421,10 +421,17 @@ test('Remember and Undo reverse exactly what was changed, also across files and 
     assert.equal((await act('known', { action: 'save' })).json().memory[1].saved.existing, true);
     await act('known', { action: 'undo' });
     assert.deepEqual(await rules('paper'), ['Number every displayed equation.']);
+    // A refinement matching a rule already there removes only the old one, and Undo keeps both.
+    await f.work.memory.add('paper', 'Use \\cref for references.', f.papers.a);
+    f.store.saveItem({ id: 'cards:memory:y', taskId: 'cards', type: 'memory', text: '', createdAt: 2, memory: [{ id: 'merge', text: 'Number every displayed equation.', scope: 'paper', replaces: 'Use \\cref for references.', tasks: 2, status: 'pending' }] });
+    assert.deepEqual((await act('merge', { action: 'save' })).json().memory[0].saved, { scope: 'paper', text: 'Number every displayed equation.', existing: true, replaced: 'Use \\cref for references.', replacedScope: 'paper' });
+    assert.deepEqual(await rules('paper'), ['Number every displayed equation.']);
+    await act('merge', { action: 'undo' });
+    assert.deepEqual(await rules('paper'), ['Number every displayed equation.', 'Use \\cref for references.']);
     // Two clicks at once both land on the card.
     const [saved, dismissed] = await Promise.all([act('other', { action: 'save' }), act('known', { action: 'dismiss' })]);
     assert.equal(saved.statusCode, 200); assert.equal(dismissed.statusCode, 200);
-    assert.deepEqual(f.store.items('cards')[0].memory!.map(item => item.status), ['pending', 'dismissed', 'saved']);
+    assert.deepEqual(f.store.items('cards').find(item => item.id === 'cards:memory:x')!.memory!.map(item => item.status), ['pending', 'dismissed', 'saved']);
     // Turning learning back on starts from now, not from the reviews made while it was off.
     await app.inject({ method: 'POST', url: '/api/memory/learning', payload: { enabled: false } });
     const before = Date.now();

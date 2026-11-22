@@ -144,7 +144,8 @@ export class Memory {
       all.push(`- ${text}`);
     }
     await this.write(current, all.join('\n').replace(/\n*$/, '\n'));
-    return { added: true, replaced };
+    // added says whether the rule is new: a replacement that matched a rule already there removed the old one only.
+    return { added: existing === -1, replaced };
   }
 
   private async updateNow(scope: unknown, previous: unknown, value: unknown, expected: unknown, paper?: string) {

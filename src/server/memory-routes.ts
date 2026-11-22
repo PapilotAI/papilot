@@ -93,7 +93,7 @@ export function registerMemoryRoutes(app: FastifyInstance, store: Store, memory:
       const { scope, text, existing, replaced, replacedScope } = suggestion.saved;
       if (!memory().has(scope, text, root)) fail(new Error('This preference changed after it was saved. Edit it in Settings → Memory.'), 409);
       // A rule that was already saved before stays; only what Remember changed is reversed.
-      if (replaced && replacedScope === scope) await memory().add(scope, replaced, root, { replaces: text });
+      if (replaced && replacedScope === scope && !existing) await memory().add(scope, replaced, root, { replaces: text });
       else {
         if (!existing) await memory().remove(scope, text, undefined, root);
         if (replaced && replacedScope) await memory().add(replacedScope, replaced, root);
