@@ -193,6 +193,7 @@ export function ReviewApp({
     [error, setError] = useState(""),
     [toast, setToast] = useState(""),
     [noteFocus, setNoteFocus] = useState<{ key?: string; round: number; units: string[] | null } | null>(null),
+    [noteGroups, setNoteGroups] = useState<{ round: number; groups: { key: string; units: string[] }[] } | null>(null),
     [openSource, setOpenSource] = useState<Set<number>>(new Set()),
     [retryingComparison, setRetryingComparison] = useState(false),
     [hostRetry, setHostRetry] = useState<string>(
@@ -334,6 +335,10 @@ export function ReviewApp({
   const selectUnitHandler = useRef<(stop: number, unit?: string) => void>(() => {});
   useEffect(() => {
     const changed = (event: Event) => setNoteFocus((event as CustomEvent).detail || null);
+    const groupsChanged = (event: Event) => {
+      const value = (event as CustomEvent<{ round: number; groups: { key: string; units: string[] }[] } | null>).detail;
+      setNoteGroups(value && Array.isArray(value.groups) ? value : null);
+    };
     const preview = (event: Event) => {
       const value = (event as CustomEvent).detail || null;
       const transition = Boolean(value) !== previewNow.current;
@@ -349,10 +354,12 @@ export function ReviewApp({
     };
     window.addEventListener("papilot:option-preview", preview);
     window.addEventListener("papilot:note-focus", changed);
+    window.addEventListener("papilot:note-groups", groupsChanged);
     window.addEventListener("papilot:select-unit", pickUnit);
     window.dispatchEvent(new Event("papilot:note-focus-ready"));
     return () => {
       window.removeEventListener("papilot:note-focus", changed);
+      window.removeEventListener("papilot:note-groups", groupsChanged);
       window.removeEventListener("papilot:option-preview", preview);
       window.removeEventListener("papilot:select-unit", pickUnit);
     };
@@ -888,48 +895,123 @@ export function ReviewApp({
     const visible = blockUnits.filter((id) => inFocus(id) && !units.get(id)?.formattingFor);
     return visible.length ? visible : blockUnits.filter(inFocus);
   };
-  const unitGroup = (blockUnits: string[], unitId: string) => [
-    unitId,
-    ...blockUnits.filter((id) => units.get(id)?.formattingFor === unitId && inFocus(id)),
-  ];
   const blockUnitStatic = useMemo(() => {
     const map = new Map<
       number,
       {
         subUnits: string[];
         selectableSet: ReadonlySet<string>;
+        groupMembers: ReadonlyMap<string, string[]>;
+        unitToGroup: ReadonlyMap<string, string>;
       }
     >();
+    const activeNotes =
+      noteGroups && detail && noteGroups.round === detail.round ? noteGroups.groups : [];
+    if (!activeNotes.length) return map;
+    const unitNotes = new Map<string, string[]>();
+    for (const note of activeNotes) {
+      for (const id of note.units) {
+        const list = unitNotes.get(id);
+        if (list) {
+          if (!list.includes(note.key)) list.push(note.key);
+        } else {
+          unitNotes.set(id, [note.key]);
+        }
+      }
+    }
+    const signatureOf = (id: string) => {
+      const keys = unitNotes.get(id);
+      return keys?.length ? [...keys].sort().join("\0") : "";
+    };
     placed.forEach(({ block, index }) => {
       const markedIds = new Set(
         [...block.before, ...block.after].flatMap((strip) => (strip.marks ?? []).map((mark) => mark.unit)),
       );
-      const subUnits = substantiveUnits(block.units).filter((id) => markedIds.has(id));
-      if (subUnits.length <= 1) return;
+      const visibleSub = substantiveUnits(block.units);
+      const markedSub = visibleSub.filter((id) => markedIds.has(id));
+      if (markedSub.length <= 1) return;
+      // Sub-unit chips exist only when annotations split a single PDF change
+      // block into >= 2 distinct groups (multiple annotations sharing the block,
+      // or an annotation covering part of the block alongside unannotated edits).
+      const bySignature = new Map<string, string[]>();
+      for (const id of markedSub) {
+        const sig = signatureOf(id);
+        const list = bySignature.get(sig);
+        if (list) list.push(id);
+        else bySignature.set(sig, [id]);
+      }
+      if (bySignature.size <= 1) return;
+      const fallbackSig = bySignature.has("") ? "" : bySignature.keys().next().value!;
+      for (const id of visibleSub) {
+        if (markedIds.has(id)) continue;
+        const sig = signatureOf(id);
+        const bucket = bySignature.get(sig) ?? bySignature.get(fallbackSig)!;
+        bucket.push(id);
+      }
+      const subUnits: string[] = [];
+      const groupMembers = new Map<string, string[]>();
+      const unitToGroup = new Map<string, string>();
+      for (const core of bySignature.values()) {
+        const rep = core[0];
+        const members = [...core];
+        for (const id of core) {
+          for (const extra of block.units) {
+            if (units.get(extra)?.formattingFor === id && inFocus(extra) && !members.includes(extra)) {
+              members.push(extra);
+            }
+          }
+        }
+        subUnits.push(rep);
+        groupMembers.set(rep, members);
+        for (const m of members) unitToGroup.set(m, rep);
+      }
+      const firstRep = subUnits[0];
+      for (const id of block.units) {
+        if (!inFocus(id) || unitToGroup.has(id)) continue;
+        groupMembers.get(firstRep)!.push(id);
+        unitToGroup.set(id, firstRep);
+      }
       map.set(index, {
         subUnits,
         selectableSet: new Set(subUnits),
+        groupMembers,
+        unitToGroup,
       });
     });
     return map;
-  }, [placed, units, focused]);
+  }, [placed, units, focused, noteGroups, detail?.round]);
+  const unitGroup = (stopIndex: number, unitId: string) => {
+    const grouped = blockUnitStatic.get(stopIndex)?.groupMembers.get(unitId);
+    if (grouped) return grouped;
+    const blockUnits = stops[stopIndex]?.units ?? [];
+    return [
+      unitId,
+      ...blockUnits.filter((id) => units.get(id)?.formattingFor === unitId && inFocus(id)),
+    ];
+  };
   // Preserve per-block unitStates object identity across polls and unrelated
   // decisions so React.memo(PdfStrip) does not re-render unaffected strips.
   const blockUnitStatesCache = useRef(new Map<number, Record<string, Decision>>());
   const blockUnitStates = useMemo(() => {
     const next = new Map<number, Record<string, Decision>>();
     const prev = blockUnitStatesCache.current;
-    placed.forEach(({ block, index }) => {
-      if (!blockUnitStatic.has(index)) return;
+    placed.forEach(({ index }) => {
+      const meta = blockUnitStatic.get(index);
+      if (!meta) return;
+      const entries: [string, Decision][] = meta.subUnits.map((rep) => {
+        const members = meta.groupMembers.get(rep) ?? [rep];
+        const s = stopState(members, decisions);
+        return [rep, s === "mixed" ? (decisions[rep] ?? "pending") : s];
+      });
       const existing = prev.get(index);
       if (
         existing &&
-        Object.keys(existing).length === block.units.length &&
-        block.units.every((id) => existing[id] === (decisions[id] ?? "pending"))
+        Object.keys(existing).length === entries.length &&
+        entries.every(([id, state]) => existing[id] === state)
       ) {
         next.set(index, existing);
       } else {
-        next.set(index, Object.fromEntries(block.units.map((id) => [id, decisions[id] ?? "pending"])));
+        next.set(index, Object.fromEntries(entries));
       }
     });
     blockUnitStatesCache.current = next;
@@ -1015,7 +1097,11 @@ export function ReviewApp({
     if (selectedUnit?.stop === index && meta.subUnits.includes(selectedUnit.unit)) {
       return selectedUnit.unit;
     }
-    return meta.subUnits.find((id) => decisions[id] === "pending") ?? meta.subUnits[0] ?? null;
+    return (
+      meta.subUnits.find((id) => stopState(meta.groupMembers.get(id) ?? [id], decisions) === "pending") ??
+      meta.subUnits[0] ??
+      null
+    );
   };
   const focusedUnitAt = (index: number): string | null =>
     index === current ? defaultUnitAt(index) : null;
@@ -1038,8 +1124,9 @@ export function ReviewApp({
     reached.current = "pick";
     select(stop, true);
     const meta = blockUnitStatic.get(stop);
-    if (unit && meta?.subUnits.includes(unit)) {
-      setSelectedUnit({ stop, unit });
+    const resolved = unit ? (meta?.unitToGroup.get(unit) ?? unit) : undefined;
+    if (resolved && meta?.subUnits.includes(resolved)) {
+      setSelectedUnit({ stop, unit: resolved });
     }
   };
   const handleHoverUnit = useMemo(
@@ -1072,8 +1159,7 @@ export function ReviewApp({
     [],
   );
   async function decideUnit(kind: Kind, stopIndex: number, unitId: string, _subUnits: string[]) {
-    const stopUnits = stops[stopIndex]?.units ?? [];
-    const group = unitGroup(stopUnits, unitId);
+    const group = unitGroup(stopIndex, unitId);
     const chosen = targets(group, kind);
     if (!chosen.length) return;
     await decide(kind, chosen);
@@ -1120,13 +1206,21 @@ export function ReviewApp({
     setQueued(queue.current!.pending);
     setSettling(true);
     const activeUnit = focusedUnitAt(current);
-    if (!changes && activeUnit && chosen.includes(activeUnit)) {
-      const sub = blockUnitStatic.get(current)?.subUnits ?? [];
+    const currentMeta = blockUnitStatic.get(current);
+    const activeMembers = activeUnit ? (currentMeta?.groupMembers.get(activeUnit) ?? [activeUnit]) : [];
+    if (
+      !changes &&
+      activeUnit &&
+      currentMeta &&
+      activeMembers.some((id) => chosen.includes(id)) &&
+      stopState(activeMembers, after) !== "pending"
+    ) {
+      const sub = currentMeta.subUnits;
       const pos = sub.indexOf(activeUnit);
       const nextUnit = [
         ...sub.slice(pos + 1),
         ...sub.slice(0, Math.max(0, pos)),
-      ].find((id) => id !== activeUnit && after[id] === "pending");
+      ].find((id) => id !== activeUnit && stopState(currentMeta.groupMembers.get(id) ?? [id], after) === "pending");
       setSelectedUnit(nextUnit ? { stop: current, unit: nextUnit } : null);
     }
     if (target >= 0 && target !== current) select(target);
@@ -1295,7 +1389,7 @@ export function ReviewApp({
     }
     // A workspace with its own editor shows the source there, not on the page.
     const focusedId = defaultUnitAt(index);
-    const sourceIds = focusedId ? unitGroup(stops[index]?.units ?? [], focusedId) : (stops[index]?.units ?? []);
+    const sourceIds = focusedId ? unitGroup(index, focusedId) : (stops[index]?.units ?? []);
     if (!openSource.has(index) && offerSource(sourceIds.map((id) => units.get(id)!).filter(Boolean))) return;
     if (openSource.has(index)) editedPlace.current = null;
     setOpenSource((previous) => {
@@ -1388,7 +1482,7 @@ export function ReviewApp({
       if (!action || (changes && action === 'comment')) return;
       event.preventDefault();
       const activeUnitGroup = focusedUnit
-        ? unitGroup(stops[current]?.units ?? [], focusedUnit)
+        ? unitGroup(current, focusedUnit)
         : null;
       const optionActive = Boolean(
         previewing &&
@@ -1428,7 +1522,7 @@ export function ReviewApp({
     };
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  }, [state, queued, detail, current, busy, composer, draft, help, confirm, history, shortcuts, noteFocus, selectedUnit, optionPreview]);
+  }, [state, queued, detail, current, busy, composer, draft, help, confirm, history, shortcuts, noteFocus, noteGroups, selectedUnit, optionPreview]);
   function onScroll() {
     if (
       !paper.current ||
@@ -1459,7 +1553,7 @@ export function ReviewApp({
       unitPos = meta && focusedUnit ? meta.subUnits.indexOf(focusedUnit) : -1,
       blockUnits = stops[index].units.filter(inFocus),
       units = focusedUnit
-        ? unitGroup(stops[index].units, focusedUnit)
+        ? unitGroup(index, focusedUnit)
         : blockUnits,
       available = kinds(units),
       remaining = nextPending(stops, decisions, current, focused),
@@ -1836,6 +1930,7 @@ export function ReviewApp({
             activeUnit={activeUnit}
             hoveredUnit={blockHoveredUnit}
             selectableUnits={selectableSet}
+            unitGroupOf={multiUnit ? meta!.unitToGroup : undefined}
             onHoverUnit={multiUnit ? handleHoverUnit : undefined}
             onSelectUnit={multiUnit ? handleSelectUnit : undefined}
           />
@@ -1900,7 +1995,8 @@ export function ReviewApp({
                 aria-label={t("{n} edits", { n: subUnits.length })}
               >
                 {subUnits.map((id, pos) => {
-                  const uState = decisions[id] ?? "pending",
+                  const members = meta!.groupMembers.get(id) ?? [id],
+                    uState = stopState(members, decisions),
                     isActive = current === index && id === activeUnit,
                     snippet = unitSnippet(units.get(id)),
                     tip = [snippet, stateLabel(uState)].filter(Boolean).join(" · ");
@@ -1910,6 +2006,7 @@ export function ReviewApp({
                       type="button"
                       className="unit-chip"
                       data-unit={id}
+                      data-units={members.join(" ")}
                       data-state={uState}
                       data-active={isActive ? "true" : undefined}
                       aria-pressed={isActive}

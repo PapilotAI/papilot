@@ -6,6 +6,7 @@ import { t } from './i18n.ts';
 
 type ChipSlot = {
   unit: string;
+  units: string[];
   slot: HTMLElement;
   notes: NoteResult[];
 };
@@ -68,8 +69,9 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
         const coveredNoteKeys = new Set<string>();
         for (const chip of chips) {
           const unitId = chip.dataset.unit!;
+          const chipUnits = chip.dataset.units?.split(' ').filter(Boolean) ?? [unitId];
           const matching = notes.filter(note =>
-            note.changes.some(change => change.round === shown && change.units.includes(unitId)),
+            note.changes.some(change => change.round === shown && change.units.some(id => chipUnits.includes(id))),
           );
           if (!matching.length) continue;
           activeChips.add(chip);
@@ -85,7 +87,7 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
           const noteTip = matching.map(n => `#${n.index + 1}: ${n.note.comment}`).join(' · ');
           chip.title = noteTip;
           for (const n of matching) coveredNoteKeys.add(n.key);
-          chipSlots.push({ unit: unitId, slot: hosted.slot, notes: matching });
+          chipSlots.push({ unit: unitId, units: chipUnits, slot: hosted.slot, notes: matching });
         }
         const unlinkedNotes = notes.filter(note => !coveredNoteKeys.has(note.key));
         if (unlinkedNotes.length) {
@@ -133,6 +135,8 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
           place.chipSlots.every((c, ci) =>
             c.slot === next[i].chipSlots[ci].slot &&
             c.unit === next[i].chipSlots[ci].unit &&
+            c.units.length === next[i].chipSlots[ci].units.length &&
+            c.units.every((u, ui) => u === next[i].chipSlots[ci].units[ui]) &&
             c.notes.length === next[i].chipSlots[ci].notes.length &&
             c.notes.every((n, ni) => n === next[i].chipSlots[ci].notes[ni]),
           ) &&
@@ -147,7 +151,7 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
     };
     scan();
     const observer = new MutationObserver(scan);
-    observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-active-unit', 'data-state', 'class'] });
+    observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-active-unit', 'data-units', 'data-state', 'class'] });
     doc.defaultView?.addEventListener('papilot:round', scan);
     return () => {
       observer.disconnect();
@@ -188,6 +192,14 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
       target.dispatchEvent(new CustomEvent('papilot:option-preview', {
         detail: preview ? { key: preview.key, round: preview.round, units, detail: preview.detail, busy: preview.busy } : null,
       }));
+      const shown = Number(doc.documentElement.dataset.papilotRound) || round;
+      const groups = (current?.notes ?? [])
+        .map(item => ({
+          key: item.key,
+          units: [...new Set(item.changes.filter(c => c.round === shown).flatMap(c => c.units))],
+        }))
+        .filter(item => item.units.length > 0);
+      target.dispatchEvent(new CustomEvent('papilot:note-groups', { detail: { round: shown, groups } }));
       target.dispatchEvent(new CustomEvent('papilot:note-focus', { detail: null }));
     };
     send();
@@ -299,8 +311,10 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
     {places.map(place => {
       if (!place.isCurrent) return createPortal(null, place.activeNoteSlot, `active-note:${place.round}:${place.stop}`);
       const focusedUnlinked = place.unlinkedNotes.filter(note => note.key === links.focus?.key);
-      const unitMatched = place.activeUnit
-        ? place.notes.filter(note => note.changes.some(change => change.round === place.round && change.units.includes(place.activeUnit!)))
+      const activeChip = place.activeUnit ? place.chipSlots.find(c => c.unit === place.activeUnit) : undefined;
+      const activeUnits = activeChip?.units ?? (place.activeUnit ? [place.activeUnit] : null);
+      const unitMatched = activeUnits
+        ? place.notes.filter(note => note.changes.some(change => change.round === place.round && change.units.some(id => activeUnits.includes(id))))
         : place.notes;
       const matching = focusedUnlinked.length
         ? focusedUnlinked

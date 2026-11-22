@@ -246,6 +246,7 @@ export const PdfStrip = memo(function PdfStrip({
   activeUnit,
   hoveredUnit,
   selectableUnits,
+  unitGroupOf,
   onHoverUnit,
   onSelectUnit,
   language = viewerLanguage(),
@@ -261,6 +262,7 @@ export const PdfStrip = memo(function PdfStrip({
   activeUnit?: string | null;
   hoveredUnit?: string | null;
   selectableUnits?: ReadonlySet<string>;
+  unitGroupOf?: ReadonlyMap<string, string>;
   onHoverUnit?: (stop: number, unit: string | null) => void;
   onSelectUnit?: (stop: number, unit: string | null, side?: "before" | "after") => void;
   language?: Language;
@@ -383,10 +385,17 @@ export const PdfStrip = memo(function PdfStrip({
   useEffect(() => {
     if (!interactive) setLocalHover(false);
   }, [interactive]);
-  const mergedMarks = useMemo(
-    () => (interactive && image.marks?.length ? resolveUnitMarks(mergeUnitMarks(image.marks)) : []),
-    [interactive, image.marks],
-  );
+  const mergedMarks = useMemo(() => {
+    if (!interactive || !image.marks?.length) return [];
+    const resolved = resolveUnitMarks(mergeUnitMarks(image.marks));
+    if (!unitGroupOf) return resolved;
+    return mergeUnitMarks(
+      resolved.map((mark) => {
+        const grouped = unitGroupOf.get(mark.unit);
+        return grouped && grouped !== mark.unit ? { ...mark, unit: grouped } : mark;
+      }),
+    );
+  }, [interactive, image.marks, unitGroupOf]);
   const selectableMarks = useMemo(
     () =>
       interactive && selectableUnits
