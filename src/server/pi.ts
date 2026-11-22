@@ -142,6 +142,23 @@ export class PiAgent extends Adapter {
         error = message.stopReason === 'error' ? message.errorMessage || 'Pi could not complete the response.' : undefined;
         aborted ||= message.stopReason === 'aborted';
         if (reply) { output = true; this.item(turn, { id: messageId, type: 'agentMessage', text: reply }); }
+        if (message.usage && typeof message.usage === 'object') {
+          const resolvedModel = message.provider && message.model ? `${message.provider}/${message.model}` : message.model || thread.model || null;
+          const reportedCost = typeof message.usage.cost?.total === 'number' && message.usage.cost.total > 0 ? message.usage.cost.total : undefined;
+          this.notify('turn/usage', {
+            threadId: turn.threadId,
+            turnId: turn.id,
+            model: resolvedModel,
+            usage: {
+              input: message.usage.input,
+              cached: message.usage.cacheRead,
+              cacheWrite: message.usage.cacheWrite,
+              output: message.usage.output,
+              total: message.usage.totalTokens,
+              ...(reportedCost !== undefined ? { costUsd: reportedCost, costSource: 'estimated' } : {}),
+            },
+          });
+        }
       }
       if (event.type === 'tool_execution_start') {
         const input = event.args || {}, name = event.toolName;

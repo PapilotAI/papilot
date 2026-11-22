@@ -23,7 +23,7 @@ export interface UpdateStatus {
 // accepted changes touched since its last commit, relative to the repository root.
 export interface ReviewJob { id?: string; phase: string; status: string; error?: string; details?: string[]; createdAt?: number; options?: { completed: number; total: number }; progress?: Partial<Record<'baseline' | 'revised', Omit<BuildProgress, 'startedAt'>>> }
 export interface ReviewSummary { ready?: number; state: string; round: number | null; counts: Record<string, number>; unsent?: number; comments?: number; files?: string[]; next?: string; job?: ReviewJob | null }
-export interface PendingBuild { requestId: string; job?: string; runs: string[]; sendBack: boolean; restarts: number }
+export interface PendingBuild { requestId: string; job?: string; runs: string[]; sendBack: boolean; restarts: number; optionAccept?: { actionId: string; count: number } }
 // previousStatus and previousError are where Check status returns the task
 // once the engine confirms the action.
 export interface PendingReview { returnNote?: Annotation; returnNotes?: Annotation[]; route: string; body: Record<string, unknown>; previousStatus: TaskStatus; previousError?: string | null }
@@ -356,4 +356,107 @@ export interface BibliographyReport {
   bibs: string[]; absent: string[]; entries: BibliographyEntry[];
   missing: (ReferenceCitation & { key: string })[]; duplicates: string[][]; similar: { ids: string[]; by: 'doi' | 'title' }[]; all_cited: boolean;
   checks: Record<string, ReferenceCheck>; pending: number; confirmed: Record<string, number>;
+}
+
+export type ActivityRange = '7d' | '30d' | '90d' | 'all';
+export const ACTIVITY_RANGES: ActivityRange[] = ['7d', '30d', '90d', 'all'];
+export type ActivityTurnRole = 'edit' | 'review' | 'worker' | 'helper';
+export type ActivityCostSource = 'reported' | 'estimated' | 'mixed' | 'unknown';
+
+export interface ActivityTokenTotals {
+  input: number;
+  cached: number;
+  cacheWrite: number;
+  output: number;
+  reasoning: number;
+  total: number;
+}
+
+export interface ActivityMetrics {
+  tokens: ActivityTokenTotals;
+  costUsd: number | null;
+  reportedCostUsd: number;
+  estimatedCostUsd: number;
+  pricedTokens: number;
+  unpricedTokens: number;
+  tasksStarted: number;
+  editTasksStarted: number;
+  reviewTasksStarted: number;
+  turns: number;
+  completedTurns: number;
+  failedTurns: number;
+  interruptedTurns: number;
+  turnsByRole: Record<ActivityTurnRole, number>;
+  accepted: number;
+  rejected: number;
+  commented: number;
+  undone: number;
+  tasksApplied: number;
+  tasksCommitted: number;
+  gitCommits: number;
+  annotationsCreated: number;
+  authorAnnotations: number;
+  agentAnnotations: number;
+  aiReviewAnnotations: number;
+  annotationsSent: number;
+}
+
+export interface ActivityTotals extends ActivityMetrics {
+  activeDays: number;
+}
+
+export interface ActivityDay extends ActivityMetrics {
+  date: string;
+  hours: number[];
+  turnHours: number[];
+  tokenHours: number[];
+}
+
+export interface ActivityAgentSummary {
+  agent: AgentId;
+  tasksStarted: number;
+  turns: number;
+  tokens: ActivityTokenTotals;
+  costUsd: number | null;
+  reportedCostUsd: number;
+  estimatedCostUsd: number;
+  unpricedTokens: number;
+}
+
+export interface ActivityModelSummary {
+  agent: AgentId;
+  model: string;
+  turns: number;
+  tokens: ActivityTokenTotals;
+  costUsd: number | null;
+  costSource: ActivityCostSource;
+}
+
+export interface ActivityProjectSummary {
+  id: string;
+  name: string;
+  removed?: true;
+  tasksStarted: number;
+  turns: number;
+  tokens: number;
+  costUsd: number | null;
+  accepted: number;
+  rejected: number;
+  annotationsCreated: number;
+}
+
+export interface ActivityReport {
+  timezone: string;
+  today: string;
+  range: ActivityRange;
+  generatedAt: number;
+  projectId: string | null;
+  projects: ActivityProjectSummary[];
+  totals: ActivityTotals;
+  hours: number[];
+  turnHours: number[];
+  tokenHours: number[];
+  days: ActivityDay[];
+  agents: ActivityAgentSummary[];
+  models: ActivityModelSummary[];
 }

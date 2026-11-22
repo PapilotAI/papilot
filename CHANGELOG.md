@@ -4,6 +4,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added
+
+- Add **Settings → Statistics** to inspect daily workspace activity across papers or per paper: token usage (input, cached, output, and reasoning), provider-reported and exact-model API-equivalent USD spend, tasks started and agent runs (editing tasks, AI reviews, collaboration workers, and background helpers) broken down by agent and model, 24-hour local active-time distribution with peak hours, accepted/rejected/commented/undone review decisions, and PDF annotations created and sent. Activity records are stored locally in SQLite, backfilled from existing workspace history on upgrade, and preserved when tasks or papers are removed.
+
 ## [0.13.0] - 2026-11-22
 
 Review changes directly in place on the full PDF, decide individual annotations that share a paragraph, sort and organize manuscript notes, and choose a dedicated Git conflict-resolution agent. See the [release notes](docs/releases/0.13.0/release-notes.md) for update instructions.

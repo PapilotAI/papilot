@@ -468,6 +468,9 @@ export class AcpAgent extends Adapter {
       this.threads.set(turn.threadId, { ...thread, started: true });
       // The response arrives at the end of the turn; user approvals can take any amount of time.
       const result = await this.rpc('session/prompt', { sessionId: turn.threadId, prompt }, 0);
+      if (result?.usage && typeof result.usage === 'object') {
+        this.notify('turn/usage', { threadId: turn.threadId, turnId: turn.id, model: thread.model, usage: result.usage });
+      }
       this.flush(live);
       if (stopped || result.stopReason === 'cancelled') this.finish(turn, 'interrupted');
       else if (result.stopReason === 'end_turn' && live.received) this.finish(turn, 'completed');

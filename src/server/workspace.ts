@@ -1,6 +1,7 @@
 import { AgentToolBridge, agentToolError } from './agent-tool-bridge.ts';
 import { PAPER_TOOLS, isPaperTool, paperToolInstructions, type PaperToolCall } from './paper-tools.ts';
-import { WORKFLOW_TOOLS, WORKER_STOPPED, workflowInstructions, workflowItem, workflowNotes, workflowRequests, delegateWorkflow, auditWorkflow, workflowSnapshot, runWorkflowHelper, workerName, type WorkflowGenerate, type WorkflowStep, type WorkflowWorker } from './collaboration.ts';
+import { WORKFLOW_TOOLS, WORKER_STOPPED, workflowInstructions, workflowItem, workflowNotes, workflowRequests, delegateWorkflow, auditWorkflow, workflowSnapshot, runWorkflowHelper, workerName, type WorkflowActivityEvent, type WorkflowGenerate, type WorkflowStep, type WorkflowWorker } from './collaboration.ts';
+import { CodexUsageTracker, normalizeCodexUsage, normalizeTurnUsage } from './activity.ts';
 import type { WorkflowChange } from './collaboration-edits.ts';
 import { aiReviewInstructions, parseAiReview, reviewPrompt, saveReviewText, type ReviewSnapshot } from './ai-review.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -138,7 +139,8 @@ export class Workspace extends EventEmitter {
   agents: Record<AgentId, AgentRuntime>;
   requests = new Map<string, PendingRequest & { rpcId: string | number; agent: AgentId }>();
   private active = new Map<string, Run>();
-  workflowGenerate: WorkflowGenerate = runWorkflowHelper;
+  private codexUsage = new CodexUsageTracker();
+  workflowGenerate: WorkflowGenerate = (worker, prompt, signal, edit, step, activity) => runWorkflowHelper(worker, prompt, signal, edit, step, undefined, activity);
   private workflowAudits = new Map<string, string>();
   private workflowDelegations = new Map<string, { count: number }>();
   private workflowStops = new Map<string, AbortController>();
@@ -282,6 +284,48 @@ export class Workspace extends EventEmitter {
     this.agents.papilot.on('credentials', () => void this.refreshAgent('papilot'));
   }
   private agentOf(task: Task): AgentId { return task.agent && AGENTS.includes(task.agent) ? task.agent : 'codex'; }
+  private projectName(projectId?: string | null) { return projectId ? this.store.findProject(projectId)?.name : undefined; }
+  private recordWorkflowActivity(task: Task, event: WorkflowActivityEvent) {
+    const projectName = this.projectName(task.projectId);
+    if (event.kind === 'turn_started') {
+      this.store.recordActivity({
+        key: `turn:worker:${event.id}`,
+        at: event.at,
+        kind: 'agent_turn',
+        projectId: task.projectId,
+        taskId: task.id,
+        agent: event.agent,
+        model: event.model,
+        data: { role: 'worker', status: 'running', ...(projectName ? { projectName } : {}) },
+      }, true);
+    } else if (event.kind === 'turn_finished') {
+      this.store.recordActivity({
+        key: `turn:worker:${event.id}`,
+        at: event.at,
+        kind: 'agent_turn',
+        projectId: task.projectId,
+        taskId: task.id,
+        agent: event.agent,
+        model: event.model,
+        data: { role: 'worker', status: event.status, finishedAt: event.at, ...(projectName ? { projectName } : {}) },
+      }, true);
+    } else if (event.kind === 'token_usage') {
+      const normalized = event.tokens
+        ? normalizeCodexUsage(event.agent, event.model, event.tokens)
+        : normalizeTurnUsage(event.agent, event.model, event.rawUsage, event.model);
+      if (!normalized) return;
+      this.store.recordActivity({
+        key: `usage:${randomUUID()}`,
+        at: event.at,
+        kind: 'token_usage',
+        projectId: task.projectId,
+        taskId: task.id,
+        agent: event.agent,
+        model: normalized.model,
+        data: { role: 'worker', tokens: normalized.tokens, costUsd: normalized.costUsd, costSource: normalized.costSource, ...(projectName ? { projectName } : {}) },
+      });
+    }
+  }
   private disconnected(id: AgentId, e: unknown) {
     if (this.closing) return;
     this.connectionEpochs.set(id, (this.connectionEpochs.get(id) || 0) + 1);
@@ -291,12 +335,23 @@ export class Workspace extends EventEmitter {
       const task = this.store.task(taskId);
       if (this.agentOf(task) !== id) continue;
       this.stopWorkflow(taskId);
-      if (task.threadId) this.loaded.delete(task.threadId);
+      if (task.threadId) { this.loaded.delete(task.threadId); this.codexUsage.forgetThread(task.threadId); }
       this.earlyCompletions.delete(taskId); this.earlyRequests.delete(taskId); this.active.delete(taskId);
-      this.store.saveRun({ ...run, status: 'interrupted', finishedAt: Date.now() });
+      const finishedAt = Date.now();
+      this.store.saveRun({ ...run, status: 'interrupted', finishedAt });
+      this.store.recordActivity({
+        key: `turn:${run.id}`,
+        at: run.createdAt,
+        kind: 'agent_turn',
+        projectId: task.projectId,
+        taskId: task.id,
+        agent: id,
+        model: task.model,
+        data: { role: task.mode === 'review' ? 'review' : 'edit', status: 'interrupted', finishedAt, ...(this.projectName(task.projectId) ? { projectName: this.projectName(task.projectId) } : {}) },
+      }, true);
       this.holdForReview(taskId, { status: 'interrupted', turnId: null, error: `${AGENT_NAMES[id]} disconnected. You can resume the same task.` });
     }
-    if (usesCodex(id)) this.loaded.clear();
+    if (usesCodex(id)) { this.loaded.clear(); this.codexUsage.clear(); }
     this.emit('change');
   }
   snapshot(): Snapshot { return { version: VERSION, projects: this.store.projects(), manuscriptNoteCounts: this.store.manuscriptNoteCounts(), tasks: this.store.tasks(), pinnedTaskIds: this.store.pinnedTaskIds(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimes }; }
@@ -449,7 +504,7 @@ export class Workspace extends EventEmitter {
         for (const task of tasks) {
           const worktree = worktrees.get(task.id)!;
           if (worktree !== pathIdentity(task.worktree)) {
-            if (task.threadId) this.loaded.delete(task.threadId);
+            if (task.threadId) { this.loaded.delete(task.threadId); this.codexUsage.forgetThread(task.threadId); }
             this.store.updateTask(task.id, { worktree, threadId: null, turnId: null });
           }
         }
@@ -466,7 +521,7 @@ export class Workspace extends EventEmitter {
       const tasks = this.store.tasks().filter(task => task.projectId === id), ids = new Set(tasks.map(task => task.id));
       for (const [key, item] of this.liveItems) if (ids.has(item.taskId)) this.liveItems.delete(key);
       for (const [key, request] of this.requests) if (ids.has(request.taskId)) this.requests.delete(key);
-      for (const task of tasks) { if (task.threadId) this.loaded.delete(task.threadId); this.earlyCompletions.delete(task.id); this.earlyRequests.delete(task.id); }
+      for (const task of tasks) { if (task.threadId) { this.loaded.delete(task.threadId); this.codexUsage.forgetThread(task.threadId); } this.earlyCompletions.delete(task.id); this.earlyRequests.delete(task.id); }
       this.store.removeProject(id);
       return { ok: true };
     } finally { release(); }
@@ -628,6 +683,17 @@ export class Workspace extends EventEmitter {
         this.attachments.claim(original.projectId, drafts.map(file => file.id), id);
         this.store.saveRun(run);
         this.store.saveItem({ ...message, id: run.id, taskId: id, createdAt: now, meta: { ...message.meta, ...(files.length ? { attachments: files } : {}) } });
+        const projectName = this.projectName(original.projectId);
+        this.store.recordActivity({
+          key: `task:${id}`,
+          at: now,
+          kind: 'task_started',
+          projectId: original.projectId,
+          taskId: id,
+          agent: input.agent,
+          model: model.id,
+          data: { mode: original.mode === 'review' ? 'review' : 'edit', restartedFrom: taskId, title: original.title, ...(projectName ? { projectName } : {}) },
+        });
       });
       admitted = true;
       void this.prepareTask(id);
@@ -792,6 +858,31 @@ export class Workspace extends EventEmitter {
       // Writing to an archived task brings it back to the task list.
       if (current.archivedAt && !options.build) this.store.updateTask(taskId, { archivedAt: null });
       this.store.saveItem({ id: run.id, taskId, type: 'user', text: options.feedback || options.build ? '' : text.trim(), createdAt: run.createdAt, ...(Object.keys(meta).length ? { meta } : {}) });
+      const projectName = this.projectName(current.projectId);
+      if (options.admit) {
+        this.store.recordActivity({
+          key: `task:${current.id}`,
+          at: current.createdAt,
+          kind: 'task_started',
+          projectId: current.projectId,
+          taskId: current.id,
+          agent: this.agentOf(current),
+          model: current.model,
+          data: { mode: current.mode === 'review' ? 'review' : 'edit', title: current.title, ...(projectName ? { projectName } : {}) },
+        });
+      }
+      if (meta.notes?.length) {
+        this.store.recordActivity({
+          key: `notes-sent:${run.id}`,
+          at: run.createdAt,
+          kind: 'annotations_sent',
+          projectId: current.projectId,
+          taskId: current.id,
+          agent: this.agentOf(current),
+          model: current.model,
+          data: { count: meta.notes.length, ...(projectName ? { projectName } : {}) },
+        });
+      }
       return run;
     });
     this.schedule();
@@ -860,8 +951,19 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     }
     if (this.agentOf(task) === 'collaboration') { this.stopWorkflow(task.id); this.workflowStops.set(task.id, new AbortController()); }
     const agent = this.agents[this.agentOf(task)], name = AGENT_NAMES[this.agentOf(task)];
+    const projectName = this.projectName(task.projectId);
     this.earlyCompletions.delete(task.id); this.earlyRequests.delete(task.id);
     this.store.saveRun({ ...run, status: 'running' });
+    this.store.recordActivity({
+      key: `turn:${run.id}`,
+      at: Date.now(),
+      kind: 'agent_turn',
+      projectId: task.projectId,
+      taskId: task.id,
+      agent: this.agentOf(task),
+      model: task.model,
+      data: { role: task.mode === 'review' ? 'review' : 'edit', status: 'running', ...(projectName ? { projectName } : {}) },
+    }, true);
     this.store.updateTask(task.id, { status: 'running', turnId: null, error: null });
     const reviewer = await this.approvalReviewer(task);
     const permissions = task.mode !== 'review' ? await agent.taskPermissionConfig?.(task.permissions || 'workspace', task.worktree) : undefined;
@@ -869,6 +971,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (!task.threadId || !this.loaded.has(task.threadId)) {
       // Codex threads get the view_pdf tool when they start, and keep it when resumed.
       const scope = task.mode === 'review' ? [] : await this.reviewScope(task), codex = usesCodex(this.agentOf(task));
+      const freshThread = !task.threadId;
       let viewPdf = task.mode !== 'review' && codex && (task.threadId ? Boolean(task.viewPdf) : !this.noViewPdf);
       const options = (tool: boolean) => ({ cwd: task.worktree, approvalPolicy: 'on-request', sandbox: 'workspace-write', ...permissions?.thread, ...reviewer, config: { web_search: 'live', 'sandbox_workspace_write.network_access': true }, developerInstructions: this.instructions(task, scope, tool) + (this.agentOf(task) === 'collaboration' ? '\n\n' + workflowInstructions(this.collaborationRoutes) : ''), ...(task.model ? { model: task.model } : {}) });
       let result;
@@ -882,12 +985,25 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
           result = await agent.request('thread/start', options(false));
         }
       }
+      if (freshThread && codex && result?.thread?.id) this.codexUsage.seedThread(result.thread.id);
       if (this.active.get(task.id)?.id !== run.id) return;
       // Settings can change while the agent loads. Keep this turn's snapshot,
       // and never overwrite a newer choice with the thread's resolved model.
       const current = this.store.task(task.id);
       this.store.updateTask(task.id, { threadId: result.thread.id, ...(current.model === task.model ? { model: result.model || task.model } : {}), ...(task.threadId ? {} : { viewPdf }) });
       task = { ...task, threadId: result.thread.id, model: result.model || task.model };
+      if (task.model) {
+        this.store.recordActivity({
+          key: `turn:${run.id}`,
+          at: Date.now(),
+          kind: 'agent_turn',
+          projectId: task.projectId,
+          taskId: task.id,
+          agent: this.agentOf(task),
+          model: task.model,
+          data: { role: task.mode === 'review' ? 'review' : 'edit', status: 'running', ...(projectName ? { projectName } : {}) },
+        }, true);
+      }
       this.loaded.add(result.thread.id);
     }
     this.store.updateTask(task.id, { pendingRunId: run.id });
@@ -944,9 +1060,19 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     this.stopWorkflow(run.taskId);
     this.active.delete(run.taskId);
     this.earlyCompletions.delete(run.taskId); this.earlyRequests.delete(run.taskId);
-    this.store.saveRun({ ...run, status: 'failed', finishedAt: Date.now() });
+    const finishedAt = Date.now(), task = this.store.task(run.taskId), id = this.agentOf(task);
+    this.store.saveRun({ ...run, status: 'failed', finishedAt });
+    this.store.recordActivity({
+      key: `turn:${run.id}`,
+      at: run.createdAt,
+      kind: 'agent_turn',
+      projectId: task.projectId,
+      taskId: task.id,
+      agent: id,
+      model: task.model,
+      data: { role: task.mode === 'review' ? 'review' : 'edit', status: 'failed', finishedAt, ...(this.projectName(task.projectId) ? { projectName: this.projectName(task.projectId) } : {}) },
+    }, true);
     this.holdForReview(run.taskId, { status: 'failed', turnId: null, pendingRunId: null, error: errorText(error) });
-    const id = this.agentOf(this.store.task(run.taskId));
     if (usesCodex(id) && signInFailure({ message: errorText(error) })) this.signedOut(id);
     this.schedule();
   }
@@ -1048,9 +1174,47 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     }
     const task = this.store.taskByThread(p.threadId);
     if (!task || task.status === 'deleting') return;
+    if (method === 'turn/usage') {
+      const normalized = normalizeTurnUsage(agent, task.model, p.usage, p.model);
+      if (normalized) {
+        const projectName = this.projectName(task.projectId);
+        this.store.recordActivity({
+          key: `usage:${randomUUID()}`,
+          at: Date.now(),
+          kind: 'token_usage',
+          projectId: task.projectId,
+          taskId: task.id,
+          agent,
+          model: normalized.model,
+          data: { role: task.mode === 'review' ? 'review' : 'edit', tokens: normalized.tokens, costUsd: normalized.costUsd, costSource: normalized.costSource, ...(projectName ? { projectName } : {}) },
+        });
+      }
+      return;
+    }
     const eventTurn = p.turnId || p.turn?.id;
     if (eventTurn && task.turnId && eventTurn !== task.turnId) return;
     if (method === 'thread/tokenUsage/updated') {
+      if (usesCodex(agent)) {
+        if (!task.turnId && !task.pendingRunId) {
+          this.codexUsage.seedBaseline(String(p.threadId || ''), p.tokenUsage);
+        } else {
+          const delta = this.codexUsage.consume(String(p.threadId || ''), p.tokenUsage);
+          const normalized = delta ? normalizeCodexUsage(agent, task.model, delta) : null;
+          if (normalized) {
+            const projectName = this.projectName(task.projectId);
+            this.store.recordActivity({
+              key: `usage:${randomUUID()}`,
+              at: Date.now(),
+              kind: 'token_usage',
+              projectId: task.projectId,
+              taskId: task.id,
+              agent,
+              model: normalized.model,
+              data: { role: task.mode === 'review' ? 'review' : 'edit', tokens: normalized.tokens, costUsd: normalized.costUsd, costSource: normalized.costSource, ...(projectName ? { projectName } : {}) },
+            });
+          }
+        }
+      }
       // The latest request's tokens are what the context holds now.
       const usage = p.tokenUsage || {}, tokens = Number(usage.last?.totalTokens ?? usage.last?.total_tokens), window = Number(usage.modelContextWindow ?? usage.model_context_window);
       if (tokens > 0 && window > 0) {
@@ -1114,7 +1278,18 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       this.active.delete(task.id);
       for (const [key, r] of this.requests) if (r.taskId === task.id) this.requests.delete(key);
       const status = p.turn.status === 'completed' ? 'completed' : p.turn.status === 'interrupted' ? 'interrupted' : 'failed';
-      this.store.saveRun({ ...run, ...(agent === 'collaboration' ? { workflowAudit: this.store.runByKey(run.requestKey)?.workflowAudit } : {}), status, finishedAt: Date.now() });
+      const finishedAt = Date.now(), latestTask = this.store.findTask(task.id) || task;
+      this.store.saveRun({ ...run, ...(agent === 'collaboration' ? { workflowAudit: this.store.runByKey(run.requestKey)?.workflowAudit } : {}), status, finishedAt });
+      this.store.recordActivity({
+        key: `turn:${run.id}`,
+        at: run.createdAt,
+        kind: 'agent_turn',
+        projectId: latestTask.projectId,
+        taskId: latestTask.id,
+        agent,
+        model: latestTask.model,
+        data: { role: latestTask.mode === 'review' ? 'review' : 'edit', status, finishedAt, ...(this.projectName(latestTask.projectId) ? { projectName: this.projectName(latestTask.projectId) } : {}) },
+      }, true);
       const ended = { turnId: null, pendingRunId: null, error: p.turn.error?.message || null };
       // A completed turn builds; publish() holds that build for the action.
       if (status === 'completed') this.store.updateTask(task.id, { ...ended, status: 'building' });
@@ -1197,10 +1372,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         const notes = this.workflowNotesFor(task, run);
         this.store.saveRun({ ...this.store.runByKey(run.requestKey)!, workflowAudit: undefined });
         const signal = AbortSignal.any([controller.signal, own.signal]), live = () => Boolean(current()) && !signal.aborted;
-        const progress = parent ? { step: (step: WorkflowStep) => { if (live()) this.workerStep(task, parent, step); }, changes: (changes: WorkflowChange[]) => { if (live()) this.workerChanges(task, parent, changes); }, integrated: finished } : {};
+        const activity = (event: WorkflowActivityEvent) => this.recordWorkflowActivity(task, event);
+        const progress = parent ? { step: (step: WorkflowStep) => { if (live()) this.workerStep(task, parent, step); }, changes: (changes: WorkflowChange[]) => { if (live()) this.workerChanges(task, parent, changes); }, integrated: finished, activity } : { activity };
         const result = tool === 'workflow_delegate'
           ? await delegateWorkflow(task.worktree, notes, args, this.workflowGenerate, signal, () => Boolean(current()), role => this.workflowWorker(task, role), progress)
-          : await auditWorkflow(task.worktree, notes, args, this.workflowGenerate, controller.signal, this.coordinator(task), this.workflowRequestsFor(task, run));
+          : await auditWorkflow(task.worktree, notes, args, this.workflowGenerate, controller.signal, this.coordinator(task), this.workflowRequestsFor(task, run), activity);
         if (!current() || controller.signal.aborted) return;
         if ('fingerprint' in result && result.verified && result.fingerprint) {
           const saved = this.store.runByKey(run.requestKey)!;
@@ -1355,6 +1531,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   }
   private settleReviewNotes(task: Task, pending: Pick<PendingReview, 'returnNotes' | 'returnNote' | 'body' | 'route'>) {
     if (pending.route.endsWith('/undo')) {
+      this.store.undoActivity(`decision:${task.id}:${String(pending.body.id)}`);
       for (const note of this.store.reviewReturns(task.projectId, task.id, String(pending.body.id))) {
         if (!note.returnAction || note.returnAction.undone) continue;
         // Remember the undo even if the author already hid this copy. A lost
@@ -1364,6 +1541,20 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       return;
     }
     const action = String(pending.body.id);
+    if (pending.route.endsWith('/decide') && (pending.body.action === 'accept' || pending.body.action === 'reject')) {
+      const count = Array.isArray(pending.body.changes) ? Math.max(1, pending.body.changes.length) : 1;
+      const projectName = this.projectName(task.projectId);
+      this.store.recordActivity({
+        key: `decision:${task.id}:${action}`,
+        at: Date.now(),
+        kind: 'review_decision',
+        projectId: task.projectId,
+        taskId: task.id,
+        agent: this.agentOf(task),
+        model: task.model,
+        data: { action: pending.body.action, count, source: 'task', ...(projectName ? { projectName } : {}) },
+      });
+    }
     if (pending.returnNotes) {
       for (const note of pending.returnNotes) this.store.returnAnnotation(note, action);
     } else if (pending.returnNote) {
@@ -1483,8 +1674,14 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const job = (value as { job?: { id?: string } } | null)?.job;
     if (!job?.id) throw new Error('The review engine could not confirm this action. Select Check status before continuing.');
     const runs = pending?.route.endsWith('/source/options') ? this.store.runs().filter(run => run.taskId === taskId && run.status === 'completed' && run.reviewRound === pending.body.round).map(run => run.id) : [];
+    const optionAccept = pending?.route.endsWith('/source/options') && pending.body.accept === true
+      ? {
+          actionId: `note-accept-${createHash('sha256').update(`option-${String(pending.body.id)}`).digest('hex')}`,
+          count: Array.isArray(pending.body.edits) ? Math.max(1, pending.body.edits.length) : 1,
+        }
+      : undefined;
     const building = this.store.task(taskId).pendingBuild;
-    this.store.updateTask(taskId, { status: 'building', error: null, pendingBuild: { requestId: randomUUID(), job: job.id, runs: [...new Set([...building?.runs ?? [], ...runs])], sendBack: building?.sendBack ?? false, restarts: 0 } });
+    this.store.updateTask(taskId, { status: 'building', error: null, pendingBuild: { requestId: randomUUID(), job: job.id, runs: [...new Set([...building?.runs ?? [], ...runs])], sendBack: building?.sendBack ?? false, restarts: 0, ...(optionAccept ? { optionAccept } : {}) } });
   }
   // A build is automatic after the agent's run `after` completes. When its
   // edits break the build, the agent gets the error in a new turn, once.
@@ -1600,6 +1797,19 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
           if (this.closing) return;
           const latest = this.store.task(taskId).pendingBuild;
           if (latest && latest.job !== pending.job) { pending = follow(latest); continue; }
+          if (pending.optionAccept && !current.superseded && !current.result?.superseded) {
+            const latestTask = this.store.task(taskId), projectName = this.projectName(latestTask.projectId);
+            this.store.recordActivity({
+              key: `decision:${taskId}:${pending.optionAccept.actionId}`,
+              at: Date.now(),
+              kind: 'review_decision',
+              projectId: latestTask.projectId,
+              taskId,
+              agent: this.agentOf(latestTask),
+              model: latestTask.model,
+              data: { action: 'accept', count: pending.optionAccept.count, source: 'task', ...(projectName ? { projectName } : {}) },
+            });
+          }
           this.holdForReview(taskId, { status: this.store.runs().some(r => r.taskId === taskId && r.status === 'queued') ? 'queued' : 'reviewing', error: null, pendingBuild: null,
             review: { ...this.store.task(taskId).review!, job: { ...current, id: pending.job } } });
           break;
@@ -1655,11 +1865,22 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       const reply = this.store.items(task.id).filter(item => item.type === 'reviewOutput' && item.id.startsWith(`${task.id}:${turnId}:`)).at(-1);
       const result = parseAiReview(reply?.text || '', snapshot);
       this.store.transaction(() => {
+        const projectName = this.projectName(task.projectId);
         result.notes.forEach((note, index) => {
           const id = `${run.id}-${index}`;
           // Deterministic IDs make completion replay safe, including deleted/sent notes.
           try { this.store.annotation(task.projectId, id); return; } catch { /* New finding. */ }
-          this.store.saveAnnotation({ ...note, id, projectId: task.projectId, key: snapshot.key, source: null, createdAt: Date.now(), aiReview: { taskId: task.id, agent: this.agentOf(task) } });
+          const saved = this.store.saveAnnotation({ ...note, id, projectId: task.projectId, key: snapshot.key, source: null, createdAt: Date.now(), aiReview: { taskId: task.id, agent: this.agentOf(task) } });
+          this.store.recordActivity({
+            key: `note:${id}`,
+            at: saved.createdAt,
+            kind: 'annotation_created',
+            projectId: task.projectId,
+            taskId: task.id,
+            agent: this.agentOf(task),
+            model: task.model,
+            data: { source: 'ai-review', ...(projectName ? { projectName } : {}) },
+          });
         });
         this.store.saveRun({ ...run, status: 'completed', finishedAt: Date.now(), reviewRound: null });
         if (reply) this.store.saveItem({ ...reply, type: 'assistant', text: result.summary });
@@ -1764,12 +1985,12 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const models = this.runtimes[id].models;
     return { id, model: (options.light ? lightModel(models) : undefined) || models.find(item => item.id === choice.model) || models.find(item => item.isDefault) };
   }
-  async diagnoseLatexBuild(root: string, prompt: string, choice: { agent: AgentId; model?: string }) {
+  async diagnoseLatexBuild(root: string, prompt: string, choice: { agent: AgentId; model?: string; projectId?: string }) {
     const id = choice.agent, runtime = this.runtimes[id];
     if (!this.agents[id].ready || !runtime.authenticated) throw new Error('Connect the selected agent before diagnosing compilation problems.');
     if (this.agents[id].supportsReadOnlyTasks === false) throw new Error('The selected agent does not support read-only compilation diagnosis. Select another agent.');
     const model = runtime.models.find(item => item.id === choice.model) || runtime.models.find(item => item.isDefault);
-    return this.oneOff(id, { cwd: root, sandbox: 'read-only', model, timeout: 120000, what: 'diagnose the LaTeX build', instructions: latexRepairInstructions, prompt });
+    return this.oneOff(id, { cwd: root, sandbox: 'read-only', model, timeout: 120000, what: 'diagnose the LaTeX build', instructions: latexRepairInstructions, prompt, projectId: choice.projectId });
   }
   async repairImport(root: string, error: string, choice: { agent?: AgentId } = {}) {
     const { id, model } = this.helper(choice, 'repair the imported paper');
@@ -1779,7 +2000,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   }
   // One turn on a thread the agent does not keep, outside any task: its
   // reply is returned and no chat shows it.
-  private async oneOff(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout: number; what: string }) {
+  private async oneOff(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout: number; what: string; projectId?: string; taskId?: string }) {
     if (this.closing) throw new Error('The server is shutting down.');
     // A read-only helper (a title, a commit message) has everything in its
     // prompt. It runs in an empty folder, so an agent that does not enforce a
@@ -1789,23 +2010,69 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     // An empty folder left behind must not discard the reply.
     finally { if (scratch) await fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 5 }).catch(() => {}); }
   }
-  private async helperTurn(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout: number; what: string }) {
-    const agent = this.agents[id], name = AGENT_NAMES[id];
+  private async helperTurn(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout: number; what: string; projectId?: string; taskId?: string }) {
+    const agent = this.agents[id], name = AGENT_NAMES[id], codex = usesCodex(id);
     // Codex unloads the thread as soon as it is released, not a minute later.
     const thread = await agent.request('thread/start', { cwd: options.cwd, approvalPolicy: 'never', sandbox: options.sandbox, ephemeral: true, config: { thread_unload_delay_secs: 0 }, developerInstructions: options.instructions, ...(options.model ? { model: options.model.id } : {}) }, options.timeout);
     const threadId = thread.thread.id;
+    const resolvedModel: string | null = thread.model || options.model?.id || null;
+    if (codex) this.codexUsage.seedThread(threadId);
     try {
       if (this.closing) throw new Error('The server is shutting down.');
-      return await this.helperReply(agent, name, threadId, options);
-    } finally { await releaseThread(agent, threadId); }
+      return await this.helperReply(id, agent, name, threadId, resolvedModel, options);
+    } finally {
+      this.codexUsage.forgetThread(threadId);
+      await releaseThread(agent, threadId);
+    }
   }
-  private helperReply(agent: AgentRuntime, name: string, threadId: string, options: { cwd: string; prompt: string; effort?: string | null; serviceTier?: string; timeout: number; what: string }) {
+  private helperReply(id: AgentId, agent: AgentRuntime, name: string, threadId: string, resolvedModel: string | null, options: { cwd: string; prompt: string; effort?: string | null; serviceTier?: string; timeout: number; what: string; projectId?: string; taskId?: string }) {
+    const helperId = randomUUID(), startedAt = Date.now(), codex = usesCodex(id);
+    const projectName = this.projectName(options.projectId);
+    this.store.recordActivity({
+      key: `turn:helper:${helperId}`,
+      at: startedAt,
+      kind: 'agent_turn',
+      projectId: options.projectId,
+      taskId: options.taskId,
+      agent: id,
+      model: resolvedModel,
+      data: { role: 'helper', what: options.what, status: 'running', ...(projectName ? { projectName } : {}) },
+    }, true);
     return new Promise<string>((resolve, reject) => {
       let text = '', turnId = '', settled = false;
       const listen = (message: any) => {
         const p = message.params || {};
         if (p.threadId !== threadId) return;
-        if (message.method === 'item/completed' && p.item?.type === 'agentMessage') text = p.item.text || text;
+        if (codex && message.method === 'thread/tokenUsage/updated') {
+          const delta = this.codexUsage.consume(threadId, p.tokenUsage);
+          const normalized = delta ? normalizeCodexUsage(id, resolvedModel, delta) : null;
+          if (normalized) {
+            this.store.recordActivity({
+              key: `usage:${randomUUID()}`,
+              at: Date.now(),
+              kind: 'token_usage',
+              projectId: options.projectId,
+              taskId: options.taskId,
+              agent: id,
+              model: normalized.model,
+              data: { role: 'helper', what: options.what, tokens: normalized.tokens, costUsd: normalized.costUsd, costSource: normalized.costSource, ...(projectName ? { projectName } : {}) },
+            });
+          }
+        } else if (message.method === 'turn/usage') {
+          const normalized = normalizeTurnUsage(id, resolvedModel, p.usage, p.model);
+          if (normalized) {
+            this.store.recordActivity({
+              key: `usage:${randomUUID()}`,
+              at: Date.now(),
+              kind: 'token_usage',
+              projectId: options.projectId,
+              taskId: options.taskId,
+              agent: id,
+              model: normalized.model,
+              data: { role: 'helper', what: options.what, tokens: normalized.tokens, costUsd: normalized.costUsd, costSource: normalized.costSource, ...(projectName ? { projectName } : {}) },
+            });
+          }
+        } else if (message.method === 'item/completed' && p.item?.type === 'agentMessage') text = p.item.text || text;
         else if (message.method === 'turn/completed') finish(p.turn?.status === 'completed' ? null : new Error(p.turn?.error?.message || `${name} stopped before it could ${options.what}.`));
       };
       const timer = setTimeout(() => {
@@ -1815,6 +2082,17 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       const finish = (error: Error | null) => {
         if (settled) return; settled = true;
         clearTimeout(timer); agent.off('notification', listen); agent.off('disconnected', disconnected); this.helperStops.delete(stop);
+        const finishedAt = Date.now();
+        this.store.recordActivity({
+          key: `turn:helper:${helperId}`,
+          at: startedAt,
+          kind: 'agent_turn',
+          projectId: options.projectId,
+          taskId: options.taskId,
+          agent: id,
+          model: resolvedModel,
+          data: { role: 'helper', what: options.what, status: error ? 'failed' : 'completed', finishedAt, ...(projectName ? { projectName } : {}) },
+        }, true);
         if (error) reject(error); else resolve(text);
       };
       const disconnected = () => finish(new Error(`${name} disconnected before it could ${options.what}.`));
@@ -1844,7 +2122,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const prompt = JSON.stringify({ request: first?.text || '', taskContext: task.instructions, existingOutcome: outcome?.text || '' });
     const revision = task.titleRevision || 0;
     this.store.updateTask(taskId, { titleGeneration: 'pending' });
-    const written = this.oneOff(id, { cwd: this.store.project(task.projectId).path, sandbox: 'read-only', instructions: taskCaptionInstructions, prompt, model, effort: model?.efforts[0], timeout: 45000, what: 'generate a task title' }).then(reply => {
+    const written = this.oneOff(id, { cwd: this.store.project(task.projectId).path, sandbox: 'read-only', instructions: taskCaptionInstructions, prompt, model, effort: model?.efforts[0], timeout: 45000, what: 'generate a task title', projectId: task.projectId, taskId }).then(reply => {
       if (this.closing) return null;
       const current = this.store.findTask(taskId);
       if (!current || current.status === 'deleting' || (current.titleRevision || 0) !== revision) return current || null;
@@ -1882,7 +2160,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const instructions = commitInstructions(choice.language);
     const key = createHash('sha256').update(`${id}\0${model?.id ?? ''}\0${effort ?? ''}\0${serviceTier ?? ''}\0${instructions}\0${prompt}`).digest('hex'), kept = this.messages.get(key);
     if (kept && !choice.fresh) return kept;
-    const written = this.oneOff(id, { cwd: project.path, sandbox: 'read-only', instructions, prompt, model, effort, serviceTier, timeout: 120000, what: 'write a commit message' }).then(reply => {
+    const written = this.oneOff(id, { cwd: project.path, sandbox: 'read-only', instructions, prompt, model, effort, serviceTier, timeout: 120000, what: 'write a commit message', projectId, taskId: choice.taskId }).then(reply => {
       const message = commitMessageFrom(reply);
       if (!message) throw new Error(`${AGENT_NAMES[id]} did not return a commit message. Try again.`);
       return { message, agent: id };
@@ -1935,8 +2213,19 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     });
     // Saving the reviewed result completes a paused review without resuming
     // its interrupted agent turn. Only a confirmed delivery clears the pause.
-    if (result.delivery && !result.delivery.pending && this.store.task(taskId).status === 'interrupted')
-      this.store.updateTask(taskId, { status: 'reviewing', error: null });
+    if (result.delivery && !result.delivery.pending && result.delivery.mode !== 'branch') {
+      if (this.store.task(taskId).status === 'interrupted') this.store.updateTask(taskId, { status: 'reviewing', error: null });
+      this.store.recordActivity({
+        key: `delivery:${taskId}:${result.delivery.accepted || result.delivery.commit || result.delivery.mode}`,
+        at: Date.now(),
+        kind: 'task_delivered',
+        projectId: project.id,
+        taskId,
+        agent: this.agentOf(task),
+        model: task.model,
+        data: { mode: result.delivery.mode === 'commit' ? 'commit' : 'workspace', projectName: project.name },
+      });
+    }
     if (result.reconciliation?.ready) await this.queueMergeSuggestion(taskId, result.reconciliation);
     this.schedule();
     return result;
@@ -1962,7 +2251,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       `Commits from ${upstream} being merged in:\n${list(theirs)}`,
       'Resolve every conflict in those files, then reply with a short summary for the author: how you resolved each conflict, and any place where you had to choose one side.',
     ].join('\n\n');
-    const summary = await this.oneOff(id, { cwd: project.path, sandbox: 'workspace-write', instructions: mergeInstructions, prompt, model, effort, serviceTier, timeout: 600000, what: 'resolve the conflicts' });
+    const summary = await this.oneOff(id, { cwd: project.path, sandbox: 'workspace-write', instructions: mergeInstructions, prompt, model, effort, serviceTier, timeout: 600000, what: 'resolve the conflicts', projectId });
     return { summary: summary.trim(), remaining: files.filter(file => conflictMarkers(project.path, file)), agent: id, git: await gitStatus(project.path) };
   }
   // A commit reads the working tree that accepting, rejecting and undoing
@@ -2071,7 +2360,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       for (const [id, item] of this.liveItems) if (item.taskId === taskId) this.liveItems.delete(id);
       for (const [id, request] of this.requests) if (request.taskId === taskId) this.requests.delete(id);
       this.earlyCompletions.delete(taskId); this.earlyRequests.delete(taskId);
-      if (task.threadId) this.loaded.delete(task.threadId);
+      if (task.threadId) { this.loaded.delete(task.threadId); this.codexUsage.forgetThread(task.threadId); }
       // Notes the agent never received go back to the manuscript.
       if (unprepared) for (const { taskId: _, ...note } of this.store.annotations(task.projectId).filter(note => note.taskId === taskId)) this.store.saveAnnotation(note);
       this.reviewCopies.delete(taskId); this.announced.delete(taskId);

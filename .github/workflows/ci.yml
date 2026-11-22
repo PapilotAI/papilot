@@ -307,6 +307,9 @@ jobs:
       - name: settings-layout
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-settings-layout.mjs
+      - name: activity-settings
+        if: ${{ !cancelled() }}
+        run: node --import tsx scripts/check-activity-settings.mjs
       - name: writer-setup
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-writer-setup.mjs
