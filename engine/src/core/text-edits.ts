@@ -137,15 +137,14 @@ export function consolidateRewrites(before: string, after: string, ops: Op[]): O
   const structural =
     /(?:^|[^\\])(?:\\\\)*%|\\begin\{|\\end\{|\\\[|\$\$|\\(?:part|chapter|section|subsection|subsubsection|paragraph|subparagraph|item|verb|lstinline)\b/;
   const hasBlankLine = (text: string) => /\r?\n[ \t]*\r?\n/.test(text);
-  const atomicOp = ([, i, j, x, y]: Op) => {
+  const isWsOp = ([, i, j, x, y]: Op) =>
+    isWhitespaceOnly(before.slice(i, j)) && isWhitespaceOnly(after.slice(x, y));
+  const atomicOp = (op: Op) => {
+    const [, i, j, x, y] = op;
     const oldText = before.slice(i, j),
       newText = after.slice(x, y);
-    return (
-      hasBlankLine(oldText) ||
-      hasBlankLine(newText) ||
-      structural.test(oldText) ||
-      structural.test(newText)
-    );
+    if (isWsOp(op) && (hasBlankLine(oldText) || hasBlankLine(newText))) return true;
+    return structural.test(oldText) || structural.test(newText);
   };
   const strongAnchor = (gap: string) => {
     if (hasBlankLine(gap) || structural.test(gap)) return true;
@@ -154,8 +153,6 @@ export function consolidateRewrites(before: string, after: string, ops: Op[]): O
     if (words >= 5 && (/[.!?]\s+[\p{Lu}\\]/u.test(gap) || /[。！？]/.test(gap))) return true;
     return false;
   };
-  const isWsOp = ([, i, j, x, y]: Op) =>
-    isWhitespaceOnly(before.slice(i, j)) && isWhitespaceOnly(after.slice(x, y));
   const runs: Op[][] = [];
   let run: Op[] = [ops[0]];
   for (let k = 1; k < ops.length; k++) {

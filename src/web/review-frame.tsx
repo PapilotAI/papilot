@@ -102,8 +102,9 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .change-head .actions>.nav:first-child{order:1}.change-head .change-number{order:2}.change-head .actions>.nav:not(:first-child){order:3}
     .change-head .change-number{flex:0 0 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
     .change-head .change-where{order:4;flex:1 1 0;min-width:0;margin-left:4px}
-    .change-head .change-kind,.change-head .badge,.change-head .unit-chips{order:5;min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
-    .change-head .unit-chips{flex:none;overflow-x:auto}
+    .change-head .change-kind,.change-head .badge,.change-head .unit-chips-wrap{order:5;min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+    .change-head .unit-chips-wrap{max-width:100%}
+    .change-head .unit-chips{flex:0 1 auto;min-width:0;overflow-x:auto}
     .change-head .actions>*{order:6}
     .change-head .link{order:7}
     .change-head .unit-focus-group button:is(.accept,.reject,.comment,.unstage){width:28px;height:28px}
