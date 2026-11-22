@@ -2081,8 +2081,105 @@ body {
 .pdf-strip[data-unit-hover] .pdf-text {
   cursor: pointer;
 }
-/* Flat, borderless per-edit controls inside the change card header:
-   no white box over the header tint. */
+/* Flat, borderless per-edit state chips and controls inside the change card header. */
+.unit-chips {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 3px;
+  flex: none;
+  max-width: 240px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 1px 0;
+}
+.unit-chips::-webkit-scrollbar {
+  display: none;
+}
+.unit-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  flex: none;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text-2);
+  font: 500 11.5px/1 var(--sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    box-shadow 0.15s;
+}
+.unit-chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 10px;
+  height: 10px;
+}
+.unit-chip:hover {
+  background: color-mix(in srgb, var(--text) 11%, transparent);
+  color: var(--text);
+}
+.unit-chip[data-state="pending"][data-active="true"] {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--primary);
+  font-weight: 600;
+}
+.unit-chip[data-state="accepted"] {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+}
+.unit-chip[data-state="accepted"]:hover {
+  background: color-mix(in srgb, var(--green) 20%, transparent);
+  color: var(--green);
+}
+.unit-chip[data-state="accepted"][data-active="true"] {
+  box-shadow: inset 0 0 0 1.5px var(--green);
+  font-weight: 600;
+}
+.unit-chip[data-state="rejected"] {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+}
+.unit-chip[data-state="rejected"]:hover {
+  background: color-mix(in srgb, var(--red) 20%, transparent);
+  color: var(--red);
+}
+.unit-chip[data-state="rejected"] .unit-chip-label {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.unit-chip[data-state="rejected"][data-active="true"] {
+  box-shadow: inset 0 0 0 1.5px var(--red);
+  font-weight: 600;
+}
+.unit-chip[data-state="commented"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.unit-chip[data-state="commented"]:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+.unit-chip[data-state="commented"][data-active="true"] {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  font-weight: 600;
+}
+.unit-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .unit-focus-group {
   display: inline-flex;
   align-items: center;
@@ -2102,42 +2199,13 @@ body {
   background: var(--line-strong, var(--line));
   flex: none;
 }
-.unit-focus-step {
+.unit-focus-state {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 22px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 14px;
-  line-height: 1;
-}
-.unit-focus-step:hover:not(:disabled) {
-  background: var(--bg-muted);
-  color: var(--text);
-}
-.unit-focus-step:disabled {
-  opacity: 0.35;
-}
-.unit-focus-step:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-.unit-focus-pos {
-  padding: 0 4px;
-  font-size: 11px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-  white-space: nowrap;
-}
-.unit-focus-state {
-  padding: 0 6px;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 5px;
   font-size: 11px;
   font-weight: 500;
   color: var(--text-2);
@@ -2145,12 +2213,15 @@ body {
 }
 .unit-focus-state[data-state="accepted"] {
   color: var(--green);
+  background: color-mix(in srgb, var(--green) 13%, transparent);
 }
 .unit-focus-state[data-state="rejected"] {
   color: var(--red);
+  background: color-mix(in srgb, var(--red) 13%, transparent);
 }
 .unit-focus-state[data-state="commented"] {
   color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
 }
 .unit-focus-group button:is(.accept, .reject, .comment, .unstage) {
   height: 24px;
@@ -2162,14 +2233,6 @@ body {
   font-size: 12px;
   font-weight: 500;
 }
-.change-multi-count {
-  font-size: 11px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-2);
-  white-space: nowrap;
-  flex: none;
-}
 .mixed-compiling {
   display: inline-flex;
   align-items: center;
@@ -2177,13 +2240,14 @@ body {
   color: var(--text-2);
 }
 @media (pointer: coarse) {
+  .unit-chip {
+    min-width: 28px;
+    height: 30px;
+    padding: 0 8px;
+  }
   .unit-focus-group {
     height: 36px;
     padding: 0 3px;
-  }
-  .unit-focus-step {
-    width: 32px;
-    height: 32px;
   }
 }
 

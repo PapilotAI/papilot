@@ -82,10 +82,20 @@ export function sourcePairs(
   right: Position[],
 ): Pair[] | null {
   if (unit.text_ops?.length !== 1) return null;
-  const [, i, j, x, y] = unit.text_ops[0],
-    a = old.read(unit.file),
+  let [, i, j, x, y] = unit.text_ops[0];
+  const a = old.read(unit.file),
     b = next.read(unit.file);
   if (a == null || b == null) return null;
+  // Trim unchanged prefix/suffix (e.g. an adjacent unchanged "$L$" absorbed
+  // into a word-diff span) so plain-text spans beside math stay locatable.
+  while (i < j && x < y && a[i] === b[x]) {
+    i++;
+    x++;
+  }
+  while (j > i && y > x && a[j - 1] === b[y - 1]) {
+    j--;
+    y--;
+  }
   if (compact(a.slice(i, j)) === compact(b.slice(x, y))) return null;
   const before = locate(old, a, i, j, left, "removed"),
     after = locate(next, b, x, y, right, "added");
