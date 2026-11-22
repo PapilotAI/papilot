@@ -16,7 +16,7 @@ import type { AgentRuntime } from '../src/server/agents.ts';
 import type { ReviewClient } from '../src/server/review.ts';
 import type { MemorySuggestion, Run, Task, TimelineItem } from '../src/shared.ts';
 
-const env = { ...process.env, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1' };
+const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
 const git = (root: string, ...args: string[]) => execFileSync('git', args, { cwd: root, env, stdio: 'pipe' }).toString();
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
 function folders() {
@@ -114,7 +114,7 @@ test('agents receive every saved preference with its precedence, and nothing onc
   } finally { f.close(); }
 });
 
-test('linked memory files in a repository are never read or written', async () => {
+test('linked memory files in a repository are never read or written', { skip: process.platform === 'win32' && 'file links need Windows Developer Mode' }, async () => {
   const f = folders();
   try {
     const paper = f.repository('paper'), secret = path.join(f.root, 'secret.txt');
@@ -128,7 +128,7 @@ test('linked memory files in a repository are never read or written', async () =
   } finally { f.close(); }
 });
 
-test('hard links and a linked .papilot folder are refused too, while a linked personal file keeps its link', async () => {
+test('hard links and a linked .papilot folder are refused too, while a linked personal file keeps its link', { skip: process.platform === 'win32' && 'file links need Windows Developer Mode' }, async () => {
   const f = folders();
   try {
     const paper = f.repository('paper'), outside = path.join(f.root, 'outside');

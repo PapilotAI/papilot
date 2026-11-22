@@ -16,7 +16,7 @@ import { Store } from '../src/server/store.ts';
 fs.mkdirSync('test-results', { recursive: true });
 const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-memory-ui-')));
 const paper = path.join(root, 'paper'), home = path.join(root, 'home');
-const env = { ...process.env, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1' };
+const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
 const git = (...args) => execFileSync('git', args, { cwd: paper, env, stdio: 'pipe' }).toString();
 fs.mkdirSync(paper); git('init', '-q'); fs.writeFileSync(path.join(paper, 'main.tex'), '\\section{Introduction}\n'); git('add', '.'); git('-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-qm', 'Base');
 const store = new Store(':memory:'), memory = new Memory({ user: home });
