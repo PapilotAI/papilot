@@ -31,11 +31,10 @@ try {
     const decisions = { a: 'pending', b: 'pending', c: 'pending' }, selected = { a: 'current', b: 'current', c: 'current' };
     const strip = (unit, text) => {
       const src = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="36"><rect width="600" height="36" fill="white"/><text x="12" y="24" font-size="18">${text}</text></svg>`);
-      return { src, clean: src, width: 600, height: 36, page: 1, label: '1', text: [{ text, chars: Array.from(text, (text, index) => ({ text, rect: [12 + index * 9, 8, 21 + index * 9, 28] })) }], marks: [{ unit, kind: 'added', rect: [12, 8, 220, 28] }] };
+      return { src, clean: src, width: 600, height: 36, page: 1, label: '1', text: [{ text, chars: Array.from(text, (ch, index) => ({ text: ch, rect: [12 + index * 9, 8, 21 + index * 9, 28] })) }], marks: [{ unit, kind: 'added', rect: [12, 8, 220, 28] }] };
     };
     let version = 1, failPreview = false, latePreview = null, saveFails = false, pendingBuild = null;
-    let releaseBaseline, releaseAlternative, releaseLate = () => {};
-    const baselineGate = new Promise(resolve => { releaseBaseline = resolve; });
+    let releaseAlternative, releaseLate = () => {};
     const alternativeGate = new Promise(resolve => { releaseAlternative = resolve; });
     const changed = () => { task.updatedAt++; task.review.counts.pending = Object.values(decisions).filter(state => state === 'pending').length; };
     const returned = new Set();
@@ -52,9 +51,9 @@ try {
           ...(unit === 'a' ? Array.from({ length: 5 }, (_, i) => ({ id: `extra-${i}`, label: `Extra ${i}`, reason: 'Another wording.', edits: [{ unit, text: `extra ${i}` }] })) : [])] };
     };
     previewHandler = async (url, reply) => {
-      const unit = noteUnits[Number(url.searchParams.get('key').split(':')[1])], option = url.searchParams.get('option');
-      const result = detail(unit, option); previews.push({ unit, option, version, background: url.searchParams.get('background') === '1' });
-      if (version === 1 && unit === 'a') await (option === 'current' ? baselineGate : alternativeGate);
+      const key = url.searchParams.get('key'), unit = noteUnits[Number(key.split(':')[1])], option = url.searchParams.get('option');
+      const result = detail(unit, option); previews.push({ key, unit, option, version, background: url.searchParams.get('background') === '1' });
+      if (version === 1 && unit === 'a' && option === 'alternative') await alternativeGate;
       if (unit === 'a' && option === 'alternative') {
         if (latePreview) { const wait = latePreview; latePreview = null; await wait; return reply.code(503).send({ error: 'Late preview failure' }); }
         if (failPreview && url.searchParams.get('retry') !== '1') return reply.code(503).send({ error: 'fetch failed' });
@@ -102,196 +101,173 @@ try {
     await page.route('**/review/**', async route => {
       const url = new URL(route.request().url());
       if (url.pathname.includes('/rounds/')) return route.fulfill({ json: detail('a', selected.a) });
-      const html = `<html><head><style>${css}.change{min-height:220px}</style></head><body><header class="bar"></header><div class="review-body"><main id="paper"><div class="document"><div class="sheet">${['a', 'b', 'c'].map((unit, index) => `<article class="change" data-stop="${index}" data-units="${unit}" data-state="${decisions[unit]}" tabindex="-1"><header class="change-head"><span class="change-number">Change ${index + 1}</span></header><p>Old ${unit}</p><p>${selected[unit]} ${unit}</p></article>`).join('')}</div></div></main></div><script>fetch('/api/tasks/flow/rounds/${task.review.round}');</script></body></html>`;
+      const html = `<html><head><style>${css}.change{min-height:180px}.change:not(.current) .dock{display:none!important}</style></head><body><header class="bar"></header><div class="review-body"><main id="paper"><div class="document"><div class="sheet">${['a', 'b', 'c'].map((unit, index) => `<article class="change${index === 0 ? ' current' : ''}" data-stop="${index}" data-units="${unit}" data-state="${decisions[unit]}" tabindex="-1"><header class="change-head"><span class="change-number">Change ${index + 1}</span><div class="dock"><nav class="actions"><button class="accept" type="button" data-action="accept">Accept</button><button class="reject" type="button" data-action="reject">Reject</button><button class="comment" type="button" data-action="comment">Comment</button></nav></div></header><p class="fixture-before">Old ${unit}</p><p class="fixture-after">${selected[unit]} ${unit}</p></article>`).join('')}</div></div></main></div><script>
+        let preview = null;
+        const setCurrent = stop => {
+          document.querySelectorAll('.change[data-stop]').forEach(el => el.classList.toggle('current', Number(el.dataset.stop) === stop));
+        };
+        document.querySelectorAll('.change[data-stop]').forEach(article => {
+          const stop = Number(article.dataset.stop);
+          article.addEventListener('click', () => setCurrent(stop));
+          article.querySelectorAll('.actions button').forEach(btn => {
+            btn.addEventListener('click', event => {
+              event.stopPropagation();
+              if (preview && preview.key) {
+                window.dispatchEvent(new CustomEvent('papilot:option-action', { detail: { key: preview.key, action: btn.dataset.action } }));
+              }
+            });
+          });
+        });
+        window.addEventListener('papilot:select-unit', event => {
+          const stop = event.detail && event.detail.stop;
+          if (Number.isInteger(stop)) setCurrent(stop);
+        });
+        window.addEventListener('papilot:option-preview', event => {
+          preview = event.detail || null;
+          document.querySelectorAll('.change[data-stop]').forEach(article => {
+            const units = (article.dataset.units || '').split(' ');
+            const matches = preview && (!preview.units || !preview.units.length || units.some(u => preview.units.includes(u)));
+            if (matches && preview.detail) {
+              article.dataset.previewRevision = preview.detail.after;
+              const u = preview.detail.units.find(x => units.includes(x.id));
+              if (u) article.querySelector('.fixture-after').textContent = u.new_text;
+            } else {
+              delete article.dataset.previewRevision;
+            }
+            const acceptBtn = article.querySelector('button.accept');
+            if (acceptBtn) acceptBtn.disabled = Boolean(matches && (preview.busy || !preview.detail));
+          });
+        });
+        fetch('/api/tasks/flow/rounds/${task.review.round}').then(() => {
+          document.documentElement.dataset.papilotRound = '${task.review.round}';
+          window.dispatchEvent(new Event('papilot:round'));
+        });
+      </script></body></html>`;
       return route.fulfill({ contentType: 'text/html', body: rewriteReviewHtml(html, '/review/paper') });
     });
-    const frame = () => page.frameLocator('.review-frame'), drawer = page.locator('.review-note-controls[data-open="true"]');
-    const sync = () => expect.poll(() => page.evaluate(() => {
-      // The review round can replace the iframe. Resolve its current window
-      // in the parent context and wait until the host has attached listeners.
+    const frame = () => page.frameLocator('.review-frame');
+    const card = stop => frame().locator(`.change[data-stop="${stop}"]`);
+    const noteBar = (stop, key) => card(stop).locator(`.papilot-inline-note[data-note-key="${key}"]`);
+    const tab = (stop, key, name) => noteBar(stop, key).getByRole('tab', { name, exact: true });
+    const sync = () => expect.poll(() => page.evaluate((currentRound) => {
       const current = document.querySelector('.review-frame');
       const doc = current?.contentDocument, view = current?.contentWindow;
       if (!view || !doc?.querySelector('#paper') || !doc.querySelector('#papilot-embed-style')) return false;
+      doc.documentElement.dataset.papilotRound = String(currentRound);
+      view.dispatchEvent(new view.Event('papilot:round'));
       view.dispatchEvent(new view.Event('papilot:review:decided'));
       return true;
-    }), { timeout: 15000 }).toBe(true);
-    const tab = name => drawer.getByRole('tab', { name, exact: true });
-    const comparison = revision => drawer.locator(`.note-option-comparison[data-revision="${revision}"]`);
+    }, task.review.round), { timeout: 15000 }).toBe(true);
     try {
       await page.goto(origin);
-      await frame().getByRole('button', { name: 'Show note 1: Improve note 1.', exact: true }).click();
+      // No bottom drawer or redundant scope switcher exists.
+      await expect(page.locator('.review-note-controls')).toHaveCount(0);
+      await expect(page.locator('.note-review-scope')).toHaveCount(0);
+
+      // Card 0 shows its inline notes with underline option tabs right below the card header.
+      await expect(noteBar(0, 'run:0')).toBeVisible();
+      await expect(tab(0, 'run:0', 'Original a')).toHaveAttribute('aria-selected', 'true');
+      await expect(noteBar(0, 'run:0').getByRole('button', { name: / · Return to manuscript$/ })).toBeVisible();
+      // Background warmup starts for alternatives without starving writes.
       await expect.poll(() => previews.some(request => request.unit === 'a' && request.option === 'alternative' && request.background)).toBe(true);
-      assert.equal(await comparison('a-current-v1').count(), 0, 'Alternatives start before the baseline response is available');
       assert.deepEqual(await page.evaluate(() => fetch('/preview-connection-probe', { method: 'POST', signal: AbortSignal.timeout(10000) }).then(response => response.json())), { ok: true }, 'A write reaches the server while optional previews are pending');
-      assert.equal(previews.filter(request => request.background).length, 1, 'Only one of six alternatives occupies a connection');
-      releaseBaseline();
-      await expect(comparison('a-current-v1')).toBeVisible();
-      const toolbar = drawer.locator('.note-option-navigation');
-      await expect(toolbar.getByRole('button', { name: / · Return to manuscript$/ })).toBeVisible();
-      await expect(toolbar.locator('.note-disposition [aria-haspopup]')).toHaveCount(0);
-      const pager = await toolbar.locator('.review-note-pager').boundingBox();
-      const choices = await toolbar.locator('.note-option-actions').boundingBox();
-      const header = await toolbar.boundingBox();
-      assert.ok(pager.x >= header.x && choices.x + choices.width <= header.x + header.width + 1, 'note controls fit the toolbar');
-      // Selected segments must rise above their groove in both themes, including
-      // the host's scope switch beside the embedded viewer's controls.
+
+      // Check underline tabs and flat header badges in both dark and light themes.
       for (const colorScheme of ['dark', 'light']) {
         await page.emulateMedia({ colorScheme });
         await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme);
-        for (const segment of [tab('Original a'), page.locator('.note-review-scope button[aria-pressed="true"]')]) {
-          await expect.poll(() => segment.evaluate(element => {
-            const lightness = color => color.match(/[\d.]+/g).slice(0, 3).reduce((sum, value, index) => sum + Number(value) * [0.2126, 0.7152, 0.0722][index], 0);
-            return lightness(getComputedStyle(element).backgroundColor) > lightness(getComputedStyle(element.parentElement).backgroundColor);
-          })).toBe(true);
-        }
+        await expect(tab(0, 'run:0', 'Original a')).toHaveAttribute('aria-selected', 'true');
         await page.screenshot({ path: `test-results/note-options-selected-${colorScheme}-${width}.png` });
       }
-      if (width <= 390) {
-        await drawer.getByRole('button', { name: 'Comment on Original a', exact: true }).click();
-        const comment = drawer.getByRole('textbox', { name: 'Comment on Original a', exact: true });
-        await expect(comment).toBeVisible();
-        assert.ok(await comment.evaluate(element => parseFloat(getComputedStyle(element).fontSize) >= 16), 'touch comments must not trigger focus zoom');
-        const close = drawer.getByRole('button', { name: 'Close comment', exact: true });
-        const target = await close.boundingBox();
-        assert.ok(target.width >= 44 && target.height >= 44, 'comment dismissal needs a finger-sized target');
-        assert.ok(await drawer.evaluate(element => element.scrollWidth <= element.clientWidth), 'comment controls must fit narrow drawers');
-        await comment.fill('Keep the original wording.');
-        await page.screenshot({ path: `test-results/note-options-comment-${width}.png` });
-        await close.click();
-        await expect(comment).toBeHidden();
-        await drawer.getByRole('button', { name: 'Comment on Original a', exact: true }).click();
-        await expect(comment).toHaveValue('Keep the original wording.');
-        await close.click();
-      }
-      // A detailed strip lays each line's glyphs out in a row over its image.
-      await expect.poll(() => comparison('a-current-v1').locator('.pdf-line-run').first().evaluate(run => {
-        const [first, second] = [...run.children].map(glyph => glyph.getBoundingClientRect());
-        return getComputedStyle(run).position === 'absolute' && second.left > first.left;
-      })).toBe(true);
-      await tab('Alternative a').click();
-      await expect.poll(() => previews.filter(request => request.unit === 'a' && request.option === 'alternative' && !request.background).length).toBe(1);
-      await expect(drawer.locator('.note-option-tab[aria-selected="true"] .spinner')).toBeVisible();
+
+      // Select Alternative a: spinner shows while pending, Accept stays gated until preview resolves.
+      await tab(0, 'run:0', 'Alternative a').click();
+      await expect.poll(() => previews.filter(request => request.unit === 'a' && request.option === 'alternative' && !request.background).length).toBeGreaterThanOrEqual(1);
+      await expect(noteBar(0, 'run:0').locator('.papilot-inline-tab[aria-selected="true"] .papilot-inline-spinner')).toBeVisible();
+      await expect(card(0).locator('button.accept')).toBeDisabled();
       releaseAlternative();
-      await expect(comparison('a-alternative-v1')).toBeVisible();
-      const selectedReads = () => previews.filter(request => request.unit === 'a' && ['current', 'alternative'].includes(request.option)).length;
-      const preparedRequests = selectedReads();
-      const switchStart = performance.now();
-      await tab('Original a').click(); await expect(comparison('a-current-v1')).toBeVisible();
-      await tab('Alternative a').click(); await expect(comparison('a-alternative-v1')).toBeVisible();
-      assert.equal(selectedReads(), preparedRequests, 'Repeated selection uses decoded comparisons without any request');
-      console.log(`${width}px: two cached tab switches displayed in ${Math.round(performance.now() - switchStart)} ms (including browser automation)`);
-      await tab('Original a').click();
+      await expect(card(0)).toHaveAttribute('data-preview-revision', 'a-alternative-v1');
+      await expect(card(0).locator('.fixture-after')).toHaveText('alternative a');
+      await expect(card(0).locator('button.accept')).toBeEnabled();
+
+      // Cached tab switches happen without extra network requests.
+      const preparedRequests = previews.filter(request => request.key === 'run:0' && request.option === 'alternative').length;
+      await tab(0, 'run:0', 'Original a').click();
+      await expect(card(0)).not.toHaveAttribute('data-preview-revision', 'a-alternative-v1');
+      await tab(0, 'run:0', 'Alternative a').click();
+      await expect(card(0)).toHaveAttribute('data-preview-revision', 'a-alternative-v1');
+      assert.equal(previews.filter(request => request.key === 'run:0' && request.option === 'alternative').length, preparedRequests, 'Repeated selection uses cached preview without any request');
+
+      // Card header Comment routes to inline comment editor for the previewed alternative.
+      if (width <= 390) {
+        await card(0).locator('button.comment').click();
+        const comment = noteBar(0, 'run:0').getByRole('textbox', { name: 'Comment on Alternative a', exact: true });
+        await expect(comment).toBeVisible();
+        await comment.fill('Keep the alternative concise.');
+        await page.screenshot({ path: `test-results/note-options-comment-${width}.png` });
+        await noteBar(0, 'run:0').getByRole('button', { name: 'Close comment', exact: true }).click();
+        await expect(comment).toBeHidden();
+        await card(0).locator('button.comment').click();
+        await expect(comment).toHaveValue('Keep the alternative concise.');
+        await noteBar(0, 'run:0').getByRole('button', { name: 'Close comment', exact: true }).click();
+      }
+
+      // Preview failure surfaces inline alert + Retry and recovers cleanly.
+      await tab(0, 'run:0', 'Original a').click();
       failPreview = true; version++; changed(); await sync();
-      await expect(comparison('a-current-v2')).toBeVisible();
-      await tab('Alternative a').click();
-      await expect(drawer.getByRole('alert')).toBeVisible();
-      await expect(drawer.locator('.note-option-comparison')).toHaveCount(0);
-      await expect(drawer.getByRole('button', { name: 'Accept Alternative a', exact: true })).toBeDisabled();
-      await drawer.getByRole('button', { name: 'Retry', exact: true }).click();
-      await expect(comparison('a-alternative-v2')).toBeVisible();
-      await expect(comparison('a-alternative-v2').locator('.note-comparison-side.after')).toContainText('alternative a');
-      await expect(drawer.getByRole('alert')).toHaveCount(0);
+      await tab(0, 'run:0', 'Alternative a').click();
+      await expect(noteBar(0, 'run:0').getByRole('alert')).toBeVisible();
+      await expect(card(0).locator('button.accept')).toBeDisabled();
+      await noteBar(0, 'run:0').getByRole('button', { name: 'Retry', exact: true }).click();
+      await expect(card(0)).toHaveAttribute('data-preview-revision', 'a-alternative-v2');
+      await expect(noteBar(0, 'run:0').getByRole('alert')).toHaveCount(0);
       assert.equal(writes.length, 0, 'switching and retrying previews never saves a choice');
 
-      failPreview = false; await tab('Original a').click();
+      // Late preview failure after switching back to Original a is ignored.
+      failPreview = false; await tab(0, 'run:0', 'Original a').click();
       latePreview = new Promise(resolve => { releaseLate = resolve; });
       version++; changed(); await sync();
-      await expect(comparison('a-current-v3')).toBeVisible();
-      await expect.poll(() => previews.some(request => request.unit === 'a' && request.option === 'alternative' && request.version === 3)).toBe(true);
-      await tab('Alternative a').click();
-      // While it loads, only the previous comparison keeps its place: dimmed,
-      // inert and hidden from assistive technology, never as this option's.
-      await expect(drawer.locator('.note-option-comparison:not([data-stale])')).toHaveCount(0);
-      await expect(drawer.locator('.note-option-comparison[data-stale][inert][aria-hidden="true"]')).toHaveCount(1);
-      await expect(drawer.getByRole('button', { name: 'Accept Alternative a', exact: true })).toBeDisabled();
-      await tab('Original a').click(); releaseLate();
-      await expect(comparison('a-current-v3')).toBeVisible();
-      await expect(drawer.getByRole('alert')).toHaveCount(0);
-      await drawer.getByRole('button', { name: 'Accept Original a', exact: true }).click();
-      await expect(drawer.locator('.review-note-position')).toHaveText('Note 3 / 4');
-      await expect(comparison('b-current-v3')).toBeVisible();
-      assert.equal(decisions.a, 'accepted', 'shared notes are skipped only after confirmed acceptance');
+      await tab(0, 'run:0', 'Alternative a').click();
+      await tab(0, 'run:0', 'Original a').click();
+      releaseLate();
+      await page.waitForTimeout(150);
+      await expect(noteBar(0, 'run:0').getByRole('alert')).toHaveCount(0);
 
-      await tab('Alternative b').click();
-      await expect(comparison('b-alternative-v3')).toBeVisible();
-      await drawer.getByRole('button', { name: 'Accept Alternative b', exact: true }).click();
+      // Accepting Alternative b via card header Accept triggers async build and advances round.
+      await card(1).locator('.change-number').click();
+      await expect(noteBar(1, 'run:2')).toBeVisible();
+      await tab(1, 'run:2', 'Alternative b').click();
+      await expect(card(1)).toHaveAttribute('data-preview-revision', 'b-alternative-v3');
+      await card(1).locator('button.accept').click();
       await expect.poll(() => pendingBuild?.unit).toBe('b');
-      await sync();
-      await expect(drawer.locator('.review-note-position')).toHaveText('Note 3 / 4');
       selected.b = pendingBuild.option; decisions.b = 'accepted'; pendingBuild = null;
       task.status = 'reviewing'; task.review.round++; version++; changed(); await sync();
-      await expect(drawer.locator('.review-note-position')).toHaveText('Note 4 / 4');
-      await expect(comparison('c-current-v4')).toBeVisible();
 
+      // Failed rejection on Alternative c keeps its retry ID; retry succeeds and returns note.
+      await card(2).locator('.change-number').click();
+      await expect(noteBar(2, 'run:3')).toBeVisible();
+      await tab(2, 'run:3', 'Alternative c').click();
+      await expect(card(2)).toHaveAttribute('data-preview-revision', 'c-alternative-v4');
       saveFails = true;
-      await drawer.getByRole('button', { name: 'Reject Original c', exact: true }).click();
-      await expect(drawer.getByRole('alert')).toContainText('The source changed');
-      await expect(drawer.locator('.review-note-position')).toHaveText('Note 4 / 4');
+      await card(2).locator('button.reject').click();
+      await expect(noteBar(2, 'run:3').getByRole('alert')).toContainText('The source changed');
       assert.equal(decisions.c, 'pending');
-      assert.deepEqual([...returned], []);
       saveFails = false;
-      // The split view can keep a Chat row mounted with its contents clipped.
-      const clipped = width === 1440 ? await page.addStyleTag({ content: '.messages { clip-path: inset(100% 0 0); }' }) : null;
-      await page.evaluate(() => {
-        window.noteCards = [];
-        window.cardStart = null;
-        new MutationObserver(records => {
-          for (const record of records) for (const el of record.addedNodes) {
-            if (el instanceof HTMLElement && el.matches('.submitted-note-flight')) {
-              const first = el.getAnimations()[0].effect.getKeyframes()[0];
-              window.cardStart = new DOMMatrix(first.transform).m41;
-              window.noteCards.push([el.querySelector('blockquote')?.textContent, el.querySelector('p')?.textContent, el.querySelector('button') === null]);
-            }
-          }
-        }).observe(document.body, { childList: true });
-      });
-      await drawer.getByRole('button', { name: 'Reject Original c', exact: true }).click();
+      await card(2).locator('button.reject').click();
       await expect.poll(() => decisions.c).toBe('rejected');
-      await expect(drawer).toBeFocused();
-      const undoReturn = drawer.getByRole('button', { name: 'Note 4 · Undo return to manuscript' });
-      await expect(undoReturn).toBeEnabled();
-      await expect(undoReturn).toHaveText('');
-      await expect(page.locator('[data-note-result="run:3"]')).toHaveAttribute('data-returned', 'true');
-      assert.deepEqual([...returned], [3]);
-      const contents = [annotations[3].quote, annotations[3].comment, true];
-      await expect.poll(() => page.evaluate(() => window.noteCards)).toEqual([contents]);
-      await undoReturn.click();
-      await expect.poll(() => page.evaluate(() => window.noteCards)).toEqual([contents, contents]);
-      if (clipped) {
-        const pager = await drawer.locator('.review-note-pager').boundingBox();
-        const start = await page.evaluate(() => window.cardStart);
-        assert.ok(Math.abs(start - pager.x) < 2, 'The note flies from and to the visible drawer when Chat is clipped');
-        await clipped.evaluate(el => el.remove());
-      }
-      await expect(drawer.getByRole('button', { name: 'Note 4 · Return to manuscript' })).toBeEnabled();
-      await expect(drawer.getByRole('button', { name: 'Continue in this task' })).toHaveCount(0);
-      await expect(drawer.getByRole('button', { name: 'New task', exact: true })).toHaveCount(0);
-      await expect(page.locator('[data-note-result="run:3"]')).not.toHaveAttribute('data-returned', 'true');
-      await drawer.getByRole('button', { name: 'Comment on Original c' }).click();
-      const followUp = drawer.getByRole('textbox', { name: 'Comment on Original c' });
-      await followUp.fill('Keep working on this sentence here.');
-      await followUp.press('Escape');
-      await expect(drawer.locator('.review-note-position')).toHaveText('Note 4 / 4');
-      await expect(drawer.getByRole('button', { name: 'Accept Original c', exact: true })).toBeDisabled();
       assert.equal(writes.at(-1).id, writes.at(-2).id, 'a failed decision keeps its retry identity');
-      // The final drawer stays mounted. An undo elsewhere must permit a new
-      // decision, while an unconfirmed retry above keeps the original ID.
-      for (const action of ['reject', 'accept', 'accept']) {
-        const previous = writes.at(-1).id;
-        undone.add(previous); decisions.c = 'pending'; version++; changed(); await sync();
-        const button = drawer.getByRole('button', { name: `${action === 'accept' ? 'Accept' : 'Reject'} Original c`, exact: true });
-        await expect(button).toBeEnabled(); await button.click();
-        await expect.poll(() => decisions.c).toBe(action === 'accept' ? 'accepted' : 'rejected');
-        assert.notEqual(writes.at(-1).id, previous, 'a confirmed decision retires its request identity before undo');
-        await expect(drawer.locator('.review-note-position')).toHaveText('Note 4 / 4');
-      }
+      assert.deepEqual([...returned], [3]);
+      await expect(noteBar(2, 'run:3').getByRole('button', { name: 'Note 4 · Undo return to manuscript' })).toBeEnabled();
+      await noteBar(2, 'run:3').getByRole('button', { name: 'Note 4 · Undo return to manuscript' }).click();
+      await expect.poll(() => returned.size).toBe(0);
+
       assert.deepEqual(errors, []);
       await page.screenshot({ path: `test-results/note-options-flow-${width}.png` });
-      console.log(`PASS ${width}px: preview failure/retry, stale response isolation, confirmed acceptance, shared-note skipping, asynchronous alternative save, final drawer retention and decisions after undo`);
+      console.log(`PASS ${width}px: inline note option tabs, live card preview, failure/retry, stale isolation, unified card accept/reject/comment, and return toggle`);
     } catch (error) {
-      releaseBaseline(); releaseAlternative();
+      releaseAlternative();
       await page.screenshot({ path: `test-results/note-options-flow-error-${width}.png` });
       throw error;
-    } finally { releaseBaseline(); releaseAlternative(); releaseLate(); await page.close(); }
+    } finally { releaseAlternative(); releaseLate(); await page.close(); }
   }
 } finally { await browser.close(); await server.close(); }

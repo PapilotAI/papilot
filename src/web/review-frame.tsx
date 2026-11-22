@@ -141,6 +141,8 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
       .change-map{right:3px;width:10px}
       .side.before::after,.side.after::after{content:none}
       .change-head{padding:4px 4px 4px 12px;min-height:44px;gap:6px}
+      .change-head:has(.unit-chips){flex-wrap:wrap;row-gap:4px}
+      .change-head .unit-chips{max-width:100%}
       .change-head .change-number{margin-right:auto;font-size:13px}
       .change-head .change-where{position:absolute;width:1px;height:1px;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
       .change-head .copy-reference{display:none}
@@ -152,7 +154,6 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
       .change-head .actions:has(.unit-focus-group){flex-wrap:wrap;justify-content:center}
       .change-head .unit-focus-group{flex:1 1 auto;justify-content:center;height:40px;padding:0 4px}
       .change-head .unit-focus-sep{display:none}
-      .change-head .unit-focus-group button:is(.accept,.reject,.comment,.unstage){width:38px;height:36px;flex:0 0 auto}
       .change-head .actions>*{order:initial!important}
       .change-head .actions button{flex:1 1 auto;min-width:0;height:40px;gap:6px;padding:0 8px;font-size:13px}
       .change-head .actions .nav{display:inline-flex;flex:0 0 36px;width:36px;min-width:36px;height:40px;padding:0}
@@ -171,6 +172,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
         .change-head .actions>.nav:not(:first-child){grid-column:3}
         .change-head .position{grid-row:1;grid-column:2;justify-self:center}
         .change-head .actions button:not(.nav){grid-row:2}
+        .change-head .actions .unit-focus-group{grid-column:1 / -1;grid-row:2}
       }
       .composer{left:8px!important;right:8px!important;width:auto!important;max-width:none;top:calc(var(--papilot-review-bar-height,42px) + 8px);bottom:auto;transform:none;max-height:calc(100% - var(--papilot-review-bar-height,42px) - var(--keyboard,0px) - 16px);overflow:auto}
       #root:has(>.composer) .change-head .dock{display:none}
@@ -647,7 +649,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     const target = event.target;
     if (!(target instanceof HTMLElement) || target.isContentEditable || target.closest('input, textarea, select, [role="menu"], [role="textbox"]')) return;
     event.preventDefault();
-    if (!event.currentTarget.querySelector('.note-options[aria-busy="true"]')) document.defaultView?.dispatchEvent(new Event(UNDO_EVENT));
+    if (!event.currentTarget.querySelector('.note-options[aria-busy="true"]') && !document.querySelector('.note-options[aria-busy="true"]')) document.defaultView?.dispatchEvent(new Event(UNDO_EVENT));
   }} className={'review-viewport' + (ready ? '' : ' review-pending') + (keepPdf ? ' keeps-pdf' : '')} aria-busy={!ready} aria-hidden={!ready && keepPdf && phase === 'loading' ? true : undefined}>
     <iframe ref={frame} key={`${attempt}:${shown}:${linkedRound || ''}:${focusSequence || ''}`} title={task ? t('{title} PDF change review', { title: task.title }) : t('Uncommitted changes in the PDF')} src={task ? reviewUrl(task, linkedRound, linkedChange) : changesUrl(changesOf!)} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
     {task && ready && <ReviewNoteConnections doc={document} round={linkedRound || task.review?.round || 0}/>}

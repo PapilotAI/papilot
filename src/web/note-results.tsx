@@ -1,5 +1,5 @@
 import type { RoundDetail } from '../../engine/src/types.ts';
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import type { Annotation, NoteChange, NoteResult, NoteReturnReceipt, NoteReturnState, NoteOption, NoteOptions, Task, TimelineItem } from '../shared.ts';
 import { readNotesInstructions } from '../notes.ts';
 import { animateSubmittedNotes } from './note-flight.ts';
@@ -78,12 +78,11 @@ async function warmComparison(detail: RoundDetail, background = false) {
   return detail;
 }
 interface Links {
-  task?: Task; optionsRequest?: OptionsRequest; previewRequest?: PreviewRequest; preview: Preview; setPreview: (preview: Preview) => void;
+  task?: Task; optionsRequest?: OptionsRequest; previewRequest?: PreviewRequest; preview: Preview; setPreview: Dispatch<SetStateAction<Preview>>;
   cachedPreview: (id: string, key: string, round: number, option: string, version?: string) => RoundDetail | undefined;
   notes: NoteResult[]; error: boolean; loading: boolean; selected: string; reveal: number;
-  focus: NoteFocus | null; scope: 'all' | 'note'; setScope: (scope: 'all' | 'note') => void; reload: () => void;
+  focus: NoteFocus | null; reload: () => void;
   clearFocus: () => void; decisionSaved: (decision: Advance) => void;
-  alternativeCounts: Record<string, number>;
   focusNote: (key: string) => void;
   returns: Record<string, { pending: boolean; error?: string }>;
   returnNote?: (key: string, source: HTMLElement) => void;
@@ -101,11 +100,10 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
 }) {
   const [notes, setNotes] = useState<NoteResult[]>([]), [error, setError] = useState(false), [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(''), [focus, setFocus] = useState<NoteFocus | null>(null);
-  const [reveal, setReveal] = useState(0), [scope, setScope] = useState<'all' | 'note'>('all');
+  const [reveal, setReveal] = useState(0);
   const [preview, setPreview] = useState<Preview>(null);
-  // The decision just saved in the drawer, to move on from once confirmed.
+  // The decision just saved, to move on from once confirmed.
   const [advance, setAdvance] = useState<Advance | null>(null);
-  const [available, setAvailable] = useState<Record<string, { round: number; count: number }>>({});
   const sequence = useRef(0), actions = useRef({ read, openReview, openChat }); actions.current = { read, openReview, openChat };
   const signature = items.filter(item => item.type === 'user' && (item.meta?.notes?.length || readNotesInstructions(item.text))).map(item => item.id).join(',');
   const id = task?.id;
@@ -119,7 +117,7 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
   }, [id, signature]);
   const decisions = JSON.stringify(task?.review?.counts);
   useEffect(() => { reload(); return () => { ++sequence.current; }; }, [reload, task?.review?.round, task?.status, task?.updatedAt, decisions]);
-  useEffect(() => { setNotes([]); setAvailable({}); setScope('all'); setPreview(null); setFocus(null); setSelected(''); setError(false); setAdvance(null); }, [id]);
+  useEffect(() => { setNotes([]); setPreview(null); setFocus(null); setSelected(''); setError(false); setAdvance(null); }, [id]);
   const showNote = (key: string) => {
     setSelected(key); setReveal(value => value + 1); actions.current.openChat();
     requestAnimationFrame(() => {
@@ -129,7 +127,6 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
   };
   const showChange = (key: string, change: NoteChange) => {
     if (id) reviewDraft(id).clearReveal();
-    setScope('all');
     setPreview(previous => previous?.key === key && previous.round === change.round ? previous : null); setSelected(key); setFocus(previous => ({ key, change, sequence: (previous?.sequence || 0) + 1, historical: change.round !== task?.review?.round })); actions.current.openReview();
   };
   const focusNote = (key: string) => {
@@ -171,20 +168,14 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     const { optionsRequest } = requests.current;
     if (!optionsRequest) return;
     let cancelled = false;
-    // Every current note's small manifest says whether its change offers
-    // "Other options", so all are read, one at a time, starting where the
-    // author is. Their PDF comparisons load only when a note is opened.
+    // Warm every current note's small manifest so inline option tabs open without delay.
     const eligible = notes.filter(note => note.round === task.review?.round && note.changes.length);
-    // Moving between notes does not restart the reads.
     const start = Math.max(0, eligible.findIndex(note => note.key === here.current));
     void (async () => {
       for (const note of [...eligible.slice(start), ...eligible.slice(0, start)]) {
         if (cancelled) return;
         try {
-          const options = await readOptions(optionStateKey(task, notes, note), () => optionsRequest(id, note.key));
-          if (cancelled || !('options' in options)) continue;
-          const count = options.locked ? 0 : Math.max(0, options.options.length - 1);
-          setAvailable(previous => previous[note.key]?.round === options.round && previous[note.key]?.count === count ? previous : { ...previous, [note.key]: { round: options.round, count } });
+          await readOptions(optionStateKey(task, notes, note), () => optionsRequest(id, note.key));
         } catch { /* Opening the note reports errors and offers Retry. */ }
       }
     })();
@@ -201,9 +192,7 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
       const copy = receipt.annotation || receipt.removed;
       if (!note?.note.id || (copy && fresh && !fresh.has(copy.id))) continue;
       updates.set(note.note.id, receipt);
-      const origin = source instanceof HTMLIFrameElement
-        ? document.querySelector<HTMLElement>(`.review-note-controls[data-open="true"] .review-note-pager[data-note-key="${CSS.escape(note.key)}"]`) || source
-        : source;
+      const origin = source;
       if ((receipt.moved || receipt.returned !== note.returned) && origin?.isConnected &&
           (origin instanceof HTMLIFrameElement || (origin.dataset.noteResult ?? origin.dataset.noteKey) === note.key)) {
         flights.push({ note, source: origin, returned: receipt.returned });
@@ -225,10 +214,9 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
         const next = { ...current }; delete next[receipt.key]; return next;
       });
       const key = CSS.escape(receipt.key);
-      const drawer = document.querySelector<HTMLElement>(`.review-note-controls[data-open="true"] .review-note-pager[data-note-key="${key}"]`);
       const frame = [...document.querySelectorAll<HTMLIFrameElement>('.review-frame')].find(frame => frame.getBoundingClientRect().height);
       const row = document.querySelector<HTMLElement>(`[data-note-result="${key}"]`);
-      confirmReturns([receipt], drawer || frame || row);
+      confirmReturns([receipt], frame || row);
     };
     window.addEventListener(NOTE_RETURN_HISTORY, replayed);
     return () => window.removeEventListener(NOTE_RETURN_HISTORY, replayed);
@@ -249,9 +237,8 @@ export function NoteResultsProvider({ task, items, read, optionsRequest, preview
     background => previewRequest(id, key, round, option, retry, version, background).then(detail => warmComparison(detail, background)),
     // A second lightweight request promotes the engine's existing work. Keep
     // one decoded result and one promise for everyone waiting in this page.
-    background ? () => { void previewRequest(id, key, round, option, retry, version, false).catch(() => {}); } : undefined)), cachedPreview: (id, key, round, option, version) => comparisonCache.peek(previewKey(id, key, round, option, version)), preview: preview?.round === task?.review?.round ? preview : null, setPreview, notes, loading, error, selected, reveal, focus, scope, setScope, reload, showNote, focusNote,
-    alternativeCounts: Object.fromEntries(notes.map(note => [note.key, task?.status === 'reviewing' && note.round === task.review?.round && note.changes.every(change => change.state === 'pending') && available[note.key]?.round === note.round ? available[note.key].count : 0])),
-    clearFocus: () => { setScope('all'); setPreview(null); setFocus(null); setSelected(''); setAdvance(null); },
+    background ? () => { void previewRequest(id, key, round, option, retry, version, false).catch(() => {}); } : undefined)), cachedPreview: (id, key, round, option, version) => comparisonCache.peek(previewKey(id, key, round, option, version)), preview: preview?.round === task?.review?.round ? preview : null, setPreview, notes, loading, error, selected, reveal, focus, reload, showNote, focusNote,
+    clearFocus: () => { setPreview(null); setFocus(null); setSelected(''); setAdvance(null); },
     decisionSaved: decision => { setAdvance(decision); reload(); }, showChange, returns, confirmReturns, replayReturn, reviewOperation, returnNote: returnRequest && returnNote };
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
@@ -296,7 +283,7 @@ export function NoteLinkError() {
  *  inline alternative-option tabs that preview live on the card's own PDF strip. */
 export function InlineNoteBar({ note }: { note: NoteResult }) {
   const links = useNoteResults()!, request = links.optionsRequest, task = links.task;
-  const tabsId = useId(), container = useRef<HTMLDivElement>(null), tabs = useRef<HTMLDivElement>(null);
+  const tabsId = useId(), container = useRef<HTMLDivElement>(null);
   const storageKey = `papilot:note-choice:${task?.id}:${note.key}`;
   const optionsKey = optionStateKey(task, links.notes, note);
   const remembered = optionCache.get(optionsKey);
@@ -326,10 +313,10 @@ export function InlineNoteBar({ note }: { note: NoteResult }) {
     return () => { cancelled = true; ++previewSequence.current; };
   }, [optionsKey, retry]);
 
-  // Clear this note's live PDF preview when unmounting or switching back to the saved proposal.
+  // Clear this note's live PDF preview when unmounting or switching notes.
   useEffect(() => () => {
-    if (links.preview?.key === note.key) links.setPreview(null);
-  }, [note.key]);
+    links.setPreview(previous => previous?.key === note.key ? null : previous);
+  }, [note.key, links.setPreview]);
 
   useEffect(() => { if (editor) commentInput.current?.focus(); }, [editor]);
 
@@ -337,7 +324,7 @@ export function InlineNoteBar({ note }: { note: NoteResult }) {
     const sequence = ++previewSequence.current;
     setPreviewBusy(false);
     if (!task || !data || !links.previewRequest || selected === saved || data.locked) {
-      if (links.preview?.key === note.key) links.setPreview(null);
+      links.setPreview(previous => previous?.key === note.key ? null : previous);
       return;
     }
     const identity = { key: note.key, round: data.round, option: selected, version: data.comparisonKey, busy: applying || task.status === 'building' };
@@ -420,7 +407,7 @@ export function InlineNoteBar({ note }: { note: NoteResult }) {
     view.addEventListener('papilot:option-action', onAction);
     return () => view.removeEventListener('papilot:option-action', onAction);
   }, [note.key, previewingAlt]);
-  const showDetailRow = Boolean(multiple && (active?.reason || editing || error || (locked && previewingAlt)));
+  const showDetailRow = Boolean(multiple && (active?.reason || editing || (locked && previewingAlt)));
 
   return <div ref={container} className="papilot-inline-note note-options" data-note-key={note.key} aria-busy={applying} onClick={event => event.stopPropagation()}>
     <div className="papilot-inline-note-main">
@@ -429,7 +416,7 @@ export function InlineNoteBar({ note }: { note: NoteResult }) {
       <NoteReturnAction noteKey={note.key}/>
     </div>
     {data && multiple && <div className="papilot-inline-options">
-      <div ref={tabs} className="papilot-inline-tabs note-option-tabs" role="tablist" aria-label={t('Options for this note')} aria-busy={saving || previewBusy}>
+      <div className="papilot-inline-tabs note-option-tabs" role="tablist" aria-label={t('Options for this note')} aria-busy={saving || previewBusy}>
         {data.options.map((option, index) => {
           const tabName = label(option.id, option.label);
           return <button type="button" className="papilot-inline-tab note-option-tab" role="tab" key={option.id} id={`${tabsId}-${option.id}`} data-option={option.id} aria-selected={selected === option.id} tabIndex={selected === option.id ? 0 : -1} disabled={saving || Boolean(locked) || busy} aria-label={tabName} onClick={() => choose(option.id)} onKeyDown={event => {
@@ -441,17 +428,17 @@ export function InlineNoteBar({ note }: { note: NoteResult }) {
           }}><span className="note-option-label">{tabName}{selected === option.id && previewBusy && <span className="papilot-inline-spinner"/>}</span></button>;
         })}
       </div>
+      {(saving || previewBusy) && <span className="sr-only" role="status">{saving ? t('Saving choice…') : t('Preparing this option’s PDF diff…')}</span>}
       {showDetailRow && <div className="papilot-inline-note-detail">
         {active?.reason && <span className="papilot-inline-reason">{active.reason}</span>}
         {editing && <div className="papilot-inline-comment">
           <textarea ref={commentInput} rows={2} aria-label={t('Comment on {label}', { label: editing.option!.label })} placeholder={t('What should change here?')} value={editing.comment} readOnly={feedback.busy} onChange={event => draft.edit(editing.id, event.target.value)} onKeyDown={event => { event.stopPropagation(); if (event.key === 'Escape') setEditor(null); }}/>
           <button type="button" className="papilot-inline-close" aria-label={t('Close comment')} title={t('Close comment')} onClick={() => setEditor(null)}><Icon name="close" size={14}/></button>
         </div>}
-        {error && <span role="alert" className="papilot-inline-error">{optionError(error)} <button type="button" onClick={() => setRetry(value => value + 1)}>{t('Retry')}</button></span>}
-        {(saving || previewBusy) && <span className="sr-only" role="status">{saving ? t('Saving choice…') : t('Preparing this option’s PDF diff…')}</span>}
         {locked && !saving && previewingAlt && <span className="papilot-inline-hint">{optionLockText(locked)}</span>}
       </div>}
     </div>}
+    {error && <span role="alert" className="papilot-inline-error">{optionError(error)} <button type="button" onClick={() => setRetry(value => value + 1)}>{t('Retry')}</button></span>}
     <NoteReturnError noteKey={note.key}/>
   </div>;
 }

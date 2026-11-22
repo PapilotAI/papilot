@@ -627,12 +627,13 @@ export function renderMixed(
         if (nextSame && nextSame.rect[1] >= group.bottom) {
           bottom = Math.min(bottom, (group.bottom + nextSame.rect[1]) / 2);
         }
+        const [left, right] = next.document.page(group.page).columnBounds(group.column);
         boxes.push({
           page: group.page,
           top,
           bottom,
-          left: s.left ?? 0,
-          right: sRight ?? next.document.page(group.page).width,
+          left,
+          right,
         });
       }
     }
