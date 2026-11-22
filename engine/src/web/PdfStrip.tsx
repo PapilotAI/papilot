@@ -59,6 +59,61 @@ export function mergeUnitMarks(marks: readonly UnitMark[]): UnitMark[] {
   }
   return merged;
 }
+
+function rectsOverlap(a: Rect, b: Rect) {
+  const ox = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0]));
+  const oy = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+  if (ox <= 0 || oy <= 0) return false;
+  const areaA = Math.max(1e-3, (a[2] - a[0]) * (a[3] - a[1]));
+  const areaB = Math.max(1e-3, (b[2] - b[0]) * (b[3] - b[1]));
+  return (ox * oy) / Math.min(areaA, areaB) >= 0.7;
+}
+
+/** Drop coarse fallback marks that duplicate a more-specific sibling unit's
+ *  exact span on the same strip so per-unit states and hit-testing stay crisp. */
+export function resolveUnitMarks(marks: readonly UnitMark[]): UnitMark[] {
+  if (marks.length <= 1) return [...marks];
+  const counts = new Map<string, number>();
+  for (const mark of marks) counts.set(mark.unit, (counts.get(mark.unit) ?? 0) + 1);
+  return marks.filter((mark, idx) => {
+    const myCount = counts.get(mark.unit) ?? 1;
+    for (let j = 0; j < marks.length; j++) {
+      if (j === idx || marks[j].unit === mark.unit) continue;
+      if ((counts.get(marks[j].unit) ?? 1) < myCount && rectsOverlap(mark.rect, marks[j].rect)) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+/** When two equal-specificity units still share an identical spatial rect
+ *  (e.g. two fallback math edits on one line), render only the single highest-
+ *  priority unit on that rect so highlights and strikes never double-stack. */
+function dedupeOverlappingMarks(
+  marks: readonly UnitMark[],
+  activeUnit?: string | null,
+  hoveredUnit?: string | null,
+  unitStates?: Record<string, Decision>,
+): UnitMark[] {
+  if (marks.length <= 1) return [...marks];
+  const rank = (unit: string) => {
+    if (unit === activeUnit) return 3;
+    if (unit === hoveredUnit) return 2;
+    const s = unitStates?.[unit] ?? "pending";
+    return s !== "pending" ? 1 : 0;
+  };
+  const chosen: UnitMark[] = [];
+  for (const mark of marks) {
+    const hit = chosen.findIndex((item) => item.unit !== mark.unit && rectsOverlap(item.rect, mark.rect));
+    if (hit < 0) {
+      chosen.push(mark);
+    } else if (rank(mark.unit) > rank(chosen[hit].unit)) {
+      chosen[hit] = mark;
+    }
+  }
+  return chosen;
+}
 let context: CanvasRenderingContext2D | null | undefined;
 const widths = new Map<string, number>();
 // Advance of `text` in the overlay font, in ems; marks that take no room give 0.
@@ -329,7 +384,7 @@ export const PdfStrip = memo(function PdfStrip({
     if (!interactive) setLocalHover(false);
   }, [interactive]);
   const mergedMarks = useMemo(
-    () => (interactive && image.marks?.length ? mergeUnitMarks(image.marks) : []),
+    () => (interactive && image.marks?.length ? resolveUnitMarks(mergeUnitMarks(image.marks)) : []),
     [interactive, image.marks],
   );
   const selectableMarks = useMemo(
@@ -338,6 +393,10 @@ export const PdfStrip = memo(function PdfStrip({
         ? mergedMarks.filter((mark) => selectableUnits.has(mark.unit))
         : [],
     [interactive, mergedMarks, selectableUnits],
+  );
+  const visibleMarks = useMemo(
+    () => dedupeOverlappingMarks(mergedMarks, activeUnit, hoveredUnit, unitStates),
+    [mergedMarks, activeUnit, hoveredUnit, unitStates],
   );
   const hasPartialDecision = Boolean(
     interactive &&
@@ -442,7 +501,7 @@ export const PdfStrip = memo(function PdfStrip({
       </svg>}
       {showUnitOverlay && (
         <svg className="pdf-unit-marks" viewBox={`0 0 ${image.width} ${image.height}`} aria-hidden="true">
-          {mergedMarks.map((mark, i) => {
+          {visibleMarks.map((mark, i) => {
             const [x, y, right, bottom] = mark.rect,
               w = Math.max(right - x, 0.5),
               h = Math.max(bottom - y, 0.5),
@@ -476,27 +535,45 @@ export const PdfStrip = memo(function PdfStrip({
             }
             const isBeforeSide = mark.kind === "removed" || (mark.kind === "moved" && side === "before");
             const isAfterSide = mark.kind === "added" || (mark.kind === "moved" && side === "after");
-            const isDecidedOut =
-              (state === "accepted" && isBeforeSide) ||
-              (state === "rejected" && isAfterSide);
-            const isDecidedKept =
-              (state === "accepted" && isAfterSide) ||
-              (state === "rejected" && isBeforeSide);
-            const color = state === "commented" ? "#0b8af0" : baseColor;
+            const isAcceptedBefore = state === "accepted" && isBeforeSide;
+            const isAcceptedAfter = state === "accepted" && isAfterSide;
+            const isRejectedBefore = state === "rejected" && isBeforeSide;
+            const isRejectedAfter = state === "rejected" && isAfterSide;
+            const isCommented = state === "commented";
+            const color = isAcceptedBefore
+              ? "#737373"
+              : isAcceptedAfter
+                ? "#14a35a"
+                : isRejectedBefore
+                  ? "#2563c9"
+                  : isRejectedAfter
+                    ? "#c72938"
+                    : isCommented
+                      ? "#0b8af0"
+                      : baseColor;
             const fillOpacity = isActive
-              ? 0.24
+              ? isAcceptedBefore
+                ? 0.14
+                : 0.24
               : isHovered
-                ? 0.22
-                : isDecidedOut
-                  ? 0.05
-                  : isDecidedKept
-                    ? 0.10
-                    : activeUnit
-                      ? 0.09
-                      : 0.18;
-            const strike =
-              (mark.kind === "removed" && !isDecidedKept) ||
-              (state === "rejected" && isAfterSide);
+                ? isAcceptedBefore
+                  ? 0.12
+                  : 0.21
+                : isAcceptedBefore
+                  ? 0.06
+                  : isAcceptedAfter
+                    ? 0.16
+                    : isRejectedBefore
+                      ? 0.13
+                      : isRejectedAfter
+                        ? 0.09
+                        : isCommented
+                          ? 0.16
+                          : activeUnit
+                            ? 0.13
+                            : 0.18;
+            const strike = (mark.kind === "removed" && !isRejectedBefore) || isRejectedAfter;
+            const underline = isAcceptedAfter || isRejectedBefore || isCommented;
             return (
               <g
                 key={i}
@@ -510,20 +587,38 @@ export const PdfStrip = memo(function PdfStrip({
                   y={isActive || isHovered ? y - 0.8 : y}
                   width={isActive || isHovered ? w + 2 : w}
                   height={isActive || isHovered ? h + 1.6 : h}
-                  rx={isActive || isHovered ? "1.5" : undefined}
+                  rx={isActive || isHovered ? "1.5" : "1"}
                   fill={color}
                   fillOpacity={fillOpacity}
-                  stroke={isActive || isHovered ? color : isDecidedKept ? color : undefined}
-                  strokeWidth={isActive ? "1.2" : isHovered ? "0.95" : isDecidedKept ? "0.6" : undefined}
-                  strokeOpacity={isActive ? ".95" : isHovered ? ".75" : isDecidedKept ? ".45" : undefined}
-                  strokeDasharray={isDecidedKept && !isActive ? "2 1.5" : undefined}
+                  stroke={isActive || isHovered ? color : undefined}
+                  strokeWidth={isActive ? "1.25" : isHovered ? "0.95" : undefined}
+                  strokeOpacity={isActive ? ".95" : isHovered ? ".75" : undefined}
                 />
+                {underline && (
+                  <path
+                    d={`M ${x} ${bottom + 0.6} H ${right}`}
+                    stroke={color}
+                    strokeWidth={isCommented ? "1.15" : "1.25"}
+                    strokeOpacity={isActive ? ".95" : ".85"}
+                    strokeDasharray={isCommented ? "2.2 1.5" : undefined}
+                  />
+                )}
                 {strike && (
                   <path
                     d={`M ${x} ${y + h * 0.55} H ${right}`}
                     stroke={color}
-                    strokeWidth=".45"
-                    strokeOpacity={isDecidedOut ? ".35" : activeUnit && !isActive && !isHovered ? ".45" : ".9"}
+                    strokeWidth={isRejectedAfter ? ".8" : isAcceptedBefore ? ".55" : ".5"}
+                    strokeOpacity={
+                      isRejectedAfter
+                        ? ".85"
+                        : isAcceptedBefore
+                          ? ".45"
+                          : isCommented
+                            ? ".35"
+                            : activeUnit && !isActive && !isHovered
+                              ? ".55"
+                              : ".9"
+                    }
                   />
                 )}
               </g>

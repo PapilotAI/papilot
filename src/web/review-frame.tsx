@@ -102,8 +102,8 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .change-head .actions>.nav:first-child{order:1}.change-head .change-number{order:2}.change-head .actions>.nav:not(:first-child){order:3}
     .change-head .change-number{flex:0 0 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
     .change-head .change-where{order:4;flex:1 1 0;min-width:0;margin-left:4px}
-    .change-head .change-kind,.change-head .badge,.change-head .change-multi-count{order:5;min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
-    .change-head .change-multi-count{flex:none}
+    .change-head .change-kind,.change-head .badge,.change-head .unit-chips{order:5;min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+    .change-head .unit-chips{flex:none;overflow-x:auto}
     .change-head .actions>*{order:6}
     .change-head .link{order:7}
     .change-head .unit-focus-group button:is(.accept,.reject,.comment,.unstage){width:28px;height:28px}
@@ -113,8 +113,8 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .change-head .copy-reference{width:28px;padding:0;justify-content:center;font-size:0}
     .change-head .copy-reference::before{content:"";width:16px;height:16px;background:currentColor;-webkit-mask:var(--icon-copy) center/contain no-repeat;mask:var(--icon-copy) center/contain no-repeat}
     @container change-tools (max-width:520px){
-      .change-head:has(.unit-focus-group){flex-wrap:wrap;row-gap:4px;padding-block:4px}
-      .change-head:has(.unit-focus-group) .change-kind{display:none}
+      .change-head:has(.unit-chips){flex-wrap:wrap;row-gap:4px;padding-block:4px}
+      .change-head:has(.unit-chips) .change-kind{display:none}
     }
     @container change-tools (max-width:360px){
       .change-number-full{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
@@ -151,7 +151,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
       .change-head .actions{display:flex;width:100%;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:4px;padding:4px;border-radius:12px;background:var(--raised);box-shadow:var(--shadow-sm)}
       .change-head .actions:has(.unit-focus-group){flex-wrap:wrap;justify-content:center}
       .change-head .unit-focus-group{flex:1 1 auto;justify-content:center;height:40px;padding:0 4px}
-      .change-head .unit-focus-step{width:32px;height:36px}
+      .change-head .unit-focus-sep{display:none}
       .change-head .unit-focus-group button:is(.accept,.reject,.comment,.unstage){width:38px;height:36px;flex:0 0 auto}
       .change-head .actions>*{order:initial!important}
       .change-head .actions button{flex:1 1 auto;min-width:0;height:40px;gap:6px;padding:0 8px;font-size:13px}

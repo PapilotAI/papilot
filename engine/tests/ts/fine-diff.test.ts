@@ -4,7 +4,7 @@ import { applyUnits, diffUnits, revertUnits } from "../../src/core/changes.ts";
 import { merge3Async } from "../../src/core/git.ts";
 import { textEdits, textTokens } from "../../src/core/text-edits.ts";
 import { wordDiff } from "../../src/web/model.ts";
-import { mergeUnitMarks } from "../../src/web/PdfStrip.tsx";
+import { mergeUnitMarks, resolveUnitMarks } from "../../src/web/PdfStrip.tsx";
 let f: Fixture;
 beforeEach(() => {
   f = new Fixture();
@@ -388,5 +388,18 @@ it("merges adjacent same-line marks per unit without merging across different un
     { unit: "u1", kind: "added", rect: [10, 9, 80, 22] },
     { unit: "u1", kind: "added", rect: [10, 28, 50, 40] },
     { unit: "u2", kind: "added", rect: [84, 10, 120, 22] },
+  ]);
+});
+
+it("drops coarse fallback marks that duplicate a more-specific sibling unit's span", () => {
+  const resolved = resolveUnitMarks([
+    // Fallback math unit inherited both its own mark and sibling u1's exact span.
+    { unit: "math", kind: "removed", rect: [10, 10, 50, 22] },
+    { unit: "math", kind: "removed", rect: [80, 10, 110, 22] },
+    { unit: "u1", kind: "removed", rect: [10, 10, 50, 22] },
+  ]);
+  expect(resolved).toEqual([
+    { unit: "math", kind: "removed", rect: [80, 10, 110, 22] },
+    { unit: "u1", kind: "removed", rect: [10, 10, 50, 22] },
   ]);
 });

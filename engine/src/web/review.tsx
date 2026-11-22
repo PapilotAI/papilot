@@ -141,6 +141,47 @@ function jobText(job: PageState["job"]) {
     : `${t(PHASE[job?.phase ?? ""] || "Starting")}…`;
 }
 
+function unitSnippet(unit: Unit | undefined) {
+  if (!unit) return "";
+  const clean = (text: string) => text.replace(/\s+/g, " ").trim();
+  const clip = (text: string, max = 28) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+  const oldText = clean(unit.old_text),
+    newText = clean(unit.new_text);
+  if (oldText && newText) return `${clip(oldText)} → ${clip(newText)}`;
+  if (newText) return `+ ${clip(newText, 40)}`;
+  if (oldText) return `− ${clip(oldText, 40)}`;
+  return "";
+}
+
+function unitStateGlyph(state: Decision | "mixed") {
+  if (state === "accepted") {
+    return (
+      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+        <path d="M1.8 5.3 4 7.5 8.2 2.6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (state === "rejected") {
+    return (
+      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+        <path d="M2.5 2.5 7.5 7.5M7.5 2.5 2.5 7.5" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (state === "commented") {
+    return (
+      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+        <circle cx="5" cy="5" r="2.7" fill="currentColor" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+      <circle cx="5" cy="5" r="2.8" fill="none" stroke="currentColor" strokeWidth="1.45" />
+    </svg>
+  );
+}
+
 function ReviewProgress({ value, total, label }: { value: number; total: number; label: string }) {
   if (total === 0) return null;
   return (
@@ -1496,32 +1537,10 @@ export function ReviewApp({
                 aria-label={t("Review the current change")}
                 onClick={(event) => event.stopPropagation()}
               >
-                <button
-                  type="button"
-                  className="unit-focus-step"
-                  aria-label={`${t("Previous change")} (${Math.max(1, unitPos)}/${meta.subUnits.length})`}
-                  title={t("Previous change")}
-                  disabled={unitPos <= 0}
-                  onClick={() => setSelectedUnit({ stop: index, unit: meta.subUnits[unitPos - 1] })}
-                >
-                  ‹
-                </button>
-                <span className="unit-focus-pos">
-                  {unitPos + 1} / {meta.subUnits.length}
-                </span>
-                <button
-                  type="button"
-                  className="unit-focus-step"
-                  aria-label={`${t("Next change")} (${Math.min(meta.subUnits.length, unitPos + 2)}/${meta.subUnits.length})`}
-                  title={t("Next change")}
-                  disabled={unitPos >= meta.subUnits.length - 1}
-                  onClick={() => setSelectedUnit({ stop: index, unit: meta.subUnits[unitPos + 1] })}
-                >
-                  ›
-                </button>
                 <span className="unit-focus-sep" aria-hidden="true" />
                 {unitStatus !== "pending" && (
                   <span className="unit-focus-state" data-state={unitStatus}>
+                    {unitStateGlyph(unitStatus)}
                     {stateLabel(unitStatus)}
                   </span>
                 )}
@@ -1788,7 +1807,6 @@ export function ReviewApp({
       multiUnit = Boolean(meta && !block.waiting && !focused && !resolved && (!reviewed || expanded)),
       selectableSet = multiUnit ? meta!.selectableSet : undefined,
       activeUnit = multiUnit ? focusedUnitAt(index) : null,
-      decidedInBlock = multiUnit ? subUnits.filter((id) => decisions[id] !== "pending").length : 0,
       blockHoveredUnit = multiUnit && hoveredUnit?.stop === index ? hoveredUnit.unit : null,
       blockUnitStatesMap = multiUnit ? blockUnitStates.get(index) : undefined;
     const images = (items: Strip[], side: "before" | "after") => (
@@ -1866,12 +1884,47 @@ export function ReviewApp({
           >
             {shortLocation(known, t)}
           </span>
-          {multiUnit && current !== index && (
-            <span className="change-multi-count">
-              {decidedInBlock > 0
-                ? `${decidedInBlock}/${subUnits.length}`
-                : t("{n} edits", { n: subUnits.length })}
-            </span>
+          {multiUnit && (
+            <div
+              className="unit-chips"
+              role="group"
+              aria-label={t("{n} edits", { n: subUnits.length })}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {subUnits.map((id, pos) => {
+                const uState = decisions[id] ?? "pending",
+                  isActive = current === index && id === activeUnit,
+                  snippet = unitSnippet(units.get(id)),
+                  tip = [snippet, stateLabel(uState)].filter(Boolean).join(" · ");
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className="unit-chip"
+                    data-unit={id}
+                    data-state={uState}
+                    data-active={isActive ? "true" : undefined}
+                    aria-pressed={isActive}
+                    title={tip}
+                    onPointerEnter={() => handleHoverUnit(index, id)}
+                    onPointerLeave={() => handleHoverUnit(index, null)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (index !== current) {
+                        reached.current = "pick";
+                        select(index, false);
+                      }
+                      setSelectedUnit({ stop: index, unit: id });
+                    }}
+                  >
+                    <span className="unit-chip-icon" aria-hidden="true">
+                      {unitStateGlyph(uState)}
+                    </span>
+                    <span className="unit-chip-label">{pos + 1}</span>
+                  </button>
+                );
+              })}
+            </div>
           )}
           {actionBar(index)}
           {kindLabel && !block.waiting && <span className="change-kind" title={kindLabel}>{kindLabel}</span>}

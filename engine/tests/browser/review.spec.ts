@@ -1325,34 +1325,49 @@ test("clicking individual highlights in a multi-unit card lets you accept one ed
   await page.goto("/?task=unit-pick");
   const card = page.locator('.change[data-stop="0"]');
   await expect(card).toBeVisible();
-  // Explicit multi-edit mode: no manual click needed, and only ONE Accept/Reject
-  // control layer inside the card (bound directly to 1 / 2).
+  // Explicit multi-edit mode: unified state chips in header (zero duplicate stepper)
+  // and only ONE Accept/Reject control layer inside the card.
   const group = card.locator(".change-head .unit-focus-group");
+  const chips = card.locator(".change-head .unit-chips .unit-chip");
   await expect(group).toBeVisible();
-  await expect(group.locator(".unit-focus-pos")).toHaveText("1 / 2");
+  await expect(chips).toHaveCount(2);
+  await expect(chips.nth(0)).toHaveAttribute("data-unit", "u1");
+  await expect(chips.nth(0)).toHaveAttribute("data-state", "pending");
+  await expect(chips.nth(0)).toHaveAttribute("data-active", "true");
+  await expect(chips.nth(1)).toHaveAttribute("data-unit", "u2");
+  await expect(chips.nth(1)).toHaveAttribute("data-state", "pending");
+  await expect(chips.nth(1)).not.toHaveAttribute("data-active", "true");
   await expect(card.locator('.pdf-unit-marks g[data-unit="u1"][data-active="true"]')).toHaveCount(2);
   await expect(card.locator(".block-batch-actions")).toHaveCount(0);
   await expect(card.locator(".change-head").getByRole("button", { name: "Accept", exact: true })).toHaveCount(1);
   await page.screenshot({ path: ".cache/plan-b-explicit-multi.png" });
 
-  // Clicking u2 directly on the PDF jumps focus to 2/2; stepping back returns to 1/2.
+  // Clicking u2 directly on the PDF jumps focus to chip 2; clicking chip 1 returns focus to u1.
   const afterStrip = card.locator(".side.after .pdf-strip");
   const box = (await afterStrip.boundingBox())!;
   await page.mouse.move(box.x + (185 / 500) * box.width, box.y + (19 / 40) * box.height);
   await expect(afterStrip).toHaveAttribute("data-unit-hover", "true");
   await page.mouse.click(box.x + (185 / 500) * box.width, box.y + (19 / 40) * box.height);
-  await expect(group.locator(".unit-focus-pos")).toHaveText("2 / 2");
-  await group.locator(".unit-focus-step").first().click();
-  await expect(group.locator(".unit-focus-pos")).toHaveText("1 / 2");
+  await expect(chips.nth(1)).toHaveAttribute("data-active", "true");
+  await chips.nth(0).click();
+  await expect(chips.nth(0)).toHaveAttribute("data-active", "true");
 
-  // Accept ONLY u1 inside the 1/2 pill; auto-advances to 2/2.
+  // Accept ONLY u1; chip 1 turns accepted and focus advances to chip 2.
   await group.getByRole("button", { name: "Accept", exact: true }).click();
   await expect.poll(() => decideCalls.length).toBe(1);
   expect(decideCalls[0]).toEqual({ action: "accept", changes: ["u1"] });
   expect(mixedCalls).toHaveLength(0);
-  await expect(group.locator(".unit-focus-pos")).toHaveText("2 / 2");
+  await expect(chips.nth(0)).toHaveAttribute("data-state", "accepted");
+  await expect(chips.nth(1)).toHaveAttribute("data-state", "pending");
+  await expect(chips.nth(1)).toHaveAttribute("data-active", "true");
   await expect(card.locator('.pdf-unit-marks g[data-unit="u1"][data-state="accepted"]')).toHaveCount(2);
   await expect(card.locator('.pdf-unit-marks g[data-unit="u2"][data-active="true"]')).toHaveCount(2);
+
+  // Clicking back on accepted chip 1 shows its decided state pill in the header.
+  await chips.nth(0).click();
+  await expect(chips.nth(0)).toHaveAttribute("data-active", "true");
+  await expect(group.locator('.unit-focus-state[data-state="accepted"]')).toBeVisible();
+  await chips.nth(1).click();
 
   // Reject ONLY u2; block finishes with mixed decisions and triggers ONE mixed compile.
   await group.getByRole("button", { name: "Reject", exact: true }).click();
@@ -1367,10 +1382,12 @@ test("clicking individual highlights in a multi-unit card lets you accept one ed
   await expect(card.locator(".side.before")).toBeHidden();
   await expect(card.locator(".side.after:not(.mixed-resolved)")).toBeHidden();
 
-  // Undo restores the Before/After strips immediately.
+  // Undo restores the Before/After strips and chips immediately.
   const undoKey = process.platform === "darwin" ? "Meta+z" : "Control+z";
   await page.keyboard.press(undoKey);
   await expect(card).not.toHaveAttribute("data-resolved", "mixed");
+  await expect(chips.nth(0)).toHaveAttribute("data-state", "accepted");
+  await expect(chips.nth(1)).toHaveAttribute("data-state", "pending");
   await expect(card.locator(".side.before")).toBeVisible();
   await expect(card.locator(".side.after:not(.mixed-resolved)")).toBeVisible();
 });

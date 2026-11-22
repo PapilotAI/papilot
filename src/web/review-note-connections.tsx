@@ -2,19 +2,56 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { NoteResult } from '../shared.ts';
 import { InlineNoteBar, useNoteResults } from './note-results.tsx';
-import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
+
+type ChipSlot = {
+  unit: string;
+  slot: HTMLElement;
+  notes: NoteResult[];
+};
 
 type Place = {
   element: HTMLElement;
-  slot: HTMLElement;
+  slot: HTMLElement | null;
   activeNoteSlot: HTMLElement;
+  chipSlots: ChipSlot[];
+  unlinkedNotes: NoteResult[];
   notes: NoteResult[];
   activeUnit: string | null;
+  cardState: string;
   isCurrent: boolean;
   stop: number;
   round: number;
 };
+
+function StateGlyph({ state }: { state: string }) {
+  if (state === 'accepted') {
+    return (
+      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+        <path d="M1.8 5.3 4 7.5 8.2 2.6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (state === 'rejected') {
+    return (
+      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+        <path d="M2.5 2.5 7.5 7.5M7.5 2.5 2.5 7.5" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (state === 'commented') {
+    return (
+      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+        <circle cx="5" cy="5" r="2.7" fill="currentColor" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+      <circle cx="5" cy="5" r="2.8" fill="none" stroke="currentColor" strokeWidth="1.45" />
+    </svg>
+  );
+}
 
 export function ReviewNoteConnections({ doc, round }: { doc: Document | null; round: number }) {
   const links = useNoteResults(), latest = useRef(links); latest.current = links;
@@ -24,12 +61,23 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
   useEffect(() => {
     if (!doc || !links) return;
     const slots = new Map<HTMLElement, { slot: HTMLElement; activeNoteSlot: HTMLElement }>();
+    const chipHosts = new Map<HTMLElement, { slot: HTMLElement; origTitle: string }>();
+    const releaseChip = (chip: HTMLElement) => {
+      const hosted = chipHosts.get(chip);
+      if (!hosted) return;
+      hosted.slot.remove();
+      delete chip.dataset.papilotAnnotated;
+      chip.title = hosted.origTitle;
+      chipHosts.delete(chip);
+    };
     const scan = () => {
       const shown = Number(doc.documentElement.dataset.papilotRound) || round;
       const next: Place[] = [];
+      const activeChips = new Set<HTMLElement>();
       for (const element of doc.querySelectorAll<HTMLElement>('.change[data-stop]')) {
         const stop = Number(element.dataset.stop), units = element.dataset.units?.split(' ');
         const activeUnit = element.dataset.activeUnit || null;
+        const cardState = element.dataset.state || 'pending';
         const isCurrent = element.classList.contains('current');
         const notes = links.notes.filter(note =>
           note.changes.some(change => change.round === shown && (units ? change.units.some(id => units.includes(id)) : change.stop === stop)),
@@ -42,12 +90,58 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
           slot.className = 'papilot-note-links'; activeNoteSlot.className = 'papilot-unit-notes';
           pair = { slot, activeNoteSlot }; slots.set(element, pair);
         }
-        if (pair.slot.parentElement !== header) header.append(pair.slot);
+        // On multi-edit cards, annotate the engine's unified .unit-chip buttons
+        // directly so there is strictly ONE selector in the header and zero hidden edits.
+        const chips = [...header.querySelectorAll<HTMLElement>('.unit-chip[data-unit]')];
+        const chipSlots: ChipSlot[] = [];
+        const coveredNoteKeys = new Set<string>();
+        for (const chip of chips) {
+          const unitId = chip.dataset.unit!;
+          const matching = notes.filter(note =>
+            note.changes.some(change => change.round === shown && change.units.includes(unitId)),
+          );
+          if (!matching.length) continue;
+          activeChips.add(chip);
+          let hosted = chipHosts.get(chip);
+          if (!hosted) {
+            const labelSlot = doc.createElement('span');
+            labelSlot.className = 'papilot-chip-note';
+            hosted = { slot: labelSlot, origTitle: chip.title };
+            chipHosts.set(chip, hosted);
+          }
+          if (hosted.slot.parentElement !== chip) chip.append(hosted.slot);
+          chip.dataset.papilotAnnotated = 'true';
+          const noteTip = matching.map(n => `#${n.index + 1}: ${n.note.comment}`).join(' · ');
+          chip.title = noteTip;
+          for (const n of matching) coveredNoteKeys.add(n.key);
+          chipSlots.push({ unit: unitId, slot: hosted.slot, notes: matching });
+        }
+        const unlinkedNotes = notes.filter(note => !coveredNoteKeys.has(note.key));
+        if (unlinkedNotes.length) {
+          if (pair.slot.parentElement !== header) header.append(pair.slot);
+        } else if (pair.slot.parentElement) {
+          pair.slot.remove();
+        }
         if (pair.activeNoteSlot.parentElement !== element || pair.activeNoteSlot.previousElementSibling !== header) {
           header.after(pair.activeNoteSlot);
         }
         element.dataset.papilotHasNotes = 'true';
-        next.push({ element, ...pair, notes, activeUnit, isCurrent, stop, round: shown });
+        next.push({
+          element,
+          slot: unlinkedNotes.length ? pair.slot : null,
+          activeNoteSlot: pair.activeNoteSlot,
+          chipSlots,
+          unlinkedNotes,
+          notes,
+          activeUnit,
+          cardState,
+          isCurrent,
+          stop,
+          round: shown,
+        });
+      }
+      for (const chip of [...chipHosts.keys()]) {
+        if (!activeChips.has(chip) || !chip.isConnected) releaseChip(chip);
       }
       for (const [element, pair] of slots) {
         if (!next.some(place => place.element === element)) {
@@ -62,7 +156,17 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
           place.element === next[i].element &&
           place.round === next[i].round &&
           place.activeUnit === next[i].activeUnit &&
+          place.cardState === next[i].cardState &&
           place.isCurrent === next[i].isCurrent &&
+          place.chipSlots.length === next[i].chipSlots.length &&
+          place.chipSlots.every((c, ci) =>
+            c.slot === next[i].chipSlots[ci].slot &&
+            c.unit === next[i].chipSlots[ci].unit &&
+            c.notes.length === next[i].chipSlots[ci].notes.length &&
+            c.notes.every((n, ni) => n === next[i].chipSlots[ci].notes[ni]),
+          ) &&
+          place.unlinkedNotes.length === next[i].unlinkedNotes.length &&
+          place.unlinkedNotes.every((n, ni) => n === next[i].unlinkedNotes[ni]) &&
           place.notes.length === next[i].notes.length &&
           place.notes.every((note, n) => note === next[i].notes[n]),
         )
@@ -72,11 +176,12 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
     };
     scan();
     const observer = new MutationObserver(scan);
-    observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-active-unit', 'class'] });
+    observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-active-unit', 'data-state', 'class'] });
     doc.defaultView?.addEventListener('papilot:round', scan);
     return () => {
       observer.disconnect();
       doc.defaultView?.removeEventListener('papilot:round', scan);
+      for (const chip of [...chipHosts.keys()]) releaseChip(chip);
       slots.forEach((pair, element) => { delete element.dataset.papilotHasNotes; pair.slot.remove(); pair.activeNoteSlot.remove(); });
     };
   }, [doc, links?.notes, round]);
@@ -135,15 +240,24 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
 
   return <>
     {createPortal(<style>{`
-      /* Cards with linked annotations use the annotation switcher as the single
-         selector in the header, hiding the redundant ‹ 1 / N › counter. */
-      .change[data-papilot-has-notes="true"] :is(.unit-focus-step,.unit-focus-pos,.unit-focus-sep){display:none}
-      .papilot-note-links{display:inline-flex;align-items:center;flex-wrap:nowrap;gap:2px;order:5;flex-shrink:0;padding:0 2px;background:transparent}
-      .papilot-note-links>svg{flex:none;margin-right:2px;color:var(--text-3)}
-      .papilot-note-links>span{display:flex;gap:2px;min-width:0;max-width:128px;overflow-x:auto;scrollbar-width:thin}
-      .papilot-note-links button{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:22px;height:22px;padding:0 6px;border:0;border-radius:4px;background:transparent;color:var(--text-2);font:500 11.5px/1 var(--sans);font-variant-numeric:tabular-nums;cursor:pointer;transition:background-color .15s,color .15s}
-      .papilot-note-links button:hover{color:var(--text);background:color-mix(in srgb,var(--text) 7%,transparent)}
-      .papilot-note-links button[data-unit-match=true]{color:var(--primary);background:color-mix(in srgb,var(--primary) 14%,transparent);font-weight:600}
+      /* On annotated multi-edit cards, replace bare edit numbers with #note labels
+         on annotated chips and show clean state glyphs on unannotated companion edits
+         so bare digits are never mistaken for annotation numbers. */
+      .change[data-papilot-has-notes="true"] .unit-chip .unit-chip-label{display:none}
+      .unit-chip[data-state="rejected"] .papilot-chip-note{text-decoration:line-through;text-decoration-thickness:1px}
+      .papilot-note-links{display:inline-flex;align-items:center;flex-wrap:nowrap;gap:3px;order:5;flex-shrink:0;padding:1px 0;background:transparent}
+      .papilot-note-links>span{display:flex;gap:3px;min-width:0;max-width:140px;overflow-x:auto;scrollbar-width:none}
+      .papilot-note-links>span::-webkit-scrollbar{display:none}
+      .papilot-note-links button{display:inline-flex;align-items:center;justify-content:center;gap:3px;flex:none;min-width:22px;height:22px;padding:0 6px;border:0;border-radius:5px;background:color-mix(in srgb,var(--text) 6%,transparent);color:var(--text-2);font:500 11.5px/1 var(--sans);font-variant-numeric:tabular-nums;cursor:pointer;transition:background-color .15s,color .15s,box-shadow .15s}
+      .papilot-note-links button:hover{color:var(--text);background:color-mix(in srgb,var(--text) 11%,transparent)}
+      .papilot-note-links button[data-state="pending"][data-unit-match="true"]{color:var(--primary);background:color-mix(in srgb,var(--primary) 14%,transparent);box-shadow:inset 0 0 0 1.5px var(--primary);font-weight:600}
+      .papilot-note-links button[data-state="accepted"]{color:var(--green);background:color-mix(in srgb,var(--green) 14%,transparent)}
+      .papilot-note-links button[data-state="accepted"][data-unit-match="true"]{box-shadow:inset 0 0 0 1.5px var(--green);font-weight:600}
+      .papilot-note-links button[data-state="rejected"]{color:var(--red);background:color-mix(in srgb,var(--red) 14%,transparent)}
+      .papilot-note-links button[data-state="rejected"] .papilot-note-num{text-decoration:line-through;text-decoration-thickness:1px}
+      .papilot-note-links button[data-state="rejected"][data-unit-match="true"]{box-shadow:inset 0 0 0 1.5px var(--red);font-weight:600}
+      .papilot-note-links button[data-state="commented"]{color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+      .papilot-note-links button[data-state="commented"][data-unit-match="true"]{box-shadow:inset 0 0 0 1.5px var(--accent);font-weight:600}
       .papilot-note-links button:focus-visible{outline:2px solid var(--primary);outline-offset:-1px}
       .papilot-unit-notes{display:flex;flex-direction:column;gap:6px;padding:7px 12px 6px;border-bottom:1px solid var(--line);background:var(--bg-subtle,var(--bg));font:12px/1.45 var(--sans);color:var(--text-2)}
       :root[data-papilot-reader] .change.inline .papilot-unit-notes{padding-right:22px}
@@ -177,37 +291,39 @@ export function ReviewNoteConnections({ doc, round }: { doc: Document | null; ro
       .papilot-inline-spinner{display:inline-block;width:10px;height:10px;border:1.5px solid currentColor;border-top-color:transparent;border-radius:50%;animation:papilot-spin .6s linear infinite}
       @keyframes papilot-spin{to{transform:rotate(360deg)}}
       @media(pointer:coarse){
-        .papilot-note-links button{min-height:32px;min-width:28px}
+        .papilot-note-links button{min-height:30px;min-width:28px;padding:0 8px}
         .papilot-inline-tab{height:30px;padding:0 10px;font-size:12px}
         .note-return-toggle,.papilot-inline-close{width:32px;height:32px}
       }
     `}</style>, doc.head)}
-    {places.map(place => {
-      const unitMatch = (note: NoteResult) => Boolean(
-        place.isCurrent && (
-          place.activeUnit
-            ? note.changes.some(change => change.round === place.round && change.units.includes(place.activeUnit!))
-            : true
+    {places.flatMap(place =>
+      place.chipSlots.map(chip =>
+        createPortal(
+          <>{chip.notes.map(n => `#${n.index + 1}`).join(',')}</>,
+          chip.slot,
+          `chip:${place.round}:${place.stop}:${chip.unit}`,
         ),
-      );
+      ),
+    )}
+    {places.map(place => {
+      if (!place.slot || !place.unlinkedNotes.length) return null;
       return createPortal(
-        <>
-          <Icon name="notes" size={12}/>
-          <span>
-            {place.notes.map(note => (
-              <button
-                key={note.key}
-                type="button"
-                title={note.note.comment}
-                data-unit-match={unitMatch(note) ? 'true' : undefined}
-                aria-label={t('Show note {n}: {comment}', { n: note.index + 1, comment: note.note.comment })}
-                onClick={event => { event.stopPropagation(); focusAt(place, note); }}
-              >
-                {note.index + 1}
-              </button>
-            ))}
-          </span>
-        </>,
+        <span>
+          {place.unlinkedNotes.map(note => (
+            <button
+              key={note.key}
+              type="button"
+              title={note.note.comment}
+              data-state={place.cardState}
+              data-unit-match={place.isCurrent ? 'true' : undefined}
+              aria-label={t('Show note {n}: {comment}', { n: note.index + 1, comment: note.note.comment })}
+              onClick={event => { event.stopPropagation(); focusAt(place, note); }}
+            >
+              <span className="unit-chip-icon" aria-hidden="true"><StateGlyph state={place.cardState}/></span>
+              <span className="papilot-note-num">#{note.index + 1}</span>
+            </button>
+          ))}
+        </span>,
         place.slot,
         `${place.round}:${place.stop}`,
       );

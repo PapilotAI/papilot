@@ -334,6 +334,50 @@ function sourceMovements(units: Unit[]) {
   }
   return new Set([...groups.values()].filter(group => group.old.length === 1 && group.next.length === 1).flatMap(group => [...group.old, ...group.next]));
 }
+// A non-independent fallback unit (such as an inline math edit) inherits every
+// aligned mark within its SyncTeX crop, including marks already owned by exact
+// source-span siblings in the same paragraph. Subtract those sibling marks so
+// per-unit hover, click and decision states stay cleanly separated.
+function pruneSharedFallbackMarks(cards: Card[]) {
+  const ownedBefore = new Map<number, Rect[]>();
+  const ownedAfter = new Map<number, Rect[]>();
+  const push = (map: Map<number, Rect[]>, page: number, rect: Rect) => {
+    const list = map.get(page);
+    if (list) list.push(rect);
+    else map.set(page, [rect]);
+  };
+  for (const card of cards) {
+    if (!card.independent) continue;
+    for (const pair of card.pairs) {
+      if (pair.old) {
+        for (const mark of pair.before_marks)
+          if (mark.kind !== "context") push(ownedBefore, pair.old.page, mark.rect);
+      }
+      if (pair.new) {
+        for (const mark of pair.after_marks)
+          if (mark.kind !== "context") push(ownedAfter, pair.new.page, mark.rect);
+      }
+    }
+  }
+  if (!ownedBefore.size && !ownedAfter.size) return;
+  const filterSide = (marks: Mark[], owned: Rect[] | undefined) => {
+    if (!owned?.length || !marks.length) return marks;
+    const kept = marks.filter(
+      (mark) =>
+        mark.kind === "context" ||
+        !owned.some((rect) => containsCenter(rect, mark.rect) || containsCenter(mark.rect, rect)),
+    );
+    return kept.some((mark) => mark.kind !== "context") ? kept : marks;
+  };
+  for (const card of cards) {
+    if (card.independent) continue;
+    for (const pair of card.pairs) {
+      if (pair.old) pair.before_marks = filterSide(pair.before_marks, ownedBefore.get(pair.old.page));
+      if (pair.new) pair.after_marks = filterSide(pair.after_marks, ownedAfter.get(pair.new.page));
+    }
+  }
+}
+
 // Renders the round. With more than one edit, when some edit prints nothing
 // of its own or some change lies outside every edit's crops, it returns null
 // after writing attribute.json: the caller compiles variants to find the
@@ -432,6 +476,7 @@ export function renderRound(
         new: request.new,
         units: places,
       });
+    pruneSharedFallbackMarks(cards);
     Object.assign(
       result,
       renderDocument(old, next, cards, strips, figureFiles),
