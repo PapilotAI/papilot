@@ -3770,6 +3770,21 @@ test('switching agents keeps the task and hands its conversation to the first tu
   } finally { f.close(); }
 });
 
+test('the handoff keeps a request its agent started on without replying, but not one cancelled while queued', async () => {
+  const f = switchFixture();
+  try {
+    f.store.saveRun({ id: 'silent', taskId: f.task.id, requestKey: 'silent', prompt: 'Keep all equations unchanged.', status: 'interrupted', createdAt: 40, startedAt: 41, finishedAt: 42 });
+    f.store.saveItem({ id: 'silent', taskId: f.task.id, type: 'user', text: 'Keep all equations unchanged.', createdAt: 40 });
+    await f.workspace.switchTaskAgent(f.task.id, f.choice);
+    await f.workspace.enqueue(f.task.id, 'Continue.', 'continue', false);
+    for (let i = 0; i < 10 && !f.claude.calls.some(call => call.method === 'turn/start'); i++) await tick();
+    const text: string = f.claude.calls.find(call => call.method === 'turn/start')!.params.input[0].text;
+    assert.match(text, /Earlier turn 3, request:\nKeep all equations unchanged\.\n\nEarlier turn 3, no reply\./);
+    assert.doesNotMatch(text, /Cancelled message/);
+    assert.equal(typeof f.store.runByKey('continue')?.startedAt, 'number', 'A run sent to its agent records when it started');
+  } finally { f.close(); }
+});
+
 test('a handoff is given again when its turn never reached the agent', async () => {
   const f = switchFixture();
   try {

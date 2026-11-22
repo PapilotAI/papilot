@@ -622,7 +622,7 @@ export class Workspace extends EventEmitter {
   // not finished when it appeared.
   private handoffPrompt(task: Task, current: Run) {
     const runs = this.store.runs().filter(run => run.taskId === task.id && run.id !== current.id && run.status !== 'queued').sort((a, b) => a.createdAt - b.createdAt);
-    const replies = new Map<string, string[]>();
+    const replies = new Map<string, string[]>(runs.filter(run => run.startedAt).map(run => [run.id, []]));
     for (const item of this.store.items(task.id)) {
       if (item.type === 'user') continue;
       const run = runs.find(run => item.createdAt <= (run.finishedAt ?? Infinity));
@@ -631,7 +631,8 @@ export class Workspace extends EventEmitter {
       if ((item.type === 'assistant' || item.type === 'reviewOutput') && !item.parent && item.text.trim()) texts.push(item.text.trim());
       replies.set(run.id, texts);
     }
-    // A message cancelled before it ran has nothing after it; its agent never saw it.
+    // A message cancelled while queued never started, and its agent never saw
+    // it. Runs saved before startedAt existed count once something followed them.
     const turns = runs.filter(run => replies.has(run.id)).map((run, index) => {
       const reply = replies.get(run.id)!;
       return `Earlier turn ${index + 1}, request:\n${run.prompt}\n\nEarlier turn ${index + 1}, ${reply.length ? 'reply:\n' + reply.join('\n\n') : 'no reply.'}`;
@@ -825,8 +826,9 @@ export class Workspace extends EventEmitter {
       const agent = this.agentOf(this.store.task(run.taskId));
       if (!this.agents[agent].ready || !this.runtimes[agent].authenticated) continue;
       if (this.switching.has(run.taskId) || this.active.has(run.taskId) || this.reviewWrites.has(run.taskId) || this.publishing.has(run.taskId) || this.store.task(run.taskId).delivery?.pending || BUSY.has(this.store.task(run.taskId).status) || this.store.task(run.taskId).preparation) continue;
-      this.active.set(run.taskId, run);
-      void this.startRun(run).catch(e => this.failRun(run, e));
+      const started = { ...run, startedAt: Date.now() };
+      this.active.set(run.taskId, started);
+      void this.startRun(started).catch(e => this.failRun(started, e));
     }
   }
   // The paths a task's review covers, or none when it covers the whole worktree.
