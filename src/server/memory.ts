@@ -92,11 +92,7 @@ export class Memory {
       fs.renameSync(temporary, file);
     } finally { fs.rmSync(temporary, { force: true }); }
   }
-  /** The first scope that holds a rule, or whether a given one does. */
-  async find(value: string, paper?: string) {
-    for (const file of (await this.catalog(paper, true)).files) if (file.rules.some(rule => ruleKey(rule) === ruleKey(value))) return file.scope;
-    return undefined;
-  }
+  /** Whether a scope holds a rule. */
   has(scope: MemoryScope, value: string, paper?: string) {
     try { return memoryRules(this.read(scope, paper).text).some(rule => ruleKey(rule) === ruleKey(value)); } catch { return false; }
   }

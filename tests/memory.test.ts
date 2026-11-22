@@ -428,6 +428,13 @@ test('Remember and Undo reverse exactly what was changed, also across files and 
     assert.deepEqual(await rules('paper'), ['Number every displayed equation.']);
     await act('merge', { action: 'undo' });
     assert.deepEqual(await rules('paper'), ['Number every displayed equation.', 'Use \\cref for references.']);
+    // The same rule in two scopes: only the one the suggestion refines is replaced.
+    await f.work.memory.add('personal', 'Prefer British spelling.');
+    await f.work.memory.add('paper', 'Prefer British spelling.', f.papers.a);
+    f.store.saveItem({ id: 'cards:memory:z', taskId: 'cards', type: 'memory', text: '', createdAt: 3, memory: [{ id: 'personal', text: 'Prefer American spelling.', scope: 'personal', replaces: 'Prefer British spelling.', tasks: 2, status: 'pending' }] });
+    await act('personal', { action: 'save' });
+    assert.deepEqual(await rules('personal'), ['Prefer American spelling.']);
+    assert.ok((await rules('paper')).includes('Prefer British spelling.'));
     // Two clicks at once both land on the card.
     const [saved, dismissed] = await Promise.all([act('other', { action: 'save' }), act('known', { action: 'dismiss' })]);
     assert.equal(saved.statusCode, 200); assert.equal(dismissed.statusCode, 200);

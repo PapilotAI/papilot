@@ -74,8 +74,9 @@ export function registerMemoryRoutes(app: FastifyInstance, store: Store, memory:
     if (b.action === 'save') {
       if (suggestion.status === 'saved') return item;
       const scope = (b.scope ?? suggestion.scope) as MemoryScope, text = memoryRule(b.text ?? suggestion.text);
-      // The rule it refines goes away wherever it is, so the two never contradict.
-      const from = suggestion.replaces ? await memory().find(suggestion.replaces, root) : undefined;
+      // The rule it refines, in the scope the suggestion came from, goes away
+      // even when the author keeps the new one elsewhere, so the two never contradict.
+      const from = suggestion.replaces && memory().has(suggestion.scope, suggestion.replaces, root) ? suggestion.scope : undefined;
       const { added, replaced } = await memory().add(scope, text, root, from === scope ? { replaces: suggestion.replaces } : {});
       let removed: string | undefined;
       if (from && from !== scope && await memory().remove(from, suggestion.replaces, undefined, root)) removed = suggestion.replaces;
