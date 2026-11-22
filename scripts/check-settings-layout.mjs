@@ -78,7 +78,7 @@ try {
           days,
           calendar: Array.from({ length: 371 }, (_, idx) => {
             const date = new Date(Date.UTC(2026, 10, 30 - idx)).toISOString().slice(0, 10);
-            return { date, tokens: (idx % 9) * 61000, costUsd: idx % 4 ? 0.37 : null, reportedCostUsd: 0, estimatedCostUsd: idx % 4 ? 0.37 : 0, turns: idx % 7, accepted: idx % 5, rejected: idx % 3, commented: 0, annotationsCreated: idx % 6 };
+            return { date, actions: idx % 7, tokens: (idx % 9) * 61000, costUsd: idx % 4 ? 0.37 : null, reportedCostUsd: 0, estimatedCostUsd: idx % 4 ? 0.37 : 0, turns: idx % 7, accepted: idx % 5, rejected: idx % 3, commented: 0, annotationsCreated: idx % 6 };
           }).filter(day => day.turns > 0).reverse(),
           agents: [
             { agent: 'codex', tasksStarted: 10, turns: 30, tokens: { input: 300000, cached: 1000000, cacheWrite: 0, output: 80000, reasoning: 25000, total: 1380000 }, costUsd: 2.72, reportedCostUsd: 0, estimatedCostUsd: 2.72, unpricedTokens: 0 },
@@ -126,7 +126,7 @@ try {
         if (name === 'updates') await page.locator('.settings-content-updates [role=alert]').waitFor();
         if (name === 'skills') await expect(page.locator('.skill-library-new')).toBeEnabled();
         if (name === 'statistics') {
-          await page.locator('.activity-table').first().waitFor();
+          await page.locator('.activity-insights').waitFor();
           await expect(page.locator('.activity-heatmap .activity-heat-cell:not([data-level="0"])').first()).toBeVisible();
         }
         if (name === 'quickNotes') await page.locator('.quick-note-text strong').getByText('Literaturverzeichnis', { exact: true }).waitFor();

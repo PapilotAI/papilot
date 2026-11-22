@@ -11,8 +11,9 @@ import { Store } from '../src/server/store.ts';
 import { buildActivityReport } from '../src/server/activity.ts';
 
 // Exercises Settings -> Statistics against a real SQLite Store + buildActivityReport
-// across desktop & mobile widths, light & dark themes, English & Simplified Chinese,
-// range/metric/paper filters, day selection, earlier-days disclosure, empty state, and error recovery.
+// across desktop and phone widths, light and dark themes, English and Simplified
+// Chinese: insights, calendar paging, details rows, sharing, range and paper
+// filters, empty state and error recovery.
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-activity-ui-'));
 const store = new Store(path.join(tempDir, 'papilot.sqlite'));
 const emptyStore = new Store(path.join(tempDir, 'empty.sqlite'));
@@ -154,35 +155,40 @@ const state = {
   runtimes: { codex: runtime },
 };
 
+const fixtureRoute = activeStore => async route => {
+  const url = new URL(route.request().url());
+  if (url.pathname === '/api/state') return route.fulfill({ json: state });
+  if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': ok\n\n' });
+  if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
+  if (url.pathname === '/api/activity') {
+    if (mode === 'error') return route.fulfill({ status: 503, json: { error: 'Temporary database lock.' } });
+    return route.fulfill({ json: report(mode === 'empty' ? emptyStore : activeStore, url.searchParams) });
+  }
+  if (url.pathname.endsWith('/manuscript')) return route.fulfill({ json: { git: { files: [] }, annotations: [], build: { status: 'ready', current: true } } });
+  if (url.pathname.endsWith('/files')) return route.fulfill({ json: { document: null, files: [] } });
+  if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
+  if (url.pathname.endsWith('/git')) return route.fulfill({ json: { files: [], branch: 'main', ahead: 0, behind: 0 } });
+  return route.fulfill({ json: {} });
+};
+const report = (activeStore, params) => buildActivityReport(activeStore, {
+  tz: params.get('tz') || 'Asia/Shanghai',
+  range: params.get('range') || 'all',
+  projectId: params.get('projectId') || undefined,
+  now: anchorNow,
+});
+const expected = (range, projectId) => report(store, new URLSearchParams({ tz: 'Asia/Shanghai', range, ...(projectId ? { projectId } : {}) }));
+const number = value => value.toLocaleString('en-US');
+const figure = label => `.activity-stat:has(dt:text-is("${label}")) strong`;
+
 try {
-  // 1. Desktop light & dark + interactive filters + error/empty states (English)
+  // 1. Desktop light & dark, filters, details, sharing, error and empty states (English)
   const context = await browser.newContext({ locale: 'en-US', timezoneId: 'Asia/Shanghai', viewport: { width: 1280, height: 820 } });
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
   await context.addInitScript(() => {
     localStorage.setItem('papilot:language', 'en');
     localStorage.setItem('papilot:setup-seen', '1');
   });
-  await context.route('**/api/**', route => {
-    const url = new URL(route.request().url());
-    if (url.pathname === '/api/state') return route.fulfill({ json: state });
-    if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': ok\n\n' });
-    if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
-    if (url.pathname === '/api/activity') {
-      if (mode === 'error') return route.fulfill({ status: 503, json: { error: 'Temporary database lock.' } });
-      const activeStore = mode === 'empty' ? emptyStore : store;
-      const report = buildActivityReport(activeStore, {
-        tz: url.searchParams.get('tz') || 'Asia/Shanghai',
-        range: url.searchParams.get('range') || '30d',
-        projectId: url.searchParams.get('projectId') || undefined,
-        now: anchorNow,
-      });
-      return route.fulfill({ json: report });
-    }
-    if (url.pathname.endsWith('/manuscript')) return route.fulfill({ json: { git: { files: [] }, annotations: [], build: { status: 'ready', current: true } } });
-    if (url.pathname.endsWith('/files')) return route.fulfill({ json: { document: null, files: [] } });
-    if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
-    if (url.pathname.endsWith('/git')) return route.fulfill({ json: { files: [], branch: 'main', ahead: 0, behind: 0 } });
-    return route.fulfill({ json: {} });
-  });
+  await context.route('**/api/**', fixtureRoute(store));
 
   const page = await context.newPage();
   page.on('pageerror', err => errors.push(err.message));
@@ -190,110 +196,139 @@ try {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.locator('[data-settings-page="statistics"]').click();
   await page.locator('.activity-settings').waitFor();
-  await expect(page.locator('.activity-kpi')).toHaveCount(6);
-  await expect(page.locator('.activity-kpi[data-kpi="tokens"] .activity-kpi-value')).toContainText('M');
-  await expect(page.locator('.activity-kpi[data-kpi="tokens"] .activity-kpi-detail')).toContainText('cache write');
-  await expect(page.locator('.activity-kpi[data-kpi="spend"] .activity-kpi-value')).toContainText('$');
-  await expect(page.locator('.activity-kpi[data-kpi="agents"] .activity-kpi-value')).toHaveText('22');
-  await expect(page.locator('.activity-kpi[data-kpi="hours"] .activity-kpi-value')).toContainText(':00');
-  await expect(page.getByText('Local time (Asia/Shanghai)')).toBeVisible();
 
-  // Past-year heatmap: 53 week columns ending today, one tab stop on the latest active day.
+  // Insights open on all time: time saved, accepted and rejected changes, agent time.
+  const all = expected('all');
+  await expect(page.locator('.activity-range-button[data-range="all"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.activity-insight')).toHaveCount(4);
+  await expect(page.locator(figure('Accepted changes'))).toHaveText(number(all.totals.accepted));
+  await expect(page.locator(figure('Rejected changes'))).toHaveText(number(all.totals.rejected));
+  await expect(page.locator(figure('Time saved'))).toHaveText(/^~\d/);
+  await expect(page.locator('.activity-insight:has(dt:text-is("Time saved")) .activity-figure-unit')).toHaveText('hours');
+  await expect(page.locator(figure('Agent time'))).not.toHaveText('0');
+  await expect(page.locator(figure('Active days'))).toHaveText(number(all.totals.activeDays));
+  await expect(page.locator(figure('Longest streak'))).toHaveText(/^\d+$/);
+  // Details wait behind closed rows, each with a one-line headline.
+  await expect(page.locator('.activity-detail')).toHaveCount(5);
+  await expect(page.locator('.activity-detail[open]')).toHaveCount(0);
+  await expect(page.locator('.activity-detail-headline').first()).toHaveText(/% accepted/);
+  await expect(page.locator('.activity-table').first()).toBeHidden();
+
+  // Calendar: as many weeks as fit, the latest week last, one tab stop.
   const heatmap = page.locator('.activity-heatmap');
   const cells = heatmap.locator('.activity-heat-cell');
-  const cellCount = await cells.count();
-  assert.ok(cellCount >= 365 && cellCount <= 371, `53 weeks of cells, got ${cellCount}`);
+  const weeks = await heatmap.evaluate(table => Number(getComputedStyle(table).getPropertyValue('--weeks')));
+  assert.ok(weeks >= 20 && weeks <= 30, `Settings shows about half a year, got ${weeks} weeks`);
   assert.equal(await cells.evaluateAll(list => list.map(cell => cell.dataset.date).sort().at(-1)), '2026-11-22', 'The newest cell is today');
-  await expect(heatmap.locator('.activity-heat-cell[tabindex="0"]')).toHaveCount(1);
-  await expect(heatmap.locator('.activity-heat-cell[aria-selected="true"]')).toHaveAttribute('data-date', '2026-11-22');
-  const shadedBeforeRange = await cells.evaluateAll(list => list.filter(cell => cell.dataset.date < '2026-10-24' && cell.dataset.level !== '0').length);
-  assert.ok(shadedBeforeRange > 100, 'History older than the 30-day range is shaded');
-  const levels = await cells.evaluateAll(list => new Set(list.map(cell => cell.dataset.level)).size);
-  assert.equal(levels, 5, 'All five shades are used');
-  await expect(page.locator('.activity-streaks dd').first()).toHaveText(/\d+ days?/);
-  await expect(page.locator('.activity-heatmap tbody th:not(:has(.sr-only))')).toHaveCount(3);
-
-  await page.locator('.activity-year').scrollIntoViewIfNeeded();
+  await expect(heatmap.locator('.activity-heat-cell[tabindex="0"]')).toHaveAttribute('data-date', '2026-11-22');
+  await expect(heatmap.locator('tbody th abbr')).toHaveCount(7);
+  const box = await cells.first().boundingBox();
+  assert.ok(Math.abs(box.width - box.height) < 1.5 && box.width >= 17, `Cells are large squares, got ${box.width}×${box.height}`);
+  assert.equal(await cells.evaluateAll(list => new Set(list.map(cell => cell.dataset.level)).size), 5, 'All five shades are used');
+  await expect(heatmap.locator('[data-outside]')).toHaveCount(0);
   await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-desktop-light.png' });
 
-  // Hover shows a tooltip; clicking selects the day; arrows move by week and by day.
+  // Hover shows the day; arrows move by week and by day; Escape hides the tip, not Settings.
   const target = heatmap.locator('[data-date="2026-11-11"]');
   await target.hover();
-  await expect(page.locator('.activity-heat-tip')).toContainText('tokens');
+  await expect(page.locator('.activity-heat-tip')).toContainText(/\d+ actions?/);
   await expect(page.locator('.activity-heat-tip')).toContainText('Nov 11');
-  await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-heatmap-tooltip.png', clip: await page.locator('.activity-year').boundingBox().then(box => ({ x: box.x - 8, y: box.y - 48, width: box.width + 16, height: box.height + 56 })) });
+  await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-heatmap-tooltip.png', clip: await page.locator('.activity-calendar').boundingBox().then(rect => ({ x: rect.x - 8, y: rect.y - 8, width: rect.width + 16, height: rect.height + 16 })) });
   await target.click();
-  await expect(target).toHaveAttribute('aria-selected', 'true');
-  await expect(page.locator('.activity-selected-day strong')).toContainText('Nov 11');
   await target.press('ArrowLeft');
-  await expect(heatmap.locator('[data-date="2026-11-04"]')).toHaveAttribute('aria-selected', 'true');
   await expect(heatmap.locator('[data-date="2026-11-04"]')).toBeFocused();
   await page.keyboard.press('ArrowUp');
-  await expect(heatmap.locator('[data-date="2026-11-03"]')).toHaveAttribute('aria-selected', 'true');
+  await expect(heatmap.locator('[data-date="2026-11-03"]')).toBeFocused();
   await expect(page.locator('.activity-heat-tip')).toContainText('Nov 3');
   await page.keyboard.press('Escape');
   await expect(page.locator('.activity-heat-tip')).toHaveCount(0);
   await expect(page.locator('.activity-settings')).toBeVisible();
 
-  // Metrics reshade the same days.
-  const tokenLevels = await cells.evaluateAll(list => list.map(cell => cell.dataset.level).join(''));
-  await page.locator('.activity-metric-tab[data-metric="reviews"]').click();
-  await expect(page.locator('.activity-metric-tab[data-metric="reviews"]')).toHaveAttribute('aria-pressed', 'true');
-  assert.notEqual(await cells.evaluateAll(list => list.map(cell => cell.dataset.level).join('')), tokenLevels);
-  await page.locator('.activity-metric-tab[data-metric="tokens"]').click();
+  // The pager walks back through earlier weeks and returns.
+  const period = page.locator('.activity-pager > span');
+  const latestPeriod = await period.textContent();
+  const latestFirst = await cells.evaluateAll(list => list.map(cell => cell.dataset.date).sort()[0]);
+  await expect(page.getByRole('button', { name: 'Later weeks' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Earlier weeks' }).click();
+  await expect(period).not.toHaveText(latestPeriod);
+  assert.ok(await cells.evaluateAll((list, before) => list.every(cell => cell.dataset.date < before), latestFirst), 'The previous page shows the weeks before');
+  await page.getByRole('button', { name: 'Later weeks' }).click();
+  await expect(period).toHaveText(latestPeriod);
 
-  // Weekday-by-hour heatmap for the range: 7 × 24 cells with the evening peak shaded darkest.
-  const hourCells = page.locator('.activity-hour-grid .activity-heat-cell');
-  await expect(hourCells).toHaveCount(168);
-  assert.ok(await page.locator('.activity-hour-grid .activity-heat-cell[data-level="4"]').count() > 0);
-  await page.locator('.activity-hour-grid').scrollIntoViewIfNeeded();
-  await page.locator('.activity-hour-grid .activity-heat-cell[data-level="4"]').first().hover();
-  await expect(page.locator('.activity-hours .activity-heat-tip')).toContainText(/\d+ actions?.*\d+ runs?.+ tokens/);
+  // Details: reviews with the time-saved basis, tokens, agents, hours and the daily table.
+  const reviews = page.locator('.activity-detail').filter({ hasText: 'Reviews & notes' });
+  await reviews.locator(':scope > summary').click();
+  await expect(reviews.locator('.activity-fact:has(dt:text-is("Time saved")) .activity-fact-note')).toHaveText(`${number(all.totals.accepted)} changes × 2 min`);
+  const tokens = page.locator('.activity-detail').filter({ hasText: 'Tokens & spend' });
+  await tokens.locator(':scope > summary').click();
+  await expect(tokens.locator('.activity-token-bar > span')).toHaveCount(4);
+  await page.locator('.activity-details').scrollIntoViewIfNeeded();
+  await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-desktop-details.png' });
+  const hours = page.locator('.activity-detail').filter({ hasText: 'Active hours' });
+  await hours.locator(':scope > summary').click();
+  await expect(hours.locator('.activity-hour-grid .activity-heat-cell')).toHaveCount(168);
+  await hours.locator('.activity-hour-grid .activity-heat-cell[data-level="4"]').first().hover();
+  await expect(hours.locator('.activity-heat-tip')).toContainText(/\d+ actions?.*\d+ runs?.+ tokens/);
   await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-desktop-hours.png' });
-  // Scrolled away, the sticky weekday labels stay under the sticky page header.
-  const header = await page.locator('.settings-content-header').boundingBox();
-  const label = await page.locator('.activity-heatmap tbody th').first().boundingBox();
-  if (label.y < header.y + header.height) {
-    const topmost = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('.settings-content-header, .activity-heatmap') ?.className, [label.x + 4, label.y + label.height / 2]);
-    assert.equal(topmost, 'settings-content-header', 'The page header covers weekday labels scrolled beneath it');
-  }
   await page.mouse.move(0, 0);
-
-  // Inspect lower sections (Active hours, Agents & models, Daily breakdown table) and expand earlier days
-  await page.locator('.activity-breakdown-grid').scrollIntoViewIfNeeded();
-  await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-desktop-agents.png' });
-  await page.locator('.activity-table-container').first().scrollIntoViewIfNeeded();
+  const daily = page.locator('.activity-detail').filter({ hasText: 'Daily breakdown' });
+  await daily.locator(':scope > summary').click();
+  await expect(daily.locator('.activity-table').first()).toBeVisible();
+  await expect(daily.locator('.activity-more-days')).toBeVisible();
   await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-desktop-detail.png' });
-  const moreDays = page.locator('.activity-more-days');
-  await expect(moreDays).toBeVisible();
-  await moreDays.locator('summary').click();
-  await moreDays.scrollIntoViewIfNeeded();
+  while (await page.locator('.activity-detail[open]').count()) await page.locator('.activity-detail[open] > summary').first().click();
 
-  // Dark theme inspection
+  // Sharing draws the figures and the latest weeks into a PNG to copy or save.
+  await page.locator('.settings-content').evaluate(el => { el.scrollTop = 0; });
+  await page.locator('.activity-share-button').click();
+  const share = page.locator('.activity-share-dialog');
+  await expect(share).toBeVisible();
+  const preview = share.locator('.activity-share-preview img');
+  await expect(preview).toHaveAttribute('alt', new RegExp(`Accepted changes ${number(all.totals.accepted)} changes`));
+  assert.equal(await preview.evaluate(image => image.decode().then(() => image.naturalWidth)), 1080);
+  await expect(share.getByRole('link', { name: 'Save image' })).toHaveAttribute('download', 'papilot-2026-11-22.png');
+  await share.getByRole('button', { name: 'Copy image' }).click();
+  await expect(share.locator('[role="status"]')).toHaveText('Copied');
+  assert.ok(await page.evaluate(async () => (await navigator.clipboard.read()).some(item => item.types.includes('image/png'))), 'The clipboard holds the PNG');
+  await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-share.png' });
+  const card = await preview.evaluate(image => fetch(image.src).then(response => response.arrayBuffer()).then(buffer => Array.from(new Uint8Array(buffer))));
+  fs.writeFileSync('test-results/activity-share-card-light.png', Buffer.from(card));
+  await page.keyboard.press('Escape');
+  await expect(share).toHaveCount(0);
+  await expect(page.locator('.activity-settings')).toBeVisible();
+
+  // Dark theme.
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await page.locator('.settings-content').evaluate(el => { el.scrollTop = 0; });
   await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-desktop-dark.png' });
+  await page.locator('.activity-share-button').click();
+  await expect(preview).toBeVisible();
+  const darkCard = await preview.evaluate(image => fetch(image.src).then(response => response.arrayBuffer()).then(buffer => Array.from(new Uint8Array(buffer))));
+  fs.writeFileSync('test-results/activity-share-card-dark.png', Buffer.from(darkCard));
+  await share.getByRole('button', { name: 'Close' }).click();
+  await expect(share).toHaveCount(0);
   await page.emulateMedia({ colorScheme: 'light' });
 
-  // Range filter -> 7 days reduces agent runs from 22 to 7; the past-year heatmap stays the same.
-  const yearShades = await cells.evaluateAll(list => list.map(cell => cell.dataset.level).join(''));
+  // Ranges recount the figures and step back the days before them; the calendar keeps every day.
+  const shades = await cells.evaluateAll(list => list.map(cell => cell.dataset.level).join(''));
   await page.locator('.activity-range-button[data-range="7d"]').click();
-  await expect(page.locator('.activity-kpi[data-kpi="agents"] .activity-kpi-value')).toHaveText('7');
-  assert.equal(await cells.evaluateAll(list => list.map(cell => cell.dataset.level).join('')), yearShades);
+  await expect(page.locator(figure('Accepted changes'))).toHaveText(number(expected('7d').totals.accepted));
+  assert.equal(await cells.evaluateAll(list => list.map(cell => cell.dataset.level).join('')), shades);
+  await expect(heatmap.locator('.activity-heat-cell:not([data-outside])')).toHaveCount(7);
   await page.locator('.activity-range-button[data-range="30d"]').click();
-  await expect(page.locator('.activity-kpi[data-kpi="agents"] .activity-kpi-value')).toHaveText('22');
+  await expect(page.locator(figure('Accepted changes'))).toHaveText(number(expected('30d').totals.accepted));
+  await expect(page.locator(figure('Active days'))).toHaveText(number(expected('30d').totals.activeDays));
 
-  // Paper filter -> select removed paper by value
+  // Paper filter -> the removed paper's six days.
   const paperSelect = page.locator('.activity-filter-controls .chip-select');
   await selectOption(paperSelect, p2.id);
-  await expect(page.locator('.activity-kpi[data-kpi="agents"] .activity-kpi-value')).toHaveText('6');
+  await expect(page.locator(figure('Accepted changes'))).toHaveText(number(expected('30d', p2.id).totals.accepted));
   await expect.poll(() => cells.evaluateAll(list => list.filter(cell => cell.dataset.level !== '0').length)).toBe(6);
   await selectOption(paperSelect, 'all');
-  await expect(page.locator('.activity-kpi[data-kpi="agents"] .activity-kpi-value')).toHaveText('22');
+  await page.locator('.activity-range-button[data-range="all"]').click();
+  await expect(page.locator(figure('Accepted changes'))).toHaveText(number(all.totals.accepted));
 
-  // Error + Retry recovery
-  await page.locator('.settings-content').evaluate(el => { el.scrollTop = 0; });
+  // Error + Retry recovery, then the empty state.
   await expect(page.locator('.activity-refresh')).toBeEnabled();
   mode = 'error';
   await page.locator('.activity-refresh').click();
@@ -303,41 +338,20 @@ try {
   await page.evaluate(() => { document.activeElement?.blur?.(); });
   await page.locator('.activity-status-banner[role="alert"]').getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(page.getByText(/No workspace activity recorded in this period yet/)).toBeVisible();
-  // Reset any manually clicked bar selection via 7d range switch and confirm empty workspace shows no selected bar
-  await page.locator('.activity-range-button[data-range="7d"]').click();
-  await expect(page.locator('.activity-heat-cell[aria-selected="true"]')).toHaveCount(0);
   await expect(page.locator('.activity-heat-cell:not([data-level="0"])')).toHaveCount(0);
-  await expect(page.locator('.activity-selected-day')).toHaveCount(0);
+  await expect(page.locator('.activity-share-button')).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Earlier weeks' })).toBeDisabled();
   await page.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-empty.png' });
-
-  // Restore populated state & check 390px and 320px mobile in Simplified Chinese
   await context.close();
+
+  // 2. Phones in Simplified Chinese: fewer, still large weeks and no sideways scrolling.
   mode = 'populated';
-  const zhContext = await browser.newContext({ locale: 'zh-CN', timezoneId: 'Asia/Shanghai', viewport: { width: 1280, height: 820 } });
+  const zhContext = await browser.newContext({ locale: 'zh-CN', timezoneId: 'Asia/Shanghai', viewport: { width: 1280, height: 820 }, hasTouch: true });
   await zhContext.addInitScript(() => {
     localStorage.setItem('papilot:language', 'zh-Hans');
     localStorage.setItem('papilot:setup-seen', '1');
   });
-  await zhContext.route('**/api/**', route => {
-    const url = new URL(route.request().url());
-    if (url.pathname === '/api/state') return route.fulfill({ json: state });
-    if (url.pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': ok\n\n' });
-    if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
-    if (url.pathname === '/api/activity') {
-      const report = buildActivityReport(store, {
-        tz: url.searchParams.get('tz') || 'Asia/Shanghai',
-        range: url.searchParams.get('range') || '30d',
-        projectId: url.searchParams.get('projectId') || undefined,
-        now: anchorNow,
-      });
-      return route.fulfill({ json: report });
-    }
-    if (url.pathname.endsWith('/manuscript')) return route.fulfill({ json: { git: { files: [] }, annotations: [], build: { status: 'ready', current: true } } });
-    if (url.pathname.endsWith('/files')) return route.fulfill({ json: { document: null, files: [] } });
-    if (url.pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
-    if (url.pathname.endsWith('/git')) return route.fulfill({ json: { files: [], branch: 'main', ahead: 0, behind: 0 } });
-    return route.fulfill({ json: {} });
-  });
+  await zhContext.route('**/api/**', fixtureRoute(store));
   const zhPage = await zhContext.newPage();
   zhPage.on('pageerror', err => errors.push(err.message));
   await zhPage.goto(origin);
@@ -345,32 +359,27 @@ try {
   await zhPage.locator('[data-settings-page="statistics"]').click();
   await zhPage.setViewportSize({ width: 390, height: 844 });
   await expect(zhPage.locator('#settings-title')).toHaveText('使用统计');
-  await expect(zhPage.locator('.activity-kpi[data-kpi="agents"] .activity-kpi-value')).toHaveText('22');
+  await expect(zhPage.locator('.activity-insight:has(dt:text-is("采纳的修改")) .activity-figure-unit')).toHaveText('处');
+  await expect(zhPage.locator('.activity-stat:has(dt:text-is("活跃天数")) .activity-figure-unit')).toHaveText('天');
+  const phoneWeeks = await zhPage.locator('.activity-heatmap').evaluate(table => Number(getComputedStyle(table).getPropertyValue('--weeks')));
+  assert.ok(phoneWeeks >= 8 && phoneWeeks <= 16, `A phone shows about a quarter, got ${phoneWeeks} weeks`);
+  await zhPage.locator('.activity-heatmap [data-date="2026-11-20"]').tap();
+  await expect(zhPage.locator('.activity-heat-tip')).toContainText('次操作');
   await zhPage.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-mobile-zh-light.png' });
-
-  // Scroll down on mobile to inspect Active hours + stacked responsive Daily breakdown cards
-  await zhPage.locator('.activity-table-container').first().scrollIntoViewIfNeeded();
-  await zhPage.emulateMedia({ colorScheme: 'dark' });
-  await zhPage.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-mobile-zh-dark-table.png' });
-
-  // The heatmap scrolls sideways on phones and opens on the newest weeks.
-  await zhPage.locator('.activity-year').scrollIntoViewIfNeeded();
-  await expect.poll(() => zhPage.locator('.activity-heatmap-scroll').evaluate(scroller => {
-    const view = scroller.getBoundingClientRect();
-    const today = scroller.querySelector('[data-date="2026-11-22"]').getBoundingClientRect();
-    return scroller.scrollWidth > scroller.clientWidth && today.left >= view.left && today.right <= view.right;
-  })).toBe(true);
-  await zhPage.emulateMedia({ colorScheme: 'light' });
+  await zhPage.locator('.activity-calendar').scrollIntoViewIfNeeded();
   await zhPage.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-mobile-zh-heatmap.png' });
-
-  // Check zero horizontal overflow at 320px width
+  await zhPage.emulateMedia({ colorScheme: 'dark' });
+  const zhDaily = zhPage.locator('.activity-detail').filter({ hasText: '每日明细' });
+  await zhDaily.locator(':scope > summary').click();
+  await zhDaily.scrollIntoViewIfNeeded();
+  await zhPage.screenshot({ animations: 'disabled', path: 'test-results/activity-settings-mobile-zh-dark-table.png' });
   await zhPage.setViewportSize({ width: 320, height: 640 });
   const hasOverflow = await zhPage.locator('.settings-content').evaluate(el => el.scrollWidth > el.clientWidth + 2);
   assert.equal(hasOverflow, false, '320px statistics pane has no horizontal overflow');
-
   await zhContext.close();
+
   assert.deepEqual(errors, []);
-  console.log('PASS: Settings -> Statistics verified across desktop/mobile, light/dark, en/zh-Hans, filters, empty and error states');
+  console.log('PASS: Statistics insights, calendar paging, details, sharing, filters, empty and error states across desktop/phone, light/dark, en/zh-Hans');
 } finally {
   await browser.close();
   await server.close();

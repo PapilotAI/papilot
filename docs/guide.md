@@ -366,12 +366,20 @@ Sending a draft attaches its files to that task. Deleting a task removes its sto
 
 ## Statistics
 
-Open **Settings → Statistics** to review daily workspace activity across all papers or filtered to a single paper over the last **7 days**, **30 days**, **90 days**, or **All time**:
+Open **Settings → Statistics** to see what Papilot has done for you, across all papers or for one paper, over the last **7 days**, **30 days**, **90 days**, or **All time** (the default).
 
-- **Tokens and spend**: input, cached, output, and reasoning tokens, together with provider-reported USD totals and API-equivalent estimates (`~`) for known model IDs when an agent reports tokens without billing totals. Models without known API pricing keep their token counts without guessed prices.
-- **Past year**: a heatmap of the last 53 weeks, one square per day, shaded by tokens, spend, agent runs, or reviews and notes, with your longest and current streaks of active days. It always covers the past year, whatever range you choose; the paper filter still applies. Hover a day, or click it or move with the arrow keys, to see its totals.
-- **Agents and active hours**: tasks started and agent runs across editing tasks, AI reviews, collaboration workers, and background helpers (task titles, commit messages, build diagnosis, and merge resolution), broken down by agent and model, and a weekday-by-hour heatmap of when you work in local time.
-- **Review decisions and annotations**: accepted, rejected, commented, and undone changes across task reviews, uncommitted manuscript changes, and AI review suggestions, alongside PDF annotations created (yours, agent tools, and AI reviews) and sent to tasks.
+- **Insights**: four figures at the top.
+  - **Time saved** is an estimate: each accepted change counts as 2 minutes of work by hand (finding the passage, rewriting it, rebuilding and checking the PDF). Open **Reviews & notes** to see the count it is based on.
+  - **Accepted changes** and **Rejected changes** count the changes you kept and the ones you stopped, across task reviews, uncommitted manuscript changes, and AI review suggestions.
+  - **Agent time** adds up how long agents worked on finished turns.
+- **Activity**: your active days, current streak, and longest streak, above a calendar with one square per day, shaded by how much happened that day. It shows as many weeks as fit, and ‹ › page back through earlier weeks. Days before the chosen range stay visible but fade. Hover a day, tap it, or move with the arrow keys to see its runs, decisions, and tokens.
+- **Details**: rows that open on click, each showing one headline value until you do.
+  - **Reviews & notes**: decisions, comments, undos, saved tasks, commits, and annotations.
+  - **Tokens & spend**: input, cached, cache write, output, and reasoning tokens, with provider-reported USD totals and API-equivalent estimates (`~`) for known model IDs when an agent reports tokens without billing totals. Models without known API pricing keep their token counts without guessed prices.
+  - **Agents & models**: runs, tokens, and spend by agent and model, across editing tasks, AI reviews, collaboration workers, and background helpers.
+  - **Active hours**: a weekday-by-hour heatmap of when you work, in local time.
+  - **Daily breakdown**: one row per active day.
+- **Share** draws the figures and the latest 26 weeks of activity into an image in your current theme and accent. Save it as a PNG, or copy or share it where the browser allows (Papilot on this computer or over HTTPS). Paper names are not included.
 
 Activity events are stored locally in your workspace SQLite database, backfilled once from existing tasks, runs, and annotations when upgrading, and kept even after individual tasks or papers are removed.
 

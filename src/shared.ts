@@ -361,10 +361,6 @@ export interface BibliographyReport {
 
 export type ActivityRange = '7d' | '30d' | '90d' | 'all';
 export const ACTIVITY_RANGES: ActivityRange[] = ['7d', '30d', '90d', 'all'];
-// The past-year heatmap shows 53 week columns ending with the current week, so
-// the report covers the 371 days that hold every first column, whatever weekday
-// the viewer's locale starts weeks on.
-export const ACTIVITY_CALENDAR_DAYS = 53 * 7;
 export type ActivityTurnRole = 'edit' | 'review' | 'worker' | 'helper';
 export type ActivityCostSource = 'reported' | 'estimated' | 'mixed' | 'unknown';
 
@@ -392,6 +388,8 @@ export interface ActivityMetrics {
   failedTurns: number;
   interruptedTurns: number;
   turnsByRole: Record<ActivityTurnRole, number>;
+  /** Wall time of finished agent turns, from start to finish. */
+  agentMs: number;
   accepted: number;
   rejected: number;
   commented: number;
@@ -417,9 +415,12 @@ export interface ActivityDay extends ActivityMetrics {
   tokenHours: number[];
 }
 
-// An active day of the past-year heatmap, independent of the selected range.
+// An active day of the activity calendar, which covers every day whatever the
+// selected range. actions counts what the active hours count: agent runs,
+// review decisions, your annotations, saved tasks and commits.
 export interface ActivityCalendarDay extends Pick<ActivityMetrics, 'costUsd' | 'reportedCostUsd' | 'estimatedCostUsd' | 'turns' | 'accepted' | 'rejected' | 'commented' | 'annotationsCreated'> {
   date: string;
+  actions: number;
   tokens: number;
 }
 

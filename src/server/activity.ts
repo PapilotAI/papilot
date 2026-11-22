@@ -1,6 +1,5 @@
 import { getModels, getProviders, type Api, type KnownProvider, type Model } from '@mariozechner/pi-ai';
 import {
-  ACTIVITY_CALENDAR_DAYS,
   ACTIVITY_RANGES,
   isAgentId,
   isTaskReviewNote,
@@ -528,6 +527,7 @@ function blankMetrics(): ActivityMetrics {
     failedTurns: 0,
     interruptedTurns: 0,
     turnsByRole: { edit: 0, review: 0, worker: 0, helper: 0 },
+    agentMs: 0,
     accepted: 0,
     rejected: 0,
     commented: 0,
@@ -666,23 +666,13 @@ export function buildActivityReport(
     return entry;
   };
 
-  // Days in the selected range feed the totals, papers, agents and models; days
-  // of the past-year calendar feed the heatmap whatever the range.
+  // Days in the selected range feed the totals, papers, agents and models;
+  // every day feeds the calendar, whatever the range.
   const inRange = (date: string) => !startDate || (date >= startDate && date <= today);
-  const calendarStart = shiftCalendarDate(today, -(ACTIVITY_CALENDAR_DAYS - 1));
-  const inCalendar = (date: string) => date >= calendarStart && date <= today;
 
   for (const event of events) {
     const { date, hour } = localDateHour(event.at, timezone);
     const counted = inRange(date);
-    if (!counted && !inCalendar(date)) {
-      // Still track undone events whose undo happened inside the selected range.
-      if (event.kind === 'review_decision' && event.undoneAt !== null && (!selectedProject || event.projectId === selectedProject)) {
-        const undoneSlot = localDateHour(event.undoneAt, timezone);
-        if (inRange(undoneSlot.date)) getDay(undoneSlot.date).undone += Math.max(1, safeInt(event.data.count) || 1);
-      }
-      continue;
-    }
 
     const agentId = event.agent && isAgentId(event.agent) ? event.agent : null;
     const modelName = typeof event.model === 'string' && event.model.trim() ? event.model.trim() : null;
@@ -773,6 +763,8 @@ export function buildActivityReport(
       else if (status === 'interrupted') day.interruptedTurns++;
       day.hours[hour]++;
       day.turnHours[hour]++;
+      const finishedAt = Number(event.data.finishedAt);
+      if (Number.isFinite(finishedAt) && finishedAt > event.at) day.agentMs += finishedAt - event.at;
       if (agent) {
         getAgent(agent).turns++;
         if (modelName) getModel(agent, modelName).turns++;
@@ -867,9 +859,10 @@ export function buildActivityReport(
   totals.activeDays = days.length;
 
   const calendar: ActivityCalendarDay[] = activeDays
-    .filter(day => inCalendar(day.date))
+    .filter(day => day.date <= today)
     .map(day => ({
       date: day.date,
+      actions: day.hours.reduce((sum, count) => sum + count, 0),
       tokens: day.tokens.total,
       costUsd: day.costUsd,
       reportedCostUsd: day.reportedCostUsd,

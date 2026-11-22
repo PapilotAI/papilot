@@ -1,6 +1,5 @@
-import { type CSSProperties, Fragment, type KeyboardEvent, type PointerEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, Fragment, type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ACTIVITY_CALENDAR_DAYS,
   ACTIVITY_RANGES,
   type ActivityAgentSummary,
   type ActivityCalendarDay,
@@ -14,6 +13,7 @@ import {
   type ActivityTotals,
   type AgentId,
 } from '../shared.ts';
+import { ShareDialog, type ShareCard, type ShareFigure } from './activity-share.tsx';
 import { agentLabel } from './agent-choice.ts';
 import { BrandIcon } from './brand-icon.tsx';
 import { ChipSelect } from './chip-select.tsx';
@@ -24,7 +24,9 @@ import './activity-settings.css';
 
 export type LoadActivity = (params: { tz: string; range: ActivityRange; projectId?: string }, signal: AbortSignal) => Promise<ActivityReport>;
 
-type TrendMetric = 'tokens' | 'spend' | 'turns' | 'reviews';
+// Time saved counts each accepted change as the minutes it would take by hand:
+// finding the passage in the source, rewriting it, rebuilding and checking the PDF.
+const MINUTES_PER_CHANGE = 2;
 
 const EMPTY_TOKENS: ActivityTokenTotals = { input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: 0, total: 0 };
 
@@ -43,6 +45,7 @@ const EMPTY_TOTALS: ActivityTotals = {
   failedTurns: 0,
   interruptedTurns: 0,
   turnsByRole: { edit: 0, review: 0, worker: 0, helper: 0 },
+  agentMs: 0,
   accepted: 0,
   rejected: 0,
   commented: 0,
@@ -120,6 +123,7 @@ function normalizeReport(raw: Partial<ActivityReport> | undefined | null, fallba
     days,
     calendar: Array.isArray(raw?.calendar) ? raw.calendar.filter(day => day && typeof day.date === 'string').map(day => ({
       date: day.date,
+      actions: Number(day.actions) || 0,
       tokens: Number(day.tokens) || 0,
       costUsd: typeof day.costUsd === 'number' && Number.isFinite(day.costUsd) ? day.costUsd : null,
       reportedCostUsd: Number(day.reportedCostUsd) || 0,
@@ -199,28 +203,71 @@ function spendPrefix(figures: Pick<ActivityMetrics, 'costUsd' | 'reportedCostUsd
   return figures.costUsd !== null && figures.reportedCostUsd === 0 && figures.estimatedCostUsd > 0 ? '~' : '';
 }
 
-function metricValue(day: ActivityCalendarDay, metric: TrendMetric): number {
-  if (metric === 'tokens') return day.tokens;
-  if (metric === 'spend') return day.costUsd ?? 0;
-  if (metric === 'turns') return day.turns;
-  return day.accepted + day.rejected + day.commented + day.annotationsCreated;
+// Counted phrases are translated whole ("162 days", "162 天") with a marker in
+// place of the number, so the number can be set large in the language's order.
+const MARK = '⁣';
+
+function figure(value: string, phrase: string, label: string): ShareFigure {
+  const [before = '', after = ''] = phrase.split(MARK);
+  return { before: before.trim(), value, after: after.trim(), label };
 }
 
-function metricParts(day: ActivityCalendarDay, metric: TrendMetric): string[] {
-  if (metric === 'tokens') return [t('{tokens} tokens', { tokens: formatCompactTokens(day.tokens) })];
-  if (metric === 'spend') return [formatUsd(day.costUsd, spendPrefix(day))];
-  if (metric === 'turns') return [tn(day.turns, '{n} run', '{n} runs')];
+const figureText = (shown: ShareFigure) => [shown.before, shown.value, shown.after].filter(Boolean).join(' ');
+
+function daysFigure(count: number, label: string) {
+  return figure(formatExactNumber(count), tn(count, '{n} day', '{n} days', { n: MARK }), label);
+}
+
+function changesFigure(count: number, label: string) {
+  return figure(formatExactNumber(count), tn(count, '{n} change', '{n} changes', { n: MARK }), label);
+}
+
+// Minutes below an hour; hours with one decimal below ten, whole hours above.
+function durationFigure(ms: number, label: string, estimate = false) {
+  const minutes = ms / 60_000, prefix = estimate && ms > 0 ? '~' : '';
+  if (minutes < 60) {
+    const count = Math.round(minutes);
+    return figure(prefix + formatExactNumber(count), tn(count, '{n} minute', '{n} minutes', { n: MARK }), label);
+  }
+  const hours = minutes / 60, count = hours < 10 ? Math.round(hours * 10) / 10 : Math.round(hours);
+  return figure(prefix + count.toLocaleString(locale()), tn(count, '{n} hour', '{n} hours', { n: MARK }), label);
+}
+
+function Figure({ shown }: { shown: ShareFigure }) {
+  return <span className="activity-figure">
+    {shown.before && <span className="activity-figure-unit">{shown.before}</span>}
+    <strong>{shown.value}</strong>
+    {shown.after && <span className="activity-figure-unit">{shown.after}</span>}
+  </span>;
+}
+
+// The label comes first for screen readers; CSS sets the number above it.
+function Stat({ shown, className }: { shown: ShareFigure; className?: string }) {
+  return <div className={className ? `activity-stat ${className}` : 'activity-stat'}>
+    <dt>{shown.label}</dt>
+    <dd><Figure shown={shown}/></dd>
+  </div>;
+}
+
+function Fact({ label, children, note }: { label: string; children: ReactNode; note?: string }) {
+  return <div className="activity-fact">
+    <dt>{label}</dt>
+    <dd>{children}{note && <span className="activity-fact-note">{note}</span>}</dd>
+  </div>;
+}
+
+function dayParts(day: ActivityCalendarDay): string[] {
   return [
-    `+${formatExactNumber(day.accepted)} / −${formatExactNumber(day.rejected)}`,
-    ...(day.commented > 0 ? [tn(day.commented, '{n} comment', '{n} comments')] : []),
-    tn(day.annotationsCreated, '{n} annotation', '{n} annotations'),
+    tn(day.actions, '{n} action', '{n} actions'),
+    ...(day.turns ? [tn(day.turns, '{n} run', '{n} runs')] : []),
+    ...(day.accepted || day.rejected ? [`+${formatExactNumber(day.accepted)} / −${formatExactNumber(day.rejected)}`] : []),
+    ...(day.tokens ? [t('{tokens} tokens', { tokens: formatCompactTokens(day.tokens) })] : []),
   ];
 }
 
 // Calendar dates are plain YYYY-MM-DD days, counted in whole UTC days so no
 // time zone or daylight saving shift can move a cell.
 const DAY_MS = 86_400_000;
-const WEEKS = ACTIVITY_CALENDAR_DAYS / 7;
 const dayNumber = (date: string) => {
   const [y, m, d] = date.split('-').map(Number);
   return Math.round(Date.UTC(y, m - 1, d) / DAY_MS);
@@ -229,7 +276,7 @@ const dayDate = (day: number) => new Date(day * DAY_MS);
 const weekday = (day: number) => dayDate(day).getUTCDay();
 
 function blankCalendarDay(date: string): ActivityCalendarDay {
-  return { date, tokens: 0, costUsd: null, reportedCostUsd: 0, estimatedCostUsd: 0, turns: 0, accepted: 0, rejected: 0, commented: 0, annotationsCreated: 0 };
+  return { date, actions: 0, tokens: 0, costUsd: null, reportedCostUsd: 0, estimatedCostUsd: 0, turns: 0, accepted: 0, rejected: 0, commented: 0, annotationsCreated: 0 };
 }
 
 // The locale's first day of the week (0 = Sunday). Intl.Locale week info is
@@ -245,8 +292,8 @@ function firstDayOfWeek(language: string): number {
   return 1;
 }
 
-function weekdayName(dow: number): string {
-  return new Intl.DateTimeFormat(locale(), { weekday: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 0, 4 + dow)));
+function weekdayName(dow: number, width: 'short' | 'narrow' = 'short'): string {
+  return new Intl.DateTimeFormat(locale(), { weekday: width, timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 0, 4 + dow)));
 }
 
 // Shades rank the distinct nonzero values, like GitHub's quartiles, so one very
@@ -266,17 +313,43 @@ function heatLevels(values: number[]): (value: number) => number {
   };
 }
 
-function streaks(activeDays: number[], today: number): { longest: number; current: number } {
-  const active = new Set(activeDays);
+// Consecutive active days: the longest since the range starts, and the current
+// streak, which still counts until today is over when it reached yesterday.
+function streaks(days: number[], today: number, from: number | null): { longest: number; current: number } {
+  const active = new Set(days);
   let longest = 0, run = 0;
-  for (const day of activeDays) {
-    run = active.has(day - 1) ? run + 1 : 1;
+  for (const day of days) {
+    if (from !== null && day < from) continue;
+    run = active.has(day - 1) && (from === null || day - 1 >= from) ? run + 1 : 1;
     longest = Math.max(longest, run);
   }
-  // A streak that reached yesterday still counts until today is over.
   let day = active.has(today) ? today : today - 1, current = 0;
   while (active.has(day)) { current++; day--; }
   return { longest, current };
+}
+
+// The week columns ending `page` pages before the current week.
+function calendarWindow(today: string, weekStart: number, weeks: number, page: number) {
+  const end = dayNumber(today);
+  const first = end - ((weekday(end) - weekStart + 7) % 7) - 7 * (weeks - 1) - 7 * weeks * page;
+  return { end, first, last: first + 7 * weeks - 1 };
+}
+
+// Month names head the first week column that starts in a new month; a name
+// with less than three columns of room before the next is left out.
+function monthLabels(first: number, weeks: number, language: string) {
+  const format = new Intl.DateTimeFormat(language, { month: 'short', timeZone: 'UTC' });
+  const starts: { column: number; label: string }[] = [];
+  let previous = -1;
+  for (let column = 0; column < weeks; column++) {
+    const month = dayDate(first + column * 7).getUTCMonth();
+    if (month !== previous) starts.push({ column, label: format.format(dayDate(first + column * 7)) });
+    previous = month;
+  }
+  return starts.map((start, index) => {
+    const span = (starts[index + 1]?.column ?? weeks) - start.column;
+    return { ...start, span, label: span >= 3 ? start.label : '' };
+  });
 }
 
 type HeatTip = { x: number; y: number; align: 'start' | 'center' | 'end'; title: string[]; detail: string };
@@ -306,52 +379,43 @@ function HeatLegend() {
   </div>;
 }
 
-function YearHeatmap({ calendar, today, metric, selectedDate, onSelect, children }: {
-  calendar: ActivityCalendarDay[];
-  today: string;
-  metric: TrendMetric;
-  selectedDate: string | null;
-  onSelect: (date: string) => void;
-  children?: ReactNode;
-}) {
+const CELL = 20, GAP = 4, LABEL = 22;
+
+function ActivityCalendar({ calendar, today, from, children }: { calendar: ActivityCalendarDay[]; today: string; from: number | null; children: ReactNode }) {
   const language = locale();
   const weekStart = useMemo(() => firstDayOfWeek(language), [language]);
-  const cardRef = useRef<HTMLDivElement | null>(null);
+  const cardRef = useRef<HTMLElement | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(0);
+  const [page, setPage] = useState(0);
   const [tip, setTip] = useState<HeatTip | null>(null);
 
-  const end = dayNumber(today);
-  const first = end - ((weekday(end) - weekStart + 7) % 7) - 7 * (WEEKS - 1);
-  const byDay = useMemo(() => new Map(calendar.map(day => [dayNumber(day.date), day])), [calendar]);
-  const visible = useMemo(() => [...byDay.keys()].filter(day => day >= first && day <= end).sort((a, b) => a - b), [byDay, end, first]);
-  const level = useMemo(() => heatLevels(visible.map(day => metricValue(byDay.get(day)!, metric))), [byDay, metric, visible]);
-  const { longest, current } = useMemo(() => streaks(visible, end), [end, visible]);
-  const selected = selectedDate ? dayNumber(selectedDate) : null;
-  const tabStop = selected !== null && selected >= first && selected <= end ? selected : end;
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => setPage(0), [calendar]);
 
-  // Month labels head the first week column that starts in a new month; a
-  // label with less than three columns of room before the next is left out.
-  const months = useMemo(() => {
-    const format = new Intl.DateTimeFormat(language, { month: 'short', timeZone: 'UTC' });
-    const starts: { column: number; label: string }[] = [];
-    let previous = -1;
-    for (let column = 0; column < WEEKS; column++) {
-      const month = dayDate(first + column * 7).getUTCMonth();
-      if (month !== previous) starts.push({ column, label: format.format(dayDate(first + column * 7)) });
-      previous = month;
-    }
-    return starts.map((start, index) => {
-      const span = (starts[index + 1]?.column ?? WEEKS) - start.column;
-      return { ...start, span, label: span >= 3 ? start.label : '' };
-    });
-  }, [first, language]);
+  // As many weeks as fit at about 20px squares: a quarter on a phone, half a
+  // year in Settings. The arrows page back through earlier weeks.
+  const weeks = width ? Math.max(8, Math.min(53, Math.floor((width - LABEL + GAP) / (CELL + GAP)))) : 24;
+  const { end, first, last } = calendarWindow(today, weekStart, weeks, page);
+  const shownEnd = Math.min(last, end);
+  const byDay = useMemo(() => new Map(calendar.map(day => [dayNumber(day.date), day])), [calendar]);
+  const level = useMemo(() => heatLevels(calendar.map(day => day.actions)), [calendar]);
+  const earliest = calendar.length ? dayNumber(calendar[0].date) : end;
+  const months = useMemo(() => monthLabels(first, weeks, language), [first, weeks, language]);
+  const period = new Intl.DateTimeFormat(language, { year: 'numeric', month: 'short', timeZone: 'UTC' }).formatRange(dayDate(first), dayDate(shownEnd));
 
   const dayOf = (day: number) => byDay.get(day) ?? blankCalendarDay(dayDate(day).toISOString().slice(0, 10));
-  const cellLabel = (day: number) => `${formatDateLabel(dayOf(day).date)}: ${metricParts(dayOf(day), metric).join(', ')}`;
   const showTip = (cell: Element | null) => {
     const date = cell instanceof HTMLElement ? cell.dataset.date : undefined;
     if (!cell || !date) return setTip(null);
     const entry = dayOf(dayNumber(date));
-    setTip(placeTip(cardRef.current, cell, metricParts(entry, metric), formatDateLabel(entry.date)));
+    setTip(placeTip(cardRef.current, cell, dayParts(entry), formatDateLabel(entry.date)));
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTableElement>) => {
@@ -365,40 +429,39 @@ function YearHeatmap({ calendar, today, metric, selectedDate, onSelect, children
     if (!focused || event.altKey || event.ctrlKey || event.metaKey) return;
     const day = dayNumber(focused);
     const row = (day - first) % 7;
-    const lastInRow = first + row + 7 * Math.floor((end - first - row) / 7);
+    const lastInRow = first + row + 7 * Math.floor((shownEnd - first - row) / 7);
     const target = event.key === 'ArrowUp' ? (row > 0 ? day - 1 : null)
-      : event.key === 'ArrowDown' ? (row < 6 && day < end ? day + 1 : null)
+      : event.key === 'ArrowDown' ? (row < 6 && day < shownEnd ? day + 1 : null)
       : event.key === 'ArrowLeft' ? (day - 7 >= first ? day - 7 : null)
-      : event.key === 'ArrowRight' ? (day + 7 <= end ? day + 7 : null)
+      : event.key === 'ArrowRight' ? (day + 7 <= shownEnd ? day + 7 : null)
       : event.key === 'Home' ? first + row
       : event.key === 'End' ? lastInRow
       : null;
     // Leave keys with nowhere to go to the browser, so it can still scroll.
     if (target === null || target === day) return;
     event.preventDefault();
-    const date = dayDate(target).toISOString().slice(0, 10);
-    onSelect(date);
-    const cell = event.currentTarget.querySelector<HTMLElement>(`[data-date="${date}"]`);
+    const cell = event.currentTarget.querySelector<HTMLElement>(`[data-date="${dayDate(target).toISOString().slice(0, 10)}"]`);
     cell?.focus();
-    cell?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     showTip(cell);
   };
 
-  return <div ref={cardRef} className="activity-chart-box activity-year">
-    <div className="activity-heatmap-scroll">
+  return <section ref={cardRef} className="activity-calendar" aria-label={t('Activity')}>
+    {children}
+    <div ref={gridRef} className="activity-calendar-grid">
       <table
         className="activity-heatmap"
         role="grid"
-        aria-label={t('Past year')}
+        aria-label={period}
         aria-readonly="true"
+        style={{ '--weeks': weeks } as CSSProperties}
         onKeyDown={onKeyDown}
-        onPointerOver={(event: PointerEvent<HTMLTableElement>) => { if (event.pointerType === 'mouse') showTip((event.target as Element).closest('[data-date]')); }}
-        onPointerLeave={() => setTip(null)}
+        onPointerOver={event => { if (event.pointerType === 'mouse') showTip((event.target as Element).closest('[data-date]')); }}
+        onPointerLeave={event => { if (event.pointerType === 'mouse') setTip(null); }}
         onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setTip(null); }}
       >
         <colgroup>
           <col className="activity-heatmap-label-column"/>
-          {Array.from({ length: WEEKS }, (_, column) => <col key={column}/>)}
+          {Array.from({ length: weeks }, (_, column) => <col key={column}/>)}
         </colgroup>
         <thead>
           <tr>
@@ -410,8 +473,8 @@ function YearHeatmap({ calendar, today, metric, selectedDate, onSelect, children
           {Array.from({ length: 7 }, (_, row) => {
             const dow = (weekStart + row) % 7;
             return <tr key={row}>
-              <th scope="row"><span className={dow === 1 || dow === 3 || dow === 5 ? undefined : 'sr-only'}>{weekdayName(dow)}</span></th>
-              {Array.from({ length: WEEKS }, (_, column) => {
+              <th scope="row"><abbr title={weekdayName(dow)}>{weekdayName(dow, 'narrow')}</abbr></th>
+              {Array.from({ length: weeks }, (_, column) => {
                 const day = first + column * 7 + row;
                 if (day > end) return <td key={column} className="activity-heat-future"/>;
                 const entry = dayOf(day);
@@ -419,11 +482,11 @@ function YearHeatmap({ calendar, today, metric, selectedDate, onSelect, children
                   key={column}
                   className="activity-heat-cell"
                   data-date={entry.date}
-                  data-level={level(metricValue(entry, metric))}
-                  tabIndex={day === tabStop ? 0 : -1}
-                  aria-selected={day === selected}
-                  aria-label={cellLabel(day)}
-                  onClick={() => onSelect(entry.date)}
+                  data-level={level(entry.actions)}
+                  data-outside={from !== null && day < from ? '' : undefined}
+                  tabIndex={day === shownEnd ? 0 : -1}
+                  aria-label={`${formatDateLabel(entry.date)}: ${dayParts(entry).join(', ')}`}
+                  onClick={event => showTip(event.currentTarget)}
                   onFocus={event => { if (event.currentTarget.matches(':focus-visible')) showTip(event.currentTarget); }}
                 />;
               })}
@@ -432,18 +495,16 @@ function YearHeatmap({ calendar, today, metric, selectedDate, onSelect, children
         </tbody>
       </table>
     </div>
-    <div className="activity-year-footer">
-      <dl className="activity-streaks">
-        {/* i18n: The most consecutive active days in the past year, shown above a length such as "12 days". */}
-        <div><dt>{t('Longest streak')}</dt><dd>{tn(longest, '{n} day', '{n} days')}</dd></div>
-        {/* i18n: Consecutive active days up to today or yesterday, shown above a length such as "3 days". */}
-        <div><dt>{t('Current streak')}</dt><dd>{tn(current, '{n} day', '{n} days')}</dd></div>
-      </dl>
+    <div className="activity-calendar-footer">
       <HeatLegend/>
+      <div className="activity-pager">
+        <button type="button" className="icon-button" aria-label={t('Earlier weeks')} disabled={first <= earliest} onClick={() => { setTip(null); setPage(page + 1); }}><Icon name="chevronLeft" size={15}/></button>
+        <span>{period}</span>
+        <button type="button" className="icon-button" aria-label={t('Later weeks')} disabled={page === 0} onClick={() => { setTip(null); setPage(page - 1); }}><Icon name="chevronRight" size={15}/></button>
+      </div>
     </div>
-    {children}
     <HeatTooltip tip={tip}/>
-  </div>;
+  </section>;
 }
 
 // Weekday by hour of the selected range, in local time: when the author
@@ -484,7 +545,7 @@ function HourHeatmap({ days, summary }: { days: ActivityDay[]; summary: string }
     ));
   };
 
-  return <div ref={cardRef} className="activity-chart-box activity-hours">
+  return <div ref={cardRef} className="activity-hours">
     <div
       className="activity-hour-grid"
       role="img"
@@ -504,6 +565,21 @@ function HourHeatmap({ days, summary }: { days: ActivityDay[]; summary: string }
     </div>
     <HeatTooltip tip={tip}/>
   </div>;
+}
+
+function Detail({ title, headline, children }: { title: string; headline: ReactNode; children: ReactNode }) {
+  return <details className="activity-detail">
+    <summary>
+      <Icon name="chevronRight" size={14}/>
+      <span className="activity-detail-title">{title}</span>
+      <span className="activity-detail-headline">{headline}</span>
+    </summary>
+    <div className="activity-detail-body">{children}</div>
+  </details>;
+}
+
+function ShareBar({ value, max }: { value: number; max: number }) {
+  return <span className="activity-share-bar" aria-hidden="true"><span style={{ '--share': `${max > 0 ? Math.max(2, Math.round((value / max) * 100)) : 0}%` } as CSSProperties}/></span>;
 }
 
 function AgentAvatar({ agent }: { agent: AgentId }) {
@@ -567,14 +643,14 @@ function DayRows({ days }: { days: ActivityDay[] }) {
 
 export function ActivitySettings({ load, initialProjectId }: { load: LoadActivity; initialProjectId?: string }) {
   const clientTz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', []);
-  const [range, setRange] = useState<ActivityRange>('30d');
+  const [range, setRange] = useState<ActivityRange>('all');
   const [projectId, setProjectId] = useState<string>('all');
-  const [metric, setMetric] = useState<TrendMetric>('tokens');
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [report, setReport] = useState<ActivityReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [sharing, setSharing] = useState(false);
   const requestSeq = useRef(0);
+  const pageRef = useRef<HTMLDivElement | null>(null);
 
   const refresh = useCallback((chosenRange = range, chosenProject = projectId) => {
     const id = ++requestSeq.current;
@@ -604,13 +680,11 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
 
   const current = report ?? normalizeReport(null, clientTz, range);
   const totals = current.totals;
+  const language = locale();
 
-  const activeDaysDesc = useMemo(
-    () => [...current.days].filter(hasAnyActivity).reverse(),
-    [current.days],
-  );
-
+  const activeDaysDesc = useMemo(() => [...current.days].filter(hasAnyActivity).reverse(), [current.days]);
   const peakHour = useMemo(() => peakHourIndex(current.hours), [current.hours]);
+  const peakWindow = peakHour !== null ? `${hourLabel(peakHour)}–${hourLabel((peakHour + 1) % 24)}` : null;
 
   const rangeLabels: Record<ActivityRange, string> = {
     '7d': t('7 days'),
@@ -627,21 +701,80 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
     return [{ value: 'all', label: t('All papers') }, ...items];
   }, [current.projects]);
 
-  const spendEstimateOnly = spendPrefix(totals) === '~';
-  const spendMixed = totals.reportedCostUsd > 0 && totals.estimatedCostUsd > 0;
+  const today = dayNumber(current.today);
+  const rangeDays = current.range === '7d' ? 7 : current.range === '30d' ? 30 : current.range === '90d' ? 90 : 0;
+  const from = rangeDays ? today - rangeDays + 1 : null;
+  const activeDays = useMemo(() => current.calendar.map(day => dayNumber(day.date)), [current.calendar]);
+  const streak = useMemo(() => streaks(activeDays, today, from), [activeDays, today, from]);
+
   const decisionTotal = totals.accepted + totals.rejected;
   const acceptRate = decisionTotal > 0 ? Math.round((totals.accepted / decisionTotal) * 100) : null;
   const emptyWorkspace = totals.activeDays === 0 && totals.tokens.total === 0 && totals.turns === 0 && decisionTotal === 0 && totals.annotationsCreated === 0;
-  // The day readout under the heatmap: the chosen day, else the latest active one.
-  const shownDate = selectedDate ?? current.calendar.at(-1)?.date ?? null;
-  const shownDay = shownDate ? current.calendar.find(day => day.date === shownDate) ?? blankCalendarDay(shownDate) : null;
-  const peakWindow = peakHour !== null ? `${hourLabel(peakHour)}–${hourLabel((peakHour + 1) % 24)}` : null;
-  const calendarActiveDays = current.calendar.filter(day => dayNumber(day.date) > dayNumber(current.today) - 365).length;
+  const savedMs = totals.accepted * MINUTES_PER_CHANGE * 60_000;
 
+  const insights = [
+    durationFigure(savedMs, t('Time saved'), true),
+    changesFigure(totals.accepted, t('Accepted changes')),
+    changesFigure(totals.rejected, t('Rejected changes')),
+    durationFigure(totals.agentMs, t('Agent time')),
+  ];
+  const calendarStats = [
+    daysFigure(totals.activeDays, t('Active days')),
+    daysFigure(streak.current, t('Current streak')),
+    daysFigure(streak.longest, t('Longest streak')),
+  ];
+
+  // The shared image: the same figures, and the latest 26 weeks of activity.
+  const shareCard = useMemo<ShareCard>(() => {
+    const weekStart = firstDayOfWeek(language), weeks = 26;
+    const { end, first } = calendarWindow(current.today, weekStart, weeks, 0);
+    const byDay = new Map(current.calendar.map(day => [dayNumber(day.date), day]));
+    const level = heatLevels(current.calendar.map(day => day.actions));
+    const [saved, ...figures] = insights;
+    return {
+      period: rangeLabels[current.range],
+      date: formatDateLabel(current.today),
+      hero: saved,
+      figures: [...figures, calendarStats[0]],
+      streaks: calendarStats.slice(1),
+      weekdays: Array.from({ length: 7 }, (_, row) => weekdayName((weekStart + row) % 7, 'narrow')),
+      months: monthLabels(first, weeks, language).filter(month => month.label),
+      weeks: Array.from({ length: weeks }, (_, column) => Array.from({ length: 7 }, (_, row) => {
+        const day = first + column * 7 + row;
+        return day > end ? null : level(byDay.get(day)?.actions ?? 0);
+      })),
+      less: t('Less'),
+      more: t('More'),
+      alt: [saved, ...figures, ...calendarStats].map(shown => `${shown.label} ${figureText(shown)}`).join(', '),
+      fileName: `papilot-${current.today}.png`,
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [report, language]);
+
+  const tokenParts = [
+    { id: 'input', label: t('Input'), value: totals.tokens.input },
+    { id: 'cached', label: t('Cached'), value: totals.tokens.cached },
+    { id: 'cacheWrite', label: t('Cache write'), value: totals.tokens.cacheWrite },
+    { id: 'output', label: t('Output'), value: totals.tokens.output },
+  ].filter(part => part.value > 0);
+  const topAgent = current.agents[0];
+  const maxAgentTokens = Math.max(0, ...current.agents.map(entry => entry.tokens.total));
+  const maxModelTokens = Math.max(0, ...current.models.map(entry => entry.tokens.total));
   const primaryDays = activeDaysDesc.slice(0, 14);
   const olderDays = activeDaysDesc.slice(14);
+  const tableHead = <thead>
+    <tr>
+      <th scope="col">{t('Date')}</th>
+      <th scope="col" className="num">{t('Tokens')}</th>
+      <th scope="col" className="num">{t('Spend')}</th>
+      <th scope="col" className="num">{t('Agent runs')}</th>
+      <th scope="col" className="num">{t('Accept / Reject')}</th>
+      <th scope="col" className="num">{t('Annotations')}</th>
+      <th scope="col" className="num">{t('Peak hour')}</th>
+    </tr>
+  </thead>;
 
-  return <div className="settings-page activity-settings">
+  return <div ref={pageRef} className="settings-page activity-settings">
     <div className="activity-toolbar">
       <div className="activity-range-group" role="group" aria-label={t('Time range')}>
         {ACTIVITY_RANGES.map(option => (
@@ -662,7 +795,7 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
           <ChipSelect
             label={t('Paper filter')}
             value={projectId}
-            onChange={value => { setSelectedDate(null); setProjectId(value); }}
+            onChange={value => setProjectId(value)}
             options={paperOptions}
           />
         )}
@@ -675,6 +808,9 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
           onClick={() => refresh(range, projectId)}
         >
           <Icon name="refresh" size={14}/>
+        </button>
+        <button type="button" className="activity-share-button" disabled={!report || emptyWorkspace} onClick={() => setSharing(true)}>
+          <Icon name="share" size={14}/>{t('Share')}
         </button>
       </div>
     </div>
@@ -698,192 +834,61 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
       </div>
     )}
 
-    <section className="activity-kpis" aria-label={t('Summary metrics')}>
-      <div className="activity-kpi" data-kpi="tokens">
-        <span className="activity-kpi-label"><Icon name="bolt" size={13}/>{t('Tokens')}</span>
-        <strong className="activity-kpi-value" title={formatExactNumber(totals.tokens.total)}>
-          {formatCompactTokens(totals.tokens.total)}
-        </strong>
-        <p className="activity-kpi-detail">
-          {t('{input} in · {cached} cached · {output} out', {
-            input: formatCompactTokens(totals.tokens.input),
-            cached: formatCompactTokens(totals.tokens.cached),
-            output: formatCompactTokens(totals.tokens.output),
-          })}
-          {totals.tokens.cacheWrite > 0 ? ` · ${t('{tokens} cache write', { tokens: formatCompactTokens(totals.tokens.cacheWrite) })}` : ''}
-          {totals.tokens.reasoning > 0 ? ` · ${t('{tokens} reasoning', { tokens: formatCompactTokens(totals.tokens.reasoning) })}` : ''}
+    <dl className="activity-insights" aria-label={t('Summary metrics')}>
+      {insights.map(shown => <Stat key={shown.label} shown={shown} className="activity-insight"/>)}
+    </dl>
+
+    <ActivityCalendar calendar={current.calendar} today={current.today} from={from}>
+      <dl className="activity-calendar-stats">
+        {calendarStats.map(shown => <Stat key={shown.label} shown={shown}/>)}
+      </dl>
+    </ActivityCalendar>
+
+    <div className="activity-details">
+      <Detail title={t('Reviews & notes')} headline={acceptRate !== null ? t('{rate}% accepted', { rate: acceptRate }) : t('No changes decided yet')}>
+        <dl className="activity-facts">
+          <Fact label={t('Accepted changes')}>{formatExactNumber(totals.accepted)}</Fact>
+          <Fact label={t('Rejected changes')}>{formatExactNumber(totals.rejected)}</Fact>
+          <Fact label={t('Review comments')}>{formatExactNumber(totals.commented)}</Fact>
+          <Fact label={t('Undone')}>{formatExactNumber(totals.undone)}</Fact>
+          <Fact label={t('Saved tasks')}>{formatExactNumber(totals.tasksApplied + totals.tasksCommitted)}</Fact>
+          <Fact label={t('Git commits')}>{formatExactNumber(totals.gitCommits)}</Fact>
+          <Fact label={t('Annotations')}>{formatExactNumber(totals.annotationsCreated)}</Fact>
+          <Fact label={t('Sent to tasks')}>{formatExactNumber(totals.annotationsSent)}</Fact>
+          <Fact label={t('Time saved')} note={t('{count} changes × {minutes} min', { count: formatExactNumber(totals.accepted), minutes: MINUTES_PER_CHANGE })}>{figureText(insights[0])}</Fact>
+        </dl>
+      </Detail>
+
+      <Detail title={t('Tokens & spend')} headline={<>
+        <span>{formatCompactTokens(totals.tokens.total)}</span>
+        <span>{formatUsd(totals.costUsd, spendPrefix(totals))}</span>
+      </>}>
+        {tokenParts.length > 0 && <div className="activity-token-bar" aria-hidden="true">
+          {tokenParts.map(part => <span key={part.id} data-part={part.id} style={{ flexGrow: part.value }}/>)}
+        </div>}
+        <dl className="activity-facts">
+          {tokenParts.map(part => <Fact key={part.id} label={part.label}>
+            <i className="activity-token-key" data-part={part.id} aria-hidden="true"/>{formatCompactTokens(part.value)}
+          </Fact>)}
+          {totals.tokens.reasoning > 0 && <Fact label={t('Reasoning')}>{formatCompactTokens(totals.tokens.reasoning)}</Fact>}
+          <Fact label={t('Provider-reported spend')}>{formatUsd(totals.reportedCostUsd)}</Fact>
+          <Fact label={t('API-equivalent model rates')} note={totals.unpricedTokens > 0 ? t('{tokens} unpriced', { tokens: formatCompactTokens(totals.unpricedTokens) }) : undefined}>
+            {formatUsd(totals.estimatedCostUsd, totals.estimatedCostUsd > 0 ? '~' : '')}
+          </Fact>
+        </dl>
+        <p className="activity-footnote">
+          {t('Values marked with ~ are estimated from exact model API rates when an agent reports tokens without billing totals. Subscription plans may include this usage at no extra charge.')}
         </p>
-      </div>
+      </Detail>
 
-      <div className="activity-kpi" data-kpi="spend">
-        <span className="activity-kpi-label"><Icon name="calculator" size={13}/>{t('Spend')}</span>
-        <strong className="activity-kpi-value">
-          {formatUsd(totals.costUsd, spendEstimateOnly ? '~' : '')}
-        </strong>
-        <p className="activity-kpi-detail">
-          {[
-            spendMixed
-              ? t('{reported} reported · {estimated} API equiv.', {
-                  reported: formatUsd(totals.reportedCostUsd),
-                  estimated: formatUsd(totals.estimatedCostUsd, '~'),
-                })
-              : spendEstimateOnly
-              ? t('API-equivalent model rates')
-              : totals.reportedCostUsd > 0
-              ? t('Provider-reported spend')
-              : totals.tokens.total > 0
-              ? t('Cost not reported for these models')
-              : t('Reported & API-equivalent USD'),
-            totals.unpricedTokens > 0 && totals.costUsd !== null
-              ? t('{tokens} unpriced', { tokens: formatCompactTokens(totals.unpricedTokens) })
-              : '',
-          ].filter(Boolean).join(' · ')}
-        </p>
-      </div>
-
-      <div className="activity-kpi" data-kpi="agents">
-        <span className="activity-kpi-label"><Icon name="terminal" size={13}/>{t('Agent runs')}</span>
-        <strong className="activity-kpi-value">{formatExactNumber(totals.turns)}</strong>
-        <p className="activity-kpi-detail">
-          {[
-            tn(totals.tasksStarted, '{n} task started', '{n} tasks started'),
-            totals.turnsByRole.review > 0 ? t('{count} review', { count: formatExactNumber(totals.turnsByRole.review) }) : '',
-            totals.turnsByRole.worker > 0 ? t('{count} worker', { count: formatExactNumber(totals.turnsByRole.worker) }) : '',
-            totals.turnsByRole.helper > 0 ? t('{count} helper', { count: formatExactNumber(totals.turnsByRole.helper) }) : '',
-          ].filter(Boolean).join(' · ')}
-        </p>
-      </div>
-
-      <div className="activity-kpi" data-kpi="reviews">
-        <span className="activity-kpi-label"><Icon name="diff" size={13}/>{t('Accept / Reject')}</span>
-        <strong className="activity-kpi-value activity-kpi-decisions">
-          <span className="activity-kpi-accept">+{formatExactNumber(totals.accepted)}</span>
-          <span aria-hidden="true">/</span>
-          <span className="activity-kpi-reject">−{formatExactNumber(totals.rejected)}</span>
-        </strong>
-        <p className="activity-kpi-detail">
-          {[
-            acceptRate !== null ? t('{rate}% accepted', { rate: acceptRate }) : t('No changes decided yet'),
-            totals.commented > 0 ? tn(totals.commented, '{n} comment', '{n} comments') : '',
-            totals.tasksApplied + totals.tasksCommitted > 0 ? t('{count} saved', { count: formatExactNumber(totals.tasksApplied + totals.tasksCommitted) }) : '',
-            totals.undone > 0 ? t('{count} undone', { count: formatExactNumber(totals.undone) }) : '',
-          ].filter(Boolean).join(' · ')}
-        </p>
-      </div>
-
-      <div className="activity-kpi" data-kpi="annotations">
-        <span className="activity-kpi-label"><Icon name="notes" size={13}/>{t('Annotations')}</span>
-        <strong className="activity-kpi-value">{formatExactNumber(totals.annotationsCreated)}</strong>
-        <p className="activity-kpi-detail">
-          {[
-            t('{count} sent to tasks', { count: formatExactNumber(totals.annotationsSent) }),
-            totals.authorAnnotations > 0 ? t('{count} yours', { count: formatExactNumber(totals.authorAnnotations) }) : '',
-            totals.aiReviewAnnotations + totals.agentAnnotations > 0
-              ? t('{count} by AI', { count: formatExactNumber(totals.aiReviewAnnotations + totals.agentAnnotations) })
-              : '',
-          ].filter(Boolean).join(' · ')}
-        </p>
-      </div>
-
-      <div className="activity-kpi" data-kpi="hours">
-        <span className="activity-kpi-label"><Icon name="clock" size={13}/>{t('Active hours')}</span>
-        <strong className="activity-kpi-value">
-          {peakHour !== null ? `${hourLabel(peakHour)}–${hourLabel((peakHour + 1) % 24)}` : '—'}
-        </strong>
-        <p className="activity-kpi-detail">
-          {[
-            tn(totals.activeDays, '{n} active day', '{n} active days'),
-            current.timezone,
-          ].filter(Boolean).join(' · ')}
-        </p>
-      </div>
-    </section>
-
-    <section className="activity-section">
-      <div className="activity-section-head">
-        <div className="activity-section-title-group">
-          <h3>{t('Past year')}</h3>
-          <p className="activity-section-subtitle">
-            {tn(calendarActiveDays, '{n} active day', '{n} active days')}
-          </p>
-        </div>
-        <div className="activity-metric-tabs" role="group" aria-label={t('Chart metric')}>
-          {([
-            ['tokens', t('Tokens')],
-            ['spend', t('Spend')],
-            ['turns', t('Agent runs')],
-            ['reviews', t('Reviews & notes')],
-          ] as const).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              className="activity-metric-tab"
-              data-metric={id}
-              aria-pressed={metric === id}
-              onClick={() => setMetric(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <YearHeatmap
-        calendar={current.calendar}
-        today={current.today}
-        metric={metric}
-        selectedDate={shownDate}
-        onSelect={setSelectedDate}
-      >
-        {shownDay && (
-          <div className="activity-selected-day">
-            <strong>{formatDateLabel(shownDay.date)}</strong>
-            <div className="activity-selected-metrics">
-              <span>{t('Tokens')}: {formatCompactTokens(shownDay.tokens)}</span>
-              <span>{t('Spend')}: {formatUsd(shownDay.costUsd, spendPrefix(shownDay))}</span>
-              <span>{t('Agent runs')}: {formatExactNumber(shownDay.turns)}</span>
-              <span>{t('Accept / Reject')}: +{formatExactNumber(shownDay.accepted)} / −{formatExactNumber(shownDay.rejected)}</span>
-              <span>{t('Annotations')}: {formatExactNumber(shownDay.annotationsCreated)}</span>
-            </div>
-          </div>
-        )}
-      </YearHeatmap>
-    </section>
-
-    <section className="activity-section">
-      <div className="activity-section-head">
-        <div className="activity-section-title-group">
-          <h3>{t('Active hours')}</h3>
-          <p className="activity-section-subtitle">
-            {[
-              t('Local time ({timezone})', { timezone: current.timezone }),
-              peakWindow ? t('Peak {window}', { window: peakWindow }) : '',
-            ].filter(Boolean).join(' · ')}
-          </p>
-        </div>
-      </div>
-      <HourHeatmap
-        days={current.days}
-        summary={peakWindow ? t('Active hours, peak {window}', { window: peakWindow }) : t('Active hours')}
-      />
-    </section>
-
-    {(current.agents.length > 0 || current.models.length > 0) && (
-      <section className="activity-section">
-        <div className="activity-section-head">
-          <div className="activity-section-title-group">
-            <h3>{t('Agents & models')}</h3>
-            <p className="activity-section-subtitle">{t('Breakdown across editing tasks, AI reviews, collaboration workers and background helpers.')}</p>
-          </div>
-        </div>
-        <div className="activity-breakdown-grid">
-          {current.agents.length > 0 && (
-            <div className="activity-list-card">
-              <h4>{t('By agent')}</h4>
-              <ul className="activity-breakdown-list" role="list">
-                {current.agents.map((entry: ActivityAgentSummary) => {
-                  const estOnly = entry.costUsd !== null && entry.reportedCostUsd === 0 && entry.estimatedCostUsd > 0;
-                  return (
+      {(current.agents.length > 0 || current.models.length > 0) && (
+        <Detail title={t('Agents & models')} headline={topAgent ? <span className="activity-detail-agent"><AgentAvatar agent={topAgent.agent}/>{agentLabel(topAgent.agent)}</span> : null}>
+          <div className="activity-breakdown-grid">
+            {current.agents.length > 0 && (
+              <div className="activity-list-card">
+                <h4>{t('By agent')}</h4>
+                <ul className="activity-breakdown-list" role="list">
+                  {current.agents.map((entry: ActivityAgentSummary) => (
                     <li key={entry.agent} className="activity-breakdown-row">
                       <div className="activity-breakdown-name">
                         <AgentAvatar agent={entry.agent}/>
@@ -892,27 +897,24 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
                       <span className="activity-breakdown-stat">
                         {entry.tokens.total > 0 ? formatCompactTokens(entry.tokens.total) : tn(entry.turns, '{n} run', '{n} runs')}
                       </span>
+                      <ShareBar value={entry.tokens.total} max={maxAgentTokens}/>
                       <span className="activity-breakdown-sub">
                         {[
                           tn(entry.turns, '{n} run', '{n} runs'),
                           entry.tasksStarted > 0 ? tn(entry.tasksStarted, '{n} task started', '{n} tasks started') : '',
-                          entry.costUsd !== null ? formatUsd(entry.costUsd, estOnly ? '~' : '') : '',
+                          entry.costUsd !== null ? formatUsd(entry.costUsd, spendPrefix(entry)) : '',
                         ].filter(Boolean).join(' · ')}
                       </span>
                     </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
-
-          {current.models.length > 0 && (
-            <div className="activity-list-card">
-              <h4>{t('By model')}</h4>
-              <ul className="activity-breakdown-list" role="list">
-                {current.models.map((entry: ActivityModelSummary) => {
-                  const estPrefix = entry.costSource === 'estimated' ? '~' : '';
-                  return (
+                  ))}
+                </ul>
+              </div>
+            )}
+            {current.models.length > 0 && (
+              <div className="activity-list-card">
+                <h4>{t('By model')}</h4>
+                <ul className="activity-breakdown-list" role="list">
+                  {current.models.map((entry: ActivityModelSummary) => (
                     <li key={`${entry.agent}:${entry.model}`} className="activity-breakdown-row">
                       <div className="activity-breakdown-name">
                         <AgentAvatar agent={entry.agent}/>
@@ -921,84 +923,63 @@ export function ActivitySettings({ load, initialProjectId }: { load: LoadActivit
                       <span className="activity-breakdown-stat">
                         {entry.tokens.total > 0 ? formatCompactTokens(entry.tokens.total) : tn(entry.turns, '{n} run', '{n} runs')}
                       </span>
+                      <ShareBar value={entry.tokens.total} max={maxModelTokens}/>
                       <span className="activity-breakdown-sub">
                         {[
                           agentLabel(entry.agent),
                           tn(entry.turns, '{n} run', '{n} runs'),
-                          entry.costUsd !== null ? formatUsd(entry.costUsd, estPrefix) : '',
+                          entry.costUsd !== null ? formatUsd(entry.costUsd, entry.costSource === 'estimated' ? '~' : '') : '',
                         ].filter(Boolean).join(' · ')}
                       </span>
                     </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
-        </div>
-      </section>
-    )}
-
-    {activeDaysDesc.length > 0 && (
-      <section className="activity-section">
-        <div className="activity-section-head">
-          <div className="activity-section-title-group">
-            <h3>{t('Daily breakdown')}</h3>
-            <p className="activity-section-subtitle">{t('Recorded locally in your workspace database and kept even after tasks or papers are removed.')}</p>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
-        </div>
+        </Detail>
+      )}
 
-        <div className="activity-table-container">
-          <table className="activity-table">
-            <caption className="sr-only">{t('Daily breakdown')}</caption>
-            <thead>
-              <tr>
-                <th scope="col">{t('Date')}</th>
-                <th scope="col" className="num">{t('Tokens')}</th>
-                <th scope="col" className="num">{t('Spend')}</th>
-                <th scope="col" className="num">{t('Agent runs')}</th>
-                <th scope="col" className="num">{t('Accept / Reject')}</th>
-                <th scope="col" className="num">{t('Annotations')}</th>
-                <th scope="col" className="num">{t('Peak hour')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <DayRows days={primaryDays}/>
-            </tbody>
-          </table>
-        </div>
+      <Detail title={t('Active hours')} headline={peakWindow ? t('Peak {window}', { window: peakWindow }) : null}>
+        <p className="activity-detail-caption">{t('Local time ({timezone})', { timezone: current.timezone })}</p>
+        <HourHeatmap
+          days={current.days}
+          summary={peakWindow ? t('Active hours, peak {window}', { window: peakWindow }) : t('Active hours')}
+        />
+      </Detail>
 
-        {olderDays.length > 0 && (
-          <details className="activity-more-days">
-            <summary>
-              <Icon name="chevronDown" size={14}/>
-              <span>{tn(olderDays.length, 'Show {n} earlier active day', 'Show {n} earlier active days')}</span>
-            </summary>
-            <div className="activity-table-container">
-              <table className="activity-table">
-                <caption className="sr-only">{t('Earlier active days')}</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">{t('Date')}</th>
-                    <th scope="col" className="num">{t('Tokens')}</th>
-                    <th scope="col" className="num">{t('Spend')}</th>
-                    <th scope="col" className="num">{t('Agent runs')}</th>
-                    <th scope="col" className="num">{t('Accept / Reject')}</th>
-                    <th scope="col" className="num">{t('Annotations')}</th>
-                    <th scope="col" className="num">{t('Peak hour')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <DayRows days={olderDays}/>
-                </tbody>
-              </table>
-            </div>
-          </details>
-        )}
+      {activeDaysDesc.length > 0 && (
+        <Detail title={t('Daily breakdown')} headline={tn(totals.activeDays, '{n} active day', '{n} active days')}>
+          <div className="activity-table-container">
+            <table className="activity-table">
+              <caption className="sr-only">{t('Daily breakdown')}</caption>
+              {tableHead}
+              <tbody>
+                <DayRows days={primaryDays}/>
+              </tbody>
+            </table>
+          </div>
+          {olderDays.length > 0 && (
+            <details className="activity-more-days">
+              <summary>
+                <Icon name="chevronDown" size={14}/>
+                <span>{tn(olderDays.length, 'Show {n} earlier active day', 'Show {n} earlier active days')}</span>
+              </summary>
+              <div className="activity-table-container">
+                <table className="activity-table">
+                  <caption className="sr-only">{t('Earlier active days')}</caption>
+                  {tableHead}
+                  <tbody>
+                    <DayRows days={olderDays}/>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
+        </Detail>
+      )}
+    </div>
 
-        <p className="activity-footnote">
-          {t('Values marked with ~ are estimated from exact model API rates when an agent reports tokens without billing totals. Subscription plans may include this usage at no extra charge.')}
-        </p>
-      </section>
-    )}
+    {sharing && pageRef.current && <ShareDialog card={shareCard} source={pageRef.current} onClose={() => setSharing(false)}/>}
   </div>;
 }

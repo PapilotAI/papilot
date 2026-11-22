@@ -399,7 +399,7 @@ test('activity ledger records tasks, helpers, workers, tokens, reviews, undos an
   }
 });
 
-test('the past-year calendar covers 53 weeks of active days whatever the range, while totals, agents and papers follow the range', () => {
+test('the calendar covers every active day whatever the range, while totals, agent time, agents and papers follow the range', () => {
   const dir = tempDir('papilot-activity-calendar-');
   const store = new Store(path.join(dir, 'papilot.sqlite'));
   try {
@@ -409,35 +409,39 @@ test('the past-year calendar covers 53 weeks of active days whatever the range, 
     const p2 = { id: 'paper-2', name: 'Side Paper', path: path.join(dir, 'p2'), createdAt: now };
     store.saveProject(p1);
     store.saveProject(p2);
-    const turn = (key: string, at: number, projectId: string, agent: string) => store.recordActivity({ key, at, kind: 'agent_turn', projectId, taskId: key, agent, model: `${agent}-model`, data: { role: 'edit', status: 'completed' } }, true);
+    const turn = (key: string, at: number, projectId: string, agent: string) => store.recordActivity({ key, at, kind: 'agent_turn', projectId, taskId: key, agent, model: `${agent}-model`, data: { role: 'edit', status: 'completed', finishedAt: at + 90_000 } }, true);
     turn('turn:today', now, p1.id, 'codex');
     store.recordActivity({ key: 'usage:today', at: now, kind: 'token_usage', projectId: p1.id, taskId: 'turn:today', agent: 'claude', model: 'claude-sonnet-4-6', data: { tokens: { input: 100, cached: 0, cacheWrite: 0, output: 50, reasoning: 0, total: 150 }, costUsd: 0.01, costSource: 'reported' } });
     turn('turn:20d', now - 20 * day, p2.id, 'glm');
     store.recordActivity({ key: 'decision:20d', at: now - 20 * day, kind: 'review_decision', projectId: p2.id, data: { action: 'accept', count: 3, source: 'task' } });
-    turn('turn:first-column', now - 370 * day, p1.id, 'codex');
-    turn('turn:too-old', now - 371 * day, p1.id, 'codex');
+    turn('turn:last-year', now - 370 * day, p1.id, 'codex');
+    turn('turn:older', now - 800 * day, p1.id, 'codex');
+    store.recordActivity({ key: 'turn:running', at: now, kind: 'agent_turn', projectId: p1.id, taskId: 'running', agent: 'codex', data: { role: 'edit', status: 'running' } }, true);
 
     const week = buildActivityReport(store, { tz: 'UTC', range: '7d', now });
-    assert.deepEqual(week.calendar.map(entry => entry.date), ['2025-11-17', '2026-11-02', '2026-11-22']);
-    assert.deepEqual(week.calendar.at(-1), { date: '2026-11-22', tokens: 150, costUsd: 0.01, reportedCostUsd: 0.01, estimatedCostUsd: 0, turns: 1, accepted: 0, rejected: 0, commented: 0, annotationsCreated: 0 });
-    assert.equal(week.calendar[1].accepted, 3);
-    assert.equal(week.calendar[1].costUsd, null);
-    assert.equal(week.totals.turns, 1);
+    assert.deepEqual(week.calendar.map(entry => entry.date), ['2024-09-13', '2025-11-17', '2026-11-02', '2026-11-22']);
+    assert.deepEqual(week.calendar.at(-1), { date: '2026-11-22', actions: 2, tokens: 150, costUsd: 0.01, reportedCostUsd: 0.01, estimatedCostUsd: 0, turns: 2, accepted: 0, rejected: 0, commented: 0, annotationsCreated: 0 });
+    assert.equal(week.calendar[2].accepted, 3);
+    assert.equal(week.calendar[2].actions, 2, 'A run and a decision');
+    assert.equal(week.calendar[2].costUsd, null);
+    assert.equal(week.totals.turns, 2);
+    assert.equal(week.totals.agentMs, 90_000, 'Only finished turns of the range count toward agent time');
     assert.equal(week.totals.accepted, 0);
     assert.equal(week.totals.activeDays, 1);
     assert.deepEqual(week.days.map(entry => entry.date), ['2026-11-22']);
     assert.deepEqual(week.agents.map(entry => entry.agent).sort(), ['claude', 'codex'], 'Calendar-only days add no agents');
     assert.deepEqual(week.models.map(entry => entry.model).sort(), ['claude-sonnet-4-6', 'codex-model']);
     assert.equal(week.projects.find(project => project.id === p2.id)?.turns, 0, 'Calendar-only days add nothing to paper summaries');
-    assert.equal(week.hours.reduce((sum, value) => sum + value, 0), 1);
+    assert.equal(week.hours.reduce((sum, value) => sum + value, 0), 2);
 
     const sidePaper = buildActivityReport(store, { tz: 'UTC', range: '7d', projectId: p2.id, now });
     assert.deepEqual(sidePaper.calendar.map(entry => entry.date), ['2026-11-02'], 'The paper filter applies to the calendar');
 
     const everything = buildActivityReport(store, { tz: 'UTC', range: 'all', now });
     assert.deepEqual(everything.calendar, week.calendar);
-    assert.equal(everything.totals.turns, 4);
+    assert.equal(everything.totals.turns, 5);
     assert.equal(everything.totals.activeDays, 4);
+    assert.equal(everything.totals.agentMs, 4 * 90_000);
   } finally {
     store.close();
     fs.rmSync(dir, { recursive: true, force: true });

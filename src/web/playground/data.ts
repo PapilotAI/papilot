@@ -328,6 +328,7 @@ export function createPlaygroundData(storage: Store, version: string, pdfKey: st
         failedTurns: 0,
         interruptedTurns: 0,
         turnsByRole: { edit: Math.max(0, turns - 1), review: 1, worker: 0, helper: 0 },
+        agentMs: turns * 95_000,
         accepted,
         rejected,
         commented,
@@ -356,7 +357,7 @@ export function createPlaygroundData(storage: Store, version: string, pdfKey: st
         turnHours,
         tokenHours,
         days: [day],
-        calendar: [{ date: today, tokens: tokens.total, costUsd: estimatedCostUsd, reportedCostUsd: 0, estimatedCostUsd, turns, accepted, rejected, commented, annotationsCreated: day.annotationsCreated }],
+        calendar: [{ date: today, actions: hours.reduce((sum, count) => sum + count, 0), tokens: tokens.total, costUsd: estimatedCostUsd, reportedCostUsd: 0, estimatedCostUsd, turns, accepted, rejected, commented, annotationsCreated: day.annotationsCreated }],
         agents: [{ agent: 'codex', tasksStarted: turns, turns, tokens, costUsd: estimatedCostUsd, reportedCostUsd: 0, estimatedCostUsd, unpricedTokens: 0 }],
         models: [{ agent: 'codex', model: demoRuntimes.codex.models[0]?.id || 'gpt-5.4', turns, tokens, costUsd: estimatedCostUsd, costSource: 'estimated' }],
       } satisfies ActivityReport;
