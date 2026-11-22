@@ -1058,6 +1058,16 @@ export function renderDocument(
   // block reads straight through instead of jumping over those lines.
   const shown = new Map<number, ChangeBlock>(),
     JOIN = 120;
+  const stripKey = (document: PdfDocument, strip: Strip) => {
+    const page0 = Math.max(0, (strip.page ?? 1) - 1),
+      left = strip.left ?? 0,
+      top = strip.top ?? 0,
+      eps = Math.min(0.5, strip.width / 4),
+      rect: Rect = [left + eps, top, left + strip.width - eps, top + strip.height];
+    return readingKey(document, laneAt(document, page0, rect), top);
+  };
+  const sortStrips = (document: PdfDocument, list: Strip[]) =>
+    list.sort((a, b) => byReading(stripKey(document, a), stripKey(document, b)) || (a.left ?? 0) - (b.left ?? 0));
   const render = (pieces: (Display | { kind: "gap" })[]): Block[] => {
     const blocks: Block[] = [];
     for (const piece of pieces) {
@@ -1096,6 +1106,7 @@ export function renderDocument(
           );
         }
         earlier.after.push(...block.after);
+        sortStrips(next.document, earlier.after);
       }
     }
     return blocks;
@@ -1115,7 +1126,7 @@ export function renderDocument(
   areas.forEach((area, index) => {
     if (!area.new.length) loose.push(change(index, []));
   });
-  return linkBlocks(rendered, loose, cards);
+  return linkBlocks(rendered, loose, cards, old.document, next.document);
 }
 // Blocks of the same edits are one block; edits that remain in several
 // blocks say why. An edit is in several regions when its crops form
@@ -1125,7 +1136,21 @@ function linkBlocks(
   sections: RenderedRound["sections"],
   loose: ChangeBlock[],
   cards: Card[],
+  oldDocument?: PdfDocument,
+  nextDocument?: PdfDocument,
 ): Pick<RenderedRound, "sections" | "loose"> {
+  const sortWith = (document: PdfDocument | undefined, list: Strip[]) => {
+    if (!document || list.length < 2) return;
+    const key = (strip: Strip) => {
+      const page0 = Math.max(0, (strip.page ?? 1) - 1),
+        left = strip.left ?? 0,
+        top = strip.top ?? 0,
+        eps = Math.min(0.5, strip.width / 4),
+        rect: Rect = [left + eps, top, left + strip.width - eps, top + strip.height];
+      return readingKey(document, laneAt(document, page0, rect), top);
+    };
+    list.sort((a, b) => byReading(key(a), key(b)) || (a.left ?? 0) - (b.left ?? 0));
+  };
   const all = [
       ...sections.flatMap((s) => s.blocks),
       ...loose,
@@ -1141,6 +1166,8 @@ function linkBlocks(
     }
     earlier.before.push(...block.before);
     earlier.after.push(...block.after);
+    sortWith(oldDocument, earlier.before);
+    sortWith(nextDocument, earlier.after);
     earlier.identical &&= block.identical;
     if (block.moved) earlier.moved = true;
     if (!block.reflow) delete earlier.reflow;

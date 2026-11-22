@@ -20,15 +20,16 @@ const LINES = 26;
 const BODY = 40,
   END = 50 + LINES * 18;
 // A PDF that prints the lines given, 26 to a page.
-function pdf(lines: string[]) {
+function pdf(lines: string[], header = (page: number) => `Page ${page + 1}`) {
   const doc = new mupdf.PDFDocument(),
     font = new mupdf.Font("Helvetica"),
     resource = doc.addSimpleFont(font);
   for (let start = 0; start < Math.max(lines.length, 1); start += LINES) {
     // A running head, as a real page has: the first line of the body is
     // then never at the page's edge, where recurring lines are furniture.
+    const headText = header(start / LINES).replace(/[()\\]/g, "\\$&");
     const content =
-      `BT /F1 9 Tf 30 580 Td (Page ${start / LINES + 1}) Tj ET ` +
+      `BT /F1 9 Tf 30 580 Td (${headText}) Tj ET ` +
       "BT /F1 12 Tf 30 550 Td 18 TL " +
       lines
         .slice(start, start + LINES)
@@ -1055,4 +1056,84 @@ it("never cuts crops mid-hyphen or drops unchanged tail lines claimed by the new
   expect(textIn(old, groups[0].left)).toContain("be- cause inference");
   expect(textIn(next, groups[0].right)).toContain("This concise mechanism");
   expect(textIn(next, groups[0].right)).toContain("Moreover, because inference");
+});
+
+it("excludes running heads and page numbers from multi-page body rewrite marks and crops", () => {
+  // Two-page document where a rewritten passage spans the page break while the
+  // running head ("Page N") stays unchanged on every page.
+  const lead = Array.from({ length: 18 }, (_, i) => `Opening unchanged body line ${i} keeps every word intact.`);
+  const tail = Array.from({ length: 18 }, (_, i) => `Closing unchanged body line ${i} keeps every word intact.`);
+  const old = pdf([
+    ...lead,
+    ...Array.from({ length: 18 }, (_, i) => `Legacy paragraph sentence ${i} describes explicit polymorphism in detail.`),
+    ...tail,
+  ]);
+  const next = pdf([
+    ...lead,
+    ...Array.from({ length: 12 }, (_, i) => `Revised paragraph sentence ${i} summarizes implicit bounded inference.`),
+    ...tail,
+  ]);
+  const al = alignment(build(old), build(next));
+  const at = (doc: PdfDocument, text: string): Position[] => {
+    for (let p = 0; p < doc.length; p++) {
+      const hits = doc.page(p).search(text);
+      if (hits.length) return [{ page: p, clip: [0, hits[0][1] - 1, 600, hits[0][3] + 1], label: String(p + 1) }];
+    }
+    return [];
+  };
+  const groups = alignedCrops(
+    al,
+    [...at(old, "Legacy paragraph sentence 0"), ...at(old, "Legacy paragraph sentence 17")],
+    [...at(next, "Revised paragraph sentence 0"), ...at(next, "Revised paragraph sentence 11")],
+    false,
+  )!;
+  expect(groups.length).toBeGreaterThan(0);
+  const allWords = (doc: PdfDocument) =>
+    Array.from({ length: doc.length }, (_, page) =>
+      doc.page(page).words.map((w) => ({ text: w.text, page, rect: w.rect })),
+    ).flat();
+  const textIn = (doc: PdfDocument, crops: Position[]) =>
+    allWords(doc)
+      .filter((w) => inside(w, crops))
+      .map((w) => w.text)
+      .join(" ");
+  for (const g of groups) {
+    expect(textIn(old, g.left)).not.toContain("Page");
+    expect(textIn(next, g.right)).not.toContain("Page");
+    for (const pos of g.left) {
+      const marked = allWords(old)
+        .filter((w) => w.page === pos.page && marksIn(al, "old", pos).some((m) => containsCenter(m.rect, w.rect)))
+        .map((w) => w.text)
+        .join(" ");
+      expect(marked).not.toContain("Page");
+    }
+    for (const pos of g.right) {
+      const marked = allWords(next)
+        .filter((w) => w.page === pos.page && marksIn(al, "new", pos).some((m) => containsCenter(m.rect, w.rect)))
+        .map((w) => w.text)
+        .join(" ");
+      expect(marked).not.toContain("Page");
+    }
+  }
+});
+
+it("still crops and marks pure running-header edits even when adjacent to unchanged body lines", () => {
+  const body = Array.from({ length: 30 }, (_, i) => `Unchanged body line ${i} keeps every word identical.`);
+  const old = pdf(body);
+  const next = pdf(body, (page) => `Section ${page + 1}`);
+  const al = alignment(build(old), build(next));
+  const headCrop = (doc: PdfDocument, page: number): Position => {
+    const line = doc.page(page).lines[0];
+    return { page, clip: [0, line.rect[1] - 1, 600, line.rect[3] + 1], label: String(page + 1) };
+  };
+  const allWords = (doc: PdfDocument) =>
+    Array.from({ length: doc.length }, (_, page) =>
+      doc.page(page).words.map((w) => ({ text: w.text, page, rect: w.rect })),
+    ).flat();
+  const groups = alignedCrops(al, [headCrop(old, 0)], [headCrop(next, 0)], false)!;
+  expect(groups.length).toBeGreaterThan(0);
+  const oldWords = allWords(old).filter((w) => inside(w, groups[0].left)).map((w) => w.text).join(" ");
+  const newWords = allWords(next).filter((w) => inside(w, groups[0].right)).map((w) => w.text).join(" ");
+  expect(oldWords).toContain("Page");
+  expect(newWords).toContain("Section");
 });

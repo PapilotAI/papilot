@@ -105,7 +105,7 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   // Set while a kept draft is put back into the editor.
   const restoring = useRef(false);
   // Asks for a sync when the file stays the same but there is something to show.
-  const [tick, setTick] = useState(0), followed = useRef(-1);
+  const [tick, setTick] = useState(0), followed = useRef('');
   const show = (reveal: Reveal) => { pending.current = reveal; setTick(value => value + 1); };
   const update = (change: (edit: Edit) => Edit) => setEdit(current => {
     const next = current ? change(current) : current;
@@ -117,7 +117,7 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
     const owner = request.current;
     return (change: (edit: Edit) => Edit) => { if (request.current === owner) update(change); };
   };
-  useEffect(() => { setEdit(null); request.current++; }, [scope]);
+  useEffect(() => { setEdit(null); followed.current = ''; request.current++; }, [scope]);
   // The editor's code loads while the manuscript is idle, so the first
   // source opens without waiting for it.
   useEffect(() => {
@@ -259,8 +259,9 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   async function follow(change: CurrentChange, showTab: () => void) {
     if (change.from === 'source' || !change.units.length) return;
     const unit = change.units[0], lines: Lines = [Math.min(...unit.lines.map(range => range[0])), Math.max(...unit.lines.map(range => Math.max(range[1], range[0] + 1)))];
-    const current = latest.current, again = followed.current === change.stop;
-    followed.current = change.stop;
+    const followKey = `${change.stop}:${unit.id}`;
+    const current = latest.current, again = followed.current === followKey;
+    followed.current = followKey;
     if (change.from === 'scroll') {
       // An open editor follows the reading, without taking the keyboard
       // from the author, and keeps unsaved changes to another file.

@@ -585,18 +585,25 @@ export function ReviewApp({
   const unitLines = (unit: Unit): [number, number][] => unit.whole_file
     ? [[Math.max(0, unit.new_start - 1), unit.new_end]]
     : unit.ops.filter((op) => op[0] !== "equal").map((op) => [op[3], op[4]]);
-  function announce(index: number) {
+  const lastAnnounced = useRef("");
+  function announce(index: number, preferredUnit?: string | null) {
     const from = reached.current;
     reached.current = "scroll";
     if (!stops[index]) return;
-    const detail: CurrentChange = {
+    const stopUnits = stops[index].units;
+    const orderedIds = preferredUnit && stopUnits.includes(preferredUnit)
+      ? [preferredUnit, ...stopUnits.filter((id) => id !== preferredUnit)]
+      : stopUnits;
+    const key = `${detail?.round ?? 0}:${index}:${from}:${orderedIds[0] ?? ""}`;
+    if (from === "scroll" && lastAnnounced.current === key) return;
+    lastAnnounced.current = key;
+    const detailEvent: CurrentChange = {
       stop: index, from,
-      units: stops[index].units.map((id) => units.get(id)).filter((unit): unit is NonNullable<typeof unit> => Boolean(unit && unit.kind === "text" && unit.status !== "deleted"))
+      units: orderedIds.map((id) => units.get(id)).filter((unit): unit is NonNullable<typeof unit> => Boolean(unit && unit.kind === "text" && unit.status !== "deleted"))
         .map((unit) => ({ id: unit.id, file: unit.file, lines: unitLines(unit) })),
     };
-    window.dispatchEvent(new CustomEvent(CURRENT_CHANGE_EVENT, { detail }));
+    window.dispatchEvent(new CustomEvent(CURRENT_CHANGE_EVENT, { detail: detailEvent }));
   }
-  useEffect(() => { if (current >= 0) announce(current); }, [current, detail]);
   // The workspace's editor shows the changes in their files, with Accept and
   // Reject, which decide them here as the buttons on the page do.
   function announceChanges() {
@@ -1002,14 +1009,21 @@ export function ReviewApp({
     if (resolved || (reviewed && !expanded)) return null;
     return meta;
   };
-  const focusedUnitAt = (index: number): string | null => {
+  const defaultUnitAt = (index: number): string | null => {
     const meta = multiUnitAt(index);
-    if (!meta || index !== current) return null;
+    if (!meta) return null;
     if (selectedUnit?.stop === index && meta.subUnits.includes(selectedUnit.unit)) {
       return selectedUnit.unit;
     }
     return meta.subUnits.find((id) => decisions[id] === "pending") ?? meta.subUnits[0] ?? null;
   };
+  const focusedUnitAt = (index: number): string | null =>
+    index === current ? defaultUnitAt(index) : null;
+  const activeFocusedUnit = current >= 0 ? focusedUnitAt(current) : null;
+  useEffect(() => {
+    if (current < 0) return;
+    announce(current, activeFocusedUnit);
+  }, [current, detail, activeFocusedUnit]);
   useEffect(() => {
     if (!selectedUnit) return;
     const meta = multiUnitAt(selectedUnit.stop);
@@ -1260,13 +1274,29 @@ export function ReviewApp({
       setRetryingComparison(false);
     }
   }
+  useEffect(() => {
+    if (current < 0 || !paper.current || !activeFocusedUnit) return;
+    const list = paper.current.querySelector<HTMLElement>(`[data-stop="${current}"] .unit-chips`);
+    const chip = list?.querySelector<HTMLElement>(`.unit-chip[data-unit="${CSS.escape(activeFocusedUnit)}"]`);
+    if (!list || !chip) return;
+    const pad = 20;
+    const listRect = list.getBoundingClientRect();
+    const chipRect = chip.getBoundingClientRect();
+    if (chipRect.left < listRect.left + pad) {
+      list.scrollLeft -= listRect.left + pad - chipRect.left;
+    } else if (chipRect.right > listRect.right - pad) {
+      list.scrollLeft += chipRect.right - (listRect.right - pad);
+    }
+  }, [current, activeFocusedUnit, detail]);
   function toggleSource(index: number) {
     if (index !== current) {
       reached.current = "source";
       select(index, false);
     }
     // A workspace with its own editor shows the source there, not on the page.
-    if (!openSource.has(index) && offerSource((stops[index]?.units ?? []).map((id) => units.get(id)!).filter(Boolean))) return;
+    const focusedId = defaultUnitAt(index);
+    const sourceIds = focusedId ? unitGroup(stops[index]?.units ?? [], focusedId) : (stops[index]?.units ?? []);
+    if (!openSource.has(index) && offerSource(sourceIds.map((id) => units.get(id)!).filter(Boolean))) return;
     if (openSource.has(index)) editedPlace.current = null;
     setOpenSource((previous) => {
       const next = new Set(previous);
@@ -1828,7 +1858,7 @@ export function ReviewApp({
           if (!block.units.some(inFocus) || composer || (!expanded && reviewed)) return;
           reached.current = "pick";
           if (index !== current) select(index, false);
-          else announce(index);
+          else announce(index, defaultUnitAt(index));
         }}
       >
         {reviewed && !expanded && !resolved && (
@@ -1863,42 +1893,50 @@ export function ReviewApp({
             {shortLocation(known, t)}
           </span>
           {multiUnit && (
-            <div
-              className="unit-chips"
-              role="group"
-              aria-label={t("{n} edits", { n: subUnits.length })}
-              onClick={(event) => event.stopPropagation()}
-            >
-              {subUnits.map((id, pos) => {
-                const uState = decisions[id] ?? "pending",
-                  isActive = current === index && id === activeUnit,
-                  snippet = unitSnippet(units.get(id)),
-                  tip = [snippet, stateLabel(uState)].filter(Boolean).join(" · ");
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    className="unit-chip"
-                    data-unit={id}
-                    data-state={uState}
-                    data-active={isActive ? "true" : undefined}
-                    aria-pressed={isActive}
-                    title={tip}
-                    onPointerEnter={() => handleHoverUnit(index, id)}
-                    onPointerLeave={() => handleHoverUnit(index, null)}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (index !== current) {
-                        reached.current = "pick";
-                        select(index, false);
-                      }
-                      setSelectedUnit({ stop: index, unit: id });
-                    }}
-                  >
-                    <span className="unit-chip-label">{pos + 1}</span>
-                  </button>
-                );
-              })}
+            <div className="unit-chips-wrap" onClick={(event) => event.stopPropagation()}>
+              <div
+                className="unit-chips"
+                role="group"
+                aria-label={t("{n} edits", { n: subUnits.length })}
+              >
+                {subUnits.map((id, pos) => {
+                  const uState = decisions[id] ?? "pending",
+                    isActive = current === index && id === activeUnit,
+                    snippet = unitSnippet(units.get(id)),
+                    tip = [snippet, stateLabel(uState)].filter(Boolean).join(" · ");
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      className="unit-chip"
+                      data-unit={id}
+                      data-state={uState}
+                      data-active={isActive ? "true" : undefined}
+                      aria-pressed={isActive}
+                      title={tip}
+                      onPointerEnter={() => handleHoverUnit(index, id)}
+                      onPointerLeave={() => handleHoverUnit(index, null)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (index !== current) {
+                          reached.current = "scroll";
+                          select(index, false);
+                        }
+                        setSelectedUnit({ stop: index, unit: id });
+                      }}
+                    >
+                      <span className="unit-chip-label">{pos + 1}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {subUnits.length > 8 && (
+                <span className="unit-chips-count" aria-hidden="true">
+                  {current === index && activeUnit
+                    ? `${Math.max(0, subUnits.indexOf(activeUnit)) + 1}/${subUnits.length}`
+                    : `${subUnits.length}`}
+                </span>
+              )}
             </div>
           )}
           {actionBar(index)}

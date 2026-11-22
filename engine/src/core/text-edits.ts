@@ -122,6 +122,92 @@ export function textEdits(before: string, after: string): Op[] {
   );
 }
 
+const meaningfulTokens = (text: string) =>
+  textTokens(text).filter((token) => /[\p{L}\p{N}\\{}$]/u.test(token)).length;
+
+const isWhitespaceOnly = (text: string) => /^\s*$/.test(text);
+
+// A heavily rewritten passage often shares scattered common words ("of", "the",
+// "type") between old and new text. Those incidental anchors slice one coherent
+// rewrite into dozens of unreviewable word fragments; keep runs separated only
+// by weak bridges together while preserving paragraph/structural boundaries,
+// comments, display math, verbatim spans, and genuinely independent local edits.
+export function consolidateRewrites(before: string, after: string, ops: Op[]): Op[] {
+  if (ops.length <= 2) return ops;
+  const structural =
+    /(?:^|[^\\])(?:\\\\)*%|\\begin\{|\\end\{|\\\[|\$\$|\\(?:part|chapter|section|subsection|subsubsection|paragraph|subparagraph|item|verb|lstinline)\b/;
+  const hasBlankLine = (text: string) => /\r?\n[ \t]*\r?\n/.test(text);
+  const atomicOp = ([, i, j, x, y]: Op) => {
+    const oldText = before.slice(i, j),
+      newText = after.slice(x, y);
+    return (
+      hasBlankLine(oldText) ||
+      hasBlankLine(newText) ||
+      structural.test(oldText) ||
+      structural.test(newText)
+    );
+  };
+  const strongAnchor = (gap: string) => {
+    if (hasBlankLine(gap) || structural.test(gap)) return true;
+    const words = meaningfulTokens(gap);
+    if (words >= 8) return true;
+    if (words >= 5 && (/[.!?]\s+[\p{Lu}\\]/u.test(gap) || /[。！？]/.test(gap))) return true;
+    return false;
+  };
+  const isWsOp = ([, i, j, x, y]: Op) =>
+    isWhitespaceOnly(before.slice(i, j)) && isWhitespaceOnly(after.slice(x, y));
+  const runs: Op[][] = [];
+  let run: Op[] = [ops[0]];
+  for (let k = 1; k < ops.length; k++) {
+    const prev = ops[k - 1],
+      next = ops[k];
+    if (atomicOp(prev) || atomicOp(next) || strongAnchor(before.slice(prev[2], next[1]))) {
+      runs.push(run);
+      run = [next];
+    } else {
+      run.push(next);
+    }
+  }
+  runs.push(run);
+  const result: Op[] = [];
+  for (const group of runs) {
+    // Trim leading/trailing pure-whitespace rewraps so collapsing a rewritten
+    // passage never swallows unchanged prose separating it from a line wrap.
+    let start = 0,
+      end = group.length;
+    while (start < end && isWsOp(group[start])) start++;
+    while (end > start && isWsOp(group[end - 1])) end--;
+    const core = group.slice(start, end);
+    const substantive = core.filter((op) => !isWsOp(op)).length;
+    if (substantive < 3) {
+      result.push(...group);
+      continue;
+    }
+    let changed = 0,
+      unchanged = 0;
+    for (let k = 0; k < core.length; k++) {
+      const [, i, j, x, y] = core[k];
+      changed += Math.max(meaningfulTokens(before.slice(i, j)), meaningfulTokens(after.slice(x, y)));
+      if (k > 0) unchanged += meaningfulTokens(before.slice(core[k - 1][2], i));
+    }
+    const density = changed / Math.max(1, changed + unchanged);
+    if (density >= 0.5) {
+      result.push(...group.slice(0, start));
+      const first = core[0],
+        last = core.at(-1)!,
+        i = first[1],
+        j = last[2],
+        x = first[3],
+        y = last[4];
+      result.push([i === j ? "insert" : x === y ? "delete" : "replace", i, j, x, y]);
+      result.push(...group.slice(end));
+    } else {
+      result.push(...group);
+    }
+  }
+  return result;
+}
+
 function wordEdits(before: string, after: string): Op[] {
   const a = textTokens(before),
     b = textTokens(after),

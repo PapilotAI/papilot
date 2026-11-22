@@ -1391,3 +1391,163 @@ test("clicking individual highlights in a multi-unit card lets you accept one ed
   await expect(card.locator(".side.before")).toBeVisible();
   await expect(card.locator(".side.after:not(.mixed-resolved)")).toBeVisible();
 });
+
+test("overflowing per-unit chips show a position count and sync active unit to source events", async ({ page }) => {
+  const unitIds = Array.from({ length: 12 }, (_, i) => `u${i + 1}`);
+  const decisions: Record<string, string> = Object.fromEntries(unitIds.map((id) => [id, "pending"]));
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 60"><rect width="500" height="60" fill="#fff"/></svg>';
+  await page.route("**/files/chip-overflow/1/*.svg", (route) =>
+    route.fulfill({ contentType: "image/svg+xml", body: svg }),
+  );
+  await page.route("**/api/tasks/chip-overflow/state*", (route) =>
+    route.fulfill({
+      json: {
+        csrf: "tok",
+        sourceEditing: true,
+        deferred: false,
+        task: "chip-overflow",
+        title: "Chip overflow",
+        closed: false,
+        state: "reviewing",
+        latest: 1,
+        round: 1,
+        history: [{ number: 1, created: 1 }],
+        decisions,
+        comments: [],
+        waiting: [],
+      },
+    }),
+  );
+  await page.route("**/api/tasks/chip-overflow/rounds/1", (route) =>
+    route.fulfill({
+      json: {
+        task: "chip-overflow",
+        round: 1,
+        before: "aaaa",
+        after: "bbbb",
+        files: "/files/chip-overflow/1/",
+        units: unitIds.map((id, i) => ({
+          id,
+          file: "paper/method.tex",
+          status: "modified",
+          kind: "text",
+          whole_file: false,
+          ops: [["replace", i * 2, i * 2 + 1, i * 2, i * 2 + 1]],
+          text_ops: [["replace", i * 10, i * 10 + 4, i * 10, i * 10 + 4]],
+          old_start: i * 2 + 1,
+          old_end: i * 2 + 1,
+          new_start: i * 2 + 1,
+          new_end: i * 2 + 1,
+          old_text: `old${i + 1}`,
+          new_text: `new${i + 1}`,
+          visual: "text",
+          pages: ["1"],
+          section: "1 Method",
+        })),
+        sections: [
+          {
+            node: "sec:1",
+            number: "1",
+            title: "Method",
+            blocks: [
+              {
+                kind: "change",
+                units: unitIds,
+                before: [
+                  {
+                    src: "before.svg",
+                    clean: "before.svg",
+                    width: 500,
+                    height: 60,
+                    page: 1,
+                    label: "1",
+                    marks: unitIds.map((id, i) => ({
+                      kind: "removed",
+                      unit: id,
+                      rect: [10 + i * 38, 10, 42 + i * 38, 24],
+                    })),
+                  },
+                ],
+                after: [
+                  {
+                    src: "after.svg",
+                    clean: "after.svg",
+                    width: 500,
+                    height: 60,
+                    page: 1,
+                    label: "1",
+                    marks: unitIds.map((id, i) => ({
+                      kind: "added",
+                      unit: id,
+                      rect: [10 + i * 38, 10, 42 + i * 38, 24],
+                    })),
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        loose: [],
+        warnings: [],
+        builds: [],
+      },
+    }),
+  );
+
+  await page.addInitScript(() => {
+    const win = window as unknown as {
+      __currentEvents: unknown[];
+      __openSourceEvents: unknown[];
+    };
+    win.__currentEvents = [];
+    win.__openSourceEvents = [];
+    window.addEventListener("papilot:review:current", (event) => {
+      win.__currentEvents.push((event as CustomEvent).detail);
+    });
+    window.addEventListener("latex-review:open-source", (event) => {
+      event.preventDefault();
+      win.__openSourceEvents.push((event as CustomEvent).detail);
+    });
+  });
+
+  await page.goto("/?task=chip-overflow");
+  const card = page.locator('.change[data-stop="0"]');
+  await expect(card).toBeVisible();
+  const count = card.locator(".unit-chips-count");
+  await expect(count).toHaveText("1/12");
+
+  // Confirm the chip strip actually overflows horizontally.
+  const overflow = await card.locator(".unit-chips").evaluate((el) => ({
+    scrollWidth: el.scrollWidth,
+    clientWidth: el.clientWidth,
+  }));
+  expect(overflow.scrollWidth).toBeGreaterThan(overflow.clientWidth);
+
+  // Navigate to u11 via keyboard (without Playwright's click-scrolling) to exercise horizontal auto-scroll.
+  for (let step = 0; step < 10; step++) {
+    await page.keyboard.press("ArrowRight");
+  }
+  const chip11 = card.locator('.unit-chip[data-unit="u11"]');
+  await expect(count).toHaveText("11/12");
+  await expect(chip11).toHaveAttribute("data-active", "true");
+  const scrolled = await card.locator(".unit-chips").evaluate((el) => {
+    const active = el.querySelector<HTMLElement>('.unit-chip[data-unit="u11"]')!;
+    const lr = el.getBoundingClientRect(), cr = active.getBoundingClientRect();
+    return { scrollLeft: el.scrollLeft, visible: cr.left >= lr.left && cr.right <= lr.right };
+  });
+  expect(scrolled.scrollLeft).toBeGreaterThan(0);
+  expect(scrolled.visible).toBe(true);
+  const currentEvents = await page.evaluate(
+    () => (window as unknown as { __currentEvents: { from: string; units: { id: string }[] }[] }).__currentEvents,
+  );
+  expect(currentEvents.at(-1)?.units[0]?.id).toBe("u11");
+  expect(currentEvents.at(-1)?.from).toBe("scroll");
+
+  // Opening LaTeX source targets the focused sub-unit u11 rather than only u1.
+  await card.locator(".change-head button.source-toggle").click();
+  const openEvents = await page.evaluate(
+    () => (window as unknown as { __openSourceEvents: { change: string; lines: [number, number] }[] }).__openSourceEvents,
+  );
+  expect(openEvents.at(-1)?.change).toBe("u11");
+  expect(openEvents.at(-1)?.lines).toEqual([20, 21]);
+});

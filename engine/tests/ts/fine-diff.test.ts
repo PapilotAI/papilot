@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { Fixture, METHOD, fakeRound } from "./helpers.ts";
 import { applyUnits, diffUnits, revertUnits } from "../../src/core/changes.ts";
 import { merge3Async } from "../../src/core/git.ts";
-import { textEdits, textTokens } from "../../src/core/text-edits.ts";
+import { consolidateRewrites, mergeText, textEdits, textTokens } from "../../src/core/text-edits.ts";
 import { wordDiff } from "../../src/web/model.ts";
 import { mergeUnitMarks, resolveUnitMarks } from "../../src/web/PdfStrip.tsx";
 let f: Fixture;
@@ -402,4 +402,65 @@ it("drops coarse fallback marks that duplicate a more-specific sibling unit's sp
     { unit: "math", kind: "removed", rect: [80, 10, 110, 22] },
     { unit: "u1", kind: "removed", rect: [10, 10, 50, 22] },
   ]);
+});
+
+it("consolidates heavily rewritten paragraphs instead of splitting on coincidental common words", () => {
+  const old = [
+    "The long-distance constraints discussed at the end of Chapter 3 require information",
+    "from one part of an expression to remain available elsewhere. Global inference",
+    "represents unknown types with unification variables. The same variable can occur",
+    "in judgments for different parts of the expression. This chapter develops such an",
+    "algorithm for a polymorphic language with bounded quantification.",
+    "",
+    "Bounded quantification is an extension of parametric polymorphism, where type",
+    "variables can have subtyping bounds. Mainstream object-oriented programming",
+    "languages such as Java, Scala, or TypeScript have polymorphic type systems with",
+    "subtyping and bounded quantification. The canonical calculus is kernel F-sub.",
+    "",
+  ].join("\n");
+  const next = [
+    "The inference closures of Chapter 3 make local type inference order-irrelevant for",
+    "hard-to-synthesize arguments in curried calls. Constraints spanning multiple sites",
+    "lie beyond local inference. Global type inference addresses such constraints by",
+    "representing unknown types with unification variables that can appear across",
+    "judgments for different parts of an expression. This chapter develops a global",
+    "type-inference algorithm for a polymorphic language with bounded quantification.",
+    "",
+    "Mainstream object-oriented languages such as Java, Scala, and TypeScript combine",
+    "parametric polymorphism with subtyping and bounded quantification, whose decidable",
+    "core is kernel F-sub. Making bounded polymorphism practical requires implicit type",
+    "inference rather than writing explicit type applications everywhere.",
+    "",
+  ].join("\n");
+  const edits = consolidateRewrites(old, next, textEdits(old, next));
+  // Two rewritten paragraphs separated by a blank line collapse to 2 semantic units,
+  // not dozens of word-level fragments around shared stopwords like "the", "of", "with".
+  expect(edits).toHaveLength(2);
+  expect(old.slice(edits[0][1], edits[0][2])).toContain("long-distance constraints");
+  expect(next.slice(edits[0][3], edits[0][4])).toContain("inference closures");
+  expect(old.slice(edits[1][1], edits[1][2])).toContain("Bounded quantification");
+  expect(next.slice(edits[1][3], edits[1][4])).toContain("explicit type applications");
+
+  // Never merge across unchanged display math, comments (including \\%), or blank lines.
+  const displayOld = "Old alpha beta gamma.\n\\[ x = 1 \\]\nOld delta epsilon zeta.\n";
+  const displayNext = "New one two three.\n\\[ x = 1 \\]\nNew four five six.\n";
+  expect(consolidateRewrites(displayOld, displayNext, textEdits(displayOld, displayNext))).toHaveLength(2);
+
+  const commentOld = "Old alpha beta gamma.\\\\% keep comment\nOld delta epsilon zeta.\n";
+  const commentNext = "New one two three.\\\\% keep comment\nNew four five six.\n";
+  expect(consolidateRewrites(commentOld, commentNext, textEdits(commentOld, commentNext))).toHaveLength(2);
+
+  // Leading/trailing whitespace rewraps must not swallow intervening unchanged words.
+  const wrapOld = "Lead alpha\nbeta unchanged middle words stay.\nOld gamma delta epsilon and old zeta eta theta.\n";
+  const wrapNext = "Lead alpha beta\nunchanged middle words stay.\nNew one two three and new four five six.\n";
+  const wrapEdits = consolidateRewrites(wrapOld, wrapNext, textEdits(wrapOld, wrapNext));
+  expect(wrapEdits.every(([, i, j]) => !wrapOld.slice(i, j).includes("unchanged middle words stay"))).toBe(true);
+
+  // Low-level textEdits stays fine-grained so 3-way mergeText merges disjoint same-paragraph edits cleanly.
+  const base = "One alpha two beta three gamma four.\n";
+  const ours = "One A two B three C four.\n";
+  const theirs = "One alpha TWO beta three gamma four.\n";
+  expect(mergeText(Buffer.from(ours), Buffer.from(base), Buffer.from(theirs))?.toString()).toBe(
+    "One A TWO B three C four.\n",
+  );
 });

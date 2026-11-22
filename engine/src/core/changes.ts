@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { Repo, within } from "./git.ts";
 import { groups, opcodes } from "./diff.ts";
 import { entrySpans } from "./bib.ts";
-import { textEdits } from "./text-edits.ts";
+import { consolidateRewrites, textEdits } from "./text-edits.ts";
 import { groupEnvironmentEdits } from "./environment-edits.ts";
 import type { Scope, Unit, Op } from "../types.ts";
 export const EXCERPT = 6000;
@@ -78,7 +78,7 @@ export function unitsOf(
       r = offsets(right);
     const fine =
       !whole && !file.endsWith(".bib")
-        ? groupEnvironmentEdits(a!, b!, textEdits(a!, b!))
+        ? groupEnvironmentEdits(a!, b!, consolidateRewrites(a!, b!, textEdits(a!, b!)))
         : null;
     const lineAt = (offsets: number[], offset: number) => {
       let lo = 0,

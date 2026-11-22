@@ -2081,20 +2081,80 @@ body {
 .pdf-strip[data-unit-hover] .pdf-text {
   cursor: pointer;
 }
+@property --unit-fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --unit-fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
 /* Flat, borderless per-edit state chips and controls inside the change card header. */
+.unit-chips-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
+}
 .unit-chips {
   display: inline-flex;
   align-items: center;
   flex-wrap: nowrap;
   gap: 4px;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 280px;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: 20px;
   scrollbar-width: none;
   padding: 1px 0;
 }
 .unit-chips::-webkit-scrollbar {
   display: none;
+}
+@supports (animation-timeline: scroll(self inline)) {
+  .unit-chips {
+    --unit-fade-size: 20px;
+    --unit-fade-dir: right;
+    --unit-fade-start-pos: 0;
+    --unit-fade-end-pos: 100%;
+    mask:
+      linear-gradient(black, black) no-clip subtract,
+      linear-gradient(to var(--unit-fade-dir), black, transparent) var(--unit-fade-start-pos) 0 / var(--unit-fade-start) 100% no-repeat no-clip,
+      linear-gradient(to var(--unit-fade-dir), transparent, black) var(--unit-fade-end-pos) 0 / var(--unit-fade-end) 100% no-repeat no-clip;
+    animation:
+      unit-fade-reveal-start linear both,
+      unit-fade-hide-end linear both;
+    animation-timeline: scroll(self inline);
+    animation-range: 0 var(--unit-fade-size), calc(100% - var(--unit-fade-size)) 100%;
+  }
+  .unit-chips:dir(rtl) {
+    --unit-fade-dir: left;
+    --unit-fade-start-pos: 100%;
+    --unit-fade-end-pos: 0;
+  }
+}
+@keyframes unit-fade-reveal-start {
+  to {
+    --unit-fade-start: var(--unit-fade-size);
+  }
+}
+@keyframes unit-fade-hide-end {
+  from {
+    --unit-fade-end: var(--unit-fade-size);
+  }
+}
+.unit-chips-count {
+  flex: none;
+  font: 500 11px/1 var(--sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  white-space: nowrap;
 }
 .unit-chip {
   display: inline-flex;

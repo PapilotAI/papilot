@@ -147,10 +147,20 @@ function build(
   // words, since words that moved are the same text. A running head or a
   // page number left unpaired only turned with its page: unless its words
   // changed, it is neither moved text nor anything a crop must show.
+  const hasBodyTokens = (effect: { old: [number, number]; new: [number, number] }) => {
+    for (let t = effect.old[0]; t < effect.old[1]; t++)
+      if (a.tokens[t].flow !== "edge") return true;
+    for (let t = effect.new[0]; t < effect.new[1]; t++)
+      if (b.tokens[t].flow !== "edge") return true;
+    return false;
+  };
   const edited = { old: new Uint8Array(a.tokens.length), new: new Uint8Array(b.tokens.length) };
   for (const effect of result.changes) {
-    edited.old.fill(1, effect.old[0], effect.old[1]);
-    edited.new.fill(1, effect.new[0], effect.new[1]);
+    const bodyEffect = hasBodyTokens(effect);
+    for (let t = effect.old[0]; t < effect.old[1]; t++)
+      if (!bodyEffect || a.tokens[t].flow !== "edge") edited.old[t] = 1;
+    for (let t = effect.new[0]; t < effect.new[1]; t++)
+      if (!bodyEffect || b.tokens[t].flow !== "edge") edited.new[t] = 1;
   }
   for (const [name, w, map] of [
     ["old", a, result.tokens],
@@ -167,14 +177,17 @@ function build(
       }
     });
   }
-  for (const effect of result.changes)
+  for (const effect of result.changes) {
+    const bodyEffect = hasBodyTokens(effect);
     for (const [name, w, [i, j]] of [
       ["old", a, effect.old],
       ["new", b, effect.new],
     ] as const)
       for (let t = i; t < j; t++)
-        for (const g of tokenGlyphs(w.tokens[t]))
-          add(sides[name].changed, w, g);
+        if (!bodyEffect || w.tokens[t].flow !== "edge")
+          for (const g of tokenGlyphs(w.tokens[t]))
+            add(sides[name].changed, w, g);
+  }
   for (const side of [sides.old, sides.new]) {
     const changed = new Set([...side.changed.values()].flat()),
       // A line-end hyphen the comparison left unpaired marks where a line
@@ -593,6 +606,23 @@ function gather(
     part = parts.get(key);
   parts.set(key, { page, column, rect: part ? union(part.rect, rect) : rect });
 }
+function isEdgeLine(side: Side, line: number): boolean {
+  const range = side.words.lines[line];
+  if (!range || range[0] >= range[1]) return false;
+  for (let t = range[0]; t < range[1]; t++)
+    if (side.words.tokens[t].flow !== "edge") return false;
+  return true;
+}
+function isUnchangedEdgeLine(side: Side, line: number): boolean {
+  return isEdgeLine(side, line) && !side.changedLine[line];
+}
+function bodyBound(side: Side, start: number, step: -1 | 1): Line | null {
+  for (let i = start; i >= 0 && i < side.parts.length; i += step) {
+    if (isUnchangedEdgeLine(side, i)) continue;
+    return step < 0 ? (side.parts[i]?.at(-1) ?? null) : (side.parts[i]?.[0] ?? null);
+  }
+  return null;
+}
 // The crops of one side of a gap: the lines between its ends, and the
 // edit's own crops inside that stretch, which hold its figures and rules.
 // A crop runs up to the end lines on its page, so nothing printed between
@@ -606,13 +636,18 @@ function cropsOf(
   const side = al[name],
     document = side.build.document,
     [lo, hi] = gap[name],
-    top = side.parts[lo]?.at(-1) ?? null,
-    end = side.parts[hi]?.[0] ?? null,
     same = (a: number, b: number) => a === b || a === -1 || b === -1,
     parts = new Map<string, Part>();
+  let hasBody = false;
   for (let i = lo + 1; i < hi; i++)
+    if (!isEdgeLine(side, i)) { hasBody = true; break; }
+  const top = hasBody ? bodyBound(side, lo, -1) : (side.parts[lo]?.at(-1) ?? null),
+    end = hasBody ? bodyBound(side, hi, 1) : (side.parts[hi]?.[0] ?? null);
+  for (let i = lo + 1; i < hi; i++) {
+    if (hasBody && isUnchangedEdgeLine(side, i)) continue;
     for (const part of side.parts[i])
       gather(parts, part.page, part.column, part.rect);
+  }
   for (const at of own) {
     if ((top && at.page < top.page) || (end && at.page > end.page)) continue;
     const column = document.page(at.page).column(at.clip);
@@ -716,14 +751,19 @@ function linesCrops(
 ): Position[] {
   const side = al[name],
     parts = new Map<string, Part>();
+  let hasBody = false;
   for (let i = first; i <= last; i++)
+    if (!isEdgeLine(side, i)) { hasBody = true; break; }
+  for (let i = first; i <= last; i++) {
+    if (hasBody && isUnchangedEdgeLine(side, i)) continue;
     for (const { page, column, rect } of side.parts[i])
       gather(parts, page, column, rect);
+  }
   return framed(
     side.build.document,
     parts.values(),
-    side.parts[first - 1]?.at(-1) ?? null,
-    side.parts[last + 1]?.[0] ?? null,
+    hasBody ? bodyBound(side, first - 1, -1) : (side.parts[first - 1]?.at(-1) ?? null),
+    hasBody ? bodyBound(side, last + 1, 1) : (side.parts[last + 1]?.[0] ?? null),
   );
 }
 // Words touched by the actual footprint, including words sharing a row
