@@ -521,6 +521,22 @@ test('a task with nothing to save learns as its review finishes, and every sugge
   } finally { f.close(); }
 });
 
+test('suggestions are written in the language the author chose', async () => {
+  const f = workspace();
+  try {
+    const app = Fastify();
+    registerMemoryRoutes(app, f.store, () => f.work.memory);
+    assert.equal((await app.inject({ method: 'GET', url: '/api/memory' })).json().language, 'auto');
+    assert.equal((await app.inject({ method: 'POST', url: '/api/memory/language', payload: { language: 'klingon' } })).statusCode, 400);
+    assert.equal((await app.inject({ method: 'POST', url: '/api/memory/language', payload: { language: 'zh-Hans' } })).json().language, 'zh-Hans');
+    f.task('language'); f.store.saveItem({ id: 'language-message', taskId: 'language', type: 'user', text: 'Polish the abstract.', createdAt: 1 });
+    await f.settle('language'); await f.save('language');
+    const prompt = JSON.parse(f.agent.calls.filter(call => call.method === 'turn/start' && String(call.params.threadId).startsWith('helper-')).at(-1)!.params.input[0].text);
+    assert.equal(prompt.writeIn, '简体中文 (zh-Hans)');
+    await app.close();
+  } finally { f.close(); }
+});
+
 test('a changed memory reaches a resumed conversation at its next turn, including when it is cleared', async () => {
   const f = workspace();
   try {

@@ -87,7 +87,7 @@ try {
   const save = page.locator('.task-delivery');
   await expect(save.getByRole('textbox', { name: 'Commit message' })).toHaveValue('Tighten the abstract');
   const card = save.getByRole('region', { name: 'Writing memory' });
-  await expect(card).toContainText('Remember for later tasks?');
+  await expect(card).toContainText('Remember this writing habit?');
   await expect(card).toContainText(rule);
   await expect(card).toContainText('All papers');
   await expect(save.getByRole('button', { name: 'Commit to manuscript', exact: true })).toBeEnabled();
@@ -118,7 +118,8 @@ try {
   await card.getByRole('button', { name: 'Manage' }).click();
   const settings = page.getByRole('dialog', { name: 'Memory', exact: true });
   await expect(settings).toBeVisible();
-  const list = settings.locator('.memory-list li');
+  const list = settings.locator('.memory-list li[data-memory-rule]');
+  const group = name => settings.getByRole('region', { name, exact: true });
   await expect(settings.getByRole('switch', { name: 'Learn from reviews' })).toBeChecked();
   await settings.getByRole('radio', { name: 'All papers' }).check();
   await expect(list).toHaveCount(1);
@@ -127,12 +128,13 @@ try {
   // Kept for this paper instead: in the checkout only, invisible to Git.
   await list.first().getByRole('button', { name: 'More actions for this preference' }).click();
   await page.getByRole('menuitem', { name: 'Move to this paper' }).click();
-  await expect(settings.locator('.memory-empty')).toHaveText('No preferences for all papers yet.');
+  await expect(group('All papers').locator('.memory-empty')).toHaveText('No preferences yet');
   assert.deepEqual([rules(personalFile), rules(localFile)], [[], [rule]]);
   assert.equal(git('status', '--porcelain', '--untracked-files=all'), '');
   await settings.getByRole('radio', { name: 'This paper' }).check();
   await expect(list).toHaveCount(1);
-  await expect(list.first()).toContainText(rule);
+  await expect(group('Only on this computer').locator('[data-memory-rule] > p')).toHaveText([rule]);
+  await expect(group('Shared with coauthors')).toContainText('.papilot/memory.md');
   await page.screenshot({ animations: 'disabled', path: 'test-results/memory-settings-desktop.png' });
 
   // A change made elsewhere since the page loaded is reported, and the list shows the file as it is now.
@@ -165,18 +167,28 @@ try {
   // Sharing moves the rule into the repository file coauthors receive.
   await list.first().getByRole('button', { name: 'More actions for this preference' }).click();
   await page.getByRole('menuitem', { name: 'Share with coauthors' }).click();
-  await expect(list.first().locator('.memory-tag')).toHaveText('Shared');
+  await expect(group('Shared with coauthors').locator('[data-memory-rule] > p')).toHaveText(['Don\'t strengthen claims beyond what the results show.']);
+  await expect(group('Only on this computer').locator('.memory-empty')).toHaveText('No preferences yet');
   assert.deepEqual(rules(sharedFile), ['Don\'t strengthen claims beyond what the results show.']);
   assert.deepEqual(rules(localFile), []);
   assert.equal(git('status', '--porcelain', '--untracked-files=all'), '?? .papilot/memory.md\n');
 
   // A rule for all papers, added from Settings.
   await settings.getByRole('radio', { name: 'All papers' }).check();
-  await expect(settings.locator('.memory-empty')).toHaveText('No preferences for all papers yet.');
+  await expect(group('All papers').locator('.memory-empty')).toHaveText('No preferences yet');
+  await group('All papers').getByRole('button', { name: 'Add preference' }).click();
   await settings.getByRole('textbox', { name: 'New preference' }).fill('Prefer British spelling.');
   await settings.getByRole('button', { name: 'Add', exact: true }).click();
   await expect(list).toHaveCount(1);
+  await expect(group('All papers').getByRole('button', { name: 'Add preference' })).toBeFocused();
   assert.deepEqual(rules(personalFile), ['Prefer British spelling.']);
+  // Suggested preferences can be written in a chosen language.
+  const language = settings.getByRole('combobox', { name: 'Memory language', exact: true });
+  await expect(language).toHaveAttribute('data-value', 'auto');
+  await language.click();
+  await page.locator('.select-list:popover-open [data-value="zh-Hans"]').click();
+  await expect(language).toHaveAttribute('data-value', 'zh-Hans');
+  assert.equal(store.preference('memory-language'), 'zh-Hans');
 
   // Learning can be turned off; deleting a rule removes it from the file.
   await settings.getByRole('switch', { name: 'Learn from reviews' }).click();
@@ -202,7 +214,7 @@ try {
   await phone.screenshot({ animations: 'disabled', path: 'test-results/memory-card-phone-dark.png' });
   await phone.evaluate(event => window.dispatchEvent(new Event(event)), 'papilot:open-memory');
   const phoneSettings = phone.getByRole('dialog', { name: 'Memory', exact: true });
-  await expect(phoneSettings.locator('.memory-list li')).toHaveCount(1);
+  await expect(phoneSettings.locator('.memory-list li[data-memory-rule]')).toHaveCount(1);
   await expect(phoneSettings).toContainText('.papilot/memory.md');
   await phone.screenshot({ animations: 'disabled', path: 'test-results/memory-settings-phone-dark.png' });
   await phoneSettings.getByRole('button', { name: 'Close' }).click();

@@ -101,7 +101,7 @@ export class Memory {
     if (expected !== undefined && expected !== current.revision) fail(new Error('Memory changed on disk. Reload it before saving.'), 409);
   }
 
-  async catalog(paper: string | undefined, learning: boolean): Promise<MemoryCatalog> {
+  async catalog(paper: string | undefined, learning: boolean, language = 'auto'): Promise<MemoryCatalog> {
     const files: MemoryFile[] = [];
     for (const scope of paper ? MEMORY_SCOPES : ['personal' as const]) {
       try {
@@ -111,7 +111,7 @@ export class Memory {
         files.push({ scope, rules: memoryRules(text), revision, path: shown.split(path.sep).join('/') });
       } catch { /* A linked or unreadable file is not offered for editing. */ }
     }
-    return { files, shareable: paper ? await shareable(paper) : false, learning };
+    return { files, shareable: paper ? await shareable(paper) : false, learning, language };
   }
 
   // Adding a rule that is already there changes nothing; replacing one keeps

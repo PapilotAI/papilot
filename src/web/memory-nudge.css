@@ -1,26 +1,28 @@
 /* A preference Papilot noticed, below a task's save step in the review's
-   completion card or the chat's commit card. It builds on task-commit.css
-   and, like it, is inlined into the review frame, which has the colour
-   tokens but not the app's utilities. */
-.memory-nudge{gap:6px}
-.memory-nudge>header{display:flex;align-items:center;gap:6px;color:var(--text-2)}
-.memory-nudge>header>span{color:var(--text-2)}
-.memory-nudge>header>svg{flex:none;color:var(--purple)}
-.memory-nudge-suggestion{display:flex;flex-direction:column;gap:4px;min-width:0}
-.memory-nudge-rule{margin:0;color:var(--text);font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+   completion card or the chat's commit card: a block like the commit field
+   beside it, with what it would remember, where, why on request, and the
+   actions. It builds on task-commit.css and, like it, is inlined into the
+   review frame, which has the colour tokens but not the app's utilities. */
+.memory-nudge{gap:8px}
+.memory-nudge-item{display:flex;flex-direction:column;gap:6px;min-width:0;padding:10px 12px;border-radius:5px;background:var(--bg-muted)}
+/* On the chat's grey commit card the block is white, as the commit field is. */
+.task-delivery .memory-nudge-item{background:var(--bg)}
+.memory-nudge-head{display:flex;align-items:center;gap:6px;min-width:0}
+.memory-nudge-head>svg{flex:none;color:var(--purple)}
+.memory-nudge-saved .memory-nudge-head>svg{color:var(--green)}
+/* The viewer mutes every span in its completion card; these keep their colours. */
+.memory-nudge .memory-nudge-head>span{min-width:0;color:var(--text-2)}
+.memory-nudge .memory-nudge-head>.memory-nudge-scope{flex:none;margin-left:auto;padding:0 6px;border-radius:4px;background:var(--bg-active);font-size:11px;line-height:18px;color:var(--text-2)}
+.memory-nudge-rule{margin:0;color:var(--text);font-size:13px;line-height:1.5;overflow-wrap:anywhere;text-wrap:pretty}
 .memory-nudge-note{margin:0;color:var(--text-3);overflow-wrap:anywhere}
-.memory-nudge details{color:var(--text-3)}
-.memory-nudge summary{width:fit-content;cursor:pointer}
+.memory-nudge-foot{display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px 12px}
+.memory-nudge-foot>details{flex:1 1 12em;min-width:0;color:var(--text-3)}
+.memory-nudge summary{display:inline-flex;align-items:center;gap:6px;min-height:24px;cursor:pointer}
 .memory-nudge summary:hover{color:var(--text-2)}
 .memory-nudge summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
-.memory-nudge-foot{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin-top:2px}
-.memory-nudge-foot>small,.memory-nudge-saved small{font-size:11px;color:var(--text-3)}
-.memory-nudge .task-commit-actions{margin-left:auto}
-.memory-nudge-saved{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
-.memory-nudge-saved>svg{flex:none;color:var(--green)}
-.memory-nudge-saved>p{display:flex;flex-direction:column;flex:1 1 12em;min-width:0;margin:0}
-.memory-nudge-saved>p>span{color:var(--text);overflow-wrap:anywhere}
-.memory-nudge-saved>.task-commit-error,.memory-nudge-suggestion>.task-commit-error{flex-basis:100%}
+.memory-nudge .memory-nudge-count{min-width:16px;padding:0 5px;border-radius:8px;background:var(--bg-active);font-size:11px;line-height:16px;text-align:center;color:var(--text-2)}
+.memory-nudge .task-commit-actions{flex:none;margin-left:auto}
+.memory-nudge-item>.task-commit-error{margin:0}
 .memory-nudge-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 
 /* What prompted it, grouped by the task it came from: a rejected change
@@ -29,8 +31,7 @@
 .memory-examples{margin-top:6px}
 .memory-examples>li{display:grid;gap:2px}
 .memory-examples small{font-size:11px;color:var(--text-3)}
-/* The viewer mutes every span in its completion card; the examples and the label keep their colours. */
 .memory-nudge .memory-examples li li,.memory-nudge .memory-examples li li span:not(.memory-arrow){color:var(--text);overflow-wrap:anywhere}
 .memory-examples del{color:var(--text-3);text-decoration-color:var(--red)}
 .memory-arrow{color:var(--text-3)}
-@media(max-width:520px){.memory-nudge-foot>small{flex-basis:100%}}
+@media(max-width:520px){.memory-nudge-foot>details{flex-basis:100%}.memory-nudge .task-commit-actions{width:100%}.memory-nudge .task-commit-actions>button{flex:1}}

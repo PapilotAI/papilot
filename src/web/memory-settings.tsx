@@ -1,34 +1,38 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { MemoryCatalog, MemoryScope, Project } from '../shared.ts';
 import { ActionMenu, type MenuAction } from './action-menu.tsx';
+import { ChipSelect } from './chip-select.tsx';
 import { Icon } from './icons.tsx';
-import { t } from './i18n.ts';
-import { failureText, memoryScopeName } from './memory-card.tsx';
+import { LANGUAGES, t } from './i18n.ts';
+import { failureText } from './memory-card.tsx';
 import './memory.css';
 
 type API = <T>(route: string, body?: unknown) => Promise<T>;
 export interface MemorySettingsOptions { project?: Project; api: API }
 type View = 'paper' | 'personal';
+type Editing = { scope: MemoryScope; rule: string | null; text: string };
 
-// Settings → Memory: the preferences agents follow, for this paper (kept in
-// this checkout or shared with coauthors) and for all papers.
+// Settings → Memory: whether and in which language Papilot suggests
+// preferences, and the preferences agents follow, grouped by the file that
+// holds them: this paper on this computer, shared with coauthors, or all papers.
 export function MemorySettings({ project, api }: MemorySettingsOptions) {
   const [catalog, setCatalog] = useState<MemoryCatalog | null>(null);
   const [view, setView] = useState<View>(project ? 'paper' : 'personal');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [draft, setDraft] = useState('');
-  const [editing, setEditing] = useState<{ scope: MemoryScope; rule: string; text: string } | null>(null);
-  const toggle = useId(), add = useId(), name = useId();
-  // Where focus goes once a change lands: the edited rule's button, or the
-  // field to add another, since the control that was used is gone.
+  // A rule being edited, or with rule null, a new one being added to scope.
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const toggle = useId(), field = useId(), name = useId();
+  // Where focus goes once a change lands, since the control that was used is
+  // gone: the edited rule's button, or the add button of its group.
   const root = useRef<HTMLDivElement>(null), focus = useRef<string | null>(null);
   useEffect(() => {
     const target = focus.current;
-    if (!target || !catalog) return;
+    if (!target || !catalog || editing) return;
     focus.current = null;
-    (root.current?.querySelector<HTMLElement>(target === 'add' ? `#${CSS.escape(add)}` : `[data-memory-rule="${CSS.escape(target)}"] .memory-edit-button`) || root.current?.querySelector<HTMLElement>(`#${CSS.escape(add)}`))?.focus();
-  }, [catalog, editing, add]);
+    const rule = root.current?.querySelector<HTMLElement>(`[data-memory-rule="${CSS.escape(target)}"] .memory-edit-button`);
+    (rule || root.current?.querySelector<HTMLElement>(`[data-memory-add="${CSS.escape(target)}"]`) || root.current?.querySelector<HTMLElement>('[data-memory-add]'))?.focus();
+  }, [catalog, editing]);
   const query = project ? `?projectId=${encodeURIComponent(project.id)}` : '';
   useEffect(() => {
     let live = true;
@@ -47,25 +51,48 @@ export function MemorySettings({ project, api }: MemorySettingsOptions) {
     } finally { setBusy(false); }
   }
   const file = (scope: MemoryScope) => catalog?.files.find(entry => entry.scope === scope);
-  const scopes: MemoryScope[] = view === 'paper' ? ['paper', 'shared'] : ['personal'];
-  const rules = scopes.flatMap(scope => (file(scope)?.rules || []).map(rule => ({ scope, rule })));
-  const target: MemoryScope = view === 'paper' ? 'paper' : 'personal';
+  // The shared file is offered when Git would carry it, or when it already holds rules.
+  const scopes: MemoryScope[] = view === 'personal' ? ['personal'] : ['paper', ...(catalog?.shareable || file('shared')?.rules.length ? ['shared' as const] : [])];
+  const groupName = (scope: MemoryScope) => scope === 'paper' ? t('Only on this computer') : scope === 'shared' ? t('Shared with coauthors') : t('All papers');
   const moves = (scope: MemoryScope, rule: string): MenuAction[] => [
     ...(['paper', 'shared', 'personal'] as MemoryScope[]).filter(other => other !== scope && (project || other === 'personal')).map(to => ({
       label: to === 'shared' ? t('Share with coauthors') : to === 'paper' ? (scope === 'shared' ? t('Stop sharing') : t('Move to this paper')) : t('Move to all papers'),
       disabled: busy || (to === 'shared' && !catalog?.shareable),
       select: () => void change('move', { scope, to, text: rule, revisions: { from: file(scope)?.revision, to: file(to)?.revision } }),
     })),
-    { label: t('Delete'), divider: true, danger: true, disabled: busy, select: () => { focus.current = 'add'; void change('remove', { scope, text: rule, revision: file(scope)?.revision }); } },
+    { label: t('Delete'), divider: true, danger: true, disabled: busy, select: () => { focus.current = scope; void change('remove', { scope, text: rule, revision: file(scope)?.revision }); } },
   ];
+  function save(current: Editing) {
+    const text = current.text.trim();
+    const done = current.rule === null
+      ? change('add', { scope: current.scope, text, revision: file(current.scope)?.revision })
+      : change('update', { scope: current.scope, previous: current.rule, text, revision: file(current.scope)?.revision });
+    void done.then(saved => { if (saved) { focus.current = current.rule === null ? current.scope : current.scope + text; setEditing(null); } });
+  }
+  const cancel = (current: Editing) => { focus.current = current.rule === null ? current.scope : current.scope + current.rule; setEditing(null); };
+  // One field for editing a rule or adding one. Escape cancels; Enter submits
+  // through the form, which leaves an input method's composition alone.
+  const form = (current: Editing) => <form className="memory-form" onSubmit={event => { event.preventDefault(); save(current); }}>
+    <label className="sr-only" htmlFor={field}>{current.rule === null ? t('New preference') : t('Preference')}</label>
+    <input id={field} value={current.text} disabled={busy} autoFocus placeholder={current.rule === null ? t('Describe the preference') : undefined}
+      onChange={event => setEditing({ ...current, text: event.target.value })}
+      onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel(current); } }}/>
+    <button type="button" className="button secondary compact" onClick={() => cancel(current)}>{t('Cancel')}</button>
+    <button type="submit" className="button primary compact" disabled={busy || !current.text.trim()}>{current.rule === null ? t('Add') : t('Save')}</button>
+  </form>;
   return <div ref={root} className="settings-page memory-settings">
     <section className="settings-card">
       <div className="settings-row settings-toggle">
         <div className="settings-text">
           <label className="settings-name" htmlFor={toggle}>{t('Learn from reviews')}</label>
-          <p id={toggle + '-detail'}>{t('After you finish reviewing a task, suggest preferences from your notes, comments and rejected edits. Nothing is saved until you choose Remember.')}</p>
+          <p id={toggle + '-detail'}>{t('As you save a task, suggest writing habits noticed in your notes, comments and rejected edits. Nothing is saved until you choose Remember.')}</p>
         </div>
         <input id={toggle} type="checkbox" role="switch" className="switch" aria-describedby={toggle + '-detail'} checked={catalog?.learning ?? true} disabled={!catalog || busy} onChange={event => void change('learning', { enabled: event.target.checked })}/>
+      </div>
+      <div className="settings-row settings-choice">
+        <div className="settings-text"><span className="settings-name">{t('Memory language')}</span><p>{t('For the preferences Papilot suggests. Auto follows the language of your feedback.')}</p></div>
+        <ChipSelect label={t('Memory language')} value={catalog?.language || 'auto'} disabled={!catalog || busy} onChange={language => void change('language', { language })}
+          options={[{ value: 'auto', label: t('Auto') }, ...LANGUAGES.map(item => ({ value: item.id, label: item.name }))]}/>
       </div>
     </section>
     <section className="memory-rules" aria-label={t('Saved preferences')}>
@@ -75,34 +102,29 @@ export function MemorySettings({ project, api }: MemorySettingsOptions) {
           <span>{option === 'paper' ? t('This paper') : t('All papers')}</span>
         </label>)}
       </div>}
-      {!catalog && !error && <p className="muted" role="status">{t('Loading memory…')}</p>}
-      {catalog && !rules.length && <p className="memory-empty">{view === 'paper' ? t('No preferences for this paper yet.') : t('No preferences for all papers yet.')}</p>}
-      {rules.length > 0 && <ul className="memory-list">
-        {rules.map(({ scope, rule }) => <li key={scope + rule} data-memory-rule={scope + rule}>
-          {editing?.scope === scope && editing.rule === rule
-            ? <form className="memory-edit" onSubmit={event => { event.preventDefault(); const text = editing.text.trim(); void change('update', { scope, previous: rule, text, revision: file(scope)?.revision }).then(done => { if (done) { focus.current = scope + text; setEditing(null); } }); }}>
-              <label className="sr-only" htmlFor={add + '-edit'}>{t('Preference')}</label>
-              {/* Escape cancels; Enter submits through the form, which leaves IME composition alone. */}
-              <input id={add + '-edit'} value={editing.text} disabled={busy} autoFocus onChange={event => setEditing({ ...editing, text: event.target.value })} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); focus.current = scope + rule; setEditing(null); } }}/>
-              <button type="button" className="button secondary compact" onClick={() => { focus.current = scope + rule; setEditing(null); }}>{t('Cancel')}</button>
-              <button type="submit" className="button primary compact" disabled={busy || !editing.text.trim()}>{t('Save')}</button>
-            </form>
-            : <>
-              <p>{rule}{scope === 'shared' && <span className="memory-tag" title={t('Shared with coauthors through Git')}>{t('Shared')}</span>}</p>
-              <button type="button" className="icon-button memory-edit-button" aria-label={t('Edit preference')} disabled={busy} onClick={() => setEditing({ scope, rule, text: rule })}><Icon name="pen" size={14}/></button>
-              <ActionMenu label={t('More actions for this preference')} actions={moves(scope, rule)} disabled={busy}/>
-            </>}
-        </li>)}
-      </ul>}
-      {catalog && <form className="memory-add" onSubmit={event => { event.preventDefault(); void change('add', { scope: target, text: draft, revision: file(target)?.revision }).then(done => { if (done) { focus.current = 'add'; setDraft(''); } }); }}>
-        <label className="sr-only" htmlFor={add}>{t('New preference')}</label>
-        <input id={add} value={draft} disabled={busy} placeholder={view === 'paper' ? t('Add a preference for this paper') : t('Add a preference for all papers')} onChange={event => setDraft(event.target.value)}/>
-        <button type="submit" className="button secondary compact" disabled={busy || !draft.trim()}>{t('Add')}</button>
-      </form>}
+      {!catalog && !error && <p className="memory-loading" role="status">{t('Loading memory…')}</p>}
+      {catalog && scopes.map(scope => {
+        const rules = file(scope)?.rules || [], adding = editing?.scope === scope && editing.rule === null;
+        return <section key={scope} className="memory-group" aria-label={groupName(scope)}>
+          <header><span>{groupName(scope)}</span><code title={file(scope)?.path}>{file(scope)?.path}</code></header>
+          <ul className="memory-list settings-card">
+            {!rules.length && !adding && <li className="memory-empty">{t('No preferences yet')}</li>}
+            {rules.map(rule => <li key={rule} data-memory-rule={scope + rule}>
+              {editing?.scope === scope && editing.rule === rule ? form(editing) : <>
+                <p>{rule}</p>
+                <span className="memory-row-actions">
+                  <button type="button" className="icon-button memory-edit-button" aria-label={t('Edit preference')} title={t('Edit preference')} disabled={busy} onClick={() => setEditing({ scope, rule, text: rule })}><Icon name="pen" size={14}/></button>
+                  <ActionMenu label={t('More actions for this preference')} actions={moves(scope, rule)} disabled={busy}/>
+                </span>
+              </>}
+            </li>)}
+            <li className="memory-add-row">
+              {adding ? form(editing) : <button type="button" className="memory-add" data-memory-add={scope} disabled={busy} onClick={() => setEditing({ scope, rule: null, text: '' })}><Icon name="plus" size={14}/>{t('Add preference')}</button>}
+            </li>
+          </ul>
+        </section>;
+      })}
       {error && <p className="inline-error" role="alert">{error}</p>}
-      {catalog && <dl className="memory-location">
-        {scopes.map(scope => <div key={scope}><dt>{memoryScopeName(scope)}</dt><dd><code>{file(scope)?.path}</code></dd></div>)}
-      </dl>}
     </section>
   </div>;
 }

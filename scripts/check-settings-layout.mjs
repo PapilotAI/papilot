@@ -91,7 +91,7 @@ try {
         } });
       }
       if (pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
-      if (pathname === '/api/memory') return route.fulfill({ json: { shareable: true, learning: true, files: [
+      if (pathname === '/api/memory') return route.fulfill({ json: { shareable: true, learning: true, language: 'auto', files: [
         { scope: 'personal', revision: 'r', path: '~/.papilot/memory.md', rules: ['Prefer British spelling, except in quotations and in the names of American institutions, journals and conferences.', 'Avoid "utilize", "leverage" and "delve".'] },
       ] } });
       return route.fulfill({ json: {} });

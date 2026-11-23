@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import type { MemoryScope, MemorySuggestion } from '../shared.ts';
 import type { Store } from './store.ts';
 import { Memory, memoryRule, ruleKey } from './memory.ts';
-import { MEMORY_LEARNING, MEMORY_SINCE, dismissedKey } from './memory-learning.ts';
+import { MEMORY_LANGUAGE, MEMORY_LEARNING, MEMORY_SINCE, dismissedKey } from './memory-learning.ts';
+import { isCommitMessageLanguage } from '../commit.ts';
 
 // Literal errors, so the error catalog translates them for the author.
 const fail = (error: Error, statusCode = 400): never => { throw Object.assign(error, { statusCode }); };
@@ -16,12 +17,12 @@ export function registerMemoryRoutes(app: FastifyInstance, store: Store, memory:
     if (typeof id !== 'string' || id.length > 64) throw new Error('Select a valid paper.');
     return store.project(id).path;
   }
-  const catalog = (projectId: unknown) => memory().catalog(paper(projectId), learning(store));
+  const catalog = (projectId: unknown) => memory().catalog(paper(projectId), learning(store), store.preference<string>(MEMORY_LANGUAGE) || 'auto');
   const written = async (projectId: unknown) => {
     if (typeof projectId === 'string' && projectId) changed(projectId);
     return catalog(projectId);
   };
-  type Body = { projectId?: string; scope?: unknown; text?: unknown; previous?: unknown; to?: unknown; revision?: unknown; revisions?: { from?: unknown; to?: unknown }; enabled?: unknown };
+  type Body = { projectId?: string; scope?: unknown; text?: unknown; previous?: unknown; to?: unknown; revision?: unknown; revisions?: { from?: unknown; to?: unknown }; enabled?: unknown; language?: unknown };
   app.get<{ Querystring: { projectId?: string } }>('/api/memory', request => catalog(request.query.projectId));
   app.post<{ Body: Body }>('/api/memory/add', async request => {
     const b = request.body || {};
@@ -49,6 +50,13 @@ export function registerMemoryRoutes(app: FastifyInstance, store: Store, memory:
     // Learning resumes with what happens next, not the reviews made while it was off.
     if (b.enabled && !learning(store)) store.savePreference(MEMORY_SINCE, Date.now());
     store.savePreference(MEMORY_LEARNING, b.enabled);
+    return catalog(b.projectId);
+  });
+  // The language Papilot writes the preferences it suggests in; 'auto' follows the author's feedback.
+  app.post<{ Body: Body }>('/api/memory/language', async request => {
+    const b = request.body || {};
+    if (!isCommitMessageLanguage(b.language)) fail(new Error('Choose a supported language for preferences.'));
+    store.savePreference(MEMORY_LANGUAGE, b.language);
     return catalog(b.projectId);
   });
 

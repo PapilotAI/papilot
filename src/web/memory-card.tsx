@@ -41,7 +41,6 @@ export function MemoryNudge({ task, answered, api, onChange }: { task: Task; ans
     });
   };
   return <section ref={section} className="task-commit memory-nudge" aria-label={t('Writing memory')}>
-    <header><Icon name="brain" size={14}/><span>{shown.some(suggestion => suggestion.status === 'pending') ? t('Remember for later tasks?') : t('Remembered')}</span></header>
     {shown.map(suggestion => <Suggestion key={suggestion.id} taskId={task.id} suggestion={suggestion} api={api} onChange={memory => update(suggestion.id, memory)}/>)}
   </section>;
 }
@@ -63,30 +62,32 @@ function Suggestion({ taskId, suggestion, api, onChange }: { taskId: string; sug
     finally { setBusy(false); }
   }
   const failed = error && <p className="task-commit-error" role="alert">{error}</p>;
-  if (suggestion.status === 'saved' && suggestion.saved) return <div className="memory-nudge-saved">
-    <Icon name="check" size={14}/>
-    <p role="status"><span className="memory-nudge-hidden">{t('Remembered')}: </span><span>{suggestion.saved.text}</span><small>{memoryScopeName(suggestion.saved.scope)}</small></p>
-    <span className="task-commit-actions">
-      <button ref={undo} type="button" className="task-commit-alternative" disabled={busy} onClick={() => void act('undo')}>{t('Undo')}</button>
-      <button type="button" className="task-commit-alternative" onClick={() => window.dispatchEvent(new Event(OPEN_MEMORY))}>{t('Manage')}</button>
-    </span>
+  if (suggestion.status === 'saved' && suggestion.saved) return <div className="memory-nudge-item memory-nudge-saved">
+    <div className="memory-nudge-head"><Icon name="check" size={14}/><span role="status">{t('Remembered')}</span><span className="memory-nudge-scope">{memoryScopeName(suggestion.saved.scope)}</span></div>
+    <p className="memory-nudge-rule">{suggestion.saved.text}</p>
+    <div className="memory-nudge-foot">
+      <span className="task-commit-actions">
+        <button ref={undo} type="button" className="task-commit-alternative" disabled={busy} onClick={() => void act('undo')}>{t('Undo')}</button>
+        <button type="button" className="task-commit-alternative" onClick={() => window.dispatchEvent(new Event(OPEN_MEMORY))}>{t('Manage')}</button>
+      </span>
+    </div>
     {failed}
   </div>;
-  return <div className="memory-nudge-suggestion">
+  return <div className="memory-nudge-item">
+    <div className="memory-nudge-head"><Icon name="brain" size={14}/><span>{t('Remember this writing habit?')}</span><span className="memory-nudge-scope">{memoryScopeName(suggestion.scope)}</span></div>
     <p className="memory-nudge-rule">{suggestion.text}</p>
     {suggestion.replaces && <p className="memory-nudge-note">{t('Replaces “{rule}”', { rule: suggestion.replaces })}</p>}
-    <details>
-      <summary>{t('What prompted it')}</summary>
-      {/* role=list: Safari drops list semantics from unstyled grid lists. */}
-      <ul className="memory-examples" role="list">
-        {byTask(suggestion.examples).map(([task, examples]) => <li key={task}>
-          <small>{task === taskId ? t('This task') : examples[0].title}</small>
-          <ul role="list">{examples.map((example, index) => <li key={index}><Example example={example}/></li>)}</ul>
-        </li>)}
-      </ul>
-    </details>
     <div className="memory-nudge-foot">
-      <small>{memoryScopeName(suggestion.scope)}</small>
+      <details>
+        <summary><span>{t('What prompted it')}</span><span className="memory-nudge-count" aria-hidden="true">{suggestion.examples.length}</span></summary>
+        {/* role=list: Safari drops list semantics from unstyled grid lists. */}
+        <ul className="memory-examples" role="list">
+          {byTask(suggestion.examples).map(([task, examples]) => <li key={task}>
+            <small>{task === taskId ? t('This task') : examples[0].title}</small>
+            <ul role="list">{examples.map((example, index) => <li key={index}><Example example={example}/></li>)}</ul>
+          </li>)}
+        </ul>
+      </details>
       <span className="task-commit-actions">
         <button type="button" className="task-commit-alternative" disabled={busy} onClick={() => void act('dismiss')}>{t('Dismiss')}</button>
         <button ref={remember} type="button" className="task-commit-primary" disabled={busy} onClick={() => void act('save')}>{t('Remember')}</button>

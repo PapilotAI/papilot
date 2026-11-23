@@ -109,7 +109,8 @@ export interface TimelineItem { id: string; taskId: string; type: string; text: 
 // shared the repository's .papilot/memory.md that coauthors receive with Git.
 export type MemoryScope = 'personal' | 'paper' | 'shared';
 export interface MemoryFile { scope: MemoryScope; rules: string[]; revision: string; path: string }
-export interface MemoryCatalog { files: MemoryFile[]; shareable: boolean; learning: boolean }
+/** language: the language suggested preferences are written in, a language ID or 'auto'. */
+export interface MemoryCatalog { files: MemoryFile[]; shareable: boolean; learning: boolean; language: string }
 // A preference Papilot noticed in the author's reviews, with the examples
 // it is based on. replaces names a rule the suggestion refines; scope starts
 // where that rule is. saved records what Remember did, so Undo reverses

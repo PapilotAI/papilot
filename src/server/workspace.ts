@@ -44,7 +44,7 @@ import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../n
 import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type GroupInstructions } from '../note-groups.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress, recentCommitSubjects } from './manuscript.ts';
 import { Memory, memoryDigest, memoryUpdate } from './memory.ts';
-import { MEMORY_EVIDENCE, MEMORY_LEARNING, MEMORY_SINCE, acceptedSuggestions, dismissedKey, evidenceHash, hasEvidence, learningPrompt, memoryLearningInstructions, taskEvidence, type EvidenceRecord, type MemoryEvidence } from './memory-learning.ts';
+import { MEMORY_EVIDENCE, MEMORY_LANGUAGE, MEMORY_LEARNING, MEMORY_SINCE, acceptedSuggestions, dismissedKey, evidenceHash, hasEvidence, learningPrompt, memoryLearningInstructions, taskEvidence, type EvidenceRecord, type MemoryEvidence } from './memory-learning.ts';
 import { AGENT_IDS, usesCodex, isTaskReviewNote, collaborationRoutes, type CollaborationRole, type CollaborationRoutes, type CollaborationSettings } from '../shared.ts';
 import type { Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, PendingBuild, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview, PageView, ToolPlace } from '../shared.ts';
 
@@ -2025,6 +2025,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     this.store.savePreference(key, { projectId: task.projectId, hash, at: Date.now(), evidence, learned: true } satisfies EvidenceRecord);
     if (!hasEvidence(evidence)) return;
     const catalog = await this.memory.catalog(project.path, true);
+    const chosen = LANGUAGES.find(item => item.id === this.store.preference<string>(MEMORY_LANGUAGE));
     // What this paper's open tasks already offer is not offered again; an
     // archived task's unanswered suggestion may come back with a later review.
     const offered = this.store.tasks().filter(other => other.projectId === task.projectId && !other.archivedAt).flatMap(other => other.memory || []).filter(suggestion => suggestion.status === 'pending');
@@ -2032,6 +2033,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       memory: catalog.files.map(({ scope, rules }) => ({ scope, rules })),
       dismissed: [...this.store.preference<string[]>(dismissedKey(task.projectId)) || [], ...this.store.preference<string[]>(dismissedKey()) || []],
       pending: offered.map(suggestion => suggestion.text), current: evidence,
+      ...(chosen ? { language: `${chosen.name} (${chosen.id})` } : {}),
       // Earlier tasks of the same agent only: feedback never goes to another provider.
       earlier: this.store.memoryEvidence(task.projectId).map(record => record.evidence as MemoryEvidence)
         .filter(other => { const earlier = other.task !== task.id && this.store.findTask(other.task); return Boolean(earlier && this.learner(earlier) === id); }),
