@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { MemoryScope, MemorySuggestion, TimelineItem } from '../shared.ts';
+import type { MemoryScope, MemorySuggestion } from '../shared.ts';
 import type { Store } from './store.ts';
 import { Memory, memoryRule, ruleKey } from './memory.ts';
 import { MEMORY_LEARNING, MEMORY_SINCE, dismissedKey } from './memory-learning.ts';
@@ -52,10 +52,11 @@ export function registerMemoryRoutes(app: FastifyInstance, store: Store, memory:
     return catalog(b.projectId);
   });
 
-  // A suggestion card in a task: Remember saves the (edited) rule where the
-  // author chose, Dismiss keeps it from being proposed again, Undo reverses
-  // exactly what Remember did. One action per task at a time, each reading
-  // the card afresh, so two clicks never overwrite each other's result.
+  // A task's suggestion: Remember saves the rule where the author chose,
+  // Dismiss keeps it from being proposed again, Undo reverses exactly what
+  // Remember did. One action per task at a time, each reading the task
+  // afresh, so two clicks never overwrite each other's result. The task's
+  // suggestions are returned.
   const cards = new Map<string, Promise<unknown>>();
   function serial<T>(taskId: string, work: () => Promise<T>) {
     const next = (cards.get(taskId) || Promise.resolve()).then(work, work);
@@ -67,12 +68,12 @@ export function registerMemoryRoutes(app: FastifyInstance, store: Store, memory:
   type Action = { action?: unknown; text?: unknown; scope?: unknown };
   app.post<{ Params: { id: string; suggestion: string }; Body: Action }>('/api/tasks/:id/memory/:suggestion', { config: { resource: { task: 'id' } } }, request => serial(request.params.id, async () => {
     const task = store.task(request.params.id), b = request.body || {};
-    const item = store.items(task.id).find(entry => entry.type === 'memory' && entry.memory?.some(suggestion => suggestion.id === request.params.suggestion));
-    if (!item) return fail(new Error('This suggestion is no longer available.'), 404);
-    const root = store.project(task.projectId).path, suggestion = item.memory!.find(entry => entry.id === request.params.suggestion)!;
+    const suggestion = task.memory?.find(entry => entry.id === request.params.suggestion);
+    if (!suggestion) return fail(new Error('This suggestion is no longer available.'), 404);
+    const root = store.project(task.projectId).path, unchanged = { memory: task.memory! };
     let next: MemorySuggestion;
     if (b.action === 'save') {
-      if (suggestion.status === 'saved') return item;
+      if (suggestion.status === 'saved') return unchanged;
       const scope = (b.scope ?? suggestion.scope) as MemoryScope, text = memoryRule(b.text ?? suggestion.text);
       // The rule it refines, in the scope the suggestion came from, goes away
       // even when the author keeps the new one elsewhere, so the two never contradict.
@@ -83,14 +84,14 @@ export function registerMemoryRoutes(app: FastifyInstance, store: Store, memory:
       const gone = replaced ?? removed;
       next = { ...suggestion, status: 'saved', saved: { scope, text, ...(added ? {} : { existing: true as const }), ...(gone ? { replaced: gone, replacedScope: from } : {}) } };
     } else if (b.action === 'dismiss') {
-      if (suggestion.status !== 'pending') return item;
+      if (suggestion.status !== 'pending') return unchanged;
       for (const key of [dismissedKey(task.projectId), ...(suggestion.scope === 'personal' ? [dismissedKey()] : [])]) {
         const dismissed = store.preference<string[]>(key) || [];
         if (!dismissed.includes(ruleKey(suggestion.text))) store.savePreference(key, [...dismissed, ruleKey(suggestion.text)]);
       }
       next = { ...suggestion, status: 'dismissed' };
     } else if (b.action === 'undo') {
-      if (suggestion.status !== 'saved' || !suggestion.saved) return item;
+      if (suggestion.status !== 'saved' || !suggestion.saved) return unchanged;
       const { scope, text, existing, replaced, replacedScope } = suggestion.saved;
       if (!memory().has(scope, text, root)) fail(new Error('This preference changed after it was saved. Edit it in Settings → Memory.'), 409);
       // A rule that was already saved before stays; only what Remember changed is reversed.
@@ -102,10 +103,9 @@ export function registerMemoryRoutes(app: FastifyInstance, store: Store, memory:
       const { saved: _, ...pending } = suggestion;
       next = { ...pending, status: 'pending' };
     } else return fail(new Error('Choose Remember, Dismiss or Undo.'));
-    const current = store.items(task.id).find(entry => entry.id === item.id) || item;
-    const updated: TimelineItem = { ...current, memory: (current.memory || []).map(entry => entry.id === next.id ? next : entry) };
-    store.saveItem(updated);
+    const suggestions = (store.task(task.id).memory || []).map(entry => entry.id === next.id ? next : entry);
+    store.updateTask(task.id, { memory: suggestions });
     if (b.action !== 'dismiss') changed(task.projectId);
-    return updated;
+    return { memory: suggestions };
   }));
 }

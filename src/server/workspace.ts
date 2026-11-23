@@ -258,7 +258,8 @@ export class Workspace extends EventEmitter {
   memory = new Memory();
   // Tasks whose finished review is being learned from (true: look again
   // afterwards), and the queue that runs one learning helper at a time.
-  private learning = new Map<string, boolean>();
+  // A task being learned from, and what to do once it is done: null for nothing more.
+  private learning = new Map<string, { suggest: boolean } | null>();
   private learningQueue: Promise<void> = Promise.resolve();
   // Set when Codex refuses the view_pdf tool, so later threads start without it.
   private noViewPdf = false;
@@ -1727,7 +1728,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       const review = { state: summary.state, round: summary.round, counts: summary.counts, ready: summary.ready, job: current.review?.job, unsent, comments, files };
       this.store.updateTask(taskId, { deferred, delivery, reconciliation, review });
       this.announceSelection(current, review);
-      if (learnable(this.store.task(taskId))) this.learnFrom(taskId);
+      if (learnable(this.store.task(taskId))) this.learnFrom(taskId, false);
       // Recover an application interrupted after the engine prepared its
       // proposal but before Papilot persisted the agent run.
       if (reconciliation?.ready && (summary.round ?? 0) <= reconciliation.round && current.status === 'reviewing' && !this.committing.has(task.projectId) && !this.reviewWrites.has(taskId)
@@ -1737,46 +1738,58 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     } catch { /* The task remains visible even if its project is temporarily unavailable. */ }
     finally { release?.(); }
   }
-  // Once the author is through with a task's result, look at what they wrote
-  // and decided there, and offer to remember any lasting preference. One
-  // read-only turn of the task's own agent; the author's feedback never goes
-  // to another provider, and without a read-only helper nothing is learned.
-  // Learning is background work: helpers run one after another, and a review
-  // that changes while its task is being learned from is looked at again.
-  private learnFrom(taskId: string) {
+  // A finished review records what the author wrote and decided there,
+  // without asking any model. When the author goes on to save the task, as
+  // its commit message is written or it is applied, the task's own agent
+  // reads the paper's recorded feedback in one read-only turn of its light
+  // model, beside the commit message rather than before it, and offers any
+  // lasting preference next to the save step. The author's feedback never
+  // goes to another provider, and without a read-only helper nothing is
+  // suggested. Learning is background work: helpers run one after another,
+  // and a review that changes while its task is being learned from is looked
+  // at again.
+  learnOnSave(taskId: string) {
+    const task = this.store.findTask(taskId);
+    if (task && learnable(task)) this.learnFrom(taskId, true);
+  }
+  private learnFrom(taskId: string, suggest: boolean) {
     if (this.closing) return;
-    if (this.learning.has(taskId)) { this.learning.set(taskId, true); return; }
-    this.learning.set(taskId, false);
-    const run = this.learningQueue.then(() => this.learnMemory(taskId)).catch(error => { if (!this.closing) console.warn('Could not learn writing preferences:', errorText(error)); })
+    if (this.learning.has(taskId)) { this.learning.set(taskId, { suggest: suggest || Boolean(this.learning.get(taskId)?.suggest) }); return; }
+    this.learning.set(taskId, null);
+    const run = this.learningQueue.then(() => this.learnMemory(taskId, suggest)).catch(error => { if (!this.closing) console.warn('Could not learn writing preferences:', errorText(error)); })
       .finally(() => {
         const again = this.learning.get(taskId);
         this.learning.delete(taskId);
-        if (again && !this.closing) { const task = this.store.findTask(taskId); if (task && learnable(task)) this.learnFrom(taskId); }
+        if (again && !this.closing) { const task = this.store.findTask(taskId); if (task && learnable(task)) this.learnFrom(taskId, again.suggest); }
       });
     this.learningQueue = run;
   }
-  private async learnMemory(taskId: string) {
+  private async learnMemory(taskId: string, suggest: boolean) {
     const task = this.store.findTask(taskId);
     if (!task || this.closing || !learnable(task) || this.store.preference<boolean>(MEMORY_LEARNING) === false) return;
-    const id: AgentId = this.agentOf(task) === 'collaboration' ? 'codex' : this.agentOf(task), runtime = this.agents[id];
-    if (!runtime.ready || !this.runtimes[id].authenticated || runtime.supportsReadOnlyTasks === false) return;
     const since = this.store.preference<number>(MEMORY_SINCE) ?? 0;
     if (!this.store.runs().some(run => run.taskId === task.id && (run.finishedAt ?? 0) >= since)) return;
     const project = this.store.project(task.projectId), client = await this.connectReview(project.path);
     const feedback = await client.get(`${taskRoute(task.name)}/feedback?after=0`);
     const evidence = taskEvidence(task.id, this.store.items(task.id), this.store.runs().filter(run => run.taskId === task.id), feedback);
-    const hash = evidenceHash(evidence), key = MEMORY_EVIDENCE + task.id;
-    if (this.store.preference<EvidenceRecord>(key)?.hash === hash || !this.store.findTask(taskId)) return;
-    // Kept before the helper runs: later tasks count this one even if the
-    // helper fails, and the same review is not sent again.
-    this.store.savePreference(key, { projectId: task.projectId, hash, at: Date.now(), evidence } satisfies EvidenceRecord);
+    const hash = evidenceHash(evidence), key = MEMORY_EVIDENCE + task.id, recorded = this.store.preference<EvidenceRecord>(key);
+    if (!this.store.findTask(taskId)) return;
+    if (recorded?.hash !== hash) this.store.savePreference(key, { projectId: task.projectId, hash, at: Date.now(), evidence } satisfies EvidenceRecord);
+    if (!suggest || (recorded?.hash === hash && recorded.learned)) return;
+    const id: AgentId = this.agentOf(task) === 'collaboration' ? 'codex' : this.agentOf(task), runtime = this.agents[id];
+    if (!runtime.ready || !this.runtimes[id].authenticated || runtime.supportsReadOnlyTasks === false) return;
+    // Marked before the helper runs, so the same review is not sent again
+    // even if the helper fails or the commit message is written again.
+    this.store.savePreference(key, { projectId: task.projectId, hash, at: Date.now(), evidence, learned: true } satisfies EvidenceRecord);
     if (!hasEvidence(evidence)) return;
     const catalog = await this.memory.catalog(project.path, true);
-    const shown = this.store.items(task.id).flatMap(item => item.type === 'memory' ? item.memory || [] : []);
+    // What this paper's open tasks already offer is not offered again; an
+    // archived task's unanswered suggestion may come back with a later review.
+    const offered = this.store.tasks().filter(other => other.projectId === task.projectId && !other.archivedAt).flatMap(other => other.memory || []).filter(suggestion => suggestion.status === 'pending');
     const input = {
       memory: catalog.files.map(({ scope, rules }) => ({ scope, rules })),
       dismissed: [...this.store.preference<string[]>(dismissedKey(task.projectId)) || [], ...this.store.preference<string[]>(dismissedKey()) || []],
-      pending: shown.map(suggestion => suggestion.text), current: evidence,
+      pending: offered.map(suggestion => suggestion.text), current: evidence,
       earlier: this.store.memoryEvidence(task.projectId).map(record => record.evidence as MemoryEvidence).filter(other => other.task !== task.id),
     };
     const models = this.runtimes[id].models, model = lightModel(models) || models.find(item => item.id === task.model) || models.find(item => item.isDefault);
@@ -1787,7 +1800,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     // Each example names its task, so the card can say where the author made it.
     const suggestions = acceptedSuggestions(reply, input, index => `${hash.slice(0, 12)}-${index}`)
       .map(suggestion => suggestion.examples ? { ...suggestion, examples: suggestion.examples.map(example => ({ ...example, title: this.store.findTask(example.task)?.title })) } : suggestion);
-    if (suggestions.length) this.store.saveItem({ id: `${task.id}:memory:${hash.slice(0, 12)}`, taskId: task.id, type: 'memory', text: suggestions.map(suggestion => suggestion.text).join('\n'), createdAt: Date.now(), memory: suggestions });
+    if (suggestions.length) this.store.updateTask(task.id, { memory: [...current.memory || [], ...suggestions] });
   }
   // Announces a task's final selection once: its last pending change was
   // just decided, or the decisions changed with none pending. What applying
@@ -1946,6 +1959,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const effort = choice.effort || model?.defaultEffort, serviceTier = id === 'codex' ? choice.serviceTier : undefined;
     const task = choice.taskId ? this.store.task(choice.taskId) : undefined;
     if (task && task.projectId !== projectId) throw new Error('Invalid task ID.');
+    // Saving a task is when Papilot offers what it noticed in the author's reviews.
+    if (task) this.learnOnSave(task.id);
     const { files, patch, recent } = task ? await this.taskCommitChanges(task) : await commitChanges(project.path, paths, choice.staged);
     const tasks = this.store.tasks().filter(task => task.projectId === projectId && task.review?.files?.some(file => paths.includes(file))).map(task => task.title);
     const prompt = [

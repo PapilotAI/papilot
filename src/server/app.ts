@@ -828,6 +828,8 @@ export async function buildApp(options: AppOptions) {
     const retryCommit = b.message === undefined && task.delivery?.mode === 'commit' && task.delivery.pending;
     const result = await serialGit(task.projectId, () => workspace.applyTask(task.id, b.keepCurrent === true, b.mode === 'commit' ? { message: retryCommit ? undefined : string(b.message, 'Commit message', 5000), ...(b.confirmation ? { confirmation: string(b.confirmation, 'Commit confirmation', 100) } : {}) } : undefined));
     if (delivered(result.delivery)) refreshManuscript(task.projectId);
+    // Applied without a commit message, the task still offers what Papilot noticed.
+    workspace.learnOnSave(task.id);
     return result;
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/commit-message', task, request => {

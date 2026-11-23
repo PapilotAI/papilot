@@ -2314,11 +2314,6 @@
     "textHash": "bd39a069d6b4fdfa09c251ea26bddc1ecae479485c25b54a925fe3cb0d6d743e",
     "model": "gemini-4-argon-medium"
   },
-  "Keep for": {
-    "revision": "316ab90cb24c611d0981ee3e2e5d8f2cfdc1ab3e2c47296a0f0115b55caafdc0",
-    "textHash": "22151f5495fe1edb10fa3a409c839c892af4322850d3d0099eed11cd66e99a1d",
-    "model": "gemini-4-argon-medium"
-  },
   "Keep in sync with Overleaf": {
     "revision": "f70fc6b0c2faa00f726c37f746f6ae0decf3c521ec1e20eda9ef0809917bf46d",
     "textHash": "0d7df9cee296bf695898621f30c0d21d508af1260c985bde88e3f4cd15d1f3e8",
@@ -3600,7 +3595,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Preference": {
-    "revision": "e68b393b3ef5b797e1664bc3332d8dfb2963a3401e8f1beaeb20d8a64a614e83",
+    "revision": "e35d863fff53fb89ce1552750264848757f7323fbf2b453cbdabb36cbdded3e1",
     "textHash": "2defd8cf58bf74cdd320c3d8a0386791f0e10f6ba6b267f094c8f896846e6df5",
     "model": "gemini-4-argon-medium"
   },
@@ -4620,7 +4615,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Shared": {
-    "revision": "29fae938cd17a887c1126a7c16095ce04dc9e1fa8ab3b8b09780bd3da867d7f6",
+    "revision": "fdafcbc5afc26c4eb2cc015be7d62df52cdcaa41e50616b572a6262bb09f6ce1",
     "textHash": "155175b51ffae86857be1b8d3fb5c8511d5f699d1917de996371909d0158d2a2",
     "model": "gemini-4-argon-medium"
   },
@@ -4630,7 +4625,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Shared with coauthors through Git": {
-    "revision": "f5d4a6f0345f36b4abe5e21a5a8f110f03b6d4f0604897b51c424240408f7afe",
+    "revision": "4e6b6bec55116b3db1f4958cc150026406d719ee1b06a2e2f5dc89b22938ff51",
     "textHash": "1c1e492a21eb8baa4f42f0050e14e8c00451c1e2983c713a0a890d62a673945c",
     "model": "gemini-4-argon-medium"
   },

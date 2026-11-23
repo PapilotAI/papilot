@@ -2314,11 +2314,6 @@
     "textHash": "0120b5eb9a8d6f42ef3a5ae5f69ce687291c40d54e7192b3b5bc29074c9773ac",
     "model": "gemini-4-argon-medium"
   },
-  "Keep for": {
-    "revision": "1eaba5d9ade35fea8d23ad492b528ffbf68da8555fde48f92210b6aeec2912e8",
-    "textHash": "03d58c841529201b2225901a0997366771fff09f3bab9cfab0fcfcd56e6267ec",
-    "model": "gemini-4-argon-medium"
-  },
   "Keep in sync with Overleaf": {
     "revision": "a4cd1725a56042e12ba4116838670ae44122b7f3757e672370f7a49b6e48ad8f",
     "textHash": "1ab523aa56d039ed3a3db3f5cbbe56bc3e0ff98c35ddf9fc7baba7481df63663",
@@ -3600,8 +3595,8 @@
     "model": "gemini-4-argon-medium"
   },
   "Preference": {
-    "revision": "600b3c140cfe975cf461cad7969814d40e4eab95094a5aad9397ed3e188a116d",
-    "textHash": "28b4f30f1f6488371c700bd20949be4e9661b69adc0f1cbe91fa3530a3c6cce2",
+    "revision": "3744e9eedbaf22b549506b844ea775a700e6f64c5370bd0448b07d222686aa42",
+    "textHash": "aa8539ef9d25091ad1710eb462544b282194bcae1a7be95f08c33486faf5e25c",
     "model": "gemini-4-argon-medium"
   },
   "Preferences for": {
@@ -4620,8 +4615,8 @@
     "model": "gemini-4-argon-medium"
   },
   "Shared": {
-    "revision": "5ec081252bcd278661ead1f2255d9aa7c48d13880e0afbcf9b77ef53abae2117",
-    "textHash": "9f344fca71a0f8687bcd6a9b7be2eb95c47cfd5398a0189d9d4d55c755e13f10",
+    "revision": "d9dbc3eef40c0a75738967aead448699a36a02c7c1ebf1cfd20601d23af2349c",
+    "textHash": "d62648e19143c34dd1825799ef7c0deb4fe5a98728b6a9f6a0d429a583eec99a",
     "model": "gemini-4-argon-medium"
   },
   "Shared with coauthors": {
@@ -4630,7 +4625,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Shared with coauthors through Git": {
-    "revision": "94b2973b984a077b688862cac498c0210963f78cae306ce3495649fc6820b212",
+    "revision": "747f6ca9e9a5e626d0543a2153e4382dc1cd8fd993e4cbbd2b4e34f058ae81b4",
     "textHash": "ae96955fea7d701cb71acf7f62800a128ed6da8bee50344f52a7e5f79792e233",
     "model": "gemini-4-argon-medium"
   },

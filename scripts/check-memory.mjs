@@ -22,21 +22,22 @@ fs.mkdirSync(paper); git('init', '-q'); fs.writeFileSync(path.join(paper, 'main.
 const store = new Store(':memory:'), memory = new Memory({ user: home });
 const project = { id: 'paper', name: 'Example paper', path: paper, createdAt: 1 };
 const now = Date.now();
-// The author turned down stronger claims in two tasks without ever stating a rule.
-const review = { state: 'done', round: 1, counts: { accepted: 2, rejected: 1, pending: 0 }, unsent: 0, comments: 0, files: [] };
-const base = { projectId: 'paper', agent: 'codex', threadId: 'thread', turnId: null, model: null, status: 'reviewing', feedbackCursor: 0, error: null, review };
-const earlier = { ...base, id: 'intro', name: 'p-intro', title: 'Polish the introduction', instructions: 'Polish the introduction.', worktree: path.join(root, 'intro'), createdAt: now - 7200000, updatedAt: now - 7200000 };
-const task = { ...base, id: 'abstract', name: 'p-abstract', title: 'Tighten the abstract', instructions: 'Tighten the abstract to 150 words.', worktree: path.join(root, 'task'), createdAt: now - 60000, updatedAt: now - 60000 };
-store.saveProject(project); store.saveTask(earlier); store.saveTask(task);
-store.saveItem({ id: 'first', taskId: task.id, type: 'user', text: 'Tighten the abstract to 150 words.', createdAt: now - 60000 });
-store.saveItem({ id: 'abstract:turn:reply', taskId: task.id, type: 'assistant', text: 'I cut the abstract to 148 words and made the contribution statement more direct.', createdAt: now - 50000 });
+// The author turned down stronger claims in two tasks without ever stating a
+// rule; the second task's review is finished and ready to save.
+const review = { state: 'done', round: 1, counts: { accepted: 2, rejected: 1, pending: 0 }, unsent: 0, comments: 0, files: ['main.tex'] };
+const base = { projectId: 'paper', agent: 'codex', threadId: 'thread', turnId: null, model: null, status: 'reviewing', feedbackCursor: 0, error: null, deferred: true, review };
+const earlier = { ...base, id: 'intro', name: 'p-intro', title: 'Polish the introduction', instructions: 'Polish the introduction.', worktree: path.join(root, 'intro'), createdAt: now - 7200000, updatedAt: now - 7200000, deferred: false, delivery: { mode: 'commit', commit: 'abc1234', branch: 'main' }, review: { ...review, files: [] } };
 const rule = 'Don\'t strengthen claims: write "show", not "prove", and use "significantly" only for statistical significance.';
 const examples = [
-  { task: task.id, rejected: 'significantly outperforms all baselines', kept: 'outperforms the baselines' },
+  { task: 'abstract', rejected: 'significantly outperforms all baselines', kept: 'outperforms the baselines' },
   { task: earlier.id, title: earlier.title, rejected: 'We prove that', kept: 'We show that' },
   { task: earlier.id, title: earlier.title, said: 'Too strong, we only have experiments.' },
 ];
-store.saveItem({ id: 'abstract:memory:fixture', taskId: task.id, type: 'memory', text: rule, createdAt: now - 40000, memory: [{ id: 'fixture-0', text: rule, scope: 'personal', examples, status: 'pending' }] });
+const task = { ...base, id: 'abstract', name: 'p-abstract', title: 'Tighten the abstract', instructions: 'Tighten the abstract to 150 words.', worktree: path.join(root, 'task'), createdAt: now - 60000, updatedAt: now - 60000,
+  memory: [{ id: 'noticed-0', text: rule, scope: 'personal', examples, status: 'pending' }] };
+store.saveProject(project); store.saveTask(earlier); store.saveTask(task);
+store.saveItem({ id: 'first', taskId: task.id, type: 'user', text: 'Tighten the abstract to 150 words.', createdAt: now - 60000 });
+store.saveItem({ id: 'abstract:turn:reply', taskId: task.id, type: 'assistant', text: 'I cut the abstract to 148 words and made the contribution statement more direct.', createdAt: now - 50000 });
 
 const server = Fastify();
 server.setErrorHandler((error, _request, reply) => reply.code(error.statusCode || 400).send({ error: error.message }));
@@ -44,10 +45,11 @@ registerMemoryRoutes(server, store, () => memory);
 await server.register(staticFiles, { root: path.resolve(process.env.PAPILOT_WEB_DIST || 'dist') });
 await server.listen({ host: '127.0.0.1', port: 0 });
 const runtime = { connected: true, authenticated: true, account: null, error: null, models: [] };
-const snapshot = { version: 'test', csrf: 'fixture', projects: [project], tasks: [task, earlier], requests: [], runtime, runtimes: { codex: runtime } };
+const snapshot = () => ({ version: 'test', csrf: 'fixture', projects: [project], tasks: [store.task(task.id), store.task(earlier.id)], requests: [], runtime, runtimes: { codex: runtime } });
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
 const errors = [];
-// The task is selected at desktop size; a phone then shows its conversation.
+// The task is selected at desktop size and shown with its chat only, where
+// the save step is the last card; a phone shows the same in its Chat tab.
 async function open(viewport, colorScheme = 'light') {
   const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1280, height: 820 }, colorScheme });
   page.on('pageerror', error => errors.push(error.message));
@@ -55,7 +57,9 @@ async function open(viewport, colorScheme = 'light') {
     const url = new URL(route.request().url()), json = data => route.fulfill({ json: data });
     if (url.pathname.startsWith('/api/memory') || /^\/api\/tasks\/[^/]+\/memory\//.test(url.pathname)) return route.continue();
     if (url.pathname === '/api/runtime/requirements') return json(readyRequirements);
-    if (url.pathname === '/api/state') return json(snapshot);
+    if (url.pathname === '/api/state') return json(snapshot());
+    if (url.pathname.endsWith('/commit-message')) return json({ message: 'Tighten the abstract', agent: 'codex' });
+    if (url.pathname.endsWith('/predict')) return json({});
     if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
     if (url.pathname === '/api/updates') return json({ currentVersion: 'test', phase: 'idle', canUpdate: false });
     if (url.pathname === '/api/note-alternatives') return json({ noteAlternatives: true, noteAlternativeRange: 'few' });
@@ -72,44 +76,42 @@ async function open(viewport, colorScheme = 'light') {
   await page.goto(`http://127.0.0.1:${server.server.address().port}/?task=${task.id}`);
   await page.locator('.task-list .task-title', { hasText: task.title }).first().click();
   await page.setViewportSize(viewport);
+  await page.getByRole('button', { name: 'Chat', exact: true }).click();
   return page;
 }
 const localFile = path.join(paper, '.papilot', 'memory.local.md'), sharedFile = path.join(paper, '.papilot', 'memory.md'), personalFile = path.join(home, 'memory.md');
 const rules = file => fs.existsSync(file) ? memoryRules(fs.readFileSync(file, 'utf8')) : [];
 try {
   const page = await open({ width: 1280, height: 820 });
-  const card = page.getByRole('region', { name: 'Writing memory' });
-  await expect(card).toBeVisible();
+  // Below the save step, which stays usable: the rule, where it would go, and why on request.
+  const save = page.locator('.task-delivery');
+  await expect(save.getByRole('textbox', { name: 'Commit message' })).toHaveValue('Tighten the abstract');
+  const card = save.getByRole('region', { name: 'Writing memory' });
   await expect(card).toContainText('Remember for later tasks?');
-  // What prompted it: each example with the task it came from.
-  const prompted = card.getByRole('list', { name: 'What prompted it' }).locator(':scope > li');
+  await expect(card).toContainText(rule);
+  await expect(card).toContainText('All papers');
+  await expect(save.getByRole('button', { name: 'Commit to manuscript', exact: true })).toBeEnabled();
+  const prompted = card.locator('.memory-examples > li');
+  await expect(prompted.first()).toBeHidden();
+  await card.getByText('What prompted it', { exact: true }).click();
   await expect(prompted).toHaveText([/^This task.*significantly outperforms all baselines.*outperforms the baselines$/, /^Polish the introduction.*We prove that.*We show that.*Too strong, we only have experiments\.$/]);
   await expect(prompted.nth(1).getByRole('listitem')).toHaveCount(2);
   await expect(prompted.first().locator('del')).toHaveText('Rejected: significantly outperforms all baselines');
-  const scope = card.getByRole('radiogroup', { name: 'Keep for' });
-  await expect(scope.getByRole('radio', { name: 'All papers' })).toBeChecked();
-  await expect(scope.getByRole('radio', { name: 'Shared' })).toBeEnabled();
   const chat = page.locator('#conversation-panel');
   await chat.screenshot({ animations: 'disabled', path: 'test-results/memory-card-desktop.png' });
 
-  // Reworded and kept for all papers, then undone.
-  const text = card.getByRole('textbox', { name: 'Preference' });
-  await text.fill('Never state a claim more strongly than the results support.');
-  await card.getByRole('button', { name: 'Remember' }).click();
+  // Remembered for all papers, undone, and remembered again.
+  await card.getByRole('button', { name: 'Remember', exact: true }).click();
   await expect(card).toContainText('Remembered');
-  await expect(card).toContainText('All papers');
-  assert.deepEqual(rules(personalFile), ['Never state a claim more strongly than the results support.']);
+  await expect(card.getByRole('button', { name: 'Undo' })).toBeFocused();
+  assert.deepEqual(rules(personalFile), [rule]);
   await card.getByRole('button', { name: 'Undo' }).click();
-  await expect(card.getByRole('button', { name: 'Remember' })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Remember', exact: true })).toBeFocused();
   assert.deepEqual(rules(personalFile), []);
-
-  // Kept for this paper: in the checkout only, invisible to Git.
-  await text.fill(rule);
-  await scope.getByRole('radio', { name: 'This paper' }).check();
-  await card.getByRole('button', { name: 'Remember' }).click();
+  await card.getByRole('button', { name: 'Remember', exact: true }).click();
   await expect(card.getByRole('button', { name: 'Undo' })).toBeVisible();
-  assert.deepEqual(rules(localFile), [rule]);
-  assert.equal(git('status', '--porcelain', '--untracked-files=all'), '');
+  assert.deepEqual(rules(personalFile), [rule]);
+  assert.equal(store.task(task.id).memory[0].status, 'saved');
   await chat.screenshot({ animations: 'disabled', path: 'test-results/memory-card-saved-desktop.png' });
 
   // Manage opens Settings → Memory.
@@ -117,9 +119,20 @@ try {
   const settings = page.getByRole('dialog', { name: 'Memory', exact: true });
   await expect(settings).toBeVisible();
   const list = settings.locator('.memory-list li');
+  await expect(settings.getByRole('switch', { name: 'Learn from reviews' })).toBeChecked();
+  await settings.getByRole('radio', { name: 'All papers' }).check();
   await expect(list).toHaveCount(1);
   await expect(list.first()).toContainText(rule);
-  await expect(settings.getByRole('switch', { name: 'Learn from reviews' })).toBeChecked();
+  await page.screenshot({ animations: 'disabled', path: 'test-results/memory-settings-personal-desktop.png' });
+  // Kept for this paper instead: in the checkout only, invisible to Git.
+  await list.first().getByRole('button', { name: 'More actions for this preference' }).click();
+  await page.getByRole('menuitem', { name: 'Move to this paper' }).click();
+  await expect(settings.locator('.memory-empty')).toHaveText('No preferences for all papers yet.');
+  assert.deepEqual([rules(personalFile), rules(localFile)], [[], [rule]]);
+  assert.equal(git('status', '--porcelain', '--untracked-files=all'), '');
+  await settings.getByRole('radio', { name: 'This paper' }).check();
+  await expect(list).toHaveCount(1);
+  await expect(list.first()).toContainText(rule);
   await page.screenshot({ animations: 'disabled', path: 'test-results/memory-settings-desktop.png' });
 
   // A change made elsewhere since the page loaded is reported, and the list shows the file as it is now.
@@ -164,7 +177,6 @@ try {
   await settings.getByRole('button', { name: 'Add', exact: true }).click();
   await expect(list).toHaveCount(1);
   assert.deepEqual(rules(personalFile), ['Prefer British spelling.']);
-  await page.screenshot({ animations: 'disabled', path: 'test-results/memory-settings-personal-desktop.png' });
 
   // Learning can be turned off; deleting a rule removes it from the file.
   await settings.getByRole('switch', { name: 'Learn from reviews' }).click();
@@ -176,17 +188,16 @@ try {
   assert.deepEqual(rules(personalFile), []);
   await page.close();
 
-  // Phone and dark appearance.
-  // An outright request, quoted, with the change it came with.
+  // On a phone: the author's outright request, offered in the Chat tab's save card.
   const voice = 'Write in the first-person plural ("we show"); don\'t switch to the passive voice.';
-  store.saveItem({ id: 'abstract:memory:fixture', taskId: task.id, type: 'memory', text: voice, createdAt: now - 40000, memory: [{ id: 'fixture-0', text: voice, scope: 'personal', quote: 'From now on, keep "we" instead of the passive voice.', examples: [{ task: task.id, rejected: 'it is shown that', kept: 'we show that' }], status: 'pending' }] });
+  store.updateTask(task.id, { memory: [{ id: 'noticed-1', text: voice, scope: 'personal', examples: [{ task: task.id, said: 'From now on, keep "we" instead of the passive voice.' }, { task: task.id, rejected: 'it is shown that', kept: 'we show that' }], status: 'pending' }] });
   const phone = await open({ width: 390, height: 844 }, 'dark');
-  await phone.getByRole('button', { name: 'Chat', exact: true }).click();
-  const phoneCard = phone.getByRole('region', { name: 'Writing memory' });
+  const phoneCard = phone.locator('.task-delivery').getByRole('region', { name: 'Writing memory' });
   await phoneCard.scrollIntoViewIfNeeded();
-  await expect(phoneCard).toContainText('“From now on, keep "we" instead of the passive voice.”');
-  await expect(phoneCard.getByRole('list', { name: 'What prompted it' })).toContainText('This task');
-  const box = await phoneCard.getByRole('button', { name: 'Remember' }).boundingBox();
+  await expect(phoneCard).toContainText(voice);
+  await phoneCard.getByText('What prompted it', { exact: true }).click();
+  await expect(phoneCard.locator('.memory-examples')).toContainText('From now on, keep "we" instead of the passive voice.');
+  const box = await phoneCard.getByRole('button', { name: 'Remember', exact: true }).boundingBox();
   assert.ok(box && box.height >= 36, 'touch-sized buttons on a phone');
   await phone.screenshot({ animations: 'disabled', path: 'test-results/memory-card-phone-dark.png' });
   await phone.evaluate(event => window.dispatchEvent(new Event(event)), 'papilot:open-memory');
@@ -197,6 +208,7 @@ try {
   await phoneSettings.getByRole('button', { name: 'Close' }).click();
   await phoneCard.getByRole('button', { name: 'Dismiss' }).click();
   await expect(phoneCard).toHaveCount(0);
+  await expect(phone.locator('.task-delivery').getByRole('button', { name: 'Commit to manuscript', exact: true })).toBeVisible();
   assert.deepEqual(store.preference('memory-dismissed:paper'), [ruleKey(voice)]);
   assert.deepEqual(store.preference('memory-dismissed'), [ruleKey(voice)], 'a rule for all papers is dismissed in every paper');
   await phone.close();

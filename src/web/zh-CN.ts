@@ -760,7 +760,6 @@ export const zhCN: Record<string, string> = {
   "Dismiss": "忽略",
   "Manage": "管理",
   "Preference": "偏好",
-  "Keep for": "适用范围",
   "All papers": "所有论文",
   "Shared": "共享",
   "Shared with coauthors": "与合作者共享",

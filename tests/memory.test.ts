@@ -208,7 +208,7 @@ test('evidence holds the author\'s words and decisions, never Papilot\'s own mes
     comments: [{ text: 'Keep the lowercase w.', changes: [{ old: 'Our method', new: 'Our Method' }] }], rejected: [{ old: 'Related work', new: 'Related Work' }] });
 });
 
-test('a suggestion needs the author\'s own words or the same correction in two tasks', () => {
+test('whether feedback is a preference is the helper\'s call, but what it shows the author must be in the reviews', () => {
   const input: LearningInput = {
     memory: [{ scope: 'paper', rules: ['Use \\cref for references.'] }, { scope: 'personal', rules: ['Prefer British spelling.'] }],
     dismissed: ['avoid passive voice'],
@@ -216,31 +216,21 @@ test('a suggestion needs the author\'s own words or the same correction in two t
     earlier: [evidence('a', { rejected: [{ old: 'Our approach', new: 'Our Approach' }] })],
   };
   const parse = (suggestions: unknown[]) => acceptedSuggestions(JSON.stringify({ suggestions }), input, index => `s${index}`);
-  assert.deepEqual(parse([{ text: 'Use sentence case for section headings.', scope: 'paper', quote: 'keep headings in sentence case' }]),
-    [{ id: 's0', text: 'Use sentence case for section headings.', scope: 'paper', quote: 'keep headings in sentence case', status: 'pending' }]);
-  assert.deepEqual(parse([{ text: 'Use sentence case for section headings.', scope: 'paper', quote: 'always use sentence case' }]), [], 'a quote the author never wrote');
-  assert.deepEqual(parse([{ text: 'Use sentence case for section headings.', scope: 'paper', quote: 'headings' }]), [], 'a word or two matches anything');
-  // Examples are checked against the evidence of the task each names.
+  const asked = { task: 'b', said: 'keep headings in sentence case' };
+  assert.deepEqual(parse([{ text: 'Use sentence case for section headings.', scope: 'paper', examples: [asked] }]),
+    [{ id: 's0', text: 'Use sentence case for section headings.', scope: 'paper', examples: [asked], status: 'pending' }]);
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [{ task: 'b', said: 'always use sentence case' }] }]), [], 'words the author never wrote');
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [{ task: 'b', said: 'headings' }] }]), [], 'a word or two matches anything');
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper' }]), [], 'a suggestion shows what prompted it');
+  // Each example is checked against the evidence of the task it names, and only those found are shown.
   const both = [{ task: 'b', rejected: 'Related Work', kept: 'Related work' }, { task: 'a', rejected: 'Our Approach', kept: 'Our approach' }];
   assert.deepEqual(parse([{ text: 'Use sentence case for section headings.', scope: 'paper', examples: both }]).map(item => item.examples), [both]);
-  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [both[0], both[0], both[1]] }])[0].examples, both, 'the same example once');
-  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [both[0]] }]), [], 'one task is not a pattern');
-  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [both[0], { task: 'unknown', rejected: 'Our Approach', kept: 'Our approach' }] }]), [], 'only tasks the helper was shown count');
-  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [both[1], { task: 'c', rejected: 'Related Work', kept: 'Related work' }] }]), [], 'the current task must show it again');
-  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [both[0], { task: 'a', rejected: 'Related Work', kept: 'Related work' }] }]), [], 'a change from another task');
-  assert.deepEqual(parse([{ text: 'Use title case.', scope: 'paper', examples: [{ task: 'b', rejected: 'Related work', kept: 'Related Work' }, { task: 'a', rejected: 'Our approach', kept: 'Our Approach' }] }]), [], 'a change keeps its direction');
-  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [{ task: 'b', rejected: 'Related Work', kept: 'Related Work' }, both[1]] }]), [], 'a change is a change');
-  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [{ task: 'b', said: 'keep headings in sentence case' }, both[1]] }])[0].examples, [{ task: 'b', said: 'keep headings in sentence case' }, both[1]], 'the author\'s words are an example');
-  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [{ task: 'b', said: 'always use sentence case' }, both[1]] }]), [], 'words the author never wrote');
-  // Three separate pieces of feedback in this task are a pattern too; excerpts of one change count once.
-  const claims: LearningInput = { memory: [], dismissed: [], earlier: [], current: evidence('b', {
-    rejected: [{ old: 'We show that', new: 'We prove that' }, { old: 'outperforms the baselines', new: 'significantly outperforms all baselines' }],
-    notes: [{ quote: 'a new paradigm', comment: 'Too strong for what we have.' }] }) };
-  const claim = (examples: unknown[]) => acceptedSuggestions(JSON.stringify({ suggestions: [{ text: 'Do not strengthen claims.', scope: 'personal', examples }] }), claims, () => 'x');
-  const three = [{ task: 'b', rejected: 'We prove', kept: 'We show' }, { task: 'b', rejected: 'significantly outperforms', kept: 'outperforms' }, { task: 'b', said: 'Too strong for what we have.' }];
-  assert.deepEqual(claim(three).map(item => item.examples), [three]);
-  assert.deepEqual(claim(three.slice(0, 2)), [], 'twice in one task is not yet a pattern');
-  assert.deepEqual(claim([three[0], { task: 'b', rejected: 'prove', kept: 'show' }, three[2]]), [], 'two excerpts of one change');
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [both[1]] }])[0].examples, [both[1]], 'an earlier task alone may show it');
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [both[0], both[0], { task: 'b', rejected: 'Work', kept: 'work' }, both[1]] }])[0].examples, both, 'one example per piece of feedback');
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [both[0], { task: 'unknown', rejected: 'Our Approach', kept: 'Our approach' }] }])[0].examples, [both[0]], 'only tasks the helper was shown');
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [{ task: 'a', rejected: 'Related Work', kept: 'Related work' }] }]), [], 'a change from another task');
+  assert.deepEqual(parse([{ text: 'Use title case.', scope: 'paper', examples: [{ task: 'b', rejected: 'Related work', kept: 'Related Work' }] }]), [], 'a change keeps its direction');
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [{ task: 'b', rejected: 'Related Work', kept: 'Related Work' }] }]), [], 'a change is a change');
   assert.deepEqual(parse([{ text: 'prefer british spelling', scope: 'personal', examples: both }]), [], 'already remembered');
   assert.deepEqual(parse([{ text: 'Avoid passive voice.', scope: 'personal', examples: both }]), [], 'dismissed before');
   assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'shared', examples: both }]), [], 'only the author shares a rule');
@@ -261,9 +251,9 @@ test('older tasks fill the helper\'s prompt newest first within its budget, and 
   const prompt = JSON.parse(learningPrompt(input));
   assert.deepEqual(prompt.earlierTasks.map((entry: MemoryEvidence) => entry.task), ['newest', 'small']);
   assert.deepEqual(prompt.memory, [], 'empty files say nothing');
-  const cite = (task: string) => JSON.stringify({ suggestions: [{ text: 'Rule.', scope: 'paper', examples: ['now', task].map(id => ({ task: id, rejected: 'Our Method', kept: 'Our method' })) }] });
-  assert.equal(acceptedSuggestions(cite('newest'), input, () => 'x').length, 1);
-  assert.deepEqual(acceptedSuggestions(cite('older'), input, () => 'x'), []);
+  const cite = (task: string) => acceptedSuggestions(JSON.stringify({ suggestions: [{ text: 'Rule.', scope: 'paper', examples: ['now', task].map(id => ({ task: id, rejected: 'Our Method', kept: 'Our method' })) }] }), input, () => 'x')[0].examples.map(example => example.task);
+  assert.deepEqual(cite('newest'), ['now', 'newest']);
+  assert.deepEqual(cite('older'), ['now']);
 });
 
 // One agent for editing turns and the read-only learning helper.
@@ -309,37 +299,44 @@ function workspace() {
     store.saveRun({ id: `${id}-run`, taskId: id, requestKey: `initial-${id}`, prompt: '', status: 'completed', createdAt: finishedAt, finishedAt } as Run);
     return store.saveTask({ id, projectId, name: `p-${id}`, title: id, instructions: 'Polish.', worktree: path.join(f.root, id), threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 9, error: null, review: null, ...extra });
   };
-  const settle = async (id: string) => {
-    await work.refresh(id);
-    for (let i = 0; i < 200 && (work as any).learning.has(id); i++) await new Promise(resolve => setTimeout(resolve, 5));
-  };
-  return { ...f, store, agent, work, papers, feedback, task, settle, close() { work.close(); store.close(); f.close(); } };
+  const learned = async (id: string) => { for (let i = 0; i < 200 && (work as any).learning.has(id); i++) await new Promise(resolve => setTimeout(resolve, 5)); };
+  // A finished review, and then the author saving the task (its commit message or Apply).
+  const settle = async (id: string) => { await work.refresh(id); await learned(id); };
+  const save = async (id: string) => { work.learnOnSave(id); await learned(id); };
+  return { ...f, store, agent, work, papers, feedback, task, settle, save, learned, close() { work.close(); store.close(); f.close(); } };
 }
 
-test('a correction repeated across two tasks becomes a suggestion the author saves, and later tasks in that paper follow it', async () => {
+test('as the author saves a task, a correction repeated across tasks becomes a suggestion they keep, and later tasks in that paper follow it', async () => {
   const f = workspace();
   try {
     f.task('first'); f.store.saveItem({ id: 'first-message', taskId: 'first', type: 'user', text: 'Polish section 2.', createdAt: 1 });
     f.feedback.set('p-first', [{ kind: 'reject', changes: [{ old: '\\section{Related work}', new: '\\section{Related Work}' }] }]);
     const rule = { text: 'Use sentence case for section headings ("Related work", not "Related Work").', scope: 'paper' };
     const first = { task: 'first', rejected: 'Related Work', kept: 'Related work' };
-    f.agent.replies.push(JSON.stringify({ suggestions: [{ ...rule, examples: [first] }] }));
+    const helpers = () => f.agent.calls.filter(call => call.method === 'thread/start' && call.params.ephemeral);
     await f.settle('first');
-    const helper = f.agent.calls.find(call => call.method === 'thread/start' && call.params.ephemeral)!;
-    assert.equal(helper.params.sandbox, 'read-only');
-    assert.equal(helper.params.model, 'small-mini', 'a light model of the task\'s own agent');
-    assert.equal(f.store.items('first').filter(item => item.type === 'memory').length, 0, 'one correction is not yet a preference');
-    // The same review again sends nothing.
-    await f.settle('first');
-    assert.equal(f.agent.calls.filter(call => call.method === 'thread/start' && call.params.ephemeral).length, 1);
+    assert.equal(helpers().length, 0, 'a finished review only records the feedback');
+    assert.ok(f.store.preference('memory-evidence:first'));
+    // The helper judges one correction not yet a preference.
+    f.agent.replies.push(JSON.stringify({ suggestions: [] }));
+    await f.save('first');
+    assert.equal(helpers()[0].params.sandbox, 'read-only');
+    assert.equal(helpers()[0].params.model, 'small-mini', 'a light model of the task\'s own agent');
+    assert.equal(f.store.task('first').memory, undefined);
+    // Writing the commit message again, or the same review again, sends nothing.
+    await f.save('first'); await f.settle('first');
+    assert.equal(helpers().length, 1);
 
     f.task('second'); f.store.saveItem({ id: 'second-message', taskId: 'second', type: 'user', text: 'Tighten the method section.', createdAt: 1 });
     f.feedback.set('p-second', [{ kind: 'reject', changes: [{ old: '\\section{Our approach}', new: '\\section{Our Approach}' }] }]);
     f.agent.replies.push(JSON.stringify({ suggestions: [{ ...rule, examples: [{ task: 'second', rejected: 'Our Approach', kept: 'Our approach' }, first] }] }));
     await f.settle('second');
+    // Writing its commit message is saving it: the helper runs beside the message.
+    await f.work.commitMessage('a', [], { taskId: 'second' }).catch(() => undefined);
+    await f.learned('second');
     const prompt = JSON.parse(f.agent.calls.filter(call => call.method === 'turn/start' && String(call.params.threadId).startsWith('helper-')).at(-1)!.params.input[0].text);
     assert.deepEqual(prompt.earlierTasks.map((entry: MemoryEvidence) => entry.task), ['first']);
-    const card = f.store.items('second').find(item => item.type === 'memory')!;
+    const card = f.store.task('second');
     assert.deepEqual(card.memory!.map(({ text, scope, examples, status }) => ({ text, scope, examples, status })), [{ text: rule.text, scope: 'paper', status: 'pending',
       examples: [{ task: 'second', title: 'second', rejected: 'Our Approach', kept: 'Our approach' }, { ...first, title: 'first' }] }], 'each example names the task it came from');
 
@@ -374,7 +371,7 @@ test('a correction repeated across two tasks becomes a suggestion the author sav
     // The rule moved since it was saved: Undo cannot take it back from where it went.
     const undo = await app.inject({ method: 'POST', url: `/api/tasks/second/memory/${card.memory![0].id}`, payload: { action: 'undo' } });
     assert.equal(undo.statusCode, 409);
-    assert.equal(f.store.items('second').find(item => item.type === 'memory')!.memory![0].status, 'saved');
+    assert.equal(f.store.task('second').memory![0].status, 'saved');
     await app.close();
   } finally { f.close(); }
 });
@@ -383,10 +380,10 @@ test('the author\'s explicit request is enough, and a dismissed suggestion is no
   const f = workspace();
   try {
     f.task('ask'); f.store.saveItem({ id: 'ask-message', taskId: 'ask', type: 'user', text: 'Fix the headings. Remember to use sentence case for headings in this paper.', createdAt: 1 });
-    f.agent.replies.push(JSON.stringify({ suggestions: [{ text: 'Use sentence case for section headings.', scope: 'paper', quote: 'Remember to use sentence case for headings in this paper.' }] }));
-    await f.settle('ask');
-    const card = f.store.items('ask').find(item => item.type === 'memory')!;
-    assert.equal(card.memory![0].quote, 'Remember to use sentence case for headings in this paper.');
+    f.agent.replies.push(JSON.stringify({ suggestions: [{ text: 'Use sentence case for section headings.', scope: 'paper', examples: [{ task: 'ask', said: 'Remember to use sentence case for headings in this paper.' }] }] }));
+    await f.settle('ask'); await f.save('ask');
+    const card = f.store.task('ask');
+    assert.deepEqual(card.memory![0].examples, [{ task: 'ask', title: 'ask', said: 'Remember to use sentence case for headings in this paper.' }]);
     const app = Fastify();
     registerMemoryRoutes(app, f.store, () => f.work.memory);
     const act = async (body: object) => (await app.inject({ method: 'POST', url: `/api/tasks/ask/memory/${card.memory![0].id}`, payload: body })).json();
@@ -399,16 +396,16 @@ test('the author\'s explicit request is enough, and a dismissed suggestion is no
     assert.equal((await act({ action: 'dismiss' })).memory[0].status, 'dismissed');
     // New feedback in the task asks the helper again; the dismissed rule is listed and dropped.
     f.store.saveItem({ id: 'ask-more', taskId: 'ask', type: 'user', text: 'Remember to use sentence case for headings in this paper.', createdAt: 2 });
-    f.agent.replies.push(JSON.stringify({ suggestions: [{ text: 'use sentence case for section headings', scope: 'paper', quote: 'Remember to use sentence case' }] }));
-    await f.settle('ask');
+    f.agent.replies.push(JSON.stringify({ suggestions: [{ text: 'use sentence case for section headings', scope: 'paper', examples: [{ task: 'ask', said: 'Remember to use sentence case' }] }] }));
+    await f.settle('ask'); await f.save('ask');
     const prompt = JSON.parse(f.agent.calls.filter(call => call.method === 'turn/start' && String(call.params.threadId).startsWith('helper-')).at(-1)!.params.input[0].text);
     assert.ok(prompt.dismissed.includes('use sentence case for section headings'));
-    assert.equal(f.store.items('ask').filter(item => item.type === 'memory').length, 1);
+    assert.equal(f.store.task('ask').memory!.length, 1);
     // Turning learning off stops it.
     assert.equal((await app.inject({ method: 'POST', url: '/api/memory/learning', payload: { enabled: false } })).json().learning, false);
     f.store.saveItem({ id: 'ask-last', taskId: 'ask', type: 'user', text: 'Always number equations.', createdAt: 3 });
     const helpers = f.agent.calls.filter(call => call.method === 'thread/start' && call.params.ephemeral).length;
-    await f.settle('ask');
+    await f.settle('ask'); await f.save('ask');
     assert.equal(f.agent.calls.filter(call => call.method === 'thread/start' && call.params.ephemeral).length, helpers);
     // Deleting the task removes its evidence.
     assert.ok(f.store.preference('memory-evidence:ask'));
@@ -427,40 +424,42 @@ test('Remember and Undo reverse exactly what was changed, also across files and 
     await f.work.memory.add('shared', 'Use American spelling.', f.papers.a);
     await f.work.memory.add('paper', 'Number every displayed equation.', f.papers.a);
     const suggestions: MemorySuggestion[] = [
-      { id: 'refine', text: 'Use British spelling.', scope: 'shared', replaces: 'Use American spelling.', status: 'pending' },
-      { id: 'known', text: 'Number every displayed equation.', scope: 'paper', status: 'pending' },
-      { id: 'other', text: 'Spell out numbers below ten.', scope: 'paper', status: 'pending' },
+      { id: 'refine', text: 'Use British spelling.', scope: 'shared', replaces: 'Use American spelling.', examples: [], status: 'pending' },
+      { id: 'known', text: 'Number every displayed equation.', scope: 'paper', examples: [], status: 'pending' },
+      { id: 'other', text: 'Spell out numbers below ten.', scope: 'paper', examples: [], status: 'pending' },
     ];
-    f.store.saveItem({ id: 'cards:memory:x', taskId: 'cards', type: 'memory', text: '', createdAt: 1, memory: suggestions });
+    f.store.updateTask('cards', { memory: suggestions });
+    const offer = (suggestion: MemorySuggestion) => f.store.updateTask('cards', { memory: [...f.store.task('cards').memory!, suggestion] });
+    const result = async (id: string, body: object) => (await act(id, body)).json().memory.find((item: MemorySuggestion) => item.id === id);
     const act = (id: string, body: object) => app.inject({ method: 'POST', url: `/api/tasks/cards/memory/${id}`, payload: body });
     const rules = async (scope: string) => (await f.work.memory.catalog(f.papers.a, true)).files.find(file => file.scope === scope)!.rules;
     // Kept for this paper although the rule it refines is shared: the shared one goes away.
-    assert.deepEqual((await act('refine', { action: 'save', scope: 'paper' })).json().memory[0].saved, { scope: 'paper', text: 'Use British spelling.', replaced: 'Use American spelling.', replacedScope: 'shared' });
+    assert.deepEqual((await result('refine', { action: 'save', scope: 'paper' })).saved, { scope: 'paper', text: 'Use British spelling.', replaced: 'Use American spelling.', replacedScope: 'shared' });
     assert.deepEqual([await rules('paper'), await rules('shared')], [['Number every displayed equation.', 'Use British spelling.'], []]);
     await act('refine', { action: 'undo' });
     assert.deepEqual([await rules('paper'), await rules('shared')], [['Number every displayed equation.'], ['Use American spelling.']]);
     // A rule that was already saved stays when its suggestion is undone.
-    assert.equal((await act('known', { action: 'save' })).json().memory[1].saved.existing, true);
+    assert.equal((await result('known', { action: 'save' })).saved.existing, true);
     await act('known', { action: 'undo' });
     assert.deepEqual(await rules('paper'), ['Number every displayed equation.']);
     // A refinement matching a rule already there removes only the old one, and Undo keeps both.
     await f.work.memory.add('paper', 'Use \\cref for references.', f.papers.a);
-    f.store.saveItem({ id: 'cards:memory:y', taskId: 'cards', type: 'memory', text: '', createdAt: 2, memory: [{ id: 'merge', text: 'Number every displayed equation.', scope: 'paper', replaces: 'Use \\cref for references.', status: 'pending' }] });
-    assert.deepEqual((await act('merge', { action: 'save' })).json().memory[0].saved, { scope: 'paper', text: 'Number every displayed equation.', existing: true, replaced: 'Use \\cref for references.', replacedScope: 'paper' });
+    offer({ id: 'merge', text: 'Number every displayed equation.', scope: 'paper', replaces: 'Use \\cref for references.', examples: [], status: 'pending' });
+    assert.deepEqual((await result('merge', { action: 'save' })).saved, { scope: 'paper', text: 'Number every displayed equation.', existing: true, replaced: 'Use \\cref for references.', replacedScope: 'paper' });
     assert.deepEqual(await rules('paper'), ['Number every displayed equation.']);
     await act('merge', { action: 'undo' });
     assert.deepEqual(await rules('paper'), ['Number every displayed equation.', 'Use \\cref for references.']);
     // The same rule in two scopes: only the one the suggestion refines is replaced.
     await f.work.memory.add('personal', 'Prefer British spelling.');
     await f.work.memory.add('paper', 'Prefer British spelling.', f.papers.a);
-    f.store.saveItem({ id: 'cards:memory:z', taskId: 'cards', type: 'memory', text: '', createdAt: 3, memory: [{ id: 'personal', text: 'Prefer American spelling.', scope: 'personal', replaces: 'Prefer British spelling.', status: 'pending' }] });
+    offer({ id: 'personal', text: 'Prefer American spelling.', scope: 'personal', replaces: 'Prefer British spelling.', examples: [], status: 'pending' });
     await act('personal', { action: 'save' });
     assert.deepEqual(await rules('personal'), ['Prefer American spelling.']);
     assert.ok((await rules('paper')).includes('Prefer British spelling.'));
-    // Two clicks at once both land on the card.
+    // Two clicks at once both land on the task.
     const [saved, dismissed] = await Promise.all([act('other', { action: 'save' }), act('known', { action: 'dismiss' })]);
     assert.equal(saved.statusCode, 200); assert.equal(dismissed.statusCode, 200);
-    assert.deepEqual(f.store.items('cards').find(item => item.id === 'cards:memory:x')!.memory!.map(item => item.status), ['pending', 'dismissed', 'saved']);
+    assert.deepEqual(f.store.task('cards').memory!.slice(0, 3).map(item => item.status), ['pending', 'dismissed', 'saved']);
     // Turning learning back on starts from now, not from the reviews made while it was off.
     await app.inject({ method: 'POST', url: '/api/memory/learning', payload: { enabled: false } });
     const before = Date.now();
@@ -477,17 +476,18 @@ test('nothing is learned before the review is finished, nor by an agent that can
     f.store.saveItem({ id: 'pending-message', taskId: 'pending', type: 'user', text: 'Always use sentence case.', createdAt: 1 });
     // An unsent comment still goes back to the agent first.
     f.feedback.set('p-pending', [{ kind: 'comment', text: 'Not like this.', changes: [] }]);
-    await f.settle('pending');
+    await f.settle('pending'); await f.save('pending');
     assert.equal(f.agent.calls.filter(call => call.params?.ephemeral).length, 0);
     // Reviews finished before learning began are history: an upgrade does not send them all.
     f.task('history', 'a', {}, 1); f.store.saveItem({ id: 'history-message', taskId: 'history', type: 'user', text: 'Always use sentence case.', createdAt: 1 });
-    await f.settle('history');
+    await f.settle('history'); await f.save('history');
     assert.equal(f.agent.calls.filter(call => call.params?.ephemeral).length, 0);
     f.task('limited'); f.store.saveItem({ id: 'limited-message', taskId: 'limited', type: 'user', text: 'Always use sentence case.', createdAt: 1 });
     (f.agent as any).supportsReadOnlyTasks = false;
-    await f.settle('limited');
+    await f.settle('limited'); await f.save('limited');
     assert.equal(f.agent.calls.filter(call => call.params?.ephemeral).length, 0);
-    assert.equal(f.store.preference('memory-evidence:limited'), undefined, 'tried again once the agent can');
+    const limited = f.store.preference<{ learned?: true }>('memory-evidence:limited');
+    assert.ok(limited && !limited.learned, 'recorded, and read once the agent can');
   } finally { f.close(); }
 });
 

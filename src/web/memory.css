@@ -1,38 +1,8 @@
-/* Writing memory: a suggestion card at the end of a task's chat, in the
-   style of the other chat cards (muted fill, no border), and the Memory page
-   in Settings as flat rows. */
-.memory-card{display:flex;flex-direction:column;gap:10px;margin:4px 0 14px;padding:12px 14px;border-radius:var(--r-md);background:var(--bg-muted);font-size:12px;color:var(--text-2)}
-.memory-card>header{display:flex;align-items:center;gap:8px;font-weight:500;color:var(--text)}
-.memory-card>header>svg{color:var(--purple)}
-.memory-suggestion{display:flex;flex-direction:column;gap:8px}
-.memory-card textarea{display:block;width:100%;min-height:0;margin:0;padding:6px 8px;resize:none;field-sizing:content;border:1px solid transparent;border-radius:var(--r);background:var(--bg);color:var(--text);font:13px/1.5 var(--sans)}
-.memory-card textarea:hover{border-color:var(--line)}
-.memory-card textarea:focus{border-color:var(--accent);outline:none}
-.memory-evidence{display:flex;flex-wrap:wrap;gap:4px 12px;margin:0;color:var(--text-3);overflow-wrap:anywhere}
-/* What prompted a suggestion, grouped by the task it came from. */
-.memory-examples,.memory-examples ul{display:grid;gap:4px;margin:0;padding:0;list-style:none}
-.memory-examples>li{display:grid;gap:2px}
-.memory-examples small{font-size:11px;color:var(--text-3)}
-.memory-examples li li{color:var(--text);overflow-wrap:anywhere}
-.memory-examples del{color:var(--text-3);text-decoration-color:var(--red)}
-.memory-arrow{color:var(--text-3)}
-.memory-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
-.memory-buttons{display:flex;gap:6px;margin-left:auto}
-/* On the muted card the switch needs a deeper track to read as one control. */
-.memory-card .segmented{background:var(--bg-active)}
-.memory-scope label.disabled{opacity:.45;cursor:default}
-.memory-scope input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
-.memory-scope input:disabled{cursor:default}
-.memory-saved{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
-.memory-saved>svg{flex:none;color:var(--green)}
-.memory-saved>p{display:flex;flex-direction:column;flex:1 1 200px;min-width:0;margin:0}
-.memory-saved>p>span{color:var(--text);overflow-wrap:anywhere}
-.memory-saved>p>small{font-size:11px;color:var(--text-3)}
-.memory-saved>.inline-error,.memory-suggestion>.inline-error{flex-basis:100%;margin:0}
-
+/* Settings → Memory: the preferences for this paper and for all papers as
+   flat rows. The suggestion beside a task's save step is in memory-nudge.css. */
 .memory-rules{display:flex;flex-direction:column;gap:12px;padding:16px 0}
 .memory-view{align-self:flex-start}
-.memory-settings .segmented label,.memory-card .segmented label{white-space:nowrap}
+.memory-settings .segmented label{white-space:nowrap}
 .memory-empty{margin:0;color:var(--text-3)}
 .memory-list{margin:0;padding:0;list-style:none}
 .memory-list>li{display:flex;align-items:center;gap:4px;min-height:40px;padding:6px 0;border-top:1px solid var(--line)}
@@ -49,11 +19,6 @@
 .memory-location dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .memory-location code{font:11px var(--mono)}
 @media(max-width:680px){
-  .memory-card textarea{font-size:16px}
-  .memory-card .memory-buttons{width:100%}
-  .memory-card .memory-buttons>.button{flex:1;height:36px;font-size:13px}
-  .memory-card .memory-scope{width:100%}
-  .memory-card .memory-scope label{flex:1;height:32px;font-size:13px}
   .memory-settings :is(.memory-edit,.memory-add) input{height:36px;font-size:16px}
   .memory-list>li{min-height:48px}
 }
