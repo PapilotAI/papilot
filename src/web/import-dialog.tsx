@@ -190,14 +190,14 @@ export function ImportPanel({ api, agent, canRepair, source, onChooseFolder, onD
           {!working && <button type="button" className="button ghost compact" disabled={busy} onClick={() => { forgetDraft(); setDraft(null); setError(''); }}>{t('Choose different files')}</button>}
         </div>
         <form onSubmit={event => { event.preventDefault(); void build(); }}>
-          <label>{t('Paper name')}<input required maxLength={120} value={form.name} disabled={locked} onChange={event => setForm({ ...form, name: event.target.value })}/></label>
+          <label>{t('Paper name')}<input required maxLength={120} value={form.name} disabled={locked} onChange={event => setForm(current => ({ ...current, name: event.target.value }))}/></label>
           <div className="import-settings"><label>{t('Main TeX file')}{draft.candidates.length > 1
             // The app's list matches the theme and shows long nested paths as name and folder.
             // A detected main file stays editable, since other files are not listed then.
-            ? <ChipSelect className="field-select" label={t('Main TeX file')} value={form.main} disabled={locked} onChange={main => setForm({ ...form, main })} display={form.main.split('/').at(-1) || t('Select')}
+            ? <ChipSelect className="field-select" label={t('Main TeX file')} value={form.main} disabled={locked} onChange={main => setForm(current => ({ ...current, main }))} display={form.main.split('/').at(-1) || t('Select')}
               options={draft.candidates.map(file => ({ value: file, label: file.split('/').at(-1)!, detail: file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : undefined }))}/>
-            : <input aria-label={t('Main TeX file')} value={form.main} disabled={locked} onChange={event => setForm({ ...form, main: event.target.value })} placeholder="main.tex" spellCheck={false}/>}</label>
-          <label>{t('LaTeX engine')}<ChipSelect className="field-select" label={t('LaTeX engine')} value={form.engine} disabled={locked} onChange={engine => setForm({ ...form, engine })} options={[{ value: 'pdflatex', label: 'pdfLaTeX' }, { value: 'xelatex', label: 'XeLaTeX' }, { value: 'lualatex', label: 'LuaLaTeX' }]}/></label></div>
+            : <input aria-label={t('Main TeX file')} value={form.main} disabled={locked} onChange={event => setForm(current => ({ ...current, main: event.target.value }))} placeholder="main.tex" spellCheck={false}/>}</label>
+          <label>{t('LaTeX engine')}<ChipSelect className="field-select" label={t('LaTeX engine')} value={form.engine} disabled={locked} onChange={engine => setForm(current => ({ ...current, engine }))} options={[{ value: 'pdflatex', label: 'pdfLaTeX' }, { value: 'xelatex', label: 'XeLaTeX' }, { value: 'lualatex', label: 'LuaLaTeX' }]}/></label></div>
           {!draft.candidates.length && <p className="import-notice warn" role="alert"><Icon name="alert" size={15}/><span>{t('Could not detect a main file. Enter its path relative to the paper folder.')}</span></p>}
           {draft.candidates.length > 1 && draft.phase === 'choose' && <p className="import-notice"><Icon name="info" size={15}/><span>{t('Several TeX files were found. Check the selected main document before continuing.')}</span></p>}
           {working && <BuildStatus draft={draft}/>}

@@ -4,6 +4,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Fixed
+
+- **Typing a paper name right away no longer clears where the paper is saved.** In **New paper**, the default folder arrives just after the dialog opens; typing the name at that moment could put back the empty folder from before it arrived. The import dialog's fields update the same safe way.
+
 ## [0.14.0] - 2026-11-23
 
 Teach agents your writing preferences across tasks, switch task agents in place without losing context, curate which agents and models appear in menus, and inspect local workspace activity statistics. See the [release notes](docs/releases/0.14.0/release-notes.md) for update instructions.
