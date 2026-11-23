@@ -484,5 +484,19 @@
   "ZIP links and special files are not supported.": "Länkar och specialfiler i ZIP-arkiv stöds inte.",
   "npm is unavailable to Papilot.": "npm är inte tillgängligt för Papilot.",
   "too large": "för stor",
-  "unsupported index": "indexet stöds inte"
+  "unsupported index": "indexet stöds inte",
+  "Add a DOI, arXiv identifier, author or year to this entry to keep a PDF for it.": "Lägg till DOI, arXiv-ID, författare eller årtal i den här posten för att spara en PDF för den.",
+  "Choose Zotero's data directory, the folder with zotero.sqlite and storage.": "Välj Zoteros datakatalog, mappen som innehåller zotero.sqlite och storage.",
+  "Choose a citation to forget.": "Välj en referens att glömma.",
+  "Choose an entry.": "Välj en post.",
+  "Choose whether to use PDFs from Zotero.": "Välj om PDF-filer från Zotero ska användas.",
+  "Could not reach zotero.org. Try again.": "Det gick inte att nå zotero.org. Försök igen.",
+  "This PDF is not in the paper's library.": "Den här PDF-filen finns inte i artikelns bibliotek.",
+  "This entry is no longer in the bibliography. Refresh the library.": "Den här posten finns inte längre i bibliografin. Uppdatera biblioteket.",
+  "This file is not a PDF.": "Den här filen är inte en PDF.",
+  "This folder has no zotero.sqlite. Choose Zotero's data directory, the folder with zotero.sqlite and storage.": "Den här mappen innehåller ingen zotero.sqlite. Välj Zoteros datakatalog, mappen som innehåller zotero.sqlite och storage.",
+  "This key cannot read any library. Create one with library access.": "Denna nyckel kan inte läsa något bibliotek. Skapa en nyckel med biblioteksåtkomst.",
+  "This sentence is no longer in the paper. Refresh the library.": "Den här meningen finns inte längre i artikeln. Uppdatera biblioteket.",
+  "Upload the PDF as binary data.": "Ladda upp PDF-filen som binärdata.",
+  "Zotero does not accept this key. Check it and try again.": "Zotero godkänner inte denna nyckel. Kontrollera den och försök igen."
 }

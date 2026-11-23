@@ -4,6 +4,18 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added
+
+- Keep a PDF for every cited work in the new **Library** (**Research Tools → Library**), which replaces **Reference check**. PDFs come from your local Zotero library (matched by citation key, DOI, arXiv identifier or title, and read where Zotero keeps them), from arXiv and open-access copies listed by OpenAlex, or from PDFs you drop on the library or on an entry. Copies found by DOI or title are kept only when their first pages show the entry's DOI or full title. Works without an open copy link to their publisher page. With online lookups on, the library checks entries and looks for missing PDFs as soon as it opens, where **Reference check** waited for **Check online**. PDFs are stored once for all papers in Papilot's data folder, never in the paper's repository. The bibliography's problems, online record checks and **Ask an agent to look into** remain in the library.
+- Check whether the works a paper cites say what it says of them with **Check citations…** in the Library. An agent goes through each citing sentence and records a verdict (supported, partly supported, not supported, cannot tell) with its reason and the passages of the work as evidence; Papilot quotes those passages from the PDF itself, and a quote opens the PDF at its lines. The Library now shows the works on the left and the selected one on the right, with the first page of its PDF and every sentence citing it, and its header counts the PDFs and the verdicts.
+- Connect a Zotero account in **Settings → Zotero** with an API key, for a computer without Zotero such as a server opened from a phone. Papilot syncs the items of your library and the groups the key can read, and downloads a cited work's PDF from Zotero's online storage when an entry needs one. The key stays on the server and is sent only to Zotero's web API.
+- Let agents list the works a paper cites and search and read their PDFs with the `library_list`, `library_search` and `library_read` paper tools, so they can check what a cited work says before describing it, and list the citing sentences and record what each work says of them with `citations_list` and `citation_record`.
+- Ask an agent to find the PDFs the Library could not, with **Ask an agent to find N PDFs** under **Without PDF**. The agent looks for openly available copies and adds them with the new `library_add` paper tool; Papilot downloads each one itself and keeps it only when its first page shows the work's DOI or full title.
+
+### Changed
+
+- Rename **Settings → Check references online** to **Look up references online**. It now also controls PDF downloads. A new **Settings → Zotero** page shows the Zotero library Papilot found on this computer, with its data directory and how many items have a PDF and a citation key, lets you choose another data directory, and holds the **Use PDFs from Zotero** switch; turned off, PDFs from Zotero are no longer used.
+
 ## [0.14.1] - 2026-11-23
 
 Choose among a note's alternatives without holding up the review, let the conflict-resolution agent prepare merge suggestions, and select text anywhere on a review's whole PDF. See the [release notes](docs/releases/0.14.1/release-notes.md) for update instructions.

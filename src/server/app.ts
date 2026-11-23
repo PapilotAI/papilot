@@ -22,7 +22,9 @@ import { AGENT_TURN, reviewClient, retryReviewRead, allowedReviewRoute, rewriteR
 import { fullPaperPdf, nextPaperPass, paperBuildPdf, paperPassPdf, retainedPaperBuild, retainedPaperPdf } from './pdf.ts';
 import { withNotePages } from './note-pages.ts';
 import { type ChangeAction, Changes } from './changes.ts';
-import { bibliography, confirmEntry } from './references.ts';
+import { citations, confirmEntry, forgetFinding, library, libraryInputs, libraryReport, recordFinding, stopLibrary } from './references.ts';
+import type { Library } from './library.ts';
+import { plain } from '../../engine/src/core/verify.ts';
 import { type Manuscripts, gitAbortMerge, gitCommit, gitDiff, gitDiscard, gitFinishMerge, gitIgnore, gitRemote, gitStage, gitStatus, gitSync } from './manuscript.ts';
 import { gitHistory, gitVersion, gitVersionDiff, gitRestoreVersion } from './git-history.ts';
 import { locateSource, placeSource, readFile, saveSource } from './manuscript-source.ts';
@@ -148,6 +150,7 @@ export interface AppOptions {
   phitexVersion?: typeof detectPhitex;
   systemRequirements?: typeof systemRequirements;
   overleaf?: OverleafService;
+  library?: Library;
 }
 
 // Serve the local workspace, including authenticated personal Tailscale access.
@@ -186,13 +189,37 @@ export async function buildApp(options: AppOptions) {
   workspace.prepareReview = (task, worktree) => manuscripts.captureReview(store.project(task.projectId).path, worktree, task.id, task.document);
   workspace.sourcePages = (task, file, lines) => manuscripts.sourcePages(task.projectId, file, lines, taskDocument(task));
   workspace.paperBuild = task => manuscripts.paperBuild(task.projectId, taskDocument(task));
-  const paperTools = new PaperTools(store, manuscripts, id => workspace.annotationSending(id));
+  // One literature library serves every paper; agents read the PDFs of the
+  // works their paper cites.
+  const papers = () => options.library ?? library();
+  const paperTools = new PaperTools(store, manuscripts, id => workspace.annotationSending(id), {
+    works: async projectId => {
+      const { entries } = await libraryInputs(store.project(projectId).path, false), shelf = papers();
+      return entries.map(input => {
+        const found = shelf.pdfOf(input), field = (name: string) => plain(input.fields[name] ?? '');
+        const names = field('author').split(/\s+and\s+/).filter(Boolean);
+        return { key: input.key, title: field('title'), authors: names.length > 3 ? `${names.slice(0, 3).join('; ')} et al.` : names.join('; '), year: field('year') || field('date').slice(0, 4),
+          pdf: Boolean(found), pages: found?.pdf.pages ?? null, lines: () => found ? shelf.text(found.hash) : Promise.resolve(null) };
+      });
+    },
+    // A PDF an agent found goes to the entry, checked like any copy found by DOI or title.
+    add: async (projectId, key, url) => {
+      const { entries } = await libraryInputs(store.project(projectId).path, false);
+      const input = entries.find(entry => entry.key === key);
+      if (!input) throw new Error(`No bibliography entry has the key ${key}. Use library_list.`);
+      const { pages } = await papers().addFrom(url, input);
+      return { pages };
+    },
+    citations: async projectId => (await citations(store.project(projectId).path, papers())).sentences,
+    record: (projectId, record) => recordFinding(store.project(projectId).path, record, papers()),
+  });
   workspace.paperTools = async (...args) => {
     const result = await paperTools.call(...args);
     if (['annotation_create', 'annotation_update', 'annotation_delete', 'annotation_restore'].includes(args[1])) manuscripts.emit('change');
     return result;
   };
   const app = Fastify({ logger: false, bodyLimit: Number.MAX_SAFE_INTEGER });
+  if (!options.library) app.addHook('onClose', async () => { await stopLibrary(); });
   if (ownsOverleaf) app.addHook('onClose', async () => { await overleaf.stop(); });
   const buildSettingsChanged = (projectId: string) => changes.buildSettingsChanged(projectId);
   manuscripts.on('build-settings', buildSettingsChanged);
@@ -894,13 +921,71 @@ export async function buildApp(options: AppOptions) {
   // The manuscript preview compiles each paper's working tree and reports its Git status.
   app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript', project(), request => manuscript(request.params.id));
   app.get<{ Params: { id: string } }>('/api/projects/:id/git', project(), request => gitStatus(store.project(request.params.id).path));
-  // The paper's bibliography: every entry, its problems and its online check.
-  app.get<{ Params: { id: string }; Querystring: { check?: string; retry?: string } }>('/api/projects/:id/references', project(), request =>
-    bibliography(store.project(request.params.id).path, request.query.check === '1', request.query.retry === '1'));
-  app.post<{ Params: { id: string } }>('/api/projects/:id/references/confirm', project(), request => {
+  // The paper's library: every bibliography entry, its problems, its online
+  // check and its PDF. Online, missing PDFs are looked for; Zotero's are
+  // used unless the author turned that off in Settings.
+  type LibraryQuery = { online?: string; retry?: string; poll?: string };
+  const libraryOptions = (query: LibraryQuery) => ({ online: query.online === '1', zotero: papers().useZotero(), retry: query.retry === '1', poll: query.poll === '1' });
+  // The Zotero libraries PDFs come from, for every paper: the one on this
+  // host and the author's account, whose API key never leaves the server.
+  app.get<{ Querystring: { sync?: string } }>('/api/library/zotero', request => papers().zoteroStatus(request.query.sync === '1'));
+  app.post('/api/library/zotero/account', async request => {
+    const key = (request.body as { key?: unknown } | null)?.key;
+    if (typeof key !== 'string') throw Object.assign(new Error('Zotero does not accept this key. Check it and try again.'), { statusCode: 400 });
+    await papers().connectZotero(key);
+    return papers().zoteroStatus();
+  });
+  app.post('/api/library/zotero/account/remove', () => { papers().disconnectZotero(); return papers().zoteroStatus(); });
+  app.post('/api/library/zotero/location', request => {
+    const dataDir = (request.body as { dataDir?: unknown } | null)?.dataDir;
+    if (dataDir !== null && (typeof dataDir !== 'string' || !dataDir.trim())) throw Object.assign(new Error('Choose Zotero\'s data directory, the folder with zotero.sqlite and storage.'), { statusCode: 400 });
+    papers().setZoteroDir(dataDir);
+    return papers().zoteroStatus();
+  });
+  app.post('/api/library/zotero/use', request => {
+    const use = (request.body as { use?: unknown } | null)?.use;
+    if (typeof use !== 'boolean') throw Object.assign(new Error('Choose whether to use PDFs from Zotero.'), { statusCode: 400 });
+    papers().setUseZotero(use);
+    return papers().zoteroStatus();
+  });
+  app.get<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/library', project(), request =>
+    libraryReport(store.project(request.params.id).path, libraryOptions(request.query), papers()));
+  app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/references/confirm', project(), async request => {
     const b = request.body as any;
     if (typeof b?.id !== 'string' || typeof b?.confirmed !== 'boolean') throw new Error('Choose an entry to confirm.');
-    return confirmEntry(store.project(request.params.id).path, b.id, b.confirmed);
+    const root = store.project(request.params.id).path;
+    await confirmEntry(root, b.id, b.confirmed);
+    return libraryReport(root, libraryOptions(request.query), papers());
+  });
+  // A finding the author judges otherwise is forgotten; an agent can check again.
+  app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/citations/forget', project(), async request => {
+    const b = request.body as any;
+    if (typeof b?.id !== 'string' || typeof b?.key !== 'string') throw new Error('Choose a citation to forget.');
+    const root = store.project(request.params.id).path;
+    await forgetFinding(root, b.id, b.key, papers());
+    return libraryReport(root, libraryOptions(request.query), papers());
+  });
+  // A PDF the author adds, to the entry it is dropped on or to the one its
+  // first pages name.
+  app.post<{ Params: { id: string }; Querystring: { entry?: string } }>('/api/projects/:id/library/pdf', project(), async request => {
+    if (!Buffer.isBuffer(request.body)) throw new Error('Upload the PDF as binary data.');
+    const { entries } = await libraryInputs(store.project(request.params.id).path, false);
+    return papers().add(request.body, entries, request.query.entry || undefined);
+  });
+  app.post<{ Params: { id: string } }>('/api/projects/:id/library/remove', project(), async request => {
+    const b = request.body as any;
+    if (typeof b?.entry !== 'string') throw new Error('Choose an entry.');
+    const { entries } = await libraryInputs(store.project(request.params.id).path, false), input = entries.find(item => item.id === b.entry);
+    if (!input) throw Object.assign(new Error('This entry is no longer in the bibliography. Refresh the library.'), { statusCode: 404 });
+    papers().remove(input);
+    return { ok: true };
+  });
+  // Only PDFs of the paper's own entries are served for it.
+  app.get<{ Params: { id: string; hash: string } }>('/api/projects/:id/library/pdfs/:hash', project(), async (request, reply) => {
+    const { entries } = await libraryInputs(store.project(request.params.id).path, false), shelf = papers();
+    const file = entries.some(input => shelf.pdfOf(input)?.hash === request.params.hash) ? shelf.file(request.params.hash) : null;
+    if (!file) throw Object.assign(new Error('This PDF is not in the paper\'s library.'), { statusCode: 404 });
+    return reply.type('application/pdf').header('Content-Disposition', 'inline').header('Cache-Control', 'private, max-age=31536000, immutable').send(fs.createReadStream(file));
   });
   app.get<{ Params: { id: string } }>('/api/projects/:id/git/overview', project(), request => gitOverview(store.project(request.params.id).path, store.tasks().filter(task => task.projectId === request.params.id)));
   app.get<{ Params: { id: string }; Querystring: { before?: string } }>('/api/projects/:id/git/history', project(), request => gitHistory(store.project(request.params.id).path, request.query.before));

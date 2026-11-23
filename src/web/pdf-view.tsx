@@ -192,6 +192,28 @@ export interface PdfHistoryActions {
   undo: () => void; redo: () => void;
 }
 
+/** The first page of a PDF, drawn small, as a reference manager shows a
+ * work on its shelf. Decorative: the work's title says what it is. */
+export function PdfThumbnail({ url, width }: { url: string; width: number }) {
+  const canvas = useRef<HTMLCanvasElement>(null), [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let cancelled = false, render: { cancel(): void } | undefined;
+    const task = pdfjs.getDocument({ url, enableXfa: false, BinaryDataFactory: CMapData });
+    void (async () => {
+      const page = await (await task.promise).getPage(1), element = canvas.current;
+      if (cancelled || !element) return;
+      const ratio = window.devicePixelRatio || 1, base = page.getViewport({ scale: 1 }), viewport = page.getViewport({ scale: width / base.width * ratio });
+      element.width = Math.round(viewport.width); element.height = Math.round(viewport.height);
+      element.style.aspectRatio = `${base.width} / ${base.height}`;
+      const drawing = page.render({ canvas: element, canvasContext: element.getContext('2d')!, viewport });
+      render = drawing;
+      await drawing.promise;
+    })().catch(() => { if (!cancelled) setFailed(true); });
+    return () => { cancelled = true; render?.cancel(); void task.destroy(); };
+  }, [url, width]);
+  return failed ? null : <canvas ref={canvas} className="pdf-thumbnail" style={{ width }} aria-hidden="true"/>;
+}
+
 export const PdfView = forwardRef<PdfHandle, {
   readOnly?: boolean;
   inFlightMarks?: InFlightMark[]; onOpenTask?: (id: string) => void;

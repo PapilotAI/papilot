@@ -73,7 +73,7 @@ try {
     await page.emulateMedia({ colorScheme });
     await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme);
     await page.getByRole('button', { name: 'Research Tools', exact: true }).click();
-    const command = page.locator('.paper-tools-menu').getByRole('menuitem', { name: /^Reference check/ });
+    const command = page.locator('.paper-tools-menu').getByRole('menuitem', { name: /^Library/ });
     for (const input of ['pointer', 'keyboard']) {
       if (input === 'pointer') await command.hover();
       else { await page.mouse.move(0, 0); await page.keyboard.press('Escape'); await page.getByRole('button', { name: 'Research Tools', exact: true }).press('ArrowDown'); }

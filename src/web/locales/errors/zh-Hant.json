@@ -484,5 +484,19 @@
   "ZIP links and special files are not supported.": "不支援 ZIP 連結與特殊檔案。",
   "npm is unavailable to Papilot.": "Papilot 無法使用 npm。",
   "too large": "過大",
-  "unsupported index": "不支援的索引"
+  "unsupported index": "不支援的索引",
+  "Add a DOI, arXiv identifier, author or year to this entry to keep a PDF for it.": "請為此項目新增 DOI、arXiv 識別碼、作者或年份，以便為其保留 PDF。",
+  "Choose Zotero's data directory, the folder with zotero.sqlite and storage.": "請選擇 Zotero 的資料目錄，即包含 zotero.sqlite 與 storage 的資料夾。",
+  "Choose a citation to forget.": "請選擇要忽略的文獻引用。",
+  "Choose an entry.": "請選擇一個文獻項目。",
+  "Choose whether to use PDFs from Zotero.": "請選擇是否使用來自 Zotero 的 PDF。",
+  "Could not reach zotero.org. Try again.": "無法連線至 zotero.org。請再試一次。",
+  "This PDF is not in the paper's library.": "此 PDF 不在論文的文獻庫中。",
+  "This entry is no longer in the bibliography. Refresh the library.": "此文獻項目已不在參考書目中。請重新整理文獻庫。",
+  "This file is not a PDF.": "此檔案不是 PDF。",
+  "This folder has no zotero.sqlite. Choose Zotero's data directory, the folder with zotero.sqlite and storage.": "此資料夾中沒有 zotero.sqlite。請選擇 Zotero 的資料目錄，即包含 zotero.sqlite 與 storage 的資料夾。",
+  "This key cannot read any library. Create one with library access.": "此金鑰無法讀取任何文獻庫。請建立具有文獻庫存取權限的金鑰。",
+  "This sentence is no longer in the paper. Refresh the library.": "此句子已不在論文中。請重新整理文獻庫。",
+  "Upload the PDF as binary data.": "請以二進位資料格式上傳 PDF。",
+  "Zotero does not accept this key. Check it and try again.": "Zotero 不接受此金鑰。請檢查後再試一次。"
 }

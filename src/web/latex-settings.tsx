@@ -18,7 +18,7 @@ export function LatexSettings({ load, online, requirements }: { requirements?: {
   }, [load, attempt]);
   return <div className="latex-settings settings-page">
     <section className="settings-card settings-card-body" aria-label={t('LaTeX installation')}>
-      <header className="latex-installation-header">
+      <header className="settings-tool-header">
         <BrandIcon name="latex" size={32}/>
         <h3>{installation?.distribution || t('LaTeX installation')}</h3>
         <button type="button" className="icon-button" aria-label={t('Detect again')} title={t('Detect again')} disabled={busy || requirements?.state.busy || !online} onClick={() => { setAttempt(value => value + 1); requirements?.state.recheck(); }}><Icon name="refresh" size={16}/></button>
@@ -26,7 +26,7 @@ export function LatexSettings({ load, online, requirements }: { requirements?: {
       {requirements && <ToolRequirement tool="latex" {...requirements} showRecheck={false}/>}
       {busy ? <p role="status" className="settings-intro">{t('Detecting LaTeX installation…')}</p>
         : failed ? <p role="alert" className="settings-intro">{t('Could not read the LaTeX installation. Try again.')}</p>
-        : installation ? <dl className="latex-installation-facts">
+        : installation ? <dl className="settings-facts">
           {!installation.distribution && <div><dt>{t('Distribution')}</dt><dd>{t('Unknown')}</dd></div>}
           <div><dt>{t('Version')}</dt><dd>{installation.version || t('Unknown')}</dd></div>
           <div><dt>{t('Installation location')}</dt><dd><code>{installation.path}</code></dd></div>

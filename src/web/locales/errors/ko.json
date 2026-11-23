@@ -484,5 +484,19 @@
   "ZIP links and special files are not supported.": "ZIP 링크 및 특수 파일은 지원되지 않습니다.",
   "npm is unavailable to Papilot.": "Papilot에서 npm을 사용할 수 없습니다.",
   "too large": "너무 큼",
-  "unsupported index": "지원되지 않는 인덱스"
+  "unsupported index": "지원되지 않는 인덱스",
+  "Add a DOI, arXiv identifier, author or year to this entry to keep a PDF for it.": "이 항목의 PDF를 보관하려면 DOI, arXiv 식별자, 저자 또는 연도를 추가하세요.",
+  "Choose Zotero's data directory, the folder with zotero.sqlite and storage.": "zotero.sqlite와 storage가 포함된 Zotero 데이터 디렉터리를 선택하세요.",
+  "Choose a citation to forget.": "기억을 해제할 인용을 선택하세요.",
+  "Choose an entry.": "항목을 선택하세요.",
+  "Choose whether to use PDFs from Zotero.": "Zotero의 PDF 사용 여부를 선택하세요.",
+  "Could not reach zotero.org. Try again.": "zotero.org에 연결할 수 없습니다. 다시 시도하세요.",
+  "This PDF is not in the paper's library.": "이 PDF는 논문의 라이브러리에 없습니다.",
+  "This entry is no longer in the bibliography. Refresh the library.": "이 항목은 더 이상 참고문헌에 없습니다. 라이브러리를 새로고침하세요.",
+  "This file is not a PDF.": "이 파일은 PDF가 아닙니다.",
+  "This folder has no zotero.sqlite. Choose Zotero's data directory, the folder with zotero.sqlite and storage.": "이 폴더에는 zotero.sqlite가 없습니다. zotero.sqlite와 storage가 포함된 Zotero 데이터 디렉터리를 선택하세요.",
+  "This key cannot read any library. Create one with library access.": "이 키로는 라이브러리를 읽을 수 없습니다. 라이브러리 접근 권한이 있는 키를 생성하세요.",
+  "This sentence is no longer in the paper. Refresh the library.": "이 문장은 더 이상 논문에 없습니다. 라이브러리를 새로고침하세요.",
+  "Upload the PDF as binary data.": "PDF를 바이너리 데이터로 업로드하세요.",
+  "Zotero does not accept this key. Check it and try again.": "Zotero에서 이 키를 승인하지 않았습니다. 키를 확인하고 다시 시도하세요."
 }

@@ -4,6 +4,7 @@ import { Fixture } from "./helpers.ts";
 import {
   bibliographyReport,
   citations,
+  citingSentences,
   documentFiles,
   entryChanges,
   parseBib,
@@ -133,6 +134,61 @@ describe("Citations", () => {
       "a:1", "b:1", "c:1", "d:3", "*:3", "e:3", "f:4", "g:4", "h:4", "i:4",
     ]);
     expect(uncomment("a % b\nc \\% d % e")).toBe("a    \nc \\% d    ");
+  });
+  it("finds the sentence each citation belongs to, as it reads", () => {
+    const main = String.raw`\documentclass{article}
+\begin{document}
+\section{Introduction}
+Type inference is decidable for System F with bounded quantification only in restricted forms~\cite{pierce1994}.
+As Smith et al.\ showed in Fig.~\ref{fig:a}, \emph{greedy} inference works \citep[p.~3]{cui2023, xie2018}.
+Bidirectional typing scales to rich systems. \cite{dunfield2022}
+MLsub \cite{dolan2017} and SuperF \cite{parreaux2024} infer types with subtyping.
+% \cite{commented} is not a citation.
+\nocite{*}
+
+\begin{itemize}
+\item Linear types can change the world \cite{wadler1990}
+\end{itemize}
+\bibliography{refs}
+\end{document}`;
+    const sentences = citingSentences(doc({ "paper/main.tex": main, "paper/refs.bib": BIB }));
+    expect(sentences.map(({ keys, line, sentence }) => ({ keys, line, sentence }))).toEqual([
+      { keys: ["pierce1994"], line: 4, sentence: "Type inference is decidable for System F with bounded quantification only in restricted forms [pierce1994]." },
+      { keys: ["cui2023", "xie2018"], line: 5, sentence: "As Smith et al. showed in Fig. [ref], greedy inference works [cui2023, xie2018, p. 3]." },
+      { keys: ["dunfield2022"], line: 6, sentence: "Bidirectional typing scales to rich systems. [dunfield2022]" },
+      // Two citations in one sentence make one claim to check.
+      { keys: ["dolan2017", "parreaux2024"], line: 7, sentence: "MLsub [dolan2017] and SuperF [parreaux2024] infer types with subtyping." },
+      { keys: ["wadler1990"], line: 12, sentence: "Linear types can change the world [wadler1990]" },
+    ]);
+    expect(sentences[0]).toMatchObject({ file: "paper/main.tex", section: "1 Introduction" });
+  });
+  it("keeps a citation that opens a sentence with it, and does not end sentences inside math, footnotes or initials", () => {
+    const main = String.raw`\documentclass{article}
+\begin{document}
+Predicative inference is well understood. \citet{eisenberg2016} proposed visible type application.
+Local inference is decidable. \citeauthor{zhao2019}'s calculus extends it.
+The identity has type $\forall a. a \to a$ in System F \cite{girard1972}.
+Type inference is old\footnote{It goes back to the 1960s \cite{hindley1969}.} and still studied \cite{dunfield2022}.
+It is solved in polynomial time.\footnote{See the appendix.} The bound is tight \cite{tarjan1975}.
+This was shown by Bruno C. d. S. Oliveira and colleagues \cite{cui2023}.
+\FbLe{} extends \citeauthor{zhao2019}'s system \citep[see][Sec.~3]{zhao2019}.
+\begin{tabular}{ll}
+MLsub & Algebraic subtyping \cite{dolan2017} \\
+SuperF & Subtyping constraints \cite{parreaux2024}
+\end{tabular}
+\end{document}`;
+    expect(citingSentences(doc({ "paper/main.tex": main, "paper/refs.bib": BIB })).map(({ keys, sentence }) => [keys.join(","), sentence])).toEqual([
+      ["eisenberg2016", "[eisenberg2016] proposed visible type application."],
+      ["zhao2019", "[zhao2019]'s calculus extends it."],
+      ["girard1972", "The identity has type ∀ a. a → a in System F [girard1972]."],
+      ["hindley1969", "It goes back to the 1960s [hindley1969]."],
+      ["dunfield2022", "Type inference is old and still studied [dunfield2022]."],
+      ["tarjan1975", "The bound is tight [tarjan1975]."],
+      ["cui2023", "This was shown by Bruno C. d. S. Oliveira and colleagues [cui2023]."],
+      ["zhao2019", "FbLe extends [zhao2019]'s system [see zhao2019, Sec. 3]."],
+      ["dolan2017", "Algebraic subtyping [dolan2017]"],
+      ["parreaux2024", "Subtyping constraints [parreaux2024]"],
+    ]);
   });
   it("follows inputs from the main file and finds its bibliography", () => {
     const files: Record<string, string> = {

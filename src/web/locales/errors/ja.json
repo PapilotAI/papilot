@@ -484,5 +484,19 @@
   "ZIP links and special files are not supported.": "ZIP 内のリンクおよび特殊ファイルはサポートされていません。",
   "npm is unavailable to Papilot.": "Papilot から npm を利用できません。",
   "too large": "サイズが大きすぎます",
-  "unsupported index": "サポートされていないインデックスです"
+  "unsupported index": "サポートされていないインデックスです",
+  "Add a DOI, arXiv identifier, author or year to this entry to keep a PDF for it.": "この項目の PDF を保存するには、DOI、arXiv ID、著者、または出版年を追加してください。",
+  "Choose Zotero's data directory, the folder with zotero.sqlite and storage.": "Zotero のデータディレクトリ（zotero.sqlite と storage を含むフォルダー）を選択してください。",
+  "Choose a citation to forget.": "除外する引用を選択してください。",
+  "Choose an entry.": "文献を選択してください。",
+  "Choose whether to use PDFs from Zotero.": "Zotero の PDF を使用するかどうかを選択してください。",
+  "Could not reach zotero.org. Try again.": "zotero.org に接続できませんでした。もう一度お試しください。",
+  "This PDF is not in the paper's library.": "このPDFは論文のライブラリに存在しません。",
+  "This entry is no longer in the bibliography. Refresh the library.": "この文献はすでに文献リストから削除されています。ライブラリを更新してください。",
+  "This file is not a PDF.": "このファイルはPDFではありません。",
+  "This folder has no zotero.sqlite. Choose Zotero's data directory, the folder with zotero.sqlite and storage.": "このフォルダーには zotero.sqlite がありません。Zotero のデータディレクトリ（zotero.sqlite と storage を含むフォルダー）を選択してください。",
+  "This key cannot read any library. Create one with library access.": "このキーではライブラリを読み取れません。ライブラリへのアクセス権があるキーを作成してください。",
+  "This sentence is no longer in the paper. Refresh the library.": "この文は論文内に存在しません。ライブラリを更新してください。",
+  "Upload the PDF as binary data.": "PDFをバイナリデータとしてアップロードしてください。",
+  "Zotero does not accept this key. Check it and try again.": "このキーは Zotero で受け付けられませんでした。キーを確認して、もう一度お試しください。"
 }

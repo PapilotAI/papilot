@@ -484,5 +484,19 @@
   "ZIP links and special files are not supported.": "Les liens et fichiers spéciaux dans les archives ZIP ne sont pas pris en charge.",
   "npm is unavailable to Papilot.": "npm n’est pas disponible pour Papilot.",
   "too large": "trop volumineux",
-  "unsupported index": "index non pris en charge"
+  "unsupported index": "index non pris en charge",
+  "Add a DOI, arXiv identifier, author or year to this entry to keep a PDF for it.": "Ajoutez un DOI, un identifiant arXiv, un auteur ou une année à cette entrée pour lui associer un PDF.",
+  "Choose Zotero's data directory, the folder with zotero.sqlite and storage.": "Choisissez le répertoire de données de Zotero, le dossier contenant zotero.sqlite et storage.",
+  "Choose a citation to forget.": "Choisissez une citation à oublier.",
+  "Choose an entry.": "Choisissez une référence.",
+  "Choose whether to use PDFs from Zotero.": "Choisissez d'utiliser ou non les PDF de Zotero.",
+  "Could not reach zotero.org. Try again.": "Impossible de joindre zotero.org. Réessayez.",
+  "This PDF is not in the paper's library.": "Ce PDF ne figure pas dans la bibliothèque de l’article.",
+  "This entry is no longer in the bibliography. Refresh the library.": "Cette référence ne figure plus dans la bibliographie. Actualisez la bibliothèque.",
+  "This file is not a PDF.": "Ce fichier n’est pas un PDF.",
+  "This folder has no zotero.sqlite. Choose Zotero's data directory, the folder with zotero.sqlite and storage.": "Ce dossier ne contient pas zotero.sqlite. Choisissez le répertoire de données de Zotero, le dossier contenant zotero.sqlite et storage.",
+  "This key cannot read any library. Create one with library access.": "Cette clé ne permet de lire aucune bibliothèque. Créez-en une avec un accès à la bibliothèque.",
+  "This sentence is no longer in the paper. Refresh the library.": "Cette phrase ne figure plus dans l'article. Actualisez la bibliothèque.",
+  "Upload the PDF as binary data.": "Importez le PDF sous forme de données binaires.",
+  "Zotero does not accept this key. Check it and try again.": "Zotero n’accepte pas cette clé. Vérifiez-la et réessayez."
 }

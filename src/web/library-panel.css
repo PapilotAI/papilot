@@ -1,0 +1,197 @@
+/* The Library: on the canvas, a raised header with how many cited works
+   have a PDF and what their citations were found to say, then the works on
+   the left and the selected one on the right, each a raised surface. Depth
+   separates them rather than rules. On a phone the list and the work take
+   turns. Files dropped on the panel or on a work are added. */
+.library-panel{flex:1;min-height:0;display:flex;flex-direction:column;gap:12px;padding:12px;overflow:hidden;background:var(--canvas);font-size:12px;line-height:1.45}
+.library-panel>.library-empty,.library-panel>.inline-error{margin:auto}
+
+/* Header */
+.library-header{flex-shrink:0;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"coverage actions" "tally tally";gap:12px 20px;padding:14px 16px;border-radius:12px;background:var(--raised);box-shadow:var(--shadow-xs)}
+.library-panel[data-drop=true]>.library-header{outline:2px dashed var(--accent);outline-offset:-2px;background:var(--accent-soft)}
+.library-coverage{grid-area:coverage;display:flex;align-items:center;gap:14px;min-width:0}
+.library-coverage-text{display:grid;gap:4px;min-width:0}
+.library-coverage-text>label{font-size:14px;font-weight:600;color:var(--text)}
+.library-sources{display:flex;flex-wrap:wrap;gap:4px 6px;margin:0}
+.library-stat{height:20px;padding:0 8px;border-radius:10px;background:var(--bg-muted);font-size:11px;line-height:20px;color:var(--text-2);white-space:nowrap}
+.library-stat.s-mismatch{background:var(--red-soft);color:var(--red)}
+/* A native <progress> drawn as a ring; its count sits in the middle. */
+@property --value{syntax:'<number>';inherits:true;initial-value:0}
+.library-ring{--size:52px;--thickness:6px;position:relative;display:grid;place-items:center;flex-shrink:0;width:var(--size);height:var(--size)}
+.library-ring>progress{appearance:none;width:100%;height:100%;border:0;border-radius:50%;background:conic-gradient(var(--accent) calc(var(--value) * 1%),var(--bg-active) 0);
+  mask-image:radial-gradient(farthest-side,transparent calc(100% - var(--thickness)),#000 calc(100% - var(--thickness) + .5px));transition:--value 0s}
+.library-ring>progress::-webkit-progress-bar,.library-ring>progress::-webkit-progress-value{background:none}
+.library-ring>progress::-moz-progress-bar{background:none}
+.library-ring>span{position:absolute;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--text)}
+@media(prefers-reduced-motion:no-preference){.library-ring>progress{transition-duration:.4s}}
+@media(forced-colors:active){.library-ring>progress{forced-color-adjust:none;background:conic-gradient(CanvasText calc(var(--value) * 1%),Canvas 0)}}
+.library-actions{grid-area:actions;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px}
+.library-progress-text{display:inline-flex;align-items:center;gap:8px;color:var(--text-2)}
+.library-progress-text:empty{display:none}
+.library-tally{grid-area:tally;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:0}
+.library-tally>div{display:grid;gap:2px;padding:8px 10px;border-radius:9px;background:var(--bg-subtle)}
+.library-tally dt{display:flex;align-items:center;gap:4px;min-width:0;font-size:11px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.library-tally dd{margin:0;font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--text)}
+.library-tally>[data-verdict=supported] dt{color:var(--green)}
+.library-tally>[data-verdict=partial] dt{color:var(--amber-text)}
+.library-tally>[data-verdict=unsupported] dt{color:var(--red)}
+.library-header>.library-note,.library-header>.inline-error{grid-column:1/-1;margin:0}
+.library-note{margin:6px 0 0;font-size:11px;color:var(--text-3)}
+
+/* Body: the works and the selected one */
+.library-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:12px}
+.library-list-pane,.library-detail-pane{min-height:0;display:flex;flex-direction:column;border-radius:12px;background:var(--raised);box-shadow:var(--shadow-xs);overflow:hidden}
+.library-search{position:relative;flex-shrink:0;margin:10px 10px 4px}
+.library-search>svg{position:absolute;left:9px;top:50%;translate:0 -50%;color:var(--text-3);pointer-events:none}
+.library-search>input{width:100%;height:30px;padding:0 10px 0 30px;border:0;border-radius:8px;background:var(--bg-muted);font-size:12px;color:var(--text)}
+.library-search>input:focus-visible{outline:2px solid var(--ring);outline-offset:0}
+.library-filter{flex-shrink:0;display:flex;gap:2px;margin:4px 10px 6px;padding:2px;border-radius:8px;background:var(--bg-muted)}
+.library-filter>button{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:0;height:26px;padding:0 6px;border-radius:6px;font-size:11px;font-weight:500;color:var(--text-2);white-space:nowrap}
+.library-filter>button:hover{color:var(--text)}
+.library-filter>button[aria-selected=true]{background:var(--raised);color:var(--text);box-shadow:var(--shadow-xs)}
+.library-filter .count{font-weight:400;color:var(--text-3);font-variant-numeric:tabular-nums}
+.library-list-scroll{flex:1;min-height:0;overflow:auto}
+.library-list{list-style:none;margin:0;padding:2px 6px 8px}
+.library-item{position:relative;display:flex;align-items:flex-start;gap:4px;border-radius:9px}
+.library-item[data-selected=true]{background:var(--accent-soft)}
+.library-item[data-drop=true]{outline:2px dashed var(--accent);outline-offset:-2px;background:var(--accent-soft)}
+.library-item>input{width:14px;height:14px;margin:12px 0 0 8px;flex-shrink:0;accent-color:var(--accent)}
+.library-row{flex:1;display:flex;align-items:flex-start;gap:10px;min-width:0;padding:8px;border-radius:9px;text-align:left;color:var(--text)}
+.library-item:not([data-selected=true]) .library-row:hover{background:var(--bg-hover)}
+.library-row-status{display:grid;place-items:center;flex-shrink:0;width:28px;height:34px;border-radius:5px;background:var(--bg-muted);color:var(--text-3)}
+.library-row-status[data-state=pdf]{background:var(--green-soft);color:var(--green)}
+.library-row-status[data-state=reading],.library-row-status[data-state=finding]{color:var(--accent)}
+.library-row-status[data-state=problem]{background:var(--red-soft);color:var(--red)}
+.library-row-text{display:grid;gap:2px;min-width:0;flex:1}
+.library-row-top{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.library-byline{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.library-row-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;color:var(--text-2);overflow-wrap:anywhere}
+.library-row-meta{display:flex;align-items:center;gap:6px;min-width:0;font-size:11px;color:var(--text-3)}
+.library-row-meta>code{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+.library-row-add{flex-shrink:0;margin:6px 6px 0 0;color:var(--text-3)}
+.library-row-add:hover{color:var(--accent)}
+.library-problems{color:var(--red);font-size:11px}
+.library-item.soft .library-problems{color:var(--text-3)}
+.library-state{height:18px;padding:0 6px;border-radius:5px;background:var(--bg-muted);font-size:11px;font-weight:500;line-height:18px;color:var(--text-2);white-space:nowrap}
+.library-state.s-pdf{background:var(--green-soft);color:var(--green)}
+.library-state.s-paywalled,.library-state.s-unidentified,.library-state.s-unreachable{background:var(--amber-soft);color:var(--amber-text)}
+.library-state.s-mismatch{background:var(--red-soft);color:var(--red)}
+.library-dots{display:inline-flex;gap:6px;flex-shrink:0}
+.library-dots>span{display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}
+.library-dots>[data-verdict=supported],.library-verdict[data-verdict=supported]{color:var(--green)}
+.library-dots>[data-verdict=partial],.library-verdict[data-verdict=partial]{color:var(--amber-text)}
+.library-dots>[data-verdict=unsupported],.library-verdict[data-verdict=unsupported]{color:var(--red)}
+.library-dots>[data-verdict=unclear],.library-verdict[data-verdict=unclear],.library-verdict[data-verdict=none]{color:var(--text-3)}
+.library-fix{flex-shrink:0;display:grid;gap:6px;padding:10px 12px;background:var(--bg-subtle)}
+.library-fix>.button{justify-self:start}
+.library-fix>span{font-size:11px;color:var(--text-3)}
+.library-empty{display:flex;align-items:center;justify-content:center;gap:6px;margin:0;padding:24px 16px;color:var(--text-3);text-align:center}
+
+/* The selected work */
+.library-detail-pane{overflow:auto}
+.library-back{align-self:flex-start;margin:10px 12px 0}
+.library-work{display:grid;gap:18px;padding:18px 20px 24px}
+.library-work-head{display:flex;align-items:flex-start;gap:18px}
+.library-cover{flex-shrink:0;display:block;width:112px;min-height:146px;padding:0;border-radius:4px;background:#fff;box-shadow:var(--shadow-sm);overflow:hidden;cursor:pointer}
+.library-cover:hover{box-shadow:var(--float)}
+.library-cover:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.pdf-thumbnail{display:block;height:auto}
+.library-cover-none{display:grid;place-content:center;justify-items:center;gap:8px;padding:12px;background:var(--bg-muted);box-shadow:none;color:var(--text-3);font-size:11px;text-align:center;cursor:default}
+.library-work-meta{display:grid;gap:6px;min-width:0}
+.library-work-title{margin:0;font-size:17px;font-weight:600;line-height:1.3;color:var(--text);overflow-wrap:anywhere}
+.library-work-authors{margin:0;font-size:12px;color:var(--text-2)}
+.library-work-venue,.library-work-source{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin:0;font-size:11px;color:var(--text-3)}
+.library-work-venue>code{font-size:11px}
+.library-work-source a{display:inline-flex;align-items:center;gap:3px;color:var(--accent)}
+.library-warning{color:var(--amber-text)}
+.library-work-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.library-claims>h3{display:flex;align-items:baseline;gap:6px;margin:0 0 10px;font-size:13px;font-weight:600;color:var(--text)}
+.library-claims .count{font-size:12px;font-weight:400;color:var(--text-3)}
+.library-claim-list{list-style:none;display:grid;gap:10px;margin:0;padding:0}
+.library-claim{display:grid;gap:8px;padding:12px 14px;border-radius:10px;background:var(--bg-subtle);box-shadow:inset 3px 0 0 var(--line-strong)}
+.library-claim[data-verdict=supported]{box-shadow:inset 3px 0 0 var(--green)}
+.library-claim[data-verdict=partial]{box-shadow:inset 3px 0 0 var(--amber)}
+.library-claim[data-verdict=unsupported]{box-shadow:inset 3px 0 0 var(--red)}
+.library-claim-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.library-claim-where{display:flex;align-items:center;gap:8px;min-width:0;font-size:11px;color:var(--text-3)}
+.library-claim-where>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.library-claim-where>code{font-size:11px;white-space:nowrap}
+.library-verdict{display:inline-flex;align-items:center;gap:4px;flex-shrink:0;font-size:11px;font-weight:600;white-space:nowrap}
+.library-verdict[data-stale]{opacity:.6}
+.library-claim-text{margin:0;font-size:13px;line-height:1.55;color:var(--text)}
+.library-cite{color:var(--text-3)}
+.library-cite mark{padding:0 2px;border-radius:3px;background:var(--accent-soft);color:var(--accent)}
+.library-claim-note{margin:0;font-size:12px;color:var(--text-2)}
+.library-evidence{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:start;gap:8px;width:100%;padding:8px 10px;border-radius:8px;background:var(--raised);box-shadow:var(--shadow-xs);text-align:left;color:var(--text-2)}
+.library-evidence:hover:not(:disabled){box-shadow:var(--shadow-sm)}
+.library-evidence:disabled{opacity:.6;cursor:default}
+.library-evidence>svg{margin-top:2px;color:var(--text-3)}
+/* A long passage shows its start; the PDF opens on all of it. */
+.library-evidence>q{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;overflow:hidden;font-size:12px;line-height:1.5;font-style:italic;overflow-wrap:anywhere}
+.library-evidence-page{font-size:11px;color:var(--accent);white-space:nowrap}
+.library-claim-actions{display:flex;justify-content:flex-end}
+.library-entry>summary{display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;font-weight:600;color:var(--text-2);cursor:pointer;list-style:none}
+.library-entry>summary::-webkit-details-marker{display:none}
+.library-entry>summary>svg{transition:rotate .15s}
+.library-entry[open]>summary>svg{rotate:90deg}
+.library-entry table{width:100%;margin-top:8px;border-collapse:collapse;font:11px/1.6 var(--mono,ui-monospace,SFMono-Regular,Menlo,monospace)}
+.library-entry th{width:1%;padding:1px 12px 1px 0;text-align:left;vertical-align:top;font-weight:400;color:var(--text-3);white-space:nowrap}
+.library-entry td{padding:1px 0;overflow-wrap:anywhere}
+.library-entry>.button{margin-top:8px}
+.library-problem{margin:8px 0 0;color:var(--red)}
+.library-resolved{color:var(--text-3)}
+.library-where,.library-record,.library-confirmed{margin:8px 0 0;font-size:11px;color:var(--text-2);overflow-wrap:anywhere}
+.library-record{display:flex;flex-wrap:wrap;gap:2px 8px}
+.library-record>span:first-child{color:var(--text-3)}
+.library-record a{color:var(--accent)}
+.library-differences{margin:8px 0 0;display:grid;gap:6px}
+.library-differences>div{display:grid;grid-template-columns:auto 1fr;gap:0 12px}
+.library-differences dt{font-weight:500;white-space:nowrap}
+.library-differences dd{margin:0;display:grid;min-width:0;overflow-wrap:anywhere}
+.library-differences dd>span:first-child{color:var(--red)}
+.library-differences dd>span:last-child{color:var(--text-2)}
+.library-confirmed{display:flex;align-items:center;gap:6px;color:var(--green)}
+
+/* A PDF read in place */
+.library-reader{flex:1;min-height:0;display:flex;flex-direction:column}
+.library-reader-lead{display:flex;align-items:center;gap:8px;min-width:0}
+.library-reader-lead>code{font-size:12px;font-weight:500;white-space:nowrap}
+.library-reader-lead>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-2);font-size:12px}
+
+/* A panel like Version control: a toolbar row, then the library. */
+.library-page{flex:1;min-height:0;display:flex;flex-direction:column;width:100%}
+.library-page-head{display:flex;align-items:center;gap:8px;flex-shrink:0;height:var(--toolbar-height);padding:0 16px;border-bottom:1px solid var(--line);background:var(--bg)}
+.library-page-head h2{margin:0;font:500 13px/1.45 var(--sans)}
+.library-page-head span{font-size:12px;color:var(--text-3)}
+
+@media(max-width:1100px){
+  .library-header{grid-template-columns:1fr;grid-template-areas:"coverage" "tally" "actions"}
+  .library-actions{justify-content:flex-start}
+}
+/* A phone: the list, then a work with a way back; the work has the whole height. */
+@media(max-width:760px){
+  .library-panel{padding:8px;gap:8px;font-size:13px}
+  .library-header{padding:12px;gap:10px}
+  .library-tally>div{padding:6px 8px}
+  .library-tally dd{font-size:15px}
+  .library-body{grid-template-columns:1fr}
+  .library-panel:not([data-detail]) .library-detail-pane,.library-panel[data-detail] .library-list-pane,.library-panel[data-detail]>.library-header{display:none}
+  .library-work{padding:14px}
+  .library-work-head{gap:14px}
+  .library-cover{width:72px;min-height:94px}
+  .library-cover .pdf-thumbnail{width:100%!important}
+  .library-work-title{font-size:16px}
+  .library-filter>button,.library-search>input{height:36px;font-size:13px}
+  .library-row{min-height:44px}
+  .library-item>input{width:20px;height:20px;margin-top:12px}
+  .library-stat,.library-note,.library-state,.library-row-meta,.library-where,.library-record,.library-confirmed,.library-fix>span,.library-entry table,.library-page-head span{font-size:13px}
+  .library-page-head{padding:0 12px}
+  .library-page-head h2{font-size:15px}
+}
+/* Very narrow: the tally keeps its icons and numbers; its names stay for screen readers. */
+@media(max-width:480px){
+  .library-differences>div{grid-template-columns:1fr}
+  .library-tally{gap:4px}
+  .library-tally dt>span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .library-tally>div{justify-items:center}
+}

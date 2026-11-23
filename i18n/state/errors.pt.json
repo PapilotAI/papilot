@@ -2028,5 +2028,75 @@
     "revision": "a6c8653f5e9bf6f15010e4ed1f7c8db6c3de56b6128449f2bd04bc37f2e1be48",
     "textHash": "84b297a6ec5ef9ec7776422a03e93fbf6cbc05f9359a39db727f8e29f464bdec",
     "model": "gemini-4-argon-medium"
+  },
+  "Add a DOI, arXiv identifier, author or year to this entry to keep a PDF for it.": {
+    "revision": "4001b40ee51c11e63718027a02faa92ce67c1bcfea4955ef7ad1da9a647557bc",
+    "textHash": "db396ebe7b95d6eff5306a2e394277251e052f02edb77bcc755cb9bb42e3d174",
+    "model": "gemini-4-argon-medium"
+  },
+  "Choose Zotero's data directory, the folder with zotero.sqlite and storage.": {
+    "revision": "85e36050ebac62ba390f1778eec51441901752792e8a05616f296767a105ca30",
+    "textHash": "8cd7b353b0ee677097e1d860d44326cb9cc990b9fb596f702c3cb02fd6afba4f",
+    "model": "gemini-4-argon-medium"
+  },
+  "Choose a citation to forget.": {
+    "revision": "b466477aa90a7ec26f10eea856dbc1bc16ba7526a90c2788414a74250b864986",
+    "textHash": "6b6a02056e2731b4c6133ad589d08bf0101584d7af21341247506398288083be",
+    "model": "gemini-4-argon-medium"
+  },
+  "Choose an entry.": {
+    "revision": "a3af4b2f31b7d786f15add0d07ceab9bd55c76b46942577c44c30c5bff685984",
+    "textHash": "d39c1977e9b7549d4b2009bfeebc994d2b8266f0b26608b0a13716a3f2cf958d",
+    "model": "gemini-4-argon-medium"
+  },
+  "Choose whether to use PDFs from Zotero.": {
+    "revision": "8bd64f3d75f40e2befdf209b5c2110d2bfa9689ee1a61597fa521a2f2df20c4f",
+    "textHash": "73dbf171069a7c2bbd5ba612df22c3bcac1a828ee3d3d67ab508f21eb5c82a8f",
+    "model": "gemini-4-argon-medium"
+  },
+  "Could not reach zotero.org. Try again.": {
+    "revision": "842ee5714d3d749139969163ebaca45e6ed7963bd97d98d2c0be934f7e543d5c",
+    "textHash": "6942f98e839131fdbee2104ac9bcd828e062cbdeff444a8f7e722b5ad3d44523",
+    "model": "gemini-4-argon-medium"
+  },
+  "This PDF is not in the paper's library.": {
+    "revision": "e3c7afce952c091311f6ccf59c8cce5ddef463c504db663afda63a6fcaee502f",
+    "textHash": "e70cf0298e250323eaa9fa57d68f07cc4d5332372d3fc1afdbce1c42ef15278d",
+    "model": "gemini-4-argon-medium"
+  },
+  "This entry is no longer in the bibliography. Refresh the library.": {
+    "revision": "09cd351cf029f1cc3a0fdc7593772e87d66a6b7754e8b3129e037a3a7e978f34",
+    "textHash": "7dd5f31ede04fbd9ed40caa1c17331e62b10258d2d8c7e08df834f4f0198d94c",
+    "model": "gemini-4-argon-medium"
+  },
+  "This file is not a PDF.": {
+    "revision": "4935751ee337e828605f76f91f5b9a47d429f05aeedde8ee00d09414175e62cd",
+    "textHash": "f93c491fba170c5cb193819db9eaf3fc8328f3b79ec2893349d73d6cb0231ac6",
+    "model": "gemini-4-argon-medium"
+  },
+  "This folder has no zotero.sqlite. Choose Zotero's data directory, the folder with zotero.sqlite and storage.": {
+    "revision": "c9692e607df6083108a69cedd620e68fa4dfa6c3299d13d1a7a9f25cc9d50f05",
+    "textHash": "028dd5fa54157333b3f608b82c281026560c6265b38f727ae647ffc5734ed5c4",
+    "model": "gemini-4-argon-medium"
+  },
+  "This key cannot read any library. Create one with library access.": {
+    "revision": "1555ef18eb9592bc051fd04c19f4b40a2975bbfc194df628c780b24afedee844",
+    "textHash": "c0411e1c32f3bc89737bef9943d5bbe6a9fa06ad27b9737c62e867c725c8c1a1",
+    "model": "gemini-4-argon-medium"
+  },
+  "This sentence is no longer in the paper. Refresh the library.": {
+    "revision": "8cb1639e28a4635cbcf04bf13f4247239bb136d375b492983c93c3c4c3829710",
+    "textHash": "391451aed4174b52842e87527663f43a4f4a93215b2b67004be8dbfaa509e57d",
+    "model": "gemini-4-argon-medium"
+  },
+  "Upload the PDF as binary data.": {
+    "revision": "55c177cc37ecadae6a9caa34171332883565ef68d567449e66ac9015d4e67981",
+    "textHash": "c493d1a5c2ddb9412612f4a308d3b899df29723d75357468420d86e3fcef012b",
+    "model": "gemini-4-argon-medium"
+  },
+  "Zotero does not accept this key. Check it and try again.": {
+    "revision": "5e97f6f49f3bab6df2cf86356d55aa6816cd67945c1c96a2ca5b761d1fc61154",
+    "textHash": "fdf127b04e37b89178ab0e211042ac66e00acd017beeedfd49a233fa22cf10b3",
+    "model": "gemini-4-argon-medium"
   }
 }

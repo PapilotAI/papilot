@@ -484,5 +484,19 @@
   "ZIP links and special files are not supported.": "No se admiten enlaces ni archivos especiales en el ZIP.",
   "npm is unavailable to Papilot.": "npm no está disponible para Papilot.",
   "too large": "demasiado grande",
-  "unsupported index": "índice no compatible"
+  "unsupported index": "índice no compatible",
+  "Add a DOI, arXiv identifier, author or year to this entry to keep a PDF for it.": "Añade un DOI, identificador de arXiv, autor o año a esta entrada para conservar un PDF asociado.",
+  "Choose Zotero's data directory, the folder with zotero.sqlite and storage.": "Elige el directorio de datos de Zotero, la carpeta que contiene zotero.sqlite y storage.",
+  "Choose a citation to forget.": "Elige una cita para olvidar.",
+  "Choose an entry.": "Elige una entrada.",
+  "Choose whether to use PDFs from Zotero.": "Elige si deseas usar los PDF de Zotero.",
+  "Could not reach zotero.org. Try again.": "No se pudo conectar con zotero.org. Inténtelo de nuevo.",
+  "This PDF is not in the paper's library.": "Este PDF no está en la biblioteca del artículo.",
+  "This entry is no longer in the bibliography. Refresh the library.": "Esta entrada ya no está en la bibliografía. Actualiza la biblioteca.",
+  "This file is not a PDF.": "Este archivo no es un PDF.",
+  "This folder has no zotero.sqlite. Choose Zotero's data directory, the folder with zotero.sqlite and storage.": "Esta carpeta no contiene zotero.sqlite. Elige el directorio de datos de Zotero, la carpeta que contiene zotero.sqlite y storage.",
+  "This key cannot read any library. Create one with library access.": "Esta clave no puede leer ninguna biblioteca. Cree una con acceso a bibliotecas.",
+  "This sentence is no longer in the paper. Refresh the library.": "Esta oración ya no está en el artículo. Actualiza la biblioteca.",
+  "Upload the PDF as binary data.": "Sube el PDF como datos binarios.",
+  "Zotero does not accept this key. Check it and try again.": "Zotero no acepta esta clave. Verifíquela e inténtelo de nuevo."
 }

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { deepestNode } from "./outline.ts";
-import { compact, doiOf } from "./verify.ts";
+import { compact, doiOf, plain } from "./verify.ts";
 import type {
   Bibliography,
   BibliographyEntry,
@@ -415,24 +415,215 @@ function lines(text: string) {
 // forms of LaTeX, natbib and biblatex, including \cites{a}{b}.
 const CITE = /\\([A-Za-z]*[cC]ite[A-Za-z]*|nocite)\*?(?![A-Za-z])/g;
 const NOT_CITES = new Set(["citestyle", "citesetup", "citeindextrue", "citeindexfalse", "citename"]);
-export function citations(text: string, file: string) {
-  const source = texSource(text),
-    lineAt = lines(source),
-    found: { key: string; file: string; line: number }[] = [];
+// Each citation command in comment-free source: its name, where it starts
+// and ends, each key with where its braces open, and its notes, such as
+// "see" and "p. 3" in \citep[see][p.~3]{key}.
+function citeCommands(source: string) {
+  const found: { name: string; start: number; end: number; keys: { key: string; at: number }[]; notes: string[] }[] = [],
+    options = /\s*(?:\([^)]*\)\s*)*((?:\[[^\]]*\]\s*)*)/y,
+    body = /\{([^{}]*)\}/y;
   for (const match of source.matchAll(CITE)) {
     if (NOT_CITES.has(match[1])) continue;
     let at = match.index + match[0].length;
-    const groups = match[1].endsWith("cites") ? Infinity : 1;
+    const keys: { key: string; at: number }[] = [],
+      notes: string[] = [],
+      groups = match[1].endsWith("cites") ? Infinity : 1;
     for (let taken = 0; taken < groups; ) {
-      const rest = source.slice(at),
-        options = /^\s*(?:\([^)]*\)\s*)*(?:\[[^\]]*\]\s*)*/.exec(rest)![0],
-        body = /^\{([^{}]*)\}/.exec(rest.slice(options.length));
-      if (!body) break;
-      const line = lineAt(at + options.length);
-      for (const key of body[1].split(",").map((k) => k.trim()).filter((k) => k && !/[\\#\s]/.test(k)))
-        found.push({ key, file, line });
-      at += options.length + body[0].length;
+      options.lastIndex = at;
+      const option = options.exec(source)!;
+      body.lastIndex = at + option[0].length;
+      const group = body.exec(source);
+      if (!group) break;
+      for (const note of option[1].matchAll(/\[([^\]]*)\]/g)) notes.push(note[1]);
+      for (const key of group[1].split(",").map((k) => k.trim()).filter((k) => k && !/[\\#\s]/.test(k)))
+        keys.push({ key, at: at + option[0].length });
+      at = body.lastIndex;
       taken++;
+    }
+    if (keys.length) found.push({ name: match[1], start: match.index, end: at, keys, notes });
+  }
+  return found;
+}
+export function citations(text: string, file: string) {
+  const source = texSource(text),
+    lineAt = lines(source);
+  return citeCommands(source).flatMap((command) => command.keys.map(({ key, at }) => ({ key, file, line: lineAt(at) })));
+}
+
+type Command = ReturnType<typeof citeCommands>[number];
+// What bounds a sentence besides its punctuation: a blank line, a heading,
+// an item, the edge of an environment, the start of a caption, and in a
+// table a cell or a row.
+const BLOCK = /\n[ \t]*\n|\\(?:part|chapter|section|subsection|subsubsection|paragraph|subparagraph)\*?\s*(?:\[[^\]]*\]\s*)?\{[^{}]*\}|\\item\b(?:\s*\[[^\]]*\])?|\\(?:begin|end)\s*\{[^{}]*\}|\\caption\s*(?:\[[^\]]*\]\s*)?\{|(?<!\\)&/g;
+// A full stop after one of these, or after an initial, does not end a sentence.
+const ABBREVIATION = /(?:^|[^A-Za-z])(?:e\.g|i\.e|et al|al|cf|vs|etc|viz|resp|approx|Fig|Figs|Sec|Secs|Eq|Eqs|Tab|Thm|Def|Lem|Prop|Cor|Ch|Chap|App|No|Nos|pp|vol|Dr|Prof|[A-Za-z])$/;
+const MATH = /\$\$[\s\S]*?\$\$|\$(?:\\.|[^$\\])+\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]/g;
+// A full stop ends a sentence before a space, or before a footnote, which
+// is a sentence of its own.
+const PUNCTUATION = /[.!?](?=["'’”)\]}]*(?:\s|$|\\footnote\b))/g;
+// A textual citation names the work in the sentence, often as its subject.
+const TEXTUAL = /^(?:[cC]ite(?:t|alt|author|title|year|yearpar|date)|[tT]extcite)$/;
+// Where each sentence of a file may start and end, found once per file:
+// footnotes are sentences of their own, and a full stop in math or a
+// footnote does not end the sentence around it.
+function layout(text: string, source: string) {
+  const inside = (ranges: [number, number][], at: number) => {
+    let low = 0, high = ranges.length - 1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      if (ranges[mid][1] <= at) low = mid + 1;
+      else if (ranges[mid][0] > at) high = mid - 1;
+      else return ranges[mid];
+    }
+    return undefined;
+  };
+  const notes: [number, number][] = [];
+  for (const match of source.matchAll(/\\footnote\s*(?:\[[^\]]*\]\s*)?\{/g)) {
+    const open = match.index + match[0].length;
+    if (notes.length && open < notes.at(-1)![1]) continue;
+    let depth = 1, at = open;
+    for (; at < source.length && depth; at++) depth += source[at] === "{" ? 1 : source[at] === "}" ? -1 : 0;
+    notes.push([open, depth ? source.length : at - 1]);
+  }
+  const math = [...source.matchAll(MATH)].map((m): [number, number] => [m.index, m.index + m[0].length]);
+  const ends = (from: number, to: number, top: boolean) => {
+    const found: number[] = [];
+    PUNCTUATION.lastIndex = from;
+    for (let match; (match = PUNCTUATION.exec(source)) && match.index < to; ) {
+      if (inside(math, match.index) || (top && inside(notes, match.index))) continue;
+      if (match[0] === "." && ABBREVIATION.test(source.slice(Math.max(from, match.index - 12), match.index))) continue;
+      found.push(match.index + 1);
+    }
+    return found;
+  };
+  const bounds = [...source.matchAll(BLOCK)].map((m): [number, number] => [m.index, m.index + m[0].length])
+    .concat([...text.matchAll(/\\\\(?![A-Za-z])/g)].map((m): [number, number] => [m.index, m.index + 2]))
+    .filter(([at]) => !inside(notes, at) && !inside(math, at))
+    .sort((a, b) => a[0] - b[0]);
+  return { notes, bounds, ends: ends(0, source.length, true), endsIn: (from: number, to: number) => ends(from, to, false), note: (at: number) => inside(notes, at) };
+}
+type Layout = ReturnType<typeof layout>;
+// Whether a citation is part of the sentence after it rather than the end
+// of the one before: a textual citation, or one followed by a lowercase
+// word or a possessive, as in "\citet{x} proposed" or "\citeauthor{x}'s".
+const opensSentence = (source: string, command: Command) =>
+  TEXTUAL.test(command.name) || /^\s*[a-z'’]/.test(source.slice(command.end, command.end + 8));
+// The sentence a citation belongs to: the one it stands in, or, for a
+// citation right after a full stop, the one it follows, which the next
+// sentence then starts after.
+function sentenceAround(source: string, map: Layout, command: Command, commands: Command[]) {
+  const { start, end } = command,
+    note = map.note(start);
+  let blockStart = 0,
+    blockEnd = source.length,
+    ends: number[];
+  if (note) {
+    [blockStart, blockEnd] = note;
+    ends = map.endsIn(blockStart, blockEnd);
+  } else {
+    for (const [at, after] of map.bounds) {
+      if (after <= start) blockStart = after;
+      else if (at >= end) { blockEnd = at; break; }
+    }
+    ends = map.ends.filter((at) => at > blockStart && at <= blockEnd);
+  }
+  const before = ends.filter((at) => at <= start),
+    after = ends.find((at) => at >= end);
+  let from = before.at(-1) ?? blockStart,
+    to = after ?? blockEnd;
+  if (before.length && !opensSentence(source, command) && !source.slice(from, start).trim().replace(/^~/, "")) {
+    to = Math.max(from, end);
+    from = before.at(-2) ?? blockStart;
+  }
+  for (let next; (next = commands.find((c) => c.start >= from && c.start < start && !opensSentence(source, c) && !source.slice(from, c.start).trim().replace(/^~/, ""))); ) from = next.end;
+  return [from, to] as const;
+}
+// Commands that only format or space their text: their names go and their
+// text stays. Other commands, such as a paper's own macros, keep their name.
+const FORMATTING = new Set(["emph", "textbf", "textit", "texttt", "textsc", "textsf", "textrm", "textup", "textsl", "textnormal", "textmd", "mathrm", "mathit", "mathbf", "mathsf", "mathtt", "mathcal", "mathbb", "mathfrak", "mathscr", "boldsymbol", "bm", "text", "mbox", "hbox", "makebox", "fbox", "underline", "uline", "sout", "ensuremath", "operatorname", "tiny", "scriptsize", "footnotesize", "small", "normalsize", "large", "Large", "LARGE", "huge", "Huge", "bfseries", "itshape", "ttfamily", "rmfamily", "sffamily", "scshape", "upshape", "mdseries", "noindent", "xspace", "quad", "qquad", "enspace", "thinspace", "nobreak", "relax", "left", "right", "big", "Big", "bigl", "bigr", "Bigl", "Bigr", "displaystyle", "textstyle", "protect", "null", "centering", "raggedright", "par", "toprule", "midrule", "bottomrule", "hline", "newline", "linebreak"]);
+const WORDS: Record<string, string> = { ldots: "…", dots: "…", cdots: "⋯", BibTeX: "BibTeX", eg: "e.g.", ie: "i.e.", etal: "et al." };
+// Math as it reads, for claims about types and logic.
+const SYMBOLS: Record<string, string> = Object.fromEntries(
+  "forall ∀ exists ∃ to → rightarrow → Rightarrow ⇒ leftarrow ← Leftarrow ⇐ leftrightarrow ↔ mapsto ↦ leq ≤ le ≤ geq ≥ ge ≥ neq ≠ ne ≠ in ∈ notin ∉ subseteq ⊆ subset ⊂ supseteq ⊇ cup ∪ cap ∩ times × vdash ⊢ dashv ⊣ models ⊨ infty ∞ langle ⟨ rangle ⟩ wedge ∧ land ∧ vee ∨ lor ∨ neg ¬ lnot ¬ top ⊤ bot ⊥ equiv ≡ approx ≈ sim ∼ simeq ≃ cong ≅ circ ∘ oplus ⊕ otimes ⊗ emptyset ∅ varnothing ∅ ell ℓ partial ∂ sum ∑ prod ∏ int ∫ cdot ⋅ star ⋆ sqsubseteq ⊑ sqcup ⊔ sqcap ⊓ uparrow ↑ downarrow ↓ hookrightarrow ↪ leadsto ⇝ triangleq ≜"
+    .split(" ")
+    .flatMap((word, i, all) => (i % 2 ? [] : [[word, all[i + 1]]])),
+);
+// A sentence of source as it reads: citations as [key, …] with their notes,
+// references as [ref], footnotes left to their own sentences, formatting
+// commands and braces gone.
+function prose(source: string, from: number, to: number, commands: Command[], map: Layout) {
+  const own = map.note(from);
+  const cuts: { start: number; end: number; text: string }[] = [];
+  for (const command of commands) {
+    if (command.end <= from || command.start >= to) continue;
+    const keys = [...new Set(command.keys.map((k) => k.key))].join(", "),
+      [pre, post] = command.notes.length > 1 ? command.notes : ["", command.notes[0] ?? ""];
+    cuts.push({ start: command.start, end: command.end, text: `\u0000${pre.trim() ? pre.trim() + " " : ""}${keys}${post.trim() ? ", " + post.trim() : ""}\u0001` });
+  }
+  for (const [open, close] of map.notes) {
+    if (open > from && close < to && (!own || own[0] !== open)) {
+      const command = source.lastIndexOf("\\footnote", open);
+      cuts.push({ start: command, end: close + 1, text: "" });
+    }
+  }
+  cuts.sort((a, b) => a.start - b.start);
+  let text = "",
+    at = from;
+  for (const cut of cuts) {
+    if (cut.end <= at) continue;
+    text += source.slice(at, Math.max(at, cut.start)) + cut.text;
+    at = Math.max(at, cut.end);
+  }
+  text += source.slice(at, to);
+  return plain(
+    text
+      // A displayed formula stands as one; inline math is kept, as types and terms are claims too.
+      .replace(/\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]/g, " [formula] ")
+      .replace(/\\(?:ref|eqref|cref|Cref|autoref|pageref|nameref|vref)\*?\s*\{[^{}]*\}/g, "[ref]")
+      // Boxes and table rules keep their text and lose their sizes.
+      .replace(/\\(?:raisebox|scalebox)\s*\{[^{}]*\}(?:\s*\[[^\]]*\])*|\\resizebox\*?\s*\{[^{}]*\}\s*\{[^{}]*\}|\\(?:makebox|framebox|parbox)\s*(?:\[[^\]]*\]\s*)*(?:\{[^{}]*\}(?=\s*\{))?|\\multicolumn\s*\{[^{}]*\}\s*\{[^{}]*\}|\\(?:cmidrule|cline)\s*(?:\([^)]*\))?\s*\{[^{}]*\}/g, "")
+      .replace(/\\(?:label|index|hypertarget|hspace|vspace|includegraphics|rule|phantom|hphantom|vphantom|setlength|addtolength)\*?\s*(?:\[[^\]]*\]\s*)?(?:\{[^{}]*\}\s*){0,2}/g, "")
+      // Names plain() knows, such as Greek letters, stay for it to write.
+      .replace(/\\([A-Za-z]{2,})\*?(?![A-Za-z])/g, (match, name: string) => SYMBOLS[name] ?? WORDS[name] ?? (FORMATTING.has(name) ? "" : plain(match) ? match : name)),
+  )
+    .replace(/[{}$]/g, "")
+    .replace(/~/g, " ")
+    .replace(/\u0000/g, "[")
+    .replace(/\u0001/g, "]")
+    .replace(/\s+([,.;:!?)])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** A place the document cites works, with the sentence that makes the claim. */
+export interface CitingSentence { keys: string[]; file: string; line: number; section: string | null; sentence: string }
+/** Every sentence that cites works, in reading order, with all the works it
+ * cites, for checking what they say against it. \nocite adds to the
+ * bibliography without a claim, so it is left out. */
+export function citingSentences(doc: Document): CitingSentence[] {
+  const { files } = documentFiles((f) => doc.read(f), doc.main),
+    found: CitingSentence[] = [];
+  for (const file of files) {
+    const text = doc.read(file);
+    if (text == null) continue;
+    const source = texSource(text),
+      lineAt = lines(source),
+      commands = citeCommands(source),
+      map = layout(text, source),
+      sentences = new Map<string, CitingSentence>();
+    for (const command of commands) {
+      const keys = [...new Set(command.keys.map((k) => k.key))].filter((key) => key !== "*");
+      if (command.name === "nocite" || !keys.length) continue;
+      const [from, to] = sentenceAround(source, map, command, commands),
+        known = sentences.get(`${from}:${to}`);
+      if (known) {
+        known.keys = [...new Set([...known.keys, ...keys])];
+        continue;
+      }
+      const line = lineAt(command.keys[0].at),
+        sentence: CitingSentence = { keys, file, line, section: sectionOf(doc, file, line), sentence: prose(source, from, to, commands, map) };
+      sentences.set(`${from}:${to}`, sentence);
+      found.push(sentence);
     }
   }
   return found;
