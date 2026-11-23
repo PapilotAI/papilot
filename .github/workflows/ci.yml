@@ -325,6 +325,9 @@ jobs:
       - name: local-agents
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-local-agents.mjs
+      - name: agent-choices
+        if: ${{ !cancelled() }}
+        run: node --import tsx scripts/check-agent-choices.mjs
       - name: skill-library
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-skill-library.mjs

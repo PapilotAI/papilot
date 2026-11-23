@@ -160,6 +160,54 @@ export class Workspace extends EventEmitter {
       this.runtimes.collaboration.error = errorText(error); this.runtimes.collaboration.connected = false; this.emit('change');
     });
   }
+  // Agents the author turned off in Settings → Agents are neither started nor
+  // offered, and their hidden models are left out of the pickers. A task that
+  // already uses an agent that is off starts it when the task continues.
+  get agentsOff(): AgentId[] {
+    const saved = this.store.preference<unknown>('agents-off');
+    return Array.isArray(saved) ? AGENTS.filter(id => id !== 'collaboration' && saved.includes(id)) : [];
+  }
+  get hiddenModels(): Partial<Record<AgentId, string[]>> {
+    const saved = this.store.preference<Record<string, unknown>>('hidden-models');
+    return Object.fromEntries(AGENTS.flatMap(id => {
+      const models = saved?.[id];
+      return Array.isArray(models) && models.length ? [[id, models.filter((model): model is string => typeof model === 'string')]] : [];
+    }));
+  }
+  agentOff(id: AgentId) { return this.agentsOff.includes(id); }
+  setAgentEnabled(id: AgentId, enabled: boolean) {
+    const others = this.agentsOff.filter(item => item !== id);
+    this.store.savePreference('agents-off', enabled ? others.length ? others : undefined : [...others, id]);
+    this.woken.delete(id);
+    this.emit('change');
+    if (enabled) this.startTurnedOn([id]);
+  }
+  setHiddenModels(id: AgentId, models: string[]) {
+    const hidden = { ...this.hiddenModels, [id]: [...new Set(models)] };
+    if (!models.length) delete hidden[id];
+    this.store.savePreference('hidden-models', Object.keys(hidden).length ? hidden : undefined);
+    this.emit('change');
+  }
+  // Turns every agent back on and shows every model.
+  resetAgentSettings() {
+    const off = this.agentsOff;
+    this.store.transaction(() => { this.store.savePreference('agents-off', undefined); this.store.savePreference('hidden-models', undefined); });
+    this.woken.clear();
+    this.emit('change');
+    this.startTurnedOn(off);
+  }
+  private startTurnedOn(ids: AgentId[]) {
+    for (const id of ids) if (!this.agents[id].ready) void this.refreshAgent(id).then(() => this.schedule(), error => {
+      this.runtimes[id].error = errorText(error); this.runtimes[id].connected = false; this.emit('change');
+    });
+  }
+  // Agents that are off but started for a task that continued, until they disconnect.
+  private woken = new Set<AgentId>();
+  private wake(id: AgentId) {
+    if (this.woken.has(id)) return;
+    this.woken.add(id);
+    void this.connectAgent(id, true).catch(error => { this.runtimes[id].error = errorText(error); }).finally(() => { this.emit('change'); this.schedule(); });
+  }
   get collaborationRoutes(): CollaborationRoutes { return collaborationRoutes(this.store.preference('collaboration-routes')); }
   collaborationSettings(): CollaborationSettings { return { enabled: this.collaborationEnabled, routes: this.collaborationRoutes }; }
   setCollaborationRoutes(routes: CollaborationRoutes) { this.store.savePreference('collaboration-routes', collaborationRoutes(routes)); this.emit('change'); }
@@ -335,6 +383,7 @@ export class Workspace extends EventEmitter {
   private disconnected(id: AgentId, e: unknown) {
     if (this.closing) return;
     this.connectionEpochs.set(id, (this.connectionEpochs.get(id) || 0) + 1);
+    this.woken.delete(id);
     this.runtimes[id].connected = false; this.runtimes[id].error = errorText(e);
     for (const [key, request] of this.requests) if (request.agent === id) this.requests.delete(key);
     for (const [taskId, run] of this.active) {
@@ -361,7 +410,12 @@ export class Workspace extends EventEmitter {
     if (usesCodex(id)) { this.loaded.clear(); this.codexUsage.clear(); }
     this.emit('change');
   }
-  snapshot(): Snapshot { return { version: VERSION, projects: this.store.projects(), manuscriptNoteCounts: this.store.manuscriptNoteCounts(), tasks: this.store.tasks(), pinnedTaskIds: this.store.pinnedTaskIds(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimes }; }
+  snapshot(): Snapshot { return { version: VERSION, projects: this.store.projects(), manuscriptNoteCounts: this.store.manuscriptNoteCounts(), tasks: this.store.tasks(), pinnedTaskIds: this.store.pinnedTaskIds(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimeStatus() }; }
+  // Each agent's status with the author's choices in Settings → Agents.
+  private runtimeStatus() {
+    const off = this.agentsOff, hidden = this.hiddenModels;
+    return Object.fromEntries(AGENTS.map(id => [id, { ...this.runtimes[id], ...(off.includes(id) ? { hidden: true } : {}), ...(hidden[id] ? { hiddenModels: hidden[id] } : {}) }])) as Record<AgentId, RuntimeStatus>;
+  }
   /** Loads the SDKs of the agents this host has before the server answers
    *  requests. Evaluating one blocks for up to a few hundred milliseconds,
    *  which would otherwise hold up whatever the app asked for while the
@@ -369,11 +423,13 @@ export class Workspace extends EventEmitter {
   async preload() {
     await Promise.all(AGENTS.map(async id => {
       const agent = this.agents[id];
+      if (this.agentOff(id)) return;
       try { if (agent.preload && (!agent.detect || await agent.detect()) && !this.closing) await agent.preload(); } catch { /* Connecting reports it. */ }
     }));
   }
   async connect() {
     if (this.connecting) return this.connecting;
+    this.woken.clear();
     this.connecting = Promise.all(AGENTS.map(id => this.connectAgent(id))).then(() => { this.emit('change'); this.schedule(); }).finally(() => { this.connecting = null; });
     return this.connecting;
   }
@@ -382,9 +438,10 @@ export class Workspace extends EventEmitter {
     await this.connectAgent(id);
     this.emit('change');
   }
-  private async connectAgent(id: AgentId) {
+  private async connectAgent(id: AgentId, wake = false) {
     if (this.closing) return;
     if (id === 'collaboration' && !this.collaborationEnabled && !this.store.tasks().some(task => task.agent === 'collaboration')) return;
+    if (!wake && this.agentOff(id)) return;
     const agent = this.agents[id], runtime = this.runtimes[id], name = AGENT_NAMES[id];
     // An agent that is not on this host is neither started nor offered;
     // Reconnect looks again. A running agent stays connected.
@@ -555,6 +612,7 @@ export class Workspace extends EventEmitter {
       return this.retryTask(existing.id);
     }
     if (input.agent === 'collaboration' && !this.collaborationEnabled) throw new Error('Enable collaboration mode in Settings → Experiments first.');
+    if (this.agentOff(input.agent || 'codex')) throw new Error('Turn this agent on in Settings → Agents first.');
     if (input.agent === 'collaboration' && input.prepareReview) throw new Error('Choose Codex for an AI review. Collaboration mode edits annotations.');
     if (input.prepareReview) this.requireReviewAgent(input.agent || 'codex');
     this.validateTaskPermissions(input.permissions ?? 'workspace', input.agent || 'codex', Boolean(input.prepareReview));
@@ -626,6 +684,7 @@ export class Workspace extends EventEmitter {
     }
     const destination = () => {
       if (input.agent === 'collaboration' && !this.collaborationEnabled) throw new Error('Enable collaboration mode before selecting it.');
+      if (this.agentOff(input.agent)) throw new Error('Turn this agent on in Settings → Agents first.');
       if (input.agent === 'collaboration' && task.mode === 'review') throw new Error('Choose Codex for an AI review. Collaboration mode edits annotations.');
       if (task.mode === 'review') this.requireReviewAgent(input.agent);
       const runtime = this.runtimes[input.agent];
@@ -907,7 +966,7 @@ export class Workspace extends EventEmitter {
     if (this.closing) return;
     for (const run of this.store.runs().filter(r => r.status === 'queued')) {
       const agent = this.agentOf(this.store.task(run.taskId));
-      if (!this.agents[agent].ready || !this.runtimes[agent].authenticated) continue;
+      if (!this.agents[agent].ready || !this.runtimes[agent].authenticated) { if (this.agentOff(agent)) this.wake(agent); continue; }
       if (this.switching.has(run.taskId) || this.active.has(run.taskId) || this.reviewWrites.has(run.taskId) || this.publishing.has(run.taskId) || this.store.task(run.taskId).delivery?.pending || BUSY.has(this.store.task(run.taskId).status) || this.store.task(run.taskId).preparation) continue;
       const started = { ...run, startedAt: Date.now() };
       this.active.set(run.taskId, started);
@@ -1992,13 +2051,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       }
       if (options.readOnly && this.agents[choice.agent].supportsReadOnlyTasks === false) throw new Error('The selected commit-message agent does not support read-only tasks. Choose another in Settings → Git.');
     }
-    const id = choice.agent && usable(choice.agent) ? choice.agent : AGENTS.find(usable);
+    const id = choice.agent && usable(choice.agent) ? choice.agent : AGENTS.find(id => !this.agentOff(id) && usable(id));
     if (!id) {
       if (options.readOnly) throw new Error('Connect an agent that supports read-only tasks, such as Codex.');
       throw new Error(`Sign in to an agent, such as Codex, to ${task}.`);
     }
-    const models = this.runtimes[id].models;
-    return { id, model: (options.light ? lightModel(models) : undefined) || models.find(item => item.id === choice.model) || models.find(item => item.isDefault) };
+    const models = this.runtimes[id].models, hidden = this.hiddenModels[id] || [];
+    return { id, model: (options.light ? lightModel(models.filter(model => !hidden.includes(model.id))) : undefined) || models.find(item => item.id === choice.model) || models.find(item => item.isDefault) };
   }
   async diagnoseLatexBuild(root: string, prompt: string, choice: { agent: AgentId; model?: string; projectId?: string }) {
     const id = choice.agent, runtime = this.runtimes[id];

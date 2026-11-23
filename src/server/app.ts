@@ -380,6 +380,18 @@ export async function buildApp(options: AppOptions) {
     if (enabled !== undefined) workspace.setCollaborationEnabled(enabled);
     return workspace.collaborationSettings();
   });
+  // Turns an agent on or off, hides some of its models, or resets both.
+  app.post('/api/agent-settings', (request, reply) => {
+    const { agent, enabled, hiddenModels, reset } = (request.body as any) || {};
+    if (reset === true) { workspace.resetAgentSettings(); return { ok: true }; }
+    if (!isAgentId(agent) || agent === 'collaboration') return reply.code(400).send({ error: 'Unknown agent.' });
+    if (enabled === undefined && hiddenModels === undefined) return reply.code(400).send({ error: 'Send enabled or hiddenModels.' });
+    if (enabled !== undefined && typeof enabled !== 'boolean') return reply.code(400).send({ error: 'Send enabled as true or false.' });
+    if (hiddenModels !== undefined && !(Array.isArray(hiddenModels) && hiddenModels.every(model => typeof model === 'string' && model))) return reply.code(400).send({ error: 'Send hiddenModels as a list of model IDs.' });
+    if (hiddenModels !== undefined) workspace.setHiddenModels(agent, hiddenModels);
+    if (enabled !== undefined) workspace.setAgentEnabled(agent, enabled);
+    return { ok: true };
+  });
   app.get('/api/indirect-changes', () => ({ indirectChanges: indirectChanges() }));
   const alternativePreferences = () => ({ noteAlternatives: store.preference<boolean>('note-alternatives') === true, noteAlternativeRange: noteAlternativeRange(store.preference('note-alternative-range')) });
   app.get('/api/note-alternatives', alternativePreferences);

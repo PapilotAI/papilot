@@ -12,7 +12,7 @@ import { findSkill } from '../src/server/skills.ts';
 import { reviewInstructions } from '../src/conversation.ts';
 import { RpcResponseError, Codex } from '../src/server/codex.ts';
 import type { ReviewClient } from '../src/server/review.ts';
-import { AGENT_IDS, type PendingReview, type Run, type Task } from '../src/shared.ts';
+import { AGENT_IDS, type AgentId, type PendingReview, type Run, type Task } from '../src/shared.ts';
 import { visibleTimeline } from '../src/web/refresh.ts';
 import { noteOptionsKey } from '../src/server/note-options.ts';
 
@@ -4235,5 +4235,64 @@ test('ordinary Codex turns receive native paper tools and a scoped compatibility
     await (f.workspace as any).toolCall(task, { id: 100, params: { tool: 'annotation_create', arguments: { comment: 'Comment' } } }, f.codex);
     const reply = f.codex.replies.find(item => item.id === 100)!.result as any;
     assert.equal(reply.success, true); assert.equal(JSON.parse(reply.contentItems[0].text).saved, true);
+  } finally { f.close(); }
+});
+
+test('an agent turned off is neither started nor offered, and a task already on it starts it when it continues', async () => {
+  const claude = new FakeCodex(), f = fixture(undefined, { claude });
+  try {
+    let starts = 0;
+    Object.assign(claude, { start: async () => { starts++; claude.ready = true; } });
+    claude.handler = async (method: string) => method === 'account/read' ? { account: { email: 'author@example.com' } }
+      : method === 'model/list' ? { data: [{ id: 'opus', displayName: 'Opus', isDefault: true }] }
+      : method === 'turn/start' ? { turn: { id: 'claude-turn' } } : { thread: { id: 'claude-thread' } };
+    f.workspace.setAgentEnabled('claude', false);
+    assert.deepEqual(f.store.preference('agents-off'), ['claude']);
+    assert.equal(f.workspace.snapshot().runtimes?.claude?.hidden, true);
+    assert.equal(f.workspace.snapshot().runtimes?.codex?.hidden, undefined);
+    await (f.workspace as any).connectAgent('claude');
+    assert.equal(starts, 0, 'connecting skips an agent that is off');
+    await assert.rejects(f.workspace.createTask({ id: 'claude-task-12345', projectId: 'paper', title: 'Task', instructions: 'Edit', agent: 'claude' }), /Turn this agent on in Settings → Agents first/);
+    await assert.rejects(f.workspace.switchTaskAgent(f.task.id, { agent: 'claude', model: 'opus' }), /Turn this agent on in Settings → Agents first/);
+
+    f.store.updateTask(f.task.id, { agent: 'claude', threadId: null, status: 'queued' });
+    f.store.saveRun({ id: 'continued', taskId: f.task.id, requestKey: 'continued', prompt: 'Continue.', status: 'queued', createdAt: Date.now(), finishedAt: null });
+    await (f.workspace as any).drain();
+    await until(() => starts === 1 && f.workspace.runtimes.claude.authenticated);
+    await until(() => claude.calls.some(call => call.method === 'turn/start'));
+    assert.equal(f.workspace.snapshot().runtimes?.claude?.hidden, true, 'starting it for the task keeps it off for new tasks');
+    await (f.workspace as any).drain();
+    assert.equal(starts, 1, 'the agent is started once');
+
+    f.workspace.setAgentEnabled('claude', true);
+    assert.equal(f.store.preference('agents-off'), undefined);
+    assert.equal(f.workspace.snapshot().runtimes?.claude?.hidden, undefined);
+    assert.equal(starts, 1, 'turning on a running agent does not start it again');
+  } finally { f.close(); }
+});
+
+test('hidden models stay out of automatic choices, and reset turns every agent on and shows every model', async () => {
+  const claude = new FakeCodex(), f = fixture(undefined, { claude });
+  try {
+    const model = (id: string, isDefault = false) => ({ id, name: id, isDefault, efforts: [], defaultEffort: null });
+    f.codex.ready = true; claude.ready = true;
+    f.workspace.runtime.models = [model('gpt-6.1-sol', true), model('gpt-6-luna')];
+    f.workspace.runtimes.claude = { connected: true, authenticated: true, account: null, error: null, models: [model('opus', true), model('haiku')] };
+    const helper = (choice: { agent?: AgentId; model?: string }, light = false) => (f.workspace as any).helper(choice, 'write a commit message', { light });
+    assert.equal(helper({}, true).model.id, 'gpt-6-luna');
+    f.workspace.setHiddenModels('codex', ['gpt-6-luna', 'gpt-6-luna']);
+    assert.deepEqual(f.workspace.snapshot().runtimes?.codex?.hiddenModels, ['gpt-6-luna']);
+    assert.equal(helper({}, true).model.id, 'gpt-6.1-sol', 'a light helper does not pick a hidden model');
+    f.workspace.setAgentEnabled('codex', false);
+    assert.equal(helper({}).id, 'claude', 'an automatic helper skips an agent that is off');
+    assert.equal(helper({ agent: 'codex' }).id, 'codex', 'a running agent chosen explicitly can still help');
+    f.workspace.setHiddenModels('claude', ['haiku']);
+    f.workspace.resetAgentSettings();
+    assert.equal(f.store.preference('agents-off'), undefined);
+    assert.equal(f.store.preference('hidden-models'), undefined);
+    const runtimes = f.workspace.snapshot().runtimes!;
+    assert.ok(!runtimes.codex?.hidden && !runtimes.codex?.hiddenModels && !runtimes.claude?.hiddenModels);
+    f.workspace.setHiddenModels('claude', []);
+    assert.equal(f.store.preference('hidden-models'), undefined, 'an empty list removes the saved choice');
   } finally { f.close(); }
 });

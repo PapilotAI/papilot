@@ -1282,6 +1282,26 @@ test('indirect changes stay off until enabled in settings', async () => {
   } finally { await f.close(); }
 });
 
+test('agents can be turned off, their models hidden, and both reset in settings', async () => {
+  const f = await fixture();
+  try {
+    const owner = { ...LOCAL, origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'local-csrf' };
+    const post = (payload: object) => f.local.inject({ method: 'POST', url: '/api/agent-settings', headers: owner, payload });
+    const runtimes = async () => (await f.local.inject({ url: '/api/state', headers: LOCAL })).json().runtimes;
+    for (const payload of [{}, { agent: 'unknown', enabled: false }, { agent: 'collaboration', enabled: true }, { agent: 'claude' }, { agent: 'claude', enabled: 'no' }, { agent: 'claude', hiddenModels: 'opus' }, { agent: 'claude', hiddenModels: [''] }, { reset: 'yes' }])
+      assert.equal((await post(payload)).statusCode, 400, JSON.stringify(payload));
+    assert.equal((await post({ agent: 'kimi', enabled: false })).statusCode, 200);
+    assert.equal((await post({ agent: 'claude', hiddenModels: ['haiku'] })).statusCode, 200);
+    let state = await runtimes();
+    assert.equal(state.kimi.hidden, true);
+    assert.deepEqual(state.claude.hiddenModels, ['haiku']);
+    assert.equal((await post({ reset: true })).statusCode, 200);
+    state = await runtimes();
+    assert.equal(state.kimi.hidden, undefined);
+    assert.equal(state.claude.hiddenModels, undefined);
+  } finally { await f.close(); }
+});
+
 test('the note alternatives default is validated and saved for future editing turns', async () => {
   const f = await fixture();
   try {

@@ -460,9 +460,9 @@
     "model": "codex"
   },
   "Reset": {
-    "revision": "e8b339e2f67a9509c32c8e245ab05a9ae0154d467c3b5509941dc3f3e0145308",
+    "revision": "0e1f984cb24cf49f0c082f789059c0856021b5c6bcc33c3958ccb21ed157a17a",
     "textHash": "cb5d682bac3d1a2d0012ad9d472f38630b60b4f2849d99b2ae3b4d109a962d87",
-    "model": "codex"
+    "model": "gemini-4-argon-medium"
   },
   "Right margin": {
     "revision": "4d238615ff09f6de5a7688c079c498ed9142289596b1b6f4c7523d9b53c34d40",

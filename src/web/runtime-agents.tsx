@@ -1,10 +1,10 @@
 import { agentLabel } from './agent-choice.ts';
-import { useEffect, useRef, useState } from 'react';
-import { AGENT_IDS, type AgentId, type DiagnosticReport, type RuntimeStatus } from '../shared.ts';
+import { useEffect, useId, useRef, useState } from 'react';
+import { AGENT_IDS, type AgentId, type AgentSettingsChange, type DiagnosticReport, type RuntimeStatus } from '../shared.ts';
 import info from 'virtual:papilot-info';
 import { BrandIcon } from './brand-icon.tsx';
 import { Icon } from './icons.tsx';
-import { errorText, t } from './i18n.ts';
+import { errorText, t, tn } from './i18n.ts';
 import { UsageSummary } from './usage.tsx';
 import { agentSetup } from './agent-setup.ts';
 import { RuntimeModels } from './runtime-models.tsx';
@@ -38,23 +38,41 @@ function connectionInfo(id: AgentId) {
 }
 
 // A disconnected host cannot confirm availability or current account usage.
-function agentAvailability(online: boolean, runtime?: RuntimeStatus) {
+function agentAvailability(online: boolean, runtime?: RuntimeStatus, off = false) {
+  if (off) return 'off';
   if (!online || !runtime) return 'unknown';
   if (runtime.installed === false) return 'missing';
   if (runtime.connected) return runtime.authenticated ? runtime.usage?.reached ? 'limited' : 'ready' : 'signin';
   return runtime.error ? 'unavailable' : 'connecting';
 }
 
-export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, checkAgain, reconnect, writer }: { online: boolean; runtimes: Partial<Record<AgentId, RuntimeStatus>>; report: DiagnosticReport | null; busy: boolean; checkFailed: boolean; checkAgain: () => void; reconnect: () => Promise<void>; writer?: (route: string, body?: unknown) => Promise<WriterAuth> }) {
+export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, checkAgain, reconnect, writer, save }: { online: boolean; runtimes: Partial<Record<AgentId, RuntimeStatus>>; report: DiagnosticReport | null; busy: boolean; checkFailed: boolean; checkAgain: () => void; reconnect: () => Promise<void>; writer?: (route: string, body?: unknown) => Promise<WriterAuth>; save?: (change: AgentSettingsChange) => Promise<void> }) {
   const [selected, setSelected] = useState<AgentId | null>(null);
+  const names = useId();
+  // Choices being saved show at once, until the host reports them.
+  const [pending, setPending] = useState<Record<string, { token: number; value: boolean | string[] }>>({});
+  const [saveError, setSaveError] = useState(false), [resetting, setResetting] = useState(false);
+  const tokens = useRef(0);
+  const isOff = (id: AgentId) => id !== 'collaboration' && Boolean((pending[`off:${id}`]?.value as boolean | undefined) ?? runtimes[id]?.hidden);
+  const hiddenOf = (id: AgentId) => (pending[`models:${id}`]?.value as string[] | undefined) ?? runtimes[id]?.hiddenModels ?? [];
+  async function apply(key: string, value: boolean | string[], change: AgentSettingsChange) {
+    const token = ++tokens.current;
+    setSaveError(false); setPending(current => ({ ...current, [key]: { token, value } }));
+    try { await save!(change); } catch { setSaveError(true); }
+    finally { setPending(current => { if (current[key]?.token !== token) return current; const { [key]: _, ...rest } = current; return rest; }); }
+  }
+  async function reset() {
+    tokens.current++; setPending({}); setSaveError(false); setResetting(true);
+    try { await save!({ reset: true }); } catch { setSaveError(true); } finally { setResetting(false); }
+  }
   const cards = useRef<Partial<Record<AgentId, HTMLButtonElement | null>>>({});
   const [reconnecting, setReconnecting] = useState(false), [reconnectError, setReconnectError] = useState(false);
-  const labels = { ready: t('Ready'), limited: t('Limit reached'), missing: t('Not detected'), signin: t('Sign-in required'), connecting: t('Connecting…'), unavailable: t('Unavailable'), unknown: t('Unknown') };
-  const icons = { ready: 'check', limited: 'alert', missing: 'minus', signin: 'key', connecting: 'refresh', unavailable: 'alert', unknown: 'minus' };
+  const labels = { ready: t('Ready'), limited: t('Limit reached'), missing: t('Not detected'), signin: t('Sign-in required'), connecting: t('Connecting…'), unavailable: t('Unavailable'), unknown: t('Unknown'), off: t('Off') };
+  const icons = { ready: 'check', limited: 'alert', missing: 'minus', signin: 'key', connecting: 'refresh', unavailable: 'alert', unknown: 'minus', off: 'pause' };
   useEffect(() => { setReconnectError(false); }, [selected]);
   const close = () => { if (selected) cards.current[selected]?.focus(); setSelected(null); };
   const runtime = selected ? runtimes[selected] : undefined;
-  const state = agentAvailability(online, runtime);
+  const state = agentAvailability(online, runtime, selected ? isOff(selected) : false);
   const setup = selected ? connectionInfo(selected) : null;
   const checked = report?.checks.find(item => item.id === `agent.${selected}`);
   const current = online && runtime?.connected && runtime.authenticated;
@@ -65,17 +83,25 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
     setReconnecting(true); setReconnectError(false);
     try { await reconnect(); } catch { setReconnectError(true); } finally { setReconnecting(false); }
   }
+  // Ready agents first and agents that are off last.
+  const rank = (availability: string) => availability === 'ready' || availability === 'limited' ? 0 : availability === 'off' ? 2 : 1;
   const agents = AGENT_IDS.filter(id => id !== 'collaboration' || runtimes.collaboration?.hidden === false).map(id => {
-    const availability = agentAvailability(online, runtimes[id]);
-    return { id, availability, active: availability === 'ready' || availability === 'limited' } as const;
-  }).sort((a, b) => Number(b.active) - Number(a.active));
+    const availability = agentAvailability(online, runtimes[id], isOff(id));
+    return { id, availability } as const;
+  }).sort((a, b) => rank(a.availability) - rank(b.availability));
+  const off = AGENT_IDS.filter(isOff).length, hiddenModels = AGENT_IDS.reduce((count, id) => count + hiddenOf(id).length, 0);
+  const choices = [...(off ? [tn(off, '{n} agent off', '{n} agents off')] : []), ...(hiddenModels ? [tn(hiddenModels, '{n} model hidden', '{n} models hidden')] : [])];
   const tiles = [
     ...agents.map(({ id, availability }) => {
-        return <li key={id} className="diagnostic-agent-card" data-agent={id} data-availability={availability}>
+        // Collaboration mode is turned on and off in Settings → Experiments,
+        // and an agent that is not on this host has nothing to turn off.
+        const toggle = save && id !== 'collaboration' && availability !== 'missing';
+        return <li key={id} className={'diagnostic-agent-card' + (toggle ? ' has-switch' : '')} data-agent={id} data-availability={availability}>
           <button type="button" className="diagnostic-agent-button" ref={element => { cards.current[id] = element; }} aria-label={t('{agent} details', { agent: agentLabel(id) })} aria-expanded={selected === id} aria-controls={selected === id ? 'runtime-agent-detail' : undefined} title={availability === 'missing' ? agentSetup(id).reason : t('View installation, account, and usage')} onClick={() => selected === id ? close() : setSelected(id)} onKeyDown={event => { if (event.key === 'Escape' && selected === id) { event.preventDefault(); event.stopPropagation(); close(); } }}>
-            <div className="diagnostic-agent-heading"><BrandIcon name={id} size={28}/><h4>{agentLabel(id)}{id === 'papilot' && <small className="diagnostic-agent-subtitle">{t('Based on Pi')}</small>}</h4></div>
+            <div className="diagnostic-agent-heading"><BrandIcon name={id} size={28}/><h4 id={`${names}-${id}`}>{agentLabel(id)}{id === 'papilot' && <small className="diagnostic-agent-subtitle">{t('Based on Pi')}</small>}</h4></div>
             <div className="diagnostic-agent-footer"><span className={'diagnostic-availability ' + availability}><Icon name={icons[availability]} size={13}/>{labels[availability]}</span><span className="diagnostic-agent-chevron"><Icon name={selected === id ? 'chevronUp' : 'chevronDown'} size={14}/></span></div>
           </button>
+          {toggle && <input type="checkbox" role="switch" className="switch diagnostic-agent-switch" aria-labelledby={`${names}-${id}`} disabled={!online || resetting} checked={!isOff(id)} onChange={event => void apply(`off:${id}`, !event.target.checked, { agent: id, enabled: event.target.checked })}/>}
         </li>;
       }),
       <li key="contribute" className="diagnostic-agent-card runtime-agent-contribute">
@@ -89,6 +115,7 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
       </li>,
   ];
   const setupGuide = <a className="runtime-agent-guide" href={`${info.repository}/blob/main/docs/guide.md#agents`} target="_blank" rel="noopener noreferrer">{t('Setup guide')}<Icon name="external" size={12}/><span className="sr-only">{t('Opens in a new tab')}</span></a>;
+  const modelChoices = (id: AgentId) => save && id !== 'collaboration' ? { hidden: hiddenOf(id), onHide: (models: string[]) => void apply(`models:${id}`, models, { agent: id, hiddenModels: models }) } : {};
   const drawer = selected && setup && <section className={'runtime-agent-detail runtime-agent-compact settings-card settings-card-body' + (selected === 'papilot' ? ' runtime-agent-writer' : '')} id="runtime-agent-detail" aria-labelledby="runtime-agent-title" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
       <header className="runtime-agent-header">
         {selected === 'papilot' && <BrandIcon name="papilot" size={22}/>}
@@ -96,9 +123,9 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
         {current && selected !== 'papilot' && <span className="runtime-agent-account" aria-label={t('Account')}>{runtime.account || t('Signed in')}</span>}
         <button type="button" className="icon-button" aria-label={t('Close agent details')} onClick={close}><Icon name="close" size={16}/></button>
       </header>
-      {selected === 'papilot' ? <>
+      {state === 'off' ? <p className="runtime-agent-note">{t('Off. Papilot does not start it or offer it for new tasks.')}</p> : selected === 'papilot' ? <>
         {writer ? <WriterSetup writer={writer} online={online}/> : <p className="runtime-agent-note">{t('Connect to view account, models, and usage.')}</p>}
-        {current && <details className="writer-models"><summary>{t('Available models')}<span>{runtime.models.length}</span></summary><RuntimeModels key={selected} models={runtime.models} connected/></details>}
+        {current && <details className="writer-models"><summary>{t('Available models')}<span>{runtime.models.length}</span></summary><RuntimeModels key={selected} models={runtime.models} connected {...modelChoices(selected)}/></details>}
       </> : <>
       {blocked && guidance && <section className="runtime-agent-help" aria-label={t('Set up this agent')}>
         <p className="runtime-agent-reason" title={runtime?.error || undefined}>{state === 'missing' ? checked?.ok ? t('The latest configuration check found this agent. Reconnect to refresh its live status.') : guidance.summary : state === 'signin' ? t('Sign in on the Papilot host to continue.') : runtime?.error || t('The agent could not connect. Check its setup and try again.')}</p>
@@ -108,7 +135,7 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
         {reconnectError && <p role="alert">{t('Could not reconnect. Check the server connection and try again.')}</p>}
       </section>}
       {current ? <div className="runtime-agent-overview">
-        <RuntimeModels key={selected} models={runtime.models} connected/>
+        <RuntimeModels key={selected} models={runtime.models} connected {...modelChoices(selected)}/>
         <section className="runtime-agent-usage">
           <h5>{t('Usage & limits')}</h5>
           {runtime.usage ? <UsageSummary usage={runtime.usage} agent={agentLabel(selected)} expanded/> : <p className="runtime-agent-note">{t('Usage not reported')}</p>}
@@ -133,6 +160,11 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
     </section>;
   const selectedIndex = agents.findIndex(agent => agent.id === selected);
   return <section aria-label={t('Agents')}>
+    {save && choices.length > 0 && <div className="runtime-agent-choices">
+      <span id={`${names}-choices`}>{choices.length > 1 ? t('{agents} and {models}', { agents: choices[0], models: choices[1] }) : choices[0]}</span>
+      <button type="button" className="button secondary compact" aria-describedby={`${names}-choices`} title={t('Turn every agent on and show every model')} disabled={!online || resetting} onClick={() => void reset()}><Icon name="restore" size={13}/>{t('Reset')}</button>
+    </div>}
+    {saveError && <p className="runtime-agent-save-error" role="alert">{t('Could not save the change. Check the server connection and try again.')}</p>}
     <RuntimeCardGrid tiles={tiles} selectedIndex={selectedIndex} drawer={drawer}/>
   </section>;
 }

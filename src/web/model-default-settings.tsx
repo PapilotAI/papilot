@@ -1,5 +1,6 @@
 import type { AgentId } from '../shared.ts';
 import type { AgentOption } from './agent-picker.tsx';
+import { shownModels } from './agent-choice.ts';
 import { ChipSelect } from './chip-select.tsx';
 import { EffortSlider } from './effort-slider.tsx';
 import { t } from './i18n.ts';
@@ -16,7 +17,7 @@ export interface ModelDefaultSettingsProps {
 // Use the same catalog and saved choices as the new-task composer.
 export function ModelDefaultSettings({ agents, agent, model, effort, onSelect, onEffort }: ModelDefaultSettingsProps) {
   const groups = agents.map(option => {
-    const models = option.runtime?.models || [], fallback = models.find(item => item.isDefault);
+    const models = shownModels(option.runtime, option.value === agent ? model : undefined), fallback = models.find(item => item.isDefault);
     return { ...option, choices: [
       { id: '', name: fallback ? `${fallback.name || fallback.id} · ${t('Default')}` : t('Default model') },
       ...models,
