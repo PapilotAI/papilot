@@ -20,6 +20,15 @@ export function shownModels(runtime: RuntimeStatus | undefined, chosen?: string)
   const hidden = runtime?.hiddenModels || [];
   return (runtime?.models || []).filter(model => model.id === chosen || !hidden.includes(model.id));
 }
+// The default model an agent uses when the author did not pick one: the host
+// default, or the first shown model if the author hid that default. When the
+// host default is unknown, return undefined instead of guessing.
+export function defaultOfferedModel(runtime: RuntimeStatus | undefined) {
+  const models = runtime?.models || [], fallback = models.find(model => model.isDefault);
+  if (!fallback) return undefined;
+  const hidden = runtime?.hiddenModels || [];
+  return hidden.includes(fallback.id) ? models.find(model => !hidden.includes(model.id)) || fallback : fallback;
+}
 export function agentsSettled(runtimes: Partial<Record<AgentId, RuntimeStatus>>) {
   const reported = Object.values(runtimes).filter(runtime => runtime && !runtime.hidden);
   return reported.length > 0 && reported.every(runtime => runtime.connected || Boolean(runtime.error) || runtime.installed === false);

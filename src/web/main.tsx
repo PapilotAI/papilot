@@ -1,7 +1,7 @@
 import '../../engine/src/web/legacy-storage.ts';
 import { TaskDocument } from './task-document.tsx';
 import { requestApi, requestState } from './api.ts';
-import { agentLabel, agentsSettled, chosenAgent, noAgent, offeredAgents, shownModels } from './agent-choice.ts';
+import { agentLabel, agentsSettled, chosenAgent, defaultOfferedModel, noAgent, offeredAgents } from './agent-choice.ts';
 import { isPlayground, pdfAsset, wordAsset, requestPlaygroundDownload } from './playground-mode.ts';
 import { annotationGroupState, canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
 import { NOTE_SORT_MODES, groupNoteEntries, isNoteSortMode, sortNoteEntries, type NoteSortMode } from '../note-sort.ts';
@@ -1709,9 +1709,9 @@ function App() {
   const writerReady = Boolean(runtimes.papilot?.connected && runtimes.papilot.authenticated);
   const suggestWriter = !writerDismissed && !missingAgent && savedAgent !== null && agentChoice !== 'papilot' && offered.includes('papilot');
   const effectivePermissions = readPermissionPreference(agentChoice, runtimes[agentChoice]);
-  const models = runtimes[agentChoice]?.models || [], offeredModels = shownModels(runtimes[agentChoice]), preferredModel = agentModels[agentChoice];
+  const models = runtimes[agentChoice]?.models || [], preferredModel = agentModels[agentChoice];
   const chosenModel = models.length && !models.some(m => m.id === preferredModel) ? '' : preferredModel;
-  const modelInfo = models.find(m => m.id === chosenModel) || offeredModels.find(m => m.isDefault) || offeredModels[0] || models.find(m => m.isDefault);
+  const modelInfo = models.find(m => m.id === chosenModel) || defaultOfferedModel(runtimes[agentChoice]);
   const pref = readModelPreferences(agentChoice, chosenModel, modelInfo) || { effort: isPlayground && agentChoice === 'codex' ? 'xhigh' : null, fast: false };
   const agent = { agent: agentChoice, model: modelInfo?.id || chosenModel, effort: taskEffort(pref.effort, modelInfo), serviceTier: agentChoice === 'codex' ? (pref.fast && modelInfo?.fastMode ? modelInfo.fastMode.serviceTier : 'default') : undefined };
   const conversationHelper: CommitMessageChoice = commitContext ? {

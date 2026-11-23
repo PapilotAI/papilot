@@ -433,11 +433,11 @@ try {
   await codexCard.click();
   await agentDetail.getByRole('button', { name: 'Show 2 more models', exact: true }).waitFor();
   assert.equal(await codexCard.evaluate(element => element === document.activeElement), true, 'Opening the drawer keeps focus on its trigger');
-  assert.equal(await agentDetail.locator('.runtime-model-list li').count(), 6);
-  assert.deepEqual((await agentDetail.locator('.runtime-model-list li>span').allTextContents()).slice(0, 2), ['Fast model', 'Deep model']);
-  assert.equal(await agentDetail.locator('.runtime-model-list li').first().getAttribute('title'), 'fast-model');
+  assert.equal(await agentDetail.locator('.runtime-model-list button').count(), 6);
+  assert.deepEqual((await agentDetail.locator('.runtime-model-list button>span').allTextContents()).slice(0, 2), ['Fast model', 'Deep model']);
+  assert.equal(await agentDetail.locator('.runtime-model-list button').first().getAttribute('title'), 'fast-model');
   await agentDetail.getByRole('button', { name: 'Show 2 more models', exact: true }).click();
-  assert.equal(await agentDetail.locator('.runtime-model-list li').count(), 8);
+  assert.equal(await agentDetail.locator('.runtime-model-list button').count(), 8);
   assert.equal(await codexCard.getAttribute('aria-expanded'), 'true');
   assert.equal(await agentDetail.getByRole('meter').getAttribute('aria-valuenow'), '83');
   await agentDetail.getByText('12,418 credits', { exact: true }).waitFor();
@@ -449,7 +449,7 @@ try {
   await diagnostics.locator('.settings-content').evaluate(element => { element.scrollTop = 0; });
   await page.screenshot({ path: 'test-results/settings-agent-details-desktop.png', animations: 'disabled' });
   await agentDetail.getByRole('button', { name: 'Show fewer models', exact: true }).click();
-  assert.equal(await agentDetail.locator('.runtime-model-list li').count(), 6);
+  assert.equal(await agentDetail.locator('.runtime-model-list button').count(), 6);
   snapshot.runtime.models = originalCatalog;
   snapshot.runtime.usage.reached = true;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { agentOff, agentsSettled, chosenAgent, noAgent, offeredAgents, shownModels } from '../src/web/agent-choice.ts';
+import { agentOff, agentsSettled, chosenAgent, defaultOfferedModel, noAgent, offeredAgents, shownModels } from '../src/web/agent-choice.ts';
 import { AGENT_IDS, type RuntimeStatus } from '../src/shared.ts';
 
 const runtime = (installed?: boolean): RuntimeStatus => ({ connected: false, authenticated: false, account: null, error: null, models: [], ...(installed === undefined ? {} : { installed }) });
@@ -78,6 +78,9 @@ test('agents turned off are not offered, and hidden models leave the pickers exc
   const model = (id: string, isDefault = false) => ({ id, name: id, isDefault, efforts: [], defaultEffort: null });
   const codex = { ...ready, models: [model('sol', true), model('luna'), model('nova')], hiddenModels: ['sol', 'luna'] };
   assert.deepEqual(shownModels(codex).map(item => item.id), ['nova'], 'the default model can be hidden too');
+  assert.equal(defaultOfferedModel(codex)?.id, 'nova', 'a hidden default falls back to the first shown model');
+  assert.equal(defaultOfferedModel({ ...codex, hiddenModels: undefined })?.id, 'sol', 'an unhidden default is kept');
+  assert.equal(defaultOfferedModel({ ...ready, models: [model('sol'), model('luna')] }), undefined, 'an unknown host default is not guessed');
   assert.deepEqual(shownModels(codex, 'luna').map(item => item.id), ['luna', 'nova'], 'a model already chosen stays selectable');
   assert.deepEqual(shownModels({ ...codex, hiddenModels: ['sol', 'luna', 'nova'] }), []);
   assert.deepEqual(shownModels({ ...codex, hiddenModels: undefined }).map(item => item.id), ['sol', 'luna', 'nova']);
