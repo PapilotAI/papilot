@@ -4,6 +4,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-11-23
+
+Choose among a note's alternatives without holding up the review, let the conflict-resolution agent prepare merge suggestions, and select text anywhere on a review's whole PDF. See the [release notes](docs/releases/0.14.1/release-notes.md) for update instructions.
+
 ### Changed
 
 - **The conflict-resolution agent prepares merge suggestions too.** When saving a task finds that the manuscript changed in overlapping passages, the agent chosen under **Settings → Git → Conflict-resolution agent** now prepares the merge suggestion instead of the task's own agent. It takes over the task's conversation for the merge and can ask about passages it cannot settle. The merge waits until that agent is connected; if it cannot take the task, the merge ends with an error instead of running on another agent. Once the merge is saved, the task returns to its own agent and settings. With **Follow current conversation**, the task's agent prepares it as before. ([#331](https://github.com/PapilotAI/papilot/pull/331))
@@ -16,6 +20,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 - **Typing a paper name right away no longer clears where the paper is saved.** In **New paper**, the default folder arrives just after the dialog opens; typing the name at that moment could put back the empty folder from before it arrived. The import dialog's fields update the same safe way. ([#330](https://github.com/PapilotAI/papilot/pull/330))
 - **A review's toolbar no longer jumps between one and two rows when the comparison rebuilds.** The PDF controls left the toolbar while the round's comparison rendered again, so on a narrow window the toolbar changed rows and moved the pages. They now stay in place, disabled, until the whole paper is back. ([#332](https://github.com/PapilotAI/papilot/pull/332))
 - **Text can be selected anywhere on a review's whole-paper PDF.** Only the changes' before and after rows could be selected, because the rest of each page was drawn as an image. The pages now carry a text layer, as the manuscript's PDF does, and a drag through the margin stops at the line's end. ([#332](https://github.com/PapilotAI/papilot/pull/332))
+
+### Updates
+
+The desktop app updates from 0.14.0 in **Settings → Updates** without a new installer, because the desktop shell is unchanged. CLI/server installations update with `npm install -g papilot@0.14.1`; APT, AUR, and other managed installations update through their package manager.
 
 ## [0.14.0] - 2026-11-23
 
@@ -763,7 +771,8 @@ The first release on npm.
 - A Git panel to diff files, commit the chosen ones, and fetch, pull or push.
 - Remote access through Tailscale, and a background service on macOS.
 
-[Unreleased]: https://github.com/PapilotAI/papilot/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/PapilotAI/papilot/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/PapilotAI/papilot/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/PapilotAI/papilot/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/PapilotAI/papilot/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/PapilotAI/papilot/compare/v0.12.0...v0.12.1
