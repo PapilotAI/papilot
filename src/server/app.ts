@@ -410,6 +410,18 @@ export async function buildApp(options: AppOptions) {
     return workspace.collaborationSettings();
   });
   // Turns an agent on or off, hides some of its models, or resets both.
+  // The model quick background jobs use: null lets each job pick the small
+  // model of the agent it would use anyway.
+  const quickModelState = () => ({ choice: workspace.quickModel() });
+  app.get('/api/quick-model', quickModelState);
+  app.post('/api/quick-model', (request, reply) => {
+    const { agent, model, effort } = (request.body as any) || {};
+    if (agent === null) { workspace.setQuickModel(null); return quickModelState(); }
+    if (!isAgentId(agent) || agent === 'collaboration') return reply.code(400).send({ error: 'Unknown agent.' });
+    if ((model !== undefined && model !== null && typeof model !== 'string') || (effort !== undefined && effort !== null && typeof effort !== 'string')) return reply.code(400).send({ error: 'Choose a model and reasoning effort.' });
+    workspace.setQuickModel({ agent, model: model || null, effort: effort || null });
+    return quickModelState();
+  });
   app.post('/api/agent-settings', (request, reply) => {
     const { agent, enabled, hiddenModels, reset } = (request.body as any) || {};
     if (reset === true) { workspace.resetAgentSettings(); return { ok: true }; }

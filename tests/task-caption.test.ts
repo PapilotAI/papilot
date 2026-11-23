@@ -153,3 +153,22 @@ test('caption parsing handles long interior padding without repeated suffix scan
   assert.equal(taskCaptionFrom('prefix' + ' '.repeat(100000) + 'suffix'), 'prefix suffix');
   assert.equal(taskCaptionFrom('```text\n' + ' '.repeat(100000) + 'A title\n```'), 'A title');
 });
+
+test('the quick model in Settings names tasks, and a signed-out choice falls back to the task agent\'s small model', async () => {
+  const f = fixture();
+  try {
+    assert.equal(f.workspace.quickModel(), null);
+    f.workspace.setQuickModel({ agent: 'codex', model: 'large', effort: 'high' });
+    const chosen = f.workspace.generateTaskTitle(f.task.id); await tick();
+    const start = f.agent.calls.findLast(call => call.method === 'thread/start' && call.params.ephemeral)!.params;
+    assert.equal(start.model, 'large');
+    assert.equal(f.agent.calls.findLast(call => call.method === 'turn/start' && call.params.threadId.startsWith('caption-'))!.params.effort, 'high');
+    f.agent.reply('Chosen model title'); await chosen;
+    f.workspace.setQuickModel({ agent: 'deepseek', model: 'deepseek/deepseek-v4.1-flash-ultrafast', effort: null });
+    const fallback = f.workspace.generateTaskTitle(f.task.id); await tick();
+    assert.equal(f.agent.calls.findLast(call => call.method === 'thread/start' && call.params.ephemeral)!.params.model, 'small-mini', 'DeepSeek is not signed in here');
+    f.agent.reply('Fallback title'); await fallback;
+    f.workspace.setQuickModel(null);
+    assert.equal(f.workspace.quickModel(), null);
+  } finally { f.close(); }
+});

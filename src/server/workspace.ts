@@ -45,7 +45,7 @@ import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress, recentCommitSubjects } from './manuscript.ts';
 import { Memory, memoryDigest, memoryUpdate } from './memory.ts';
 import { MEMORY_EVIDENCE, MEMORY_LANGUAGE, MEMORY_LEARNING, MEMORY_SINCE, acceptedSuggestions, dismissedKey, evidenceHash, hasEvidence, learningPrompt, memoryLearningInstructions, taskEvidence, type EvidenceRecord, type MemoryEvidence } from './memory-learning.ts';
-import { AGENT_IDS, usesCodex, isTaskReviewNote, collaborationRoutes, type CollaborationRole, type CollaborationRoutes, type CollaborationSettings } from '../shared.ts';
+import { AGENT_IDS, isAgentId, usesCodex, isTaskReviewNote, collaborationRoutes, type CollaborationRole, type CollaborationRoutes, type CollaborationSettings } from '../shared.ts';
 import type { HelperChoice, Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, PendingBuild, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview, PageView, ToolPlace } from '../shared.ts';
 
 const execute = promisify(execFile);
@@ -120,6 +120,8 @@ const signInFailure = (error: { message?: unknown; codexErrorInfo?: unknown } | 
 // by the names agents give them (GPT Luna and mini, Claude Haiku, Gemini Flash).
 const LIGHT = /\b(?:luna|mini|nano|haiku|flash|lite)\b/i;
 export const lightModel = (models: AgentModel[]) => models.find(model => LIGHT.test(model.id) || LIGHT.test(model.name));
+export const QUICK_MODEL = 'quick-model';
+export interface QuickModel { agent: AgentId; model: string | null; effort: string | null }
 // A commit message's agent sees the changes in its prompt and needs no tools.
 function commitInstructions(language: CommitMessageLanguage = 'auto') {
   const languageRule = language === 'auto'
@@ -2166,6 +2168,32 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const items = feedback.feedback || [];
     return { unsent: items.length, comments: items.filter(item => item.kind === 'comment' || item.kind === 'note').length };
   }
+  /** The model for quick background jobs, such as checking citations and
+   * naming tasks: the author's choice in Settings, or null to let each job
+   * use the small model of the agent it would use anyway. */
+  quickModel(): QuickModel | null {
+    const choice = this.store.preference<QuickModel | null>(QUICK_MODEL);
+    return choice && isAgentId(choice.agent) ? choice : null;
+  }
+  setQuickModel(choice: QuickModel | null) { this.store.savePreference(QUICK_MODEL, choice); }
+  // The agent, model and effort for a quick job. The author's choice wins
+  // while it is signed in; otherwise the fallback agent's small model does it.
+  private quick(fallback: { agent?: AgentId; model?: string }, what: string) {
+    const choice = this.quickModel();
+    if (choice && !this.agentOff(choice.agent) && this.agents[choice.agent].ready && this.runtimes[choice.agent].authenticated && this.agents[choice.agent].supportsReadOnlyTasks !== false) {
+      const models = this.runtimes[choice.agent].models, model = models.find(item => item.id === choice.model) || lightModel(models) || models.find(item => item.isDefault);
+      return { id: choice.agent, model, effort: choice.effort && model?.efforts.includes(choice.effort) ? choice.effort : model?.efforts[0] };
+    }
+    const { id, model } = this.helper(fallback, what, { light: true, readOnly: true });
+    return { id, model, effort: model?.efforts[0] };
+  }
+  /** One quick job's reply, from a read-only turn that has everything it
+   * needs in its prompt, and the agent and model that wrote it. */
+  async quickReply(options: { instructions: string; prompt: string; what: string; projectId?: string; timeout?: number }) {
+    const { id, model, effort } = this.quick({}, options.what);
+    const reply = await this.oneOff(id, { cwd: os.tmpdir(), sandbox: 'read-only', instructions: options.instructions, prompt: options.prompt, model, effort, timeout: options.timeout ?? 180000, what: options.what, projectId: options.projectId });
+    return { reply, agent: id, model: model?.name || model?.id || null };
+  }
   // The agent that writes a commit message or resolves a merge: the one the
   // author chose, or else the first that is signed in, with the chosen model
   // or the default one; light asks for the agent's small model when it has one.
@@ -2318,13 +2346,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     const pending = this.titles.get(taskId);
     if (pending) return pending;
-    const { id, model } = this.helper({ agent: this.agentOf(task), model: task.model || undefined }, 'generate a task title', { light: true, readOnly: true });
+    const { id, model, effort } = this.quick({ agent: this.agentOf(task), model: task.model || undefined }, 'generate a task title');
     const items = this.store.items(taskId), first = items.find(item => item.type === 'user');
     const outcome = items.findLast(item => item.type === 'assistant' && item.text);
     const prompt = JSON.stringify({ request: first?.text || '', taskContext: task.instructions, existingOutcome: outcome?.text || '' });
     const revision = task.titleRevision || 0;
     this.store.updateTask(taskId, { titleGeneration: 'pending' });
-    const written = this.oneOff(id, { cwd: this.store.project(task.projectId).path, sandbox: 'read-only', instructions: taskCaptionInstructions, prompt, model, effort: model?.efforts[0], timeout: 45000, what: 'generate a task title', projectId: task.projectId, taskId }).then(reply => {
+    const written = this.oneOff(id, { cwd: this.store.project(task.projectId).path, sandbox: 'read-only', instructions: taskCaptionInstructions, prompt, model, effort, timeout: 45000, what: 'generate a task title', projectId: task.projectId, taskId }).then(reply => {
       if (this.closing) return null;
       const current = this.store.findTask(taskId);
       if (!current || current.status === 'deleting' || (current.titleRevision || 0) !== revision) return current || null;
