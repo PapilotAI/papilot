@@ -4283,9 +4283,17 @@ test('hidden models stay out of automatic choices, and reset turns every agent o
     f.workspace.setHiddenModels('codex', ['gpt-6-luna', 'gpt-6-luna']);
     assert.deepEqual(f.workspace.snapshot().runtimes?.codex?.hiddenModels, ['gpt-6-luna']);
     assert.equal(helper({}, true).model.id, 'gpt-6.1-sol', 'a light helper does not pick a hidden model');
-    f.workspace.setAgentEnabled('codex', false);
+    f.workspace.setHiddenModels('codex', ['gpt-6.1-sol']);
+    assert.equal(helper({}).model.id, 'gpt-6-luna', 'hiding the default model lets helpers pick another offered model');
+    f.workspace.setHiddenModels('codex', ['gpt-6.1-sol', 'gpt-6-luna']);
+    assert.equal(f.workspace.snapshot().runtimes?.codex?.hidden, true, 'hiding every model of an agent turns the agent off');
+    assert.equal(f.workspace.snapshot().runtimes?.codex?.hiddenModels, undefined, 'turning an agent off by hiding all models clears its hidden list');
     assert.equal(helper({}).id, 'claude', 'an automatic helper skips an agent that is off');
     assert.equal(helper({ agent: 'codex' }).id, 'codex', 'a running agent chosen explicitly can still help');
+    f.workspace.setAgentEnabled('codex', true);
+    assert.equal(f.workspace.snapshot().runtimes?.codex?.hidden, undefined);
+    assert.equal(f.workspace.snapshot().runtimes?.codex?.hiddenModels, undefined, 'turning the agent back on leaves its models offered');
+    f.workspace.setAgentEnabled('codex', false);
     f.workspace.setHiddenModels('claude', ['haiku']);
     f.workspace.resetAgentSettings();
     assert.equal(f.store.preference('agents-off'), undefined);

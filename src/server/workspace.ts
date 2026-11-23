@@ -177,14 +177,38 @@ export class Workspace extends EventEmitter {
   agentOff(id: AgentId) { return this.agentsOff.includes(id); }
   setAgentEnabled(id: AgentId, enabled: boolean) {
     const others = this.agentsOff.filter(item => item !== id);
-    this.store.savePreference('agents-off', enabled ? others.length ? others : undefined : [...others, id]);
+    const known = this.runtimes[id].models, currentHidden = this.hiddenModels[id] || [];
+    const clearHidden = enabled && known.length > 0 && known.every(model => currentHidden.includes(model.id));
+    this.store.transaction(() => {
+      this.store.savePreference('agents-off', enabled ? others.length ? others : undefined : [...others, id]);
+      if (clearHidden) {
+        const hidden = { ...this.hiddenModels };
+        delete hidden[id];
+        this.store.savePreference('hidden-models', Object.keys(hidden).length ? hidden : undefined);
+      }
+    });
     this.woken.delete(id);
     this.emit('change');
     if (enabled) this.startTurnedOn([id]);
   }
   setHiddenModels(id: AgentId, models: string[]) {
-    const hidden = { ...this.hiddenModels, [id]: [...new Set(models)] };
-    if (!models.length) delete hidden[id];
+    const unique = [...new Set(models)], known = this.runtimes[id].models;
+    // Hiding every model of an agent turns the agent off and clears its hidden list
+    // so turning it back on later restores its models instead of leaving 0 selected.
+    if (known.length > 0 && known.every(model => unique.includes(model.id))) {
+      const hidden = { ...this.hiddenModels };
+      delete hidden[id];
+      const others = this.agentsOff.filter(item => item !== id);
+      this.store.transaction(() => {
+        this.store.savePreference('hidden-models', Object.keys(hidden).length ? hidden : undefined);
+        this.store.savePreference('agents-off', [...others, id]);
+      });
+      this.woken.delete(id);
+      this.emit('change');
+      return;
+    }
+    const hidden = { ...this.hiddenModels, [id]: unique };
+    if (!unique.length) delete hidden[id];
     this.store.savePreference('hidden-models', Object.keys(hidden).length ? hidden : undefined);
     this.emit('change');
   }
@@ -2056,8 +2080,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       if (options.readOnly) throw new Error('Connect an agent that supports read-only tasks, such as Codex.');
       throw new Error(`Sign in to an agent, such as Codex, to ${task}.`);
     }
-    const models = this.runtimes[id].models, hidden = this.hiddenModels[id] || [];
-    return { id, model: (options.light ? lightModel(models.filter(model => !hidden.includes(model.id))) : undefined) || models.find(item => item.id === choice.model) || models.find(item => item.isDefault) };
+    const models = this.runtimes[id].models, hidden = this.hiddenModels[id] || [], offered = models.filter(model => !hidden.includes(model.id));
+    return { id, model: (options.light ? lightModel(offered) : undefined) || models.find(item => item.id === choice.model) || offered.find(item => item.isDefault) || offered[0] || models.find(item => item.isDefault) };
   }
   async diagnoseLatexBuild(root: string, prompt: string, choice: { agent: AgentId; model?: string; projectId?: string }) {
     const id = choice.agent, runtime = this.runtimes[id];

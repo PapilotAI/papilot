@@ -55,11 +55,28 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
   const tokens = useRef(0);
   const isOff = (id: AgentId) => id !== 'collaboration' && Boolean((pending[`off:${id}`]?.value as boolean | undefined) ?? runtimes[id]?.hidden);
   const hiddenOf = (id: AgentId) => (pending[`models:${id}`]?.value as string[] | undefined) ?? runtimes[id]?.hiddenModels ?? [];
-  async function apply(key: string, value: boolean | string[], change: AgentSettingsChange) {
+  async function apply(updates: Record<string, boolean | string[]>, change: AgentSettingsChange) {
     const token = ++tokens.current;
-    setSaveError(false); setPending(current => ({ ...current, [key]: { token, value } }));
+    setSaveError(false);
+    setPending(current => {
+      const next = { ...current };
+      for (const [key, value] of Object.entries(updates)) next[key] = { token, value };
+      return next;
+    });
     try { await save!(change); } catch { setSaveError(true); }
-    finally { setPending(current => { if (current[key]?.token !== token) return current; const { [key]: _, ...rest } = current; return rest; }); }
+    finally {
+      setPending(current => {
+        const next = { ...current };
+        for (const key of Object.keys(updates)) if (next[key]?.token === token) delete next[key];
+        return next;
+      });
+    }
+  }
+  function toggleAgent(id: AgentId, enabled: boolean) {
+    const list = runtimes[id]?.models || [];
+    const allHidden = enabled && list.length > 0 && list.every(model => hiddenOf(id).includes(model.id));
+    if (allHidden) void apply({ [`off:${id}`]: false, [`models:${id}`]: [] }, { agent: id, enabled: true, hiddenModels: [] });
+    else void apply({ [`off:${id}`]: !enabled }, { agent: id, enabled });
   }
   async function reset() {
     tokens.current++; setPending({}); setSaveError(false); setResetting(true);
@@ -101,7 +118,7 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
             <div className="diagnostic-agent-heading"><BrandIcon name={id} size={28}/><h4 id={`${names}-${id}`}>{agentLabel(id)}{id === 'papilot' && <small className="diagnostic-agent-subtitle">{t('Based on Pi')}</small>}</h4></div>
             <div className="diagnostic-agent-footer"><span className={'diagnostic-availability ' + availability}><Icon name={icons[availability]} size={13}/>{labels[availability]}</span><span className="diagnostic-agent-chevron"><Icon name={selected === id ? 'chevronUp' : 'chevronDown'} size={14}/></span></div>
           </button>
-          {toggle && <input type="checkbox" role="switch" className="switch diagnostic-agent-switch" aria-labelledby={`${names}-${id}`} disabled={!online || resetting} checked={!isOff(id)} onChange={event => void apply(`off:${id}`, !event.target.checked, { agent: id, enabled: event.target.checked })}/>}
+          {toggle && <input type="checkbox" role="switch" className="switch diagnostic-agent-switch" aria-labelledby={`${names}-${id}`} disabled={!online || resetting} checked={!isOff(id)} onChange={event => toggleAgent(id, event.target.checked)}/>}
         </li>;
       }),
       <li key="contribute" className="diagnostic-agent-card runtime-agent-contribute">
@@ -115,7 +132,17 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
       </li>,
   ];
   const setupGuide = <a className="runtime-agent-guide" href={`${info.repository}/blob/main/docs/guide.md#agents`} target="_blank" rel="noopener noreferrer">{t('Setup guide')}<Icon name="external" size={12}/><span className="sr-only">{t('Opens in a new tab')}</span></a>;
-  const modelChoices = (id: AgentId) => save && id !== 'collaboration' ? { hidden: hiddenOf(id), onHide: (models: string[]) => void apply(`models:${id}`, models, { agent: id, hiddenModels: models }) } : {};
+  const modelChoices = (id: AgentId) => save && id !== 'collaboration' ? {
+    hidden: hiddenOf(id),
+    onHide: (models: string[]) => {
+      const list = runtimes[id]?.models || [];
+      if (list.length > 0 && list.every(model => models.includes(model.id))) {
+        void apply({ [`off:${id}`]: true, [`models:${id}`]: [] }, { agent: id, enabled: false, hiddenModels: [] });
+      } else {
+        void apply({ [`models:${id}`]: models }, { agent: id, hiddenModels: models });
+      }
+    },
+  } : {};
   const drawer = selected && setup && <section className={'runtime-agent-detail runtime-agent-compact settings-card settings-card-body' + (selected === 'papilot' ? ' runtime-agent-writer' : '')} id="runtime-agent-detail" aria-labelledby="runtime-agent-title" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
       <header className="runtime-agent-header">
         {selected === 'papilot' && <BrandIcon name="papilot" size={22}/>}

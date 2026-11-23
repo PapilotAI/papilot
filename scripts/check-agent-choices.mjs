@@ -94,8 +94,9 @@ try {
 
     await card('codex').locator('.diagnostic-agent-button').click();
     const models = page.locator('.runtime-agent-detail').getByRole('group');
-    await expect(models.getByRole('button')).toHaveCount(2);
-    await expect(models.getByRole('button', { name: 'GPT-6.1 Sol' }), 'the default model cannot be hidden').toHaveCount(0);
+    await expect(models.getByRole('button')).toHaveCount(3);
+    await expect(models.locator('.runtime-model-default')).toHaveCount(0);
+    await expect(models.getByRole('button', { name: 'GPT-6.1 Sol' }), 'every model is toggleable, with no locked default').toHaveAttribute('aria-pressed', 'true');
     await models.getByRole('button', { name: 'GPT-6 Luna' }).click();
     await expect(models.getByRole('button', { name: 'GPT-6 Luna' })).toHaveAttribute('aria-pressed', 'false');
     assert.deepEqual(changes.at(-1), { agent: 'codex', hiddenModels: ['luna'] });
@@ -122,20 +123,36 @@ try {
       await expect(card('claude')).toHaveAttribute('data-availability', 'ready');
       await card('codex').locator('.diagnostic-agent-button').click();
       await expect(models.getByRole('button', { name: 'GPT-6 Luna' })).toHaveAttribute('aria-pressed', 'true');
-      // Hide all, then show all, for one agent's models.
+      // Deselecting every model one by one turns the agent switch off; turning it back on restores all models.
+      await models.getByRole('button', { name: 'GPT-6.1 Sol' }).click();
+      await expect(models.getByRole('button', { name: 'GPT-6.1 Sol' })).toHaveAttribute('aria-pressed', 'false');
+      await models.getByRole('button', { name: 'GPT-6 Luna' }).click();
+      await models.getByRole('button', { name: 'GPT-6 Nova' }).click();
+      assert.deepEqual(changes.at(-1), { agent: 'codex', enabled: false, hiddenModels: [] });
+      await expect(card('codex')).toHaveAttribute('data-availability', 'off');
+      await expect(toggle('codex')).not.toBeChecked();
+      await expect(choices).toContainText('1 agent off');
+      await toggle('codex').click();
+      assert.deepEqual(changes.at(-1), { agent: 'codex', enabled: true });
+      await expect(card('codex')).toHaveAttribute('data-availability', 'ready');
+      await expect(toggle('codex')).toBeChecked();
+      await expect(models.getByRole('button', { pressed: true })).toHaveCount(3);
+      // Hide all with no search filter turns the agent off too.
       await page.locator('.runtime-models-actions').getByRole('button', { name: 'Hide all' }).click();
-      assert.deepEqual(changes.at(-1), { agent: 'codex', hiddenModels: ['luna', 'nova'] });
-      await expect(models.getByRole('button', { pressed: true })).toHaveCount(0);
-      await page.locator('.runtime-models-actions').getByRole('button', { name: 'Show all' }).click();
-      assert.deepEqual(changes.at(-1), { agent: 'codex', hiddenModels: [] });
-      await expect(models.getByRole('button', { pressed: true })).toHaveCount(2);
+      assert.deepEqual(changes.at(-1), { agent: 'codex', enabled: false, hiddenModels: [] });
+      await expect(card('codex')).toHaveAttribute('data-availability', 'off');
+      await expect(toggle('codex')).not.toBeChecked();
+      await toggle('codex').click();
+      await expect(card('codex')).toHaveAttribute('data-availability', 'ready');
+      await expect(models.getByRole('button', { pressed: true })).toHaveCount(3);
       // A long catalog is searched, and Hide all then hides only the matches.
       await card('opencode').locator('.diagnostic-agent-button').click();
-      await expect(models.getByRole('button')).toHaveCount(5);
+      await expect(models.getByRole('button')).toHaveCount(6);
       await page.getByRole('searchbox', { name: 'Search models' }).fill('deepseek');
       await expect(models.getByRole('button')).toHaveCount(2);
       await page.locator('.runtime-models-actions').getByRole('button', { name: 'Hide all' }).click();
       assert.deepEqual(changes.at(-1), { agent: 'opencode', hiddenModels: ['deepseek/v4-pro', 'deepseek/v4-flash'] });
+      await expect(toggle('opencode')).toBeChecked();
       await page.getByRole('searchbox', { name: 'Search models' }).fill('');
       await expect(page.locator('.runtime-agent-detail')).toContainText('6 of 8');
       await page.screenshot({ path: `test-results/agent-choices-search-${width}.png`, animations: 'disabled' });

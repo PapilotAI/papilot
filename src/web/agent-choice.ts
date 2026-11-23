@@ -15,10 +15,10 @@ export function noAgent(runtimes: Partial<Record<AgentId, RuntimeStatus>>) {
   return AGENT_IDS.every(id => agentOff(id, runtimes) || runtimes[id]?.installed === false);
 }
 // The models an agent offers in the pickers: those the author did not hide,
-// its default model, and the one already chosen.
+// and the one already chosen.
 export function shownModels(runtime: RuntimeStatus | undefined, chosen?: string) {
   const hidden = runtime?.hiddenModels || [];
-  return (runtime?.models || []).filter(model => model.isDefault || model.id === chosen || !hidden.includes(model.id));
+  return (runtime?.models || []).filter(model => model.id === chosen || !hidden.includes(model.id));
 }
 export function agentsSettled(runtimes: Partial<Record<AgentId, RuntimeStatus>>) {
   const reported = Object.values(runtimes).filter(runtime => runtime && !runtime.hidden);

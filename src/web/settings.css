@@ -261,10 +261,9 @@
 .runtime-models-actions button{font-size:12px;color:var(--accent)}
 .runtime-models-actions button:hover{text-decoration:underline;text-underline-offset:3px}
 /* Offered models are filled with a check; hidden ones are outlined and dimmed. */
-.runtime-model-toggles>:is(button,span){display:inline-flex;align-items:center;gap:4px;min-width:0;max-width:100%;min-height:24px;padding:2px 8px 2px 6px;border-radius:var(--r);font-size:11px;line-height:1.45;background:var(--bg-muted);color:var(--text);text-align:left}
-.runtime-model-toggles>:is(button,span)>span{min-width:0;overflow-wrap:anywhere}
-.runtime-model-toggles>:is(button,span)>svg{flex:none;color:var(--accent)}
-.runtime-model-toggles>span>small{flex:none;font-size:10px;color:var(--text-3)}
+.runtime-model-toggles>button{display:inline-flex;align-items:center;gap:4px;min-width:0;max-width:100%;min-height:24px;padding:2px 8px 2px 6px;border-radius:var(--r);font-size:11px;line-height:1.45;background:var(--bg-muted);color:var(--text);text-align:left}
+.runtime-model-toggles>button>span{min-width:0;overflow-wrap:anywhere}
+.runtime-model-toggles>button>svg{flex:none;color:var(--accent)}
 .runtime-model-toggles>button:hover{background:var(--bg-active)}
 .runtime-model-toggles>button[aria-pressed=false]{background:transparent;color:var(--text-3);box-shadow:inset 0 0 0 1px var(--line)}
 .runtime-model-toggles>button[aria-pressed=false]:hover{background:var(--bg-muted);color:var(--text-2)}
@@ -274,7 +273,7 @@
 .settings-dialog .runtime-model-search input,.settings-dialog .runtime-model-search input:is(:hover,:focus){height:100%;margin:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none;font-size:12px}
 .runtime-model-empty{margin:0;font-size:12px;color:var(--text-3)}
 .runtime-model-toggles>button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-@media(pointer:coarse){.runtime-model-toggles>:is(button,span){min-height:32px;font-size:13px}.runtime-models-actions button{min-height:32px;font-size:13px}.settings-dialog .runtime-model-search{max-width:none;height:36px}.settings-dialog .runtime-model-search input:is(*,:focus){font-size:16px}}
+@media(pointer:coarse){.runtime-model-toggles>button{min-height:32px;font-size:13px}.runtime-models-actions button{min-height:32px;font-size:13px}.settings-dialog .runtime-model-search{max-width:none;height:36px}.settings-dialog .runtime-model-search input:is(*,:focus){font-size:16px}}
 .runtime-model-more{display:inline-flex;align-items:center;gap:4px;margin-top:8px;font-size:12px;color:var(--text-2)}
 .runtime-model-more:hover{color:var(--text)}
 .runtime-agent-help{margin:0 0 16px;font-size:12px;color:var(--text-2);overflow-wrap:anywhere}

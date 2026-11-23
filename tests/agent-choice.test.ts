@@ -64,7 +64,7 @@ test('no agent is reported only after every runtime is known to be missing', () 
   assert.deepEqual(offeredAgents({ ...runtimes, claude: runtime(true) }), ['claude']);
 });
 
-test('agents turned off are not offered, and hidden models leave the pickers except the default and the current choice', () => {
+test('agents turned off are not offered, and hidden models leave the pickers except the current choice', () => {
   const ready = { ...runtime(true), connected: true, authenticated: true };
   const runtimes = { codex: { ...ready, hidden: true }, claude: ready, collaboration: { ...ready, hidden: false } };
   assert.equal(agentOff('codex', runtimes), true);
@@ -76,9 +76,10 @@ test('agents turned off are not offered, and hidden models leave the pickers exc
   assert.equal(noAgent({ ...missing, codex: { ...ready, hidden: true } }), true, 'nothing to offer when every agent is off or missing');
   assert.equal(noAgent({ ...missing, codex: ready }), false);
   const model = (id: string, isDefault = false) => ({ id, name: id, isDefault, efforts: [], defaultEffort: null });
-  const codex = { ...ready, models: [model('sol', true), model('luna'), model('nova')], hiddenModels: ['sol', 'luna', 'nova'] };
-  assert.deepEqual(shownModels(codex).map(item => item.id), ['sol']);
-  assert.deepEqual(shownModels(codex, 'luna').map(item => item.id), ['sol', 'luna']);
+  const codex = { ...ready, models: [model('sol', true), model('luna'), model('nova')], hiddenModels: ['sol', 'luna'] };
+  assert.deepEqual(shownModels(codex).map(item => item.id), ['nova'], 'the default model can be hidden too');
+  assert.deepEqual(shownModels(codex, 'luna').map(item => item.id), ['luna', 'nova'], 'a model already chosen stays selectable');
+  assert.deepEqual(shownModels({ ...codex, hiddenModels: ['sol', 'luna', 'nova'] }), []);
   assert.deepEqual(shownModels({ ...codex, hiddenModels: undefined }).map(item => item.id), ['sol', 'luna', 'nova']);
   assert.deepEqual(shownModels(undefined), []);
 });
