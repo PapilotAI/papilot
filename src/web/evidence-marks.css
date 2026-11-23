@@ -1,6 +1,6 @@
 /* Checked citations in the paper's PDF: a thin bar in the margin beside the
    sentence, one segment per cited work, worst first, and a card beside it. */
-.evidence-tag{position:absolute;z-index:3;display:flex;flex-direction:column;gap:2px;width:14px;min-height:12px;padding:0 5px;border:0;background:none;cursor:pointer;pointer-events:auto}
+.evidence-tag{position:absolute;z-index:3;display:flex;flex-direction:column;gap:2px;width:14px;min-height:6px;padding:0 5px;border:0;background:none;cursor:pointer;pointer-events:auto}
 .evidence-tag>span{flex:1;min-height:4px;border-radius:2px;background:var(--text-3)}
 .evidence-tag>[data-verdict=supported]{background:var(--green)}
 .evidence-tag>[data-verdict=partial]{background:var(--amber)}

@@ -67,7 +67,7 @@ function EvidenceTag({ mark, open, onToggle, onOpen }: { mark: EvidenceMark; ope
   const label = t('Citation check: {verdicts}', { verdicts: findings.map(finding => `${finding.key} ${verdictName(finding.verdict)}`).join(', ') });
   return <>
     <button ref={tag} type="button" className="evidence-tag" data-verdict={worst} aria-label={label} aria-expanded={open} aria-controls={open ? id : undefined}
-      style={{ left: `calc(${left * 100}% - 14px)`, top: `${top * 100}%`, height: `${Math.max(bottom - top, 0.012) * 100}%` }} onClick={() => onToggle(!open)}>
+      style={{ left: `calc(${left * 100}% - 14px)`, top: `${top * 100}%`, height: `${(bottom - top) * 100}%` }} onClick={() => onToggle(!open)}>
       {findings.map((finding, index) => <span key={index} data-verdict={finding.verdict}/>)}
     </button>
     {open && mark.rects.map((rect, index) => <div key={index} className="evidence-sentence" data-verdict={worst} style={{ left: `${rect[0] * 100}%`, top: `${rect[1] * 100}%`, width: `${(rect[2] - rect[0]) * 100}%`, height: `${(rect[3] - rect[1]) * 100}%` }}/>)}
