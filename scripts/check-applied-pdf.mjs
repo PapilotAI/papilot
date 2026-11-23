@@ -178,6 +178,7 @@ try {
   await word.scrollIntoViewIfNeeded();
   await word.dblclick();
   assert.match(await frame.locator('body').evaluate(() => getSelection()?.toString() ?? ''), /\w{3,}/, 'a word outside the changes can be selected');
+  await page.screenshot({ path: 'test-results/review-pdf-select.png' });
   // A drag into the margin ends at the line's end instead of taking the rest of the page.
   const lineStart = frame.locator('.paper-slice .textLayer span').filter({ hasText: /Fixture/ }).first();
   const start = await lineStart.boundingBox(), sliceBox = await lineStart.locator('xpath=ancestor::div[contains(@class,"paper-slice")]').boundingBox();
