@@ -104,14 +104,19 @@ test('timeline reads redact internal alternatives from saved assistant replies',
   } finally { await f.close(); }
 });
 
-test('task restart forwards destination permissions and model settings', async () => {
+test('switching a task agent forwards destination permissions and model settings', async () => {
   const f = await fixture(), choices: any[] = [];
-  f.workspace.restartTask = async (_task, choice) => { choices.push(choice); return f.store.task('thesis-task'); };
+  f.workspace.switchTaskAgent = async (_task, choice) => { choices.push(choice); return f.store.task('thesis-task'); };
   try {
-    const choice = { id: 'replacement-task-id', agent: 'claude', model: 'opus', effort: 'high', permissions: 'full', stop: true };
-    const response = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/restart', headers: f.as, payload: choice });
+    const choice = { agent: 'claude', model: 'opus', effort: 'high', permissions: 'full', stop: true };
+    const response = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/agent', headers: f.as, payload: choice });
     assert.equal(response.statusCode, 200, response.body);
-    assert.deepEqual(choices, [{ ...choice, serviceTier: undefined, draftAttachments: [] }]);
+    assert.deepEqual(choices, [{ ...choice, serviceTier: undefined }]);
+    for (const payload of [{ agent: 'unknown' }, { agent: 'claude', model: 5 }]) {
+      const rejected = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/agent', headers: f.as, payload });
+      assert.equal(rejected.statusCode, 400, rejected.body);
+    }
+    assert.equal(choices.length, 1);
   } finally { await f.close(); }
 });
 

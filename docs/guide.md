@@ -70,7 +70,7 @@ Papilot uses the `codex` on your `PATH` when it is version 0.164.0 or newer; oth
 
 ### Agents
 
-The model menu below the chat lists models from every configured agent. A circular arrow beside a model means selecting it restarts the task. Choosing another model from the current agent keeps the conversation and applies the model to the next turn. Choosing a model from another agent automatically stops the current task and reruns the original request on the current manuscript in a linked replacement task, with the original notes, source context, attachments and skill instructions. The original conversation, proposed changes and review decisions remain available. This action starts a fresh agent conversation; it does not resume the original agent's session or continue its unaccepted edits. The replacement starts only after the original task has stopped. Unsent text, skills and attachments are copied as a draft for you to review, without sending them automatically. Unsent review comments are copied as text with their original locations; review highlights are not transferred.
+The model menu below the chat lists models from every configured agent. Choosing another model from the current agent applies it to the next turn. Choosing a model from another agent moves the task to that agent: the conversation, proposed changes, review decisions and unsent drafts stay in the task. The next turn starts a session of the new agent, and Papilot gives it the conversation so far: each request and the replies to it, oldest first. Tool activity is left out, because the task's files already contain the earlier edits. If the task is working, its turn stops first. Instructions already queued behind that turn go to the new agent; your unsent draft stays in the composer. Tasks that Papilot 0.13 and earlier restarted on another agent still link to the task they replaced.
 
 Each task runs on one agent and model, chosen from the model menu below the prompt. The menu lists every available agent's models, grouped by agent with your recent choices first; type to search all of them, or use the arrow keys and Enter. Reasoning effort and fast mode for the chosen model sit below the list. Use the arrow keys on a focused reasoning slider to change its level. Papilot remembers the agent, and each agent's model and reasoning effort, for the next task. Papilot looks for every agent when it starts and whenever you select **Reconnect**, and offers only the ones it finds on this host: an installed CLI, or the API key an SDK-based agent needs. The `papilot` command always offers Codex, because it installs it; the desktop app offers it when it finds one. An agent that is found but not signed in is listed as unavailable and says why. **Settings → Runtime → Agents** shows every supported agent and its live availability, including agents that are not set up. Select an agent card to see its account, model names, setup instructions, installation checks, and usage limits when the agent reports them. Model names appear as compact labels, with the default marked and longer catalogs expandable. When setup is not detected, the card explains the server-side detection result, offers steps for that adapter, and provides Reconnect to refresh availability. Changes to environment variables require restarting Papilot; a different terminal or desktop-app login may not configure the running server. Details open within Settings; quotas are hidden while the connection is unavailable. The **LaTeX** page automatically identifies the active distribution (such as MacTeX, TeX Live, or MiKTeX), version, and installation location on the host.
 
@@ -363,6 +363,24 @@ Attach up to **10 files**, with **25 MB per file**, **5 MB per PNG, JPEG, GIF or
 Files are stored beside Papilot's database, outside the manuscript and task worktrees. Codex, Claude and Kimi receive supported raster images as native image inputs; other files are provided by their local paths for the agent to read with its tools. Antigravity receives image paths for its file/image tools rather than native image blocks. Reading a particular file format depends on the agent's tools; uploading does not automatically convert documents or import them into the paper. If you ask to use an attached figure or data file in the manuscript, the agent can copy it into its task worktree for review.
 
 Sending a draft attaches its files to that task. Deleting a task removes its stored attachments after task cleanup is confirmed. Unsent uploads expire after 30 days and are cleaned up during later uploads; each paper can keep up to 500 MB of unsent uploads.
+
+## Statistics
+
+Open **Settings → Statistics** to see what Papilot has done for you, across all papers or for one paper, over the last **7 days**, **30 days**, **90 days**, or **All time** (the default).
+
+- **Figures**: four numbers at the top.
+  - **Accepted changes** and **Rejected changes** count the changes you kept and the ones you stopped, across task reviews, uncommitted manuscript changes, and AI review suggestions.
+  - **Agent time** adds up how long agents worked on finished turns.
+  - **Tasks started** counts the tasks you started.
+- **Activity**: your active days, current streak, and longest streak, above a calendar with one square per day, shaded by how much happened that day. It shows as many weeks as fit, and ‹ › page back through earlier weeks. Days before the chosen range stay visible but fade. Hover a day, tap it, or move with the arrow keys to see its runs, decisions, and tokens.
+- **Cards**:
+  - **Reviews & notes**: your acceptance rate as a ring, with review comments, undos, annotations, and annotations sent to tasks.
+  - **Tokens**: the total, split into input, cached, cache write, and output, with the spend. Spend is provider-reported where the agent reports it. Otherwise it is an API-equivalent estimate (`~`) for known model IDs; models without known API pricing keep their token counts without guessed prices.
+  - **Active hours**: a weekday-by-hour heatmap of when you work, in local time, with the peak hour.
+  - **Agents & models**: tokens (or runs) by agent and by model, across editing tasks, AI reviews, collaboration workers, and background helpers.
+- **Share** draws the figures and the latest 26 weeks of activity into an image in your current theme and accent. Save it as a PNG, or copy or share it where the browser allows (Papilot on this computer or over HTTPS). Paper names are not included.
+
+Activity events are stored locally in your workspace SQLite database, backfilled once from existing tasks, runs, and annotations when upgrading, and kept even after individual tasks or papers are removed.
 
 ## Skills
 

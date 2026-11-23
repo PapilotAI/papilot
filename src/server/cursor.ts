@@ -152,6 +152,9 @@ export class CursorAgent extends Adapter {
         else if (message.type === 'assistant' && !streamed) for (const block of message.message?.content || []) if (block.type === 'text' && block.text) live += block.text;
       }
       const result = await run.wait();
+      if ((result as any)?.usage && typeof (result as any).usage === 'object') {
+        this.notify('turn/usage', { threadId: turn.threadId, turnId: turn.id, model: thread.model, usage: (result as any).usage });
+      }
       flush();
       if (stopped || result.status === 'cancelled') this.finish(turn, 'interrupted');
       else if (result.status === 'finished') this.finish(turn, 'completed');

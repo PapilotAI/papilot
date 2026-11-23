@@ -191,6 +191,16 @@ export class PaperTools {
         ...(spec.group ? { group: spec.group } : {}), ...(spec.stamp ? { stamp: spec.stamp } : {}),
         source: null, createdAt: Date.now(), agentAnnotation: { taskId: task.id, request: spec.request },
       });
+      this.store.recordActivity({
+        key: `note:${note.id}`,
+        at: note.createdAt,
+        kind: 'annotation_created',
+        projectId: task.projectId,
+        taskId: task.id,
+        agent: task.agent || 'codex',
+        model: task.model,
+        data: { source: 'agent', ...(spec.group ? { group: spec.group } : {}), projectName: this.store.findProject(task.projectId)?.name },
+      });
       // Source lookup is optional: the real PDF geometry is already sufficient.
       void this.manuscripts.locate(task.projectId, key, note.page, note.rect, note.rects, note.quote).then(({ source }) => {
         const saved = this.store.annotation(task.projectId, spec.id);

@@ -1,4 +1,5 @@
 import { PaperTools } from './paper-tools.ts';
+import { buildActivityReport, type ActivityEventRow } from './activity.ts';
 import { canonicalGroup, isNoteGroup, regroupAnnotation, sameAnnotationGroup } from '../note-groups.ts';
 import { isCommitMessageLanguage, type CommitMessageLanguage } from '../commit.ts';
 import { noteAlternativeRange, NOTE_ALTERNATIVE_RANGES, validRoutes, taskFinished, type InFlightMark } from '../shared.ts';
@@ -340,6 +341,11 @@ export async function buildApp(options: AppOptions) {
     const repo = projectId ? store.project(projectId).path : undefined;
     return diagnostics.check(repo, listener.port);
   });
+  app.get<{ Querystring: { tz?: string; projectId?: string; range?: string } }>('/api/activity', request => {
+    const { tz, projectId, range } = request.query || {};
+    if (projectId !== undefined && (typeof projectId !== 'string' || projectId.length > 64)) throw new Error('Select a valid paper to check.');
+    return buildActivityReport(store, { tz, projectId, range });
+  });
   if (options.updates) {
     app.get('/api/updates', () => options.updates!.snapshot());
     app.post('/api/updates/check', () => options.updates!.check());
@@ -530,13 +536,11 @@ export async function buildApp(options: AppOptions) {
   });
   // Retry for a task whose preparation failed; it answers at once as well.
   app.post<{ Params: { id: string } }>('/api/tasks/:id/prepare', task, request => workspace.retryTask(request.params.id));
-  app.post<{ Params: { id: string } }>('/api/tasks/:id/restart', task, request => {
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/agent', task, request => {
     const body = (request.body || {}) as any;
     if (!isAgentId(body.agent)) throw new Error('Choose a valid destination agent.');
     for (const key of ['model', 'effort', 'serviceTier']) if (body[key] !== undefined && typeof body[key] !== 'string') throw new Error('Choose valid destination model settings.');
-    return workspace.restartTask(request.params.id, { id: string(body.id, 'Task ID', 64), agent: body.agent,
-      model: typeof body.model === 'string' ? body.model : undefined, effort: typeof body.effort === 'string' ? body.effort : undefined,
-      serviceTier: typeof body.serviceTier === 'string' ? body.serviceTier : undefined, permissions: body.permissions, stop: body.stop === true, draftAttachments: attachmentIds(body.draftAttachments) });
+    return workspace.switchTaskAgent(request.params.id, { agent: body.agent, model: body.model, effort: body.effort, serviceTier: body.serviceTier, permissions: body.permissions, stop: body.stop === true });
   });
   app.get<{ Params: { id: string }; Querystring: { since?: string } }>('/api/tasks/:id/items', task, request => {
     store.task(request.params.id);
@@ -909,6 +913,13 @@ export async function buildApp(options: AppOptions) {
     let pushError: string | undefined;
     return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => {
       const commit = await gitCommit(project.path, message, chosen, b.amend === true);
+      store.recordActivity({
+        key: `commit:${project.id}:${String((commit as any)?.hash || commit || randomUUID())}`,
+        at: Date.now(),
+        kind: 'git_commit',
+        projectId: project.id,
+        data: { projectName: project.name },
+      });
       // The commit stands even when the push fails; the author can push again.
       if (b.push === true) try { await gitRemote(project.path, 'push'); } catch (error) { pushError = (error as Error).message; }
       return { commit, git: await gitStatus(project.path), ...(pushError ? { pushError } : {}) };
@@ -939,7 +950,17 @@ export async function buildApp(options: AppOptions) {
   });
   app.post<{ Params: { id: string } }>('/api/projects/:id/git/finish', project(), request => {
     const project = store.project(request.params.id);
-    return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => ({ commit: await gitFinishMerge(project.path), git: await gitStatus(project.path) })));
+    return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => {
+      const commit = await gitFinishMerge(project.path);
+      store.recordActivity({
+        key: `commit:${project.id}:${String((commit as any)?.hash || commit || randomUUID())}`,
+        at: Date.now(),
+        kind: 'git_commit',
+        projectId: project.id,
+        data: { projectName: project.name },
+      });
+      return { commit, git: await gitStatus(project.path) };
+    }));
   });
   app.post<{ Params: { id: string } }>('/api/projects/:id/git/abort', project(), request => {
     const project = store.project(request.params.id);
@@ -1062,6 +1083,13 @@ export async function buildApp(options: AppOptions) {
     if (settled && 'error' in settled) throw settled.error;
     const document = manuscripts.documentOf(project.id, key);
     const note = store.saveAnnotation({ id: randomUUID(), projectId: project.id, ...(document ? { document } : {}), key, page, rect: b.rect, ...(b.group ? { group: b.group } : {}), ...(b.kind ? { kind: b.kind } : {}), ...(stamp ? { stamp } : {}), ...(rects.length ? { rects } : {}), comment, quote: settled?.value.quote || selected, source: settled?.value.source ?? null, createdAt: Date.now() });
+    store.recordActivity({
+      key: `note:${note.id}`,
+      at: note.createdAt,
+      kind: 'annotation_created',
+      projectId: project.id,
+      data: { source: 'author', ...(note.group ? { group: note.group } : {}), ...(note.kind ? { markKind: note.kind } : {}), projectName: project.name },
+    });
     if (!settled) {
       const lookup = located.then(({ quote, source }) => {
         // Keep what the author changed meanwhile; a note moved to a newer PDF
@@ -1194,7 +1222,7 @@ export async function buildApp(options: AppOptions) {
     const selected = body?.agent;
     if (!isAgentId(selected)) throw new Error('Connect the selected agent before diagnosing compilation problems.');
     return manuscripts.repair(paper.id, paper.path, string(body.failureId, 'Compilation failure ID', 64), prompt => workspace.diagnoseLatexBuild(paper.path, prompt, {
-      agent: selected, model: typeof body.model === 'string' ? body.model : undefined,
+      agent: selected, model: typeof body.model === 'string' ? body.model : undefined, projectId: paper.id,
     }));
   });
   // Exact word places for the PDF view's selection layer; immutable per build key.
@@ -1259,13 +1287,53 @@ export async function buildApp(options: AppOptions) {
     const project = store.project(request.params.projectId), b = request.body as any, action = CHANGE_ACTIONS[String(b?.action)];
     if (!action) throw new Error('Choose stage, unstage or revert.');
     const ids = Array.isArray(b.changes) ? b.changes.filter((id: unknown): id is string => typeof id === 'string') : [];
-    const act = () => changes.act(project.id, project.path, options.csrf, action, Number(b.round), ids);
+    const round = Number(b.round);
+    const act = async () => {
+      let applied: { base: string; signatures: string[]; revertId?: string } | undefined;
+      const result = await changes.act(project.id, project.path, options.csrf, action, round, ids, info => { applied = info; });
+      if (applied) {
+        if (action === 'stage') {
+          for (const sig of applied.signatures) {
+            store.recordActivity({
+              key: `decision:changes:${project.id}:${applied.base}:${sig}`,
+              at: Date.now(),
+              kind: 'review_decision',
+              projectId: project.id,
+              data: { action: 'accept', count: 1, source: 'changes', projectName: project.name },
+            }, true);
+          }
+        } else if (action === 'unstage') {
+          for (const sig of applied.signatures) store.clearActivity(`decision:changes:${project.id}:${applied.base}:${sig}`);
+        } else if (action === 'revert') {
+          // The revert keeps the acceptances it removes, to restore them if it is undone.
+          const base = applied.base;
+          const restores = applied.signatures.flatMap(sig => store.clearActivity(`decision:changes:${project.id}:${base}:${sig}`) ?? []);
+          store.recordActivity({
+            key: `decision:changes:${project.id}:${String(applied.revertId || result.undo?.id || randomUUID())}`,
+            at: Date.now(),
+            kind: 'review_decision',
+            projectId: project.id,
+            data: { action: 'reject', count: Math.max(1, applied.signatures.length), source: 'changes', projectName: project.name, ...(restores.length ? { restores } : {}) },
+          });
+        }
+      }
+      return result;
+    };
     return serialGit(project.id, () => action === 'revert' ? workspace.exclusiveCommit(project.id, act) : act());
   });
   app.post<{ Params: { projectId: string } }>('/review/:projectId/api/changes/undo', changesAccess, request => {
     changesToken(request);
     const project = store.project(request.params.projectId), id = string((request.body as any)?.id, 'Revert ID', 80);
-    return serialGit(project.id, () => workspace.exclusiveCommit(project.id, () => changes.undo(project.id, project.path, options.csrf, id)));
+    return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => {
+      const result = await changes.undo(project.id, project.path, options.csrf, id);
+      const key = `decision:changes:${project.id}:${id}`, revert = store.activityEvent(key);
+      store.undoActivity(key);
+      // Undoing a revert stages its changes again, and with them their acceptances.
+      for (const event of Array.isArray(revert?.data.restores) ? revert.data.restores as ActivityEventRow[] : []) {
+        store.recordActivity({ key: event.key, at: event.at, kind: event.kind, projectId: event.projectId, taskId: event.taskId, agent: event.agent, model: event.model, data: event.data }, true);
+      }
+      return result;
+    }));
   });
 
   // The complete PDF of a round's new version, for the review's full paper.
@@ -1378,6 +1446,20 @@ export async function buildApp(options: AppOptions) {
       if ((readUndo || readReturns.length) && confirmedReviewResponse(200, result, reviewTask!.name)) {
         const noteReturns = readUndo?.() ?? readReturns.map(({ key, read }) => ({ key, ...read() }));
         if (noteReturns.length) Object.assign(result as object, { noteReturns, ...(input?.noteKey ? { noteReturn: noteReturns[0] } : {}) });
+      }
+      if (reviewTask && route.endsWith('/decide') && input?.action === 'comment' && confirmedReviewResponse(200, result, reviewTask.name)) {
+        const actionId = (request.body as any)?.id || (result as any)?.undo?.id || randomUUID();
+        const count = Array.isArray(input.changes) ? Math.max(1, input.changes.length) : 1;
+        store.recordActivity({
+          key: `decision:${reviewTask.id}:${String(actionId)}`,
+          at: Date.now(),
+          kind: 'review_decision',
+          projectId: project.id,
+          taskId: reviewTask.id,
+          agent: reviewTask.agent || 'codex',
+          model: reviewTask.model,
+          data: { action: 'comment', count, source: 'task', projectName: project.name },
+        });
       }
       return annotateReviewState(result, store.tasks().filter(task => task.projectId === project.id));
     },

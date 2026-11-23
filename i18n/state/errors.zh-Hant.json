@@ -1914,6 +1914,41 @@
     "textHash": "1489b21136ccfae9ee468304489437c46a625eb509d0bdced5e4fafbfedc00b5",
     "model": "manual"
   },
+  "Confirm stopping the current turn before switching agents.": {
+    "revision": "35f90bb765230e351cbb9d0397f375ff3c57384a90c1bae1a59a71883edee33b",
+    "textHash": "ae7ee854d9c82165798f75ce3a3c2f30e1ccada8c667d5e443d53a68878c16a7",
+    "model": "gemini-4-argon-medium"
+  },
+  "Connect and sign in to the destination agent before switching.": {
+    "revision": "63bae9c5c8c6cf07a13bf0702549a78e2772503388e20aee71ad375370448798",
+    "textHash": "467884f8202f8b86871e4bb3f94795c4991ef65643e8b6de9caf70d6fa7a1846",
+    "model": "gemini-4-argon-medium"
+  },
+  "Resolve the pending task action before switching agents.": {
+    "revision": "3cf4ddc4e9e3c660c8caaa9a1ee549fbdf174fda9154cad9facbe1a74183f6a6",
+    "textHash": "f3ca2a49cf33f88a29870720d5566fe7381785965b7976a37bea770b7d8d557f",
+    "model": "gemini-4-argon-medium"
+  },
+  "The current turn is still stopping. Wait for it to finish, then retry.": {
+    "revision": "014c2ac5eed8b6ab546b5853b05ec26e09aee66f83042cdb5dddc3e736dfa093",
+    "textHash": "6bafba2a5c31adb245e0349cb4e34a7206816f50d3408bcb04f31e1928586ff7",
+    "model": "gemini-4-argon-medium"
+  },
+  "This task is already switching agents.": {
+    "revision": "3fa0425f18b10047b1bafe0ea121fef149b49daec002989bb6018ca0769d9f56",
+    "textHash": "ca1793ce7a56d0fa6807c9de8961c074a821f585545ef2c49a624de417e5904d",
+    "model": "gemini-4-argon-medium"
+  },
+  "Wait for this task to switch agents before deleting it.": {
+    "revision": "0b874fb53dd4ea35c68116daa9ba321119bb58ee39659cd9abb950414d3ea43d",
+    "textHash": "d4e0e5085c0db8b50ec50ddba516ff3b4d0e4ebe3b1e0de9e42a69f7d8430152",
+    "model": "gemini-4-argon-medium"
+  },
+  "Wait for this task to switch agents before sending more instructions.": {
+    "revision": "27192199c298a89dc1b13295efa1ff0cce3b6c8bfc62ad2d3c6e04f04429d487",
+    "textHash": "d202f05d9c2ca38ad366f09fa553061793c3de10bf849547458de2f4c80cb22f",
+    "model": "gemini-4-argon-medium"
+  },
   "Choose Remember, Dismiss or Undo.": {
     "revision": "c64927069025c64a321c9595525d2e7648e4025cdf5fad44dba40a8d7541e3a8",
     "textHash": "99cf9c15d9208931a448c084e46bf31896784632ed59afa2ffc6cb590e163732",
