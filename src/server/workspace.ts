@@ -46,7 +46,7 @@ import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeC
 import { Memory, memoryDigest, memoryUpdate } from './memory.ts';
 import { MEMORY_EVIDENCE, MEMORY_LANGUAGE, MEMORY_LEARNING, MEMORY_SINCE, acceptedSuggestions, dismissedKey, evidenceHash, hasEvidence, learningPrompt, memoryLearningInstructions, taskEvidence, type EvidenceRecord, type MemoryEvidence } from './memory-learning.ts';
 import { AGENT_IDS, usesCodex, isTaskReviewNote, collaborationRoutes, type CollaborationRole, type CollaborationRoutes, type CollaborationSettings } from '../shared.ts';
-import type { Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, PendingBuild, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview, PageView, ToolPlace } from '../shared.ts';
+import type { HelperChoice, Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, PendingBuild, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview, PageView, ToolPlace } from '../shared.ts';
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -764,13 +764,17 @@ export class Workspace extends EventEmitter {
       }
     }
     // Settings may have changed while the turn stopped.
-    const model = destination(), saved = current();
-    const conversation = saved.handoff || this.store.runs().some(run => run.taskId === taskId && run.status !== 'queued');
+    const model = destination();
+    return this.handOver(current(), from, { agent: input.agent, model: model.id, effort: input.effort || null, serviceTier: input.agent === 'codex' ? input.serviceTier || 'default' : undefined, permissions: permissions as string });
+  }
+  // The task continues on another agent, whose next turn starts a session of
+  // its own and is given the conversation so far.
+  private handOver(task: Task, from: AgentId, settings: Pick<Task, 'agent' | 'model' | 'effort' | 'serviceTier' | 'permissions'> & Partial<Task>) {
+    const conversation = task.handoff || this.store.runs().some(run => run.taskId === task.id && run.status !== 'queued');
     // The old session is no longer used; let its agent release it and the worktree.
-    if (saved.threadId) { this.loaded.delete(saved.threadId); void this.agents[from].closeThread?.(saved.threadId).catch(() => {}); }
-    if (saved.worktree) void this.agents[from].closeWorktree?.(saved.worktree).catch(() => {});
-    return this.store.updateTask(taskId, { agent: input.agent, model: model.id, effort: input.effort || null, serviceTier: input.agent === 'codex' ? input.serviceTier || 'default' : undefined,
-      permissions: permissions as string, threadId: null, turnId: null, viewPdf: undefined, context: null, ...(conversation ? { handoff: true } : {}) });
+    if (task.threadId) { this.loaded.delete(task.threadId); void this.agents[from].closeThread?.(task.threadId).catch(() => {}); }
+    if (task.worktree) void this.agents[from].closeWorktree?.(task.worktree).catch(() => {});
+    return this.store.updateTask(task.id, { ...settings, threadId: null, turnId: null, viewPdf: undefined, context: null, ...(conversation ? { handoff: true } : {}) });
   }
   // The earlier conversation, for the first turn of a session that did not
   // take part in it: each request an agent received, with the replies it
@@ -1005,9 +1009,21 @@ export class Workspace extends EventEmitter {
   private async drain() {
     if (this.closing) return;
     for (const run of this.store.runs().filter(r => r.status === 'queued')) {
-      const agent = this.agentOf(this.store.task(run.taskId));
+      const task = this.store.task(run.taskId), handover = this.mergeHandover(task, run), agent = handover?.agent ?? this.agentOf(task);
       if (!this.agents[agent].ready || !this.runtimes[agent].authenticated) { if (this.agentOff(agent)) this.wake(agent); continue; }
       if (this.switching.has(run.taskId) || this.active.has(run.taskId) || this.reviewWrites.has(run.taskId) || this.publishing.has(run.taskId) || this.store.task(run.taskId).delivery?.pending || BUSY.has(this.store.task(run.taskId).status) || this.store.task(run.taskId).preparation) continue;
+      if (handover) {
+        // The merge waits for the chosen agent; one that cannot take the task
+        // fails the run, as the task's own agent failing would, never another.
+        const back = { agent: this.agentOf(task), model: task.model, effort: task.effort ?? null, ...(task.serviceTier ? { serviceTier: task.serviceTier } : {}), ...(task.permissions ? { permissions: task.permissions } : {}) };
+        void this.switchTaskAgent(task.id, { agent: handover.agent, model: handover.model, effort: handover.effort, serviceTier: handover.serviceTier })
+          .then(() => { this.store.updateTask(task.id, { mergeReturn: back }); }, () => {
+            const failed = { ...run, startedAt: Date.now() };
+            this.active.set(run.taskId, failed);
+            this.failRun(failed, new Error('The selected conflict-resolution agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.'));
+          });
+        continue;
+      }
       const started = { ...run, startedAt: Date.now() };
       this.active.set(run.taskId, started);
       void this.startRun(started).catch(e => this.failRun(started, e));
@@ -2054,6 +2070,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       if (current.status === 'deleting') return;
       const review = { state: summary.state, round: summary.round, counts: summary.counts, ready: summary.ready, job: current.review?.job, unsent, comments, files };
       this.store.updateTask(taskId, { deferred, delivery, reconciliation, review });
+      if (!reconciliation && current.mergeReturn) this.returnFromMerge(taskId);
       this.announceSelection(current, review);
       // A task with nothing to save learns as its review finishes; one with a save step, as it is saved.
       const reviewed = this.store.task(taskId);
@@ -2388,13 +2405,15 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     ]);
     return { files: paths.map(path => ({ path, status: 'M', from: undefined })), patch, recent };
   }
-  async applyTask(taskId: string, keepCurrent = false, commit?: { message?: string; confirmation?: string }) {
+  async applyTask(taskId: string, keepCurrent = false, commit?: { message?: string; confirmation?: string }, mergeAgent?: HelperChoice) {
     const task = this.store.task(taskId), project = this.store.project(task.projectId);
     if (task.mode === 'review') throw new Error('AI review has no manuscript changes to apply.');
     if (!task.deferred) throw new Error('Accepted changes are already in the manuscript.');
     const pausedMerge = task.status === 'interrupted' && task.reconciliation && (!task.reconciliation.ready || (task.review?.round ?? 0) <= task.reconciliation.round);
     if (!['reviewing', 'interrupted'].includes(task.status) || pausedMerge || this.active.has(taskId) || this.publishing.has(taskId) || task.pendingReview || this.store.runs().some(run => run.taskId === taskId && run.status === 'queued'))
       throw new Error('Wait for the task and review actions to finish before applying changes.');
+    // Kept with the task, so a merge suggestion prepared after a restart uses it too.
+    this.store.updateTask(taskId, { mergeAgent: mergeAgent ?? null });
     const result = await this.exclusiveCommit(project.id, async () => {
       const retry = Boolean(commit && commit.message === undefined);
       this.reviewWrites.add(taskId);
@@ -2436,6 +2455,27 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   }
   private queueMergeSuggestion(taskId: string, merge: TaskReconciliation) {
     return this.enqueue(taskId, 'The manuscript has changed in overlapping passages. Prepare a merge suggestion for me to review; keep the manuscript unchanged.', 'merge-review-' + merge.id, false, { merge });
+  }
+  // The conflict-resolution agent the author chose prepares a merge
+  // suggestion in the task's conversation, where it can ask the author: the
+  // agent to take over before that run starts, or none.
+  private mergeHandover(task: Task, run: Run): HelperChoice | null {
+    const choice = task.mergeAgent;
+    if (!run.requestKey.startsWith('merge-review-') || !choice || task.mergeReturn) return null;
+    const differs = choice.agent !== this.agentOf(task) || Boolean(choice.model && choice.model !== task.model)
+      || Boolean(choice.effort && choice.effort !== task.effort) || Boolean(choice.serviceTier && choice.serviceTier !== task.serviceTier);
+    return differs ? choice : null;
+  }
+  // Once no merge is left to resolve, the task's own agent takes over again
+  // with its own settings, even if it is now off or offline: its next turn
+  // waits for it, as any task's does.
+  private returnFromMerge(taskId: string) {
+    const task = this.store.task(taskId), back = task.mergeReturn;
+    if (!back || task.reconciliation || this.active.has(taskId) || this.switching.has(taskId) || BUSY.has(task.status) || task.pendingReview
+      || this.store.runs().some(run => run.taskId === taskId && run.status === 'queued')) return;
+    const settings = { model: back.model, effort: back.effort ?? null, serviceTier: back.serviceTier, permissions: back.permissions, mergeReturn: null, mergeAgent: null };
+    if (back.agent === this.agentOf(task)) this.store.updateTask(taskId, settings);
+    else this.handOver(task, this.agentOf(task), { agent: back.agent, ...settings });
   }
   // Resolves a merge's conflicts in the manuscript checkout itself: the agent
   // edits only the conflicted files and leaves committing the merge to the
