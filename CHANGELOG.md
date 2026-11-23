@@ -6,7 +6,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Added
 
-- Remember writing preferences across tasks. When you finish reviewing a task, Papilot suggests a preference if you asked for it in your own words or made the same correction in two tasks; edit it and keep it for this paper, for all papers, or share it with coauthors through `.papilot/memory.md`. Editing agents, AI reviews and Collaboration mode workers follow saved preferences, and **Settings → Memory** lists, edits and moves them. See [Writing memory](docs/guide.md#writing-memory). ([#313](https://github.com/PapilotAI/papilot/issues/313))
+- Remember writing preferences across tasks. When you finish reviewing a task, Papilot suggests a preference if you asked for it in your own words or made the same kind of correction in two tasks or three times in one, and shows the edits it is based on; edit it and keep it for this paper, for all papers, or share it with coauthors through `.papilot/memory.md`. Editing agents, AI reviews and Collaboration mode workers follow saved preferences, and **Settings → Memory** lists, edits and moves them. See [Writing memory](docs/guide.md#writing-memory). ([#313](https://github.com/PapilotAI/papilot/issues/313))
 
 ## [0.13.0] - 2026-11-22
 

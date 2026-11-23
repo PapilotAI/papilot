@@ -9,6 +9,13 @@
 .memory-card textarea:hover{border-color:var(--line)}
 .memory-card textarea:focus{border-color:var(--accent);outline:none}
 .memory-evidence{display:flex;flex-wrap:wrap;gap:4px 12px;margin:0;color:var(--text-3);overflow-wrap:anywhere}
+/* What prompted a suggestion, grouped by the task it came from. */
+.memory-examples,.memory-examples ul{display:grid;gap:4px;margin:0;padding:0;list-style:none}
+.memory-examples>li{display:grid;gap:2px}
+.memory-examples small{font-size:11px;color:var(--text-3)}
+.memory-examples li li{color:var(--text);overflow-wrap:anywhere}
+.memory-examples del{color:var(--text-3);text-decoration-color:var(--red)}
+.memory-arrow{color:var(--text-3)}
 .memory-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
 .memory-buttons{display:flex;gap:6px;margin-left:auto}
 /* On the muted card the switch needs a deeper track to read as one control. */

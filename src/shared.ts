@@ -107,7 +107,9 @@ export interface MemoryCatalog { files: MemoryFile[]; shareable: boolean; learni
 // replaces names a rule the suggestion refines; scope starts where that rule is.
 // saved records what Remember did, so Undo reverses exactly that: existing
 // when the rule was already there, replaced and its scope when one went away.
-export interface MemorySuggestion { id: string; text: string; scope: MemoryScope; quote?: string; tasks?: number; replaces?: string; status: 'pending' | 'saved' | 'dismissed'; saved?: { scope: MemoryScope; text: string; existing?: true; replaced?: string; replacedScope?: MemoryScope } }
+/** What prompted a suggestion, copied from a task's evidence: the author's words, or a change they rejected (the agent's text and the text they kept). */
+export interface MemoryExample { task: string; title?: string; said?: string; rejected?: string; kept?: string }
+export interface MemorySuggestion { id: string; text: string; scope: MemoryScope; quote?: string; examples?: MemoryExample[]; replaces?: string; status: 'pending' | 'saved' | 'dismissed'; saved?: { scope: MemoryScope; text: string; existing?: true; replaced?: string; replacedScope?: MemoryScope } }
 /** A file an agent changed: its diff, and where in the paper the changes are. */
 export interface FileEdit { path: string; diff?: string; added: number; removed: number; places?: EditPlace[] }
 /** Changes within one part of the paper: its sections (innermost last), the page it starts on, and the lines changed. */

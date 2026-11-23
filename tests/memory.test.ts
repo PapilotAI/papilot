@@ -220,30 +220,50 @@ test('a suggestion needs the author\'s own words or the same correction in two t
     [{ id: 's0', text: 'Use sentence case for section headings.', scope: 'paper', quote: 'keep headings in sentence case', status: 'pending' }]);
   assert.deepEqual(parse([{ text: 'Use sentence case for section headings.', scope: 'paper', quote: 'always use sentence case' }]), [], 'a quote the author never wrote');
   assert.deepEqual(parse([{ text: 'Use sentence case for section headings.', scope: 'paper', quote: 'headings' }]), [], 'a word or two matches anything');
-  assert.deepEqual(parse([{ text: 'Use sentence case for section headings.', scope: 'paper', tasks: ['b', 'a'] }]).map(item => item.tasks), [2]);
-  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', tasks: ['b'] }]), [], 'one task is not a pattern');
-  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', tasks: ['b', 'unknown'] }]), [], 'only tasks the helper was shown count');
-  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', tasks: ['a', 'c'] }]), [], 'the current task must show it again');
-  assert.deepEqual(parse([{ text: 'prefer british spelling', scope: 'personal', tasks: ['a', 'b'] }]), [], 'already remembered');
-  assert.deepEqual(parse([{ text: 'Avoid passive voice.', scope: 'personal', tasks: ['a', 'b'] }]), [], 'dismissed before');
-  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'shared', tasks: ['a', 'b'] }]), [], 'only the author shares a rule');
-  assert.equal(parse([{ text: 'Use \\cref or \\Cref for references.', scope: 'paper', tasks: ['a', 'b'], replaces: 'use \\cref for references' }])[0].replaces, 'Use \\cref for references.');
+  // Examples are checked against the evidence of the task each names.
+  const both = [{ task: 'b', rejected: 'Related Work', kept: 'Related work' }, { task: 'a', rejected: 'Our Approach', kept: 'Our approach' }];
+  assert.deepEqual(parse([{ text: 'Use sentence case for section headings.', scope: 'paper', examples: both }]).map(item => item.examples), [both]);
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [both[0], both[0], both[1]] }])[0].examples, both, 'the same example once');
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [both[0]] }]), [], 'one task is not a pattern');
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [both[0], { task: 'unknown', rejected: 'Our Approach', kept: 'Our approach' }] }]), [], 'only tasks the helper was shown count');
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [both[1], { task: 'c', rejected: 'Related Work', kept: 'Related work' }] }]), [], 'the current task must show it again');
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [both[0], { task: 'a', rejected: 'Related Work', kept: 'Related work' }] }]), [], 'a change from another task');
+  assert.deepEqual(parse([{ text: 'Use title case.', scope: 'paper', examples: [{ task: 'b', rejected: 'Related work', kept: 'Related Work' }, { task: 'a', rejected: 'Our approach', kept: 'Our Approach' }] }]), [], 'a change keeps its direction');
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [{ task: 'b', rejected: 'Related Work', kept: 'Related Work' }, both[1]] }]), [], 'a change is a change');
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [{ task: 'b', said: 'keep headings in sentence case' }, both[1]] }])[0].examples, [{ task: 'b', said: 'keep headings in sentence case' }, both[1]], 'the author\'s words are an example');
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [{ task: 'b', said: 'always use sentence case' }, both[1]] }]), [], 'words the author never wrote');
+  // Three separate pieces of feedback in this task are a pattern too; excerpts of one change count once.
+  const claims: LearningInput = { memory: [], dismissed: [], earlier: [], current: evidence('b', {
+    rejected: [{ old: 'We show that', new: 'We prove that' }, { old: 'outperforms the baselines', new: 'significantly outperforms all baselines' }],
+    notes: [{ quote: 'a new paradigm', comment: 'Too strong for what we have.' }] }) };
+  const claim = (examples: unknown[]) => acceptedSuggestions(JSON.stringify({ suggestions: [{ text: 'Do not strengthen claims.', scope: 'personal', examples }] }), claims, () => 'x');
+  const three = [{ task: 'b', rejected: 'We prove', kept: 'We show' }, { task: 'b', rejected: 'significantly outperforms', kept: 'outperforms' }, { task: 'b', said: 'Too strong for what we have.' }];
+  assert.deepEqual(claim(three).map(item => item.examples), [three]);
+  assert.deepEqual(claim(three.slice(0, 2)), [], 'twice in one task is not yet a pattern');
+  assert.deepEqual(claim([three[0], { task: 'b', rejected: 'prove', kept: 'show' }, three[2]]), [], 'two excerpts of one change');
+  assert.deepEqual(parse([{ text: 'prefer british spelling', scope: 'personal', examples: both }]), [], 'already remembered');
+  assert.deepEqual(parse([{ text: 'Avoid passive voice.', scope: 'personal', examples: both }]), [], 'dismissed before');
+  assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'shared', examples: both }]), [], 'only the author shares a rule');
+  assert.equal(parse([{ text: 'Use \\cref or \\Cref for references.', scope: 'paper', examples: both, replaces: 'use \\cref for references' }])[0].replaces, 'Use \\cref for references.');
   // A refinement starts where its rule is, and a paper rule never replaces a personal one.
   const shared = { ...input, memory: [{ scope: 'shared' as const, rules: ['Use American spelling.'] }, { scope: 'personal' as const, rules: ['Prefer British spelling.'] }] };
-  assert.deepEqual(acceptedSuggestions(JSON.stringify({ suggestions: [{ text: 'Use British spelling.', scope: 'paper', tasks: ['a', 'b'], replaces: 'Use American spelling.' }] }), shared, () => 'x').map(item => [item.scope, item.replaces]), [['shared', 'Use American spelling.']]);
-  assert.deepEqual(acceptedSuggestions(JSON.stringify({ suggestions: [{ text: 'Use American spelling in this paper.', scope: 'paper', tasks: ['a', 'b'], replaces: 'Prefer British spelling.' }] }), shared, () => 'x').map(item => [item.scope, item.replaces]), [['paper', undefined]]);
-  assert.equal(parse([1, 2, 3].map(n => ({ text: `Rule ${n}.`, scope: 'paper', tasks: ['a', 'b'] }))).length, 2);
+  assert.deepEqual(acceptedSuggestions(JSON.stringify({ suggestions: [{ text: 'Use British spelling.', scope: 'paper', examples: both, replaces: 'Use American spelling.' }] }), shared, () => 'x').map(item => [item.scope, item.replaces]), [['shared', 'Use American spelling.']]);
+  assert.deepEqual(acceptedSuggestions(JSON.stringify({ suggestions: [{ text: 'Use American spelling in this paper.', scope: 'paper', examples: both, replaces: 'Prefer British spelling.' }] }), shared, () => 'x').map(item => [item.scope, item.replaces]), [['paper', undefined]]);
+  assert.equal(parse([1, 2, 3].map(n => ({ text: `Rule ${n}.`, scope: 'paper', examples: both }))).length, 2);
   assert.deepEqual(acceptedSuggestions('Sorry, I cannot help.', input, () => 'x'), []);
-  assert.equal(acceptedSuggestions('```json\n{"suggestions":[{"text":"Use sentence case.","scope":"paper","tasks":["a","b"]}]}\n```', input, () => 'x').length, 1);
+  assert.equal(acceptedSuggestions('```json\n' + JSON.stringify({ suggestions: [{ text: 'Use sentence case.', scope: 'paper', examples: both }] }) + '\n```', input, () => 'x').length, 1);
 });
 
 test('older tasks fill the helper\'s prompt newest first within its budget, and only those it saw count', () => {
-  const large = (task: string) => evidence(task, { requests: ['x'.repeat(EARLIER_EVIDENCE_BUDGET / 2)] });
-  const input: LearningInput = { memory: [{ scope: 'paper', rules: [] }], dismissed: [], current: evidence('now'), earlier: [large('newest'), large('older'), evidence('small')] };
+  const change = { old: 'Our method', new: 'Our Method' };
+  const large = (task: string) => evidence(task, { requests: ['x'.repeat(EARLIER_EVIDENCE_BUDGET / 2)], rejected: [change] });
+  const input: LearningInput = { memory: [{ scope: 'paper', rules: [] }], dismissed: [], current: evidence('now', { rejected: [change] }), earlier: [large('newest'), large('older'), evidence('small')] };
   const prompt = JSON.parse(learningPrompt(input));
   assert.deepEqual(prompt.earlierTasks.map((entry: MemoryEvidence) => entry.task), ['newest', 'small']);
   assert.deepEqual(prompt.memory, [], 'empty files say nothing');
-  assert.deepEqual(acceptedSuggestions(JSON.stringify({ suggestions: [{ text: 'Rule.', scope: 'paper', tasks: ['now', 'older'] }] }), input, () => 'x'), []);
+  const cite = (task: string) => JSON.stringify({ suggestions: [{ text: 'Rule.', scope: 'paper', examples: ['now', task].map(id => ({ task: id, rejected: 'Our Method', kept: 'Our method' })) }] });
+  assert.equal(acceptedSuggestions(cite('newest'), input, () => 'x').length, 1);
+  assert.deepEqual(acceptedSuggestions(cite('older'), input, () => 'x'), []);
 });
 
 // One agent for editing turns and the read-only learning helper.
@@ -302,7 +322,8 @@ test('a correction repeated across two tasks becomes a suggestion the author sav
     f.task('first'); f.store.saveItem({ id: 'first-message', taskId: 'first', type: 'user', text: 'Polish section 2.', createdAt: 1 });
     f.feedback.set('p-first', [{ kind: 'reject', changes: [{ old: '\\section{Related work}', new: '\\section{Related Work}' }] }]);
     const rule = { text: 'Use sentence case for section headings ("Related work", not "Related Work").', scope: 'paper' };
-    f.agent.replies.push(JSON.stringify({ suggestions: [{ ...rule, tasks: ['first'] }] }));
+    const first = { task: 'first', rejected: 'Related Work', kept: 'Related work' };
+    f.agent.replies.push(JSON.stringify({ suggestions: [{ ...rule, examples: [first] }] }));
     await f.settle('first');
     const helper = f.agent.calls.find(call => call.method === 'thread/start' && call.params.ephemeral)!;
     assert.equal(helper.params.sandbox, 'read-only');
@@ -314,12 +335,13 @@ test('a correction repeated across two tasks becomes a suggestion the author sav
 
     f.task('second'); f.store.saveItem({ id: 'second-message', taskId: 'second', type: 'user', text: 'Tighten the method section.', createdAt: 1 });
     f.feedback.set('p-second', [{ kind: 'reject', changes: [{ old: '\\section{Our approach}', new: '\\section{Our Approach}' }] }]);
-    f.agent.replies.push(JSON.stringify({ suggestions: [{ ...rule, tasks: ['second', 'first'] }] }));
+    f.agent.replies.push(JSON.stringify({ suggestions: [{ ...rule, examples: [{ task: 'second', rejected: 'Our Approach', kept: 'Our approach' }, first] }] }));
     await f.settle('second');
     const prompt = JSON.parse(f.agent.calls.filter(call => call.method === 'turn/start' && String(call.params.threadId).startsWith('helper-')).at(-1)!.params.input[0].text);
     assert.deepEqual(prompt.earlierTasks.map((entry: MemoryEvidence) => entry.task), ['first']);
     const card = f.store.items('second').find(item => item.type === 'memory')!;
-    assert.deepEqual(card.memory!.map(({ text, scope, tasks, status }) => ({ text, scope, tasks, status })), [{ text: rule.text, scope: 'paper', tasks: 2, status: 'pending' }]);
+    assert.deepEqual(card.memory!.map(({ text, scope, examples, status }) => ({ text, scope, examples, status })), [{ text: rule.text, scope: 'paper', status: 'pending',
+      examples: [{ task: 'second', title: 'second', rejected: 'Our Approach', kept: 'Our approach' }, { ...first, title: 'first' }] }], 'each example names the task it came from');
 
     const app = Fastify();
     registerMemoryRoutes(app, f.store, () => f.work.memory);
@@ -405,9 +427,9 @@ test('Remember and Undo reverse exactly what was changed, also across files and 
     await f.work.memory.add('shared', 'Use American spelling.', f.papers.a);
     await f.work.memory.add('paper', 'Number every displayed equation.', f.papers.a);
     const suggestions: MemorySuggestion[] = [
-      { id: 'refine', text: 'Use British spelling.', scope: 'shared', replaces: 'Use American spelling.', tasks: 2, status: 'pending' },
-      { id: 'known', text: 'Number every displayed equation.', scope: 'paper', tasks: 2, status: 'pending' },
-      { id: 'other', text: 'Spell out numbers below ten.', scope: 'paper', tasks: 2, status: 'pending' },
+      { id: 'refine', text: 'Use British spelling.', scope: 'shared', replaces: 'Use American spelling.', status: 'pending' },
+      { id: 'known', text: 'Number every displayed equation.', scope: 'paper', status: 'pending' },
+      { id: 'other', text: 'Spell out numbers below ten.', scope: 'paper', status: 'pending' },
     ];
     f.store.saveItem({ id: 'cards:memory:x', taskId: 'cards', type: 'memory', text: '', createdAt: 1, memory: suggestions });
     const act = (id: string, body: object) => app.inject({ method: 'POST', url: `/api/tasks/cards/memory/${id}`, payload: body });
@@ -423,7 +445,7 @@ test('Remember and Undo reverse exactly what was changed, also across files and 
     assert.deepEqual(await rules('paper'), ['Number every displayed equation.']);
     // A refinement matching a rule already there removes only the old one, and Undo keeps both.
     await f.work.memory.add('paper', 'Use \\cref for references.', f.papers.a);
-    f.store.saveItem({ id: 'cards:memory:y', taskId: 'cards', type: 'memory', text: '', createdAt: 2, memory: [{ id: 'merge', text: 'Number every displayed equation.', scope: 'paper', replaces: 'Use \\cref for references.', tasks: 2, status: 'pending' }] });
+    f.store.saveItem({ id: 'cards:memory:y', taskId: 'cards', type: 'memory', text: '', createdAt: 2, memory: [{ id: 'merge', text: 'Number every displayed equation.', scope: 'paper', replaces: 'Use \\cref for references.', status: 'pending' }] });
     assert.deepEqual((await act('merge', { action: 'save' })).json().memory[0].saved, { scope: 'paper', text: 'Number every displayed equation.', existing: true, replaced: 'Use \\cref for references.', replacedScope: 'paper' });
     assert.deepEqual(await rules('paper'), ['Number every displayed equation.']);
     await act('merge', { action: 'undo' });
@@ -431,7 +453,7 @@ test('Remember and Undo reverse exactly what was changed, also across files and 
     // The same rule in two scopes: only the one the suggestion refines is replaced.
     await f.work.memory.add('personal', 'Prefer British spelling.');
     await f.work.memory.add('paper', 'Prefer British spelling.', f.papers.a);
-    f.store.saveItem({ id: 'cards:memory:z', taskId: 'cards', type: 'memory', text: '', createdAt: 3, memory: [{ id: 'personal', text: 'Prefer American spelling.', scope: 'personal', replaces: 'Prefer British spelling.', tasks: 2, status: 'pending' }] });
+    f.store.saveItem({ id: 'cards:memory:z', taskId: 'cards', type: 'memory', text: '', createdAt: 3, memory: [{ id: 'personal', text: 'Prefer American spelling.', scope: 'personal', replaces: 'Prefer British spelling.', status: 'pending' }] });
     await act('personal', { action: 'save' });
     assert.deepEqual(await rules('personal'), ['Prefer American spelling.']);
     assert.ok((await rules('paper')).includes('Prefer British spelling.'));

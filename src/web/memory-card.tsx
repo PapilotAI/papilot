@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { MemoryCatalog, MemoryScope, MemorySuggestion, TimelineItem } from '../shared.ts';
+import type { MemoryCatalog, MemoryExample, MemoryScope, MemorySuggestion, TimelineItem } from '../shared.ts';
 import { Icon } from './icons.tsx';
-import { t, tn } from './i18n.ts';
+import { t } from './i18n.ts';
 import './memory.css';
 
 type API = <T>(route: string, body?: unknown) => Promise<T>;
@@ -79,11 +79,20 @@ function Suggestion({ taskId, suggestion, shareable, api, onSaved }: { taskId: s
     </span>
     {error && <p className="inline-error" role="alert">{error}</p>}
   </div>;
-  const evidence = suggestion.quote ? `“${suggestion.quote}”` : tn(suggestion.tasks || 2, 'Corrected in {n} task', 'Corrected in {n} tasks');
   return <form className="memory-suggestion" onSubmit={event => { event.preventDefault(); void act({ action: 'save', text, scope }); }}>
     <label className="sr-only" htmlFor={id}>{t('Preference')}</label>
     <textarea ref={field} id={id} rows={2} value={text} disabled={busy} onChange={event => setText(event.target.value)}/>
-    <p className="memory-evidence">{suggestion.replaces && <span>{t('Replaces “{rule}”', { rule: suggestion.replaces })}</span>}<span>{evidence}</span></p>
+    {(suggestion.replaces || suggestion.quote) && <p className="memory-evidence">
+      {suggestion.replaces && <span>{t('Replaces “{rule}”', { rule: suggestion.replaces })}</span>}
+      {suggestion.quote && <span>“{suggestion.quote}”</span>}
+    </p>}
+    {/* role=list: Safari drops list semantics from unstyled grid lists. */}
+    {suggestion.examples?.length ? <ul className="memory-examples" role="list" aria-label={t('What prompted it')}>
+      {byTask(suggestion.examples).map(([task, examples]) => <li key={task}>
+        <small>{task === taskId ? t('This task') : examples[0].title}</small>
+        <ul role="list">{examples.map((example, index) => <li key={index}><Example example={example}/></li>)}</ul>
+      </li>)}
+    </ul> : null}
     <div className="memory-actions">
       <MemoryScopeSwitch label={t('Keep for')} value={scope} onChange={setScope} shareable={shareable} disabled={busy}/>
       <span className="memory-buttons">
@@ -93,4 +102,16 @@ function Suggestion({ taskId, suggestion, shareable, api, onSaved }: { taskId: s
     </div>
     {error && <p className="inline-error" role="alert">{error}</p>}
   </form>;
+}
+
+const byTask = (examples: MemoryExample[]) => [...examples.reduce((groups, example) => groups.set(example.task, [...groups.get(example.task) || [], example]), new Map<string, MemoryExample[]>())];
+
+// The author's own words, or a change they turned down: the agent's text struck through, then what they kept.
+function Example({ example }: { example: MemoryExample }) {
+  if (example.said) return <q>{example.said}</q>;
+  return <>
+    {example.rejected && <del><span className="sr-only">{t('Rejected')}: </span>{example.rejected}</del>}
+    {example.rejected && example.kept && <span className="memory-arrow" aria-hidden="true"> → </span>}
+    {example.kept && <span><span className={example.rejected ? 'sr-only' : undefined}>{t('Kept')}: </span>{example.kept}</span>}
+  </>;
 }

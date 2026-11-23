@@ -1289,16 +1289,6 @@
     "textHash": "dbb063d6f051665c96fe32c02eb0f74f8ae8cca282facdba0aec1392f5decaef",
     "model": "gemini-4-argon-medium"
   },
-  "Corrected in {n} task": {
-    "revision": "92748f3ae0a6c5c4ddfa21417edc3bd146407d746d7211ade30368e71b36463a",
-    "textHash": "b8ea2124bc7df7b4c82b32888c845e09b32b56cad43bca15bb1af700517895e8",
-    "model": "gemini-4-argon-medium"
-  },
-  "Corrected in {n} tasks": {
-    "revision": "d061da470f45e1bcdd0091eaa3cd5519ad6f611720d6257523aff62babb156ad",
-    "textHash": "1cff1224068549e58f99d330724db2c2bdb88df98dead74ab3742bf2d21fac7f",
-    "model": "gemini-4-argon-medium"
-  },
   "Could not check": {
     "revision": "509b368d64727b31253003d9f08647382fb91c514a2a0b6056d5e3080cb5e2a3",
     "textHash": "60826ad9aa5c5decf9a55d8c8430ddfe677deb932b05cb2a12d60202e02847d9",
@@ -2362,6 +2352,11 @@
   "Keep this paper’s": {
     "revision": "cbe48ebb15132e9fb5721fa10425f176dfd38a2e625142947ea65f5e0f72a0a9",
     "textHash": "19b9ab84d160454a18ab7f2e0267a73099a0d4c27420126153773c82bbcbdf27",
+    "model": "gemini-4-argon-medium"
+  },
+  "Kept": {
+    "revision": "56dfb4b278a4750d9862a5e676e8e0c11618c3bc022fcd598e5890d6c2a6ede4",
+    "textHash": "27d1d93c9b94ab29308da98ef045aec8d7ce08bf3e6c8a2f6f27d5b60e018d3d",
     "model": "gemini-4-argon-medium"
   },
   "Kept on manuscript": {
@@ -3939,6 +3934,11 @@
     "textHash": "161f75259aa6a2e1e1d72a314078aba37cd232152b543052bca98a71bb198d28",
     "model": "gemini-4-argon-medium"
   },
+  "Rejected": {
+    "revision": "ae6fda489f3820b707f09adb5043f37481eb1e7b027e77ab99183754ff3f6a69",
+    "textHash": "a9148e8654e848357e0fae7ee7bb71bc512d5f88256d71d54f502fdec0e174bd",
+    "model": "gemini-4-argon-medium"
+  },
   "Release modifier keys and retry.": {
     "revision": "379d38dd4d362266fca9175da1cd99d95177ca90a9046d48d8924a6663be55b8",
     "textHash": "8745f5b0fd84a80ded5c6b85ac05bf250d27ba8197957d904d55c5d879576fad",
@@ -5359,6 +5359,11 @@
     "textHash": "c3b451ccc703b41e5e1ed5e8822b07a83f45b099753d87e8dc72b01eaaddf61d",
     "model": "gemini-4-argon-medium"
   },
+  "This task": {
+    "revision": "a59b230ebb98777f1f13f67672fe1587f055bce8428bd472db21112dc3ffea0a",
+    "textHash": "b723025a9c2911f0d6c37dbb71aa4a2a4df37050bc4b2357683966d377798e7c",
+    "model": "gemini-4-argon-medium"
+  },
   "This task did not change the manuscript. Read the answer in the chat.": {
     "revision": "701436551ef18a1debdbed0f9f705472df99cc9810996b0022ae3068d202e5a4",
     "textHash": "b2e6058b663dc259554da3052d39137eb4485869209130b8cfe758ad60ed700a",
@@ -5897,6 +5902,11 @@
   "What is staged, in {n} files:": {
     "revision": "4684041bb3559978749e28cf97e2c6095ae3f700e3bcc7e78dd1841d97d408db",
     "textHash": "b05b5179b4d3c50f17e67ebc931ccdb7298b9d6a1fda2b17c7359ed723ed2f86",
+    "model": "gemini-4-argon-medium"
+  },
+  "What prompted it": {
+    "revision": "1d70a7c31a09816652d750ee5e351a812853dff612414ff51c8a4ac3f05b24e3",
+    "textHash": "9137c3bf144ee0268ec5361130ecd1553b3081f5c8fc47a25fcba8cb59e81a28",
     "model": "gemini-4-argon-medium"
   },
   "What should change here?": {

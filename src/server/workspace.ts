@@ -1784,7 +1784,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const reply = await this.oneOff(id, { cwd: project.path, sandbox: 'read-only', instructions: memoryLearningInstructions, prompt: learningPrompt(input), model, effort: model?.efforts[0], timeout: 120000, what: 'learn writing preferences' });
     const current = this.store.findTask(taskId);
     if (this.closing || !current || current.status === 'deleting') return;
-    const suggestions = acceptedSuggestions(reply, input, index => `${hash.slice(0, 12)}-${index}`);
+    // Each example names its task, so the card can say where the author made it.
+    const suggestions = acceptedSuggestions(reply, input, index => `${hash.slice(0, 12)}-${index}`)
+      .map(suggestion => suggestion.examples ? { ...suggestion, examples: suggestion.examples.map(example => ({ ...example, title: this.store.findTask(example.task)?.title })) } : suggestion);
     if (suggestions.length) this.store.saveItem({ id: `${task.id}:memory:${hash.slice(0, 12)}`, taskId: task.id, type: 'memory', text: suggestions.map(suggestion => suggestion.text).join('\n'), createdAt: Date.now(), memory: suggestions });
   }
   // Announces a task's final selection once: its last pending change was
