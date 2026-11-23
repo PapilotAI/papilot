@@ -71,6 +71,7 @@
 <symbol id="i-restore" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 9M3 4v6h6M12 7v5l3 2"/></symbol>
 <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3c.4 3.9 2.1 5.6 6 6-3.9.4-5.6 2.1-6 6-.4-3.9-2.1-5.6-6-6 3.9-.4 5.6-2.1 6-6ZM19 15c.2 1.5.8 2.1 2.3 2.3-1.5.2-2.1.8-2.3 2.3-.2-1.5-.8-2.1-2.3-2.3 1.5-.2 2.1-.8 2.3-2.3Z"/></symbol>
 <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
 <symbol id="i-log" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M9 13h6m-6 4h4"/></symbol>
 </svg>
 
@@ -247,55 +248,26 @@
       <a class="hero-star" href="https://github.com/PapilotAI/papilot"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01Z"/></svg><span lang="en">Star on GitHub</span><span lang="zh-CN">在 GitHub 点 Star</span></a>
       <span lang="en">Version {{version}} · Free and open source · <a href="https://github.com/PapilotAI/papilot/blob/main/LICENSE">MIT License</a></span><span lang="zh-CN">版本 {{version}} · 免费开源 · <a href="https://github.com/PapilotAI/papilot/blob/main/LICENSE">MIT 许可证</a></span>
     </p>
-    <a class="scroll-cue" href="#agents" aria-label="Scroll down" data-zh-aria-label="向下滚动"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></a>
-  </div>
-</section>
-
-<!-- Every agent at once, in colour. The first time they come on screen
-     they arrive one after another; without script or motion they simply
-     stand there. -->
-<section class="logos" id="agents" aria-labelledby="logos-title">
-  <div class="wrap">
-    <h2 id="logos-title"><span lang="en">Supported Coding Agents</span><span lang="zh-CN">支持的编程智能体</span></h2>
-  </div>
-  <div class="wrap">
-    <ul class="agent-grid" role="list">
-      <li class="agent pi"><i aria-hidden="true"></i>Pi</li>
-      <li class="agent codex"><i aria-hidden="true"></i>Codex</li>
-      <li class="agent claude"><i aria-hidden="true"></i>Claude</li>
-      <li class="agent cursor"><i aria-hidden="true"></i>Cursor</li>
-      <li class="agent copilot"><i aria-hidden="true"></i>GitHub Copilot</li>
-      <li class="agent grok"><i aria-hidden="true"></i>Grok</li>
-      <li class="agent antigravity"><i aria-hidden="true"></i>Antigravity</li>
-      <li class="agent kimi"><i aria-hidden="true"></i>Kimi</li>
-      <li class="agent glm"><i aria-hidden="true"></i>GLM</li>
-      <li class="agent deepseek"><i aria-hidden="true"></i>DeepSeek</li>
-      <li class="agent qwen"><i aria-hidden="true"></i>Qwen</li>
-      <li class="agent opencode"><i aria-hidden="true"></i>OpenCode</li>
-      <li class="agent qoder"><i aria-hidden="true"></i>Qoder</li>
-      <li class="agent codebuddy"><i aria-hidden="true"></i>CodeBuddy</li>
-      <li class="agent workbuddy"><i aria-hidden="true"></i>WorkBuddy</li>
-    </ul>
+    <a class="scroll-cue" href="#features" aria-label="Scroll down" data-zh-aria-label="向下滚动"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></a>
   </div>
 </section>
 
 <section class="section features" id="features">
   <div class="wrap">
-    <header class="section-head">
-      <h2><span lang="en">Why Papilot</span><span lang="zh-CN">为什么用 Papilot</span></h2>
-    </header>
     <!-- The README's reasons, in its order: pointing at the page and
          reviewing typeset changes here, then live Overleaf sync in a section
-         of its own, then any agent and model and the record, then the phone
-         and templates. Each feature is drawn like the opening window, with
-         the rest of the app as bars, and plays what the opening round leaves
-         out: two notes added to a task and sent together, a comment that
-         sends a change back for another round, another agent's model picked
-         and the request rerun, and the accepted change committed and synced
-         in Version Management. On a phone the PDF and the chat take turns,
-         switched in the navigation bar, as in the phone app. Each round plays
-         while its window is on screen and not under the mouse. Without script
-         or motion a window shows where its round ends. -->
+         of its own, then any agent and model with every supported agent
+         listed, the record, the phone and templates. Each feature is drawn
+         like the opening window, with the rest of the app as bars, and plays
+         what the opening round leaves out: two notes added to a task and sent
+         together, a comment that sends a change back for another round,
+         another agent's model picked and the request rerun, the accepted
+         change committed and synced in Version Management, changes accepted
+         on a phone, and a paper created from a template. On a phone the PDF
+         and the chat take turns, switched in the navigation bar, as in the
+         phone app. Each round plays while its window is on screen and not
+         under the mouse. Without script or motion a window shows where its
+         round ends. -->
     <article class="feature">
       <div class="feature-text">
         <p class="step"><span lang="en">Annotate</span><span lang="zh-CN">批注</span></p>
@@ -416,7 +388,7 @@
      Overleaf project, side by side, joined at the height of the paragraph
      they share. A change is accepted on the PDF and committed from the chat;
      its words cross the bridge and land in the coauthor's editor. Then Ada
-     types a sentence on Overleaf, beside her cursor and name, and it crosses
+     types a sentence on Overleaf, beside their cursor and name, and it crosses
      back into the PDF as it rebuilds. Faces, cursor flags and the save step
      are the app's own (src/web/overleaf.css, source-codemirror.ts,
      task-apply.tsx). Below 1200px the windows stack and the words travel
@@ -527,8 +499,8 @@
   </div>
 </section>
 
-<!-- The rest of the reasons after the sync: any agent and model, then the
-     record of every change. -->
+<!-- The reasons after the sync: any agent and model, with every supported
+     agent listed, then the record of every change. -->
 <section class="section features features-more" id="record">
   <div class="wrap">
     <article class="feature">
@@ -536,6 +508,23 @@
         <p class="step"><span lang="en">Agents</span><span lang="zh-CN">智能体</span></p>
         <h3><span lang="en">Any Agent, Any Model</span><span lang="zh-CN">用你顺手的智能体和模型</span></h3>
         <p><span lang="en">Pick a model from any connected agent below the chat. Switch to another agent and Papilot reruns your request with it, with the same notes. Bring the login or API key you already have, or use the built-in Papilot Writer.</span><span lang="zh-CN">对话框下方能选所有已连接智能体的模型。换成另一个智能体的模型，Papilot 会带着同样的批注重新做一遍。登录和 API Key 用你现有的就行，也可以用内置的 Papilot Writer。</span></p>
+        <ul class="agent-grid" id="agents" role="list" aria-label="Supported Coding Agents" data-zh-aria-label="支持的编程智能体">
+          <li class="agent pi"><i aria-hidden="true"></i>Pi</li>
+          <li class="agent codex"><i aria-hidden="true"></i>Codex</li>
+          <li class="agent claude"><i aria-hidden="true"></i>Claude</li>
+          <li class="agent cursor"><i aria-hidden="true"></i>Cursor</li>
+          <li class="agent copilot"><i aria-hidden="true"></i>GitHub Copilot</li>
+          <li class="agent grok"><i aria-hidden="true"></i>Grok</li>
+          <li class="agent antigravity"><i aria-hidden="true"></i>Antigravity</li>
+          <li class="agent kimi"><i aria-hidden="true"></i>Kimi</li>
+          <li class="agent glm"><i aria-hidden="true"></i>GLM</li>
+          <li class="agent deepseek"><i aria-hidden="true"></i>DeepSeek</li>
+          <li class="agent qwen"><i aria-hidden="true"></i>Qwen</li>
+          <li class="agent opencode"><i aria-hidden="true"></i>OpenCode</li>
+          <li class="agent qoder"><i aria-hidden="true"></i>Qoder</li>
+          <li class="agent codebuddy"><i aria-hidden="true"></i>CodeBuddy</li>
+          <li class="agent workbuddy"><i aria-hidden="true"></i>WorkBuddy</li>
+        </ul>
         <p class="feature-link"><a href="https://github.com/PapilotAI/papilot/blob/main/docs/guide.md#agents"><span lang="en">Set up an agent</span><span lang="zh-CN">配置智能体（英文）</span></a></p>
       </div>
       <figure class="app-window scene" data-scene="models" data-tab="side" data-step="rerun" role="img" aria-label="The model menu below the chat: choosing Claude's Opus 5.5 instead of Codex reruns the request with the same notes" data-zh-aria-label="对话框下方的模型菜单：把 Codex 换成 Claude 的 Opus 5.5，同样的批注重新做一遍">
@@ -629,52 +618,127 @@
   </div>
 </section>
 
-<!-- Two ways in and out of the desk: a paper started from a Universe
-     template, and a review finished on a phone. Each card's drawing is
-     decoration; the card's text carries the claim and its next step. -->
-<section class="section more" id="anywhere">
+<!-- The last two reasons, drawn like the others. The phone app at the size
+     of a phone, as the opening window draws it below 720px: two changes on
+     the page, accepted one after the other with taps on the capsule, which
+     then gives way to the annotation tools. Then the New paper dialog over
+     the workspace: searching a conference finds the template its call for
+     papers asks for, Create paper sets it up, and the new paper's first page
+     is in the PDF. Without script or motion the phone shows the changes to
+     decide and the dialog shows the search. -->
+<section class="section features features-more" id="anywhere">
   <div class="wrap">
-    <header class="section-head">
-      <h2><span lang="en">Start from a Template, Review from Anywhere</span><span lang="zh-CN">从模板开始写，在手机上也能审</span></h2>
-    </header>
-    <div class="more-cards">
-      <article class="more-card">
-        <div class="more-art universe-art" aria-hidden="true">
-          <span class="tpl-venues"><b>400+</b><span lang="en">conferences mapped to their template</span><span lang="zh-CN">个会议已对应模板</span></span>
-          <span class="tpl-shelf">
-            <span class="tpl tpl-thesis"><span class="tpl-page"><i class="crest"></i><b></b><i class="t-line"></i><i class="t-line short"></i></span><em><span lang="en">Thesis</span><span lang="zh-CN">学位论文</span></em></span>
-            <span class="tpl tpl-conf chosen"><span class="tpl-page"><b></b><i class="t-line short"></i><span class="cols"><span><i></i><i></i><i></i><i class="fig"></i><i></i></span><span><i></i><i></i><i class="eq"></i><i></i><i></i></span></span></span><em><span lang="en">Conference</span><span lang="zh-CN">会议</span></em></span>
-            <span class="tpl tpl-journal"><span class="tpl-page"><b></b><i class="t-line short"></i><i class="abstract"></i><i></i><i></i><i></i><i class="short"></i></span><em><span lang="en">Journal</span><span lang="zh-CN">期刊</span></em></span>
-            <span class="tpl tpl-slides"><span class="tpl-page"><b></b><span class="slide-body"><i></i><i></i><i class="short"></i></span><i class="slide-fig"></i></span><em><span lang="en">Slides</span><span lang="zh-CN">幻灯片</span></em></span>
-            <span class="tpl tpl-poster"><span class="tpl-page"><b></b><span class="cols three"><span><i class="block"></i><i></i></span><span><i></i><i class="block tall"></i></span><span><i class="block"></i><i></i></span></span></span><em><span lang="en">Poster</span><span lang="zh-CN">海报</span></em></span>
-            <span class="tpl tpl-cv"><span class="tpl-page"><b></b><i class="t-line short"></i><span class="cv-row"><i></i><i></i></span><span class="cv-row"><i></i><i></i></span><span class="cv-row"><i></i><i></i></span></span><em><span lang="en">CV</span><span lang="zh-CN">简历</span></em></span>
-          </span>
-        </div>
-        <h3><span lang="en">Start from a Template</span><span lang="zh-CN">从模板开始</span></h3>
-        <p><span lang="en">Papilot Universe has theses, journal and conference kits, slides, posters, CVs and books, and points more than 400 conferences to the template their call for papers asks for. Choose one and Papilot creates the paper, ready to compile.</span><span lang="zh-CN">Papilot Universe 里有学位论文、期刊和会议模板，也有幻灯片、海报、简历和书籍；400 多个会议都标好了征稿要求用哪个模板。选好后 Papilot 会建好文档，马上就能编译。</span></p>
-        <footer><a href="https://papilot.ai/universe/"><span lang="en">Browse Papilot Universe</span><span lang="zh-CN">浏览 Papilot Universe</span></a></footer>
-      </article>
-      <article class="more-card">
-        <div class="more-art phone-art" aria-hidden="true">
-          <span class="phone">
-            <span class="phone-island"></span>
-            <span class="phone-nav"><span class="phone-seg"><b class="on"><svg class="ic"><use href="#i-paper"/></svg><span lang="en">Review</span><span lang="zh-CN">审阅</span></b><b><svg class="ic"><use href="#i-chat"/></svg><span lang="en">Chat</span><span lang="zh-CN">对话</span></b></span></span>
-            <span class="phone-page">
-              <span class="phone-head"><b>3.2</b><i></i></span>
-              <i class="p-line"></i><i class="p-line short"></i>
-              <span class="phone-change"><span class="phone-side before"><i></i><i class="mid"></i></span><span class="phone-side after"><i></i><i class="short"></i></span></span>
-              <i class="p-line"></i><i class="p-line"></i><i class="p-line short"></i>
-              <span class="phone-eq"><i></i>=<span class="frac"><i></i><b></b><i></i></span></span>
-              <i class="p-line"></i><i class="p-line short"></i>
-            </span>
-            <span class="phone-decide"><i class="ok"><svg class="ic"><use href="#i-check"/></svg></i><i class="no"><svg class="ic"><use href="#i-close"/></svg></i><i class="talk"><svg class="ic"><use href="#i-chat"/></svg></i></span>
-          </span>
-        </div>
+    <article class="feature">
+      <div class="feature-text">
+        <p class="step"><span lang="en">Phone</span><span lang="zh-CN">手机</span></p>
         <h3><span lang="en">Review from Your Phone</span><span lang="zh-CN">在手机上审阅</span></h3>
         <p><span lang="en">Open Papilot on your phone or tablet over Tailscale, then read the PDF, mark it up and accept changes away from your desk.</span><span lang="zh-CN">通过 Tailscale 在手机或平板上打开 Papilot，不在电脑前也能看 PDF、写批注、接受改动。</span></p>
-        <footer><a href="https://github.com/PapilotAI/papilot/blob/main/docs/guide.md#remote-access-with-tailscale"><span lang="en">Set up remote access</span><span lang="zh-CN">设置远程访问（英文）</span></a></footer>
-      </article>
-    </div>
+        <p class="feature-link"><a href="https://github.com/PapilotAI/papilot/blob/main/docs/guide.md#remote-access-with-tailscale"><span lang="en">Set up remote access</span><span lang="zh-CN">设置远程访问（英文）</span></a></p>
+      </div>
+      <figure class="scene phone-scene" data-scene="phone" role="img" aria-label="Papilot on a phone: two changes shown typeset on the page, each accepted with a tap" data-zh-aria-label="手机上的 Papilot：页面上两处排好版的改动，各点一下就接受">
+        <div class="scene-art" aria-hidden="true" inert>
+          <div class="phone">
+            <span class="phone-island"></span>
+            <div class="phone-nav"><i class="tb-icon"><svg class="ic"><use href="#i-menu"/></svg></i><span class="tb-seg"><b class="on"><svg class="ic"><use href="#i-paper"/></svg><span lang="en">Review</span><span lang="zh-CN">审阅</span><em class="tb-badge phone-badge">2</em></b><b><svg class="ic"><use href="#i-chat"/></svg><span lang="en">Chat</span><span lang="zh-CN">对话</span></b></span><span class="tb-space"></span><i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i></div>
+            <div class="phone-pdf">
+              <div class="review-page">
+                <span class="sheet-head"><b>4</b><i style="width:52%"></i></span>
+                <span class="sheet-lines"><i style="width:72%"></i></span>
+                <article class="review-change current" data-state="pending">
+                  <div class="review-head"><span class="review-number"><span lang="en">Change 1</span><span lang="zh-CN">修改 1</span></span><i><svg class="ic"><use href="#i-copy"/></svg></i><i><svg class="ic"><use href="#i-code"/></svg></i></div>
+                  <div class="review-side before"><span class="review-label"><span lang="en">Before</span><span lang="zh-CN">修改前</span></span><p class="review-body"><span lang="en"><del>Reduction preserves types.</del></span><span lang="zh-CN"><del>归约保持类型。</del></span></p></div>
+                  <div class="review-side after"><span class="review-label"><span lang="en">After</span><span lang="zh-CN">修改后</span></span><p class="review-body"><span lang="en"><ins>If Γ ⊢ <i>e</i> : <i>τ</i> and <i>e</i> ⟶ <i>e</i>′, then Γ ⊢ <i>e</i>′ : <i>τ</i>.</ins></span><span lang="zh-CN"><ins>若 Γ ⊢ <i>e</i> : <i>τ</i> 且 <i>e</i> ⟶ <i>e</i>′，则 Γ ⊢ <i>e</i>′ : <i>τ</i>。</ins></span></p></div>
+                </article>
+                <span class="sheet-lines"><i style="width:100%"></i><i style="width:54%"></i></span>
+                <article class="review-change" data-state="pending">
+                  <div class="review-head"><span class="review-number"><span lang="en">Change 2</span><span lang="zh-CN">修改 2</span></span><i><svg class="ic"><use href="#i-copy"/></svg></i><i><svg class="ic"><use href="#i-code"/></svg></i></div>
+                  <div class="review-side before"><span class="review-label"><span lang="en">Before</span><span lang="zh-CN">修改前</span></span><p class="review-body"><span lang="en">The proof is by induction on <del><i>e</i></del>.</span><span lang="zh-CN">证明对 <del><i>e</i></del> 归纳。</span></p></div>
+                  <div class="review-side after"><span class="review-label"><span lang="en">After</span><span lang="zh-CN">修改后</span></span><p class="review-body"><span lang="en">The proof is by induction on <ins>the typing derivation</ins>.</span><span lang="zh-CN">证明对<ins>类型推导</ins>归纳。</span></p></div>
+                </article>
+                <span class="sheet-lines fill"><i style="width:100%"></i><i style="width:100%"></i><i style="width:72%"></i><i style="width:100%"></i><i style="width:100%"></i></span>
+              </div>
+              <div class="phone-decide"><i><svg class="ic"><use href="#i-chevron-left"/></svg></i><span class="phone-count">1 / 2</span><i class="m-accept"><svg class="ic"><use href="#i-check"/></svg></i><i class="m-reject"><svg class="ic"><use href="#i-close"/></svg></i><i class="m-talk"><svg class="ic"><use href="#i-chat"/></svg></i><i><svg class="ic"><use href="#i-chevron-right"/></svg></i></div>
+              <div class="phone-tools"><i><svg class="ic"><use href="#i-tool-magic"/></svg></i><i><svg class="ic"><use href="#i-tool-note"/></svg></i><i><svg class="ic"><use href="#i-tool-region"/></svg></i><i><svg class="ic"><use href="#i-tool-sticky"/></svg></i><i><svg class="ic"><use href="#i-tool-strike"/></svg></i><i class="on"><svg class="ic"><use href="#i-tool-select"/></svg></i></div>
+            </div>
+            <span class="phone-home"></span>
+          </div>
+          <span class="app-cursor touch"></span>
+        </div>
+      </figure>
+    </article>
+
+    <article class="feature flip">
+      <div class="feature-text">
+        <p class="step"><span lang="en">Templates</span><span lang="zh-CN">模板</span></p>
+        <h3><span lang="en">Start from a Template</span><span lang="zh-CN">从模板开始</span></h3>
+        <p><span lang="en">Papilot Universe has theses, journal and conference kits, slides, posters, CVs and books, and points more than 400 conferences to the template their call for papers asks for. Choose one and Papilot creates the paper, ready to compile.</span><span lang="zh-CN">Papilot Universe 里有学位论文、期刊和会议模板，也有幻灯片、海报、简历和书籍；400 多个会议都标好了征稿要求用哪个模板。选好后 Papilot 会建好文档，马上就能编译。</span></p>
+        <p class="feature-link"><a href="https://papilot.ai/universe/"><span lang="en">Browse Papilot Universe</span><span lang="zh-CN">浏览 Papilot Universe</span></a></p>
+      </div>
+      <figure class="app-window scene" data-scene="template" data-step="found" role="img" aria-label="New paper from a template: searching POPL finds the PACMPL template its call for papers asks for, and Create paper sets it up, ready to compile" data-zh-aria-label="从模板新建：搜索 POPL，就找到它征稿要求的 PACMPL 模板，点“创建论文”就建好了，马上能编译">
+        <div class="scene-art" aria-hidden="true" inert>
+          <div class="app-bar"><span class="lights"><i></i><i></i><i></i></span></div>
+          <div class="app-top">
+            <div class="m-nav"><i class="tb-icon"><svg class="ic"><use href="#i-menu"/></svg></i><span class="tb-seg"><b class="seg-pdf"><svg class="ic"><use href="#i-pdf"/></svg>PDF</b><b class="seg-side"><svg class="ic"><use href="#i-compose"/></svg><span lang="en">New task</span><span lang="zh-CN">新任务</span></b></span><span class="tb-space"></span><i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i></div>
+            <div class="app-tb"><i class="tb-icon tb-sidebar"><svg class="ic"><use href="#i-sidebar"/></svg></i><span class="tb-seg"><b class="on"><svg class="ic"><use href="#i-paper"/></svg><span class="tb-label">PDF</span></b><b><svg class="ic"><use href="#i-diff"/></svg><span class="tb-label"><span lang="en">Changes</span><span lang="zh-CN">改动</span></span></b></span><span class="tb-space"></span><i class="tb-icon tb-run"><svg class="ic"><use href="#i-compile"/></svg></i></div>
+            <div class="app-tb side"><span class="tb-tab"><svg class="ic"><use href="#i-compose"/></svg><span lang="en">New task</span><span lang="zh-CN">新任务</span></span></div>
+          </div>
+          <div class="app-body np-body">
+            <div class="app-pdf">
+              <div class="review-page np-old">
+                <span class="sheet-head"><b>3</b><i style="width:38%"></i></span>
+                <span class="sheet-lines fill"><i style="width:100%"></i><i style="width:100%"></i><i style="width:64%"></i><i style="width:100%"></i><i style="width:100%"></i><i style="width:100%"></i><i style="width:82%"></i><i style="width:100%"></i><i style="width:100%"></i><i style="width:58%"></i></span>
+              </div>
+              <div class="review-page np-new">
+                <p class="np-paper-title">The Name of the Title Is Hope</p>
+                <span class="np-authors"><i></i><i></i><i></i></span>
+                <span class="np-abstract"><i style="width:100%"></i><i style="width:100%"></i><i style="width:100%"></i><i style="width:76%"></i></span>
+                <span class="np-acm"><i style="width:84%"></i><i style="width:100%"></i><i style="width:52%"></i></span>
+                <span class="sheet-lines fill"><b class="np-section"></b><i style="width:100%"></i><i style="width:100%"></i><i style="width:100%"></i><i style="width:68%"></i><i style="width:100%"></i><i style="width:100%"></i></span>
+              </div>
+            </div>
+            <div class="app-chat">
+              <div class="chat-thread"></div>
+              <div class="chat-composer">
+                <span class="chat-input"><i></i></span>
+                <span class="chat-foot"><i class="chat-plus"><svg class="ic"><use href="#i-plus"/></svg></i><span class="chat-agent agent claude"><i></i><b>Claude</b><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="chat-send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></span>
+              </div>
+            </div>
+          </div>
+          <div class="np-dialog">
+            <p class="np-title"><b><span lang="en">New paper</span><span lang="zh-CN">新建论文</span></b><svg class="ic"><use href="#i-close"/></svg></p>
+            <p class="np-tabs"><span><span lang="en">Blank</span><span lang="zh-CN">空白</span></span><span><span lang="en">Import or open</span><span lang="zh-CN">导入或打开</span></span><span class="on"><span lang="en">Templates</span><span lang="zh-CN">模板</span></span></p>
+            <div class="np-pick">
+              <p class="np-search"><svg class="ic"><use href="#i-search"/></svg><span class="np-query">POPL</span><span class="np-hint"><span lang="en">Search templates</span><span lang="zh-CN">搜索模板</span></span></p>
+              <p class="np-groups"><b class="on"><span lang="en">All</span><span lang="zh-CN">全部</span></b><b><span lang="en">Theses</span><span lang="zh-CN">学位论文</span></b><b><span lang="en">Conferences</span><span lang="zh-CN">会议</span></b><b><span lang="en">Journals</span><span lang="zh-CN">期刊</span></b><b><span lang="en">Slides</span><span lang="zh-CN">演示文稿</span></b><b><span lang="en">Posters</span><span lang="zh-CN">海报</span></b><b><span lang="en">CVs</span><span lang="zh-CN">简历</span></b><b><span lang="en">Books</span><span lang="zh-CN">书籍</span></b></p>
+              <span class="np-grid np-all">
+                <span class="np-card"><span class="np-thumb t-thesis"><i class="crest"></i><b></b><i></i><i class="short"></i><span class="t-foot"><i></i><i></i></span></span><span class="np-name">USTC Thesis</span><span class="np-meta">University of Science and Technology of China</span></span>
+                <span class="np-card"><span class="np-thumb t-neurips"><b></b><span class="t-authors"><i></i><i></i></span><i class="t-head"></i><span class="t-indent"><i></i><i></i><i></i></span><i></i><i></i><i></i><i class="short"></i></span><span class="np-name">NeurIPS 2026</span></span>
+                <span class="np-card"><span class="np-thumb t-journal"><b></b><i class="short"></i><i class="t-box"></i><span class="cols"><span><i></i><i></i><i></i><i></i></span><span><i></i><i></i><i class="t-fig"></i><i></i></span></span></span><span class="np-name">Elsevier Journal (elsarticle)</span></span>
+                <span class="np-card"><span class="np-thumb t-slides"><span class="t-slide"><b></b><i></i><i></i><i class="short"></i></span><span class="t-slide"><b></b><i class="t-fig"></i></span></span><span class="np-name">Beamer Slides (Moloch)</span><span class="np-meta">Papilot</span></span>
+                <span class="np-card"><span class="np-thumb t-poster"><b></b><span class="cols three"><span><i class="t-block"></i><i></i><i></i></span><span><i></i><i class="t-block tall"></i></span><span><i class="t-block"></i><i></i><i></i></span></span></span><span class="np-name">Gemini Poster</span><span class="np-meta">Anish Athalye</span></span>
+                <span class="np-card"><span class="np-thumb t-cv"><b></b><i class="short"></i><i class="t-rule"></i><i></i><i></i><i class="t-rule"></i><i></i><i class="short"></i></span><span class="np-name">Jake’s Resume</span><span class="np-meta">Jake Gutierrez</span></span>
+                <span class="np-card"><span class="np-thumb t-book"><span class="t-cover"></span><b></b><i class="short"></i></span><span class="np-name">ElegantBook</span><span class="np-meta">ElegantLaTeX</span></span>
+                <span class="np-card"><span class="np-thumb t-lncs"><b></b><i class="short"></i><i class="t-box"></i><i></i><i></i><i></i><i></i><i class="short"></i></span><span class="np-name">Springer LNCS</span></span>
+              </span>
+              <span class="np-grid np-found">
+                <span class="np-card np-popl"><span class="np-thumb t-acm"><b></b><i class="short"></i><i class="t-box"></i><i class="t-acm-box"></i><i></i><i></i><i></i><i class="short"></i></span><span class="np-name">POPL 2027</span><span class="np-meta">PACMPL (POPL, PLDI, ICFP, OOPSLA)</span></span>
+                <span class="np-card"><span class="np-thumb t-acm"><b></b><i class="short"></i><i class="t-box"></i><i class="t-acm-box"></i><i></i><i></i><i></i><i class="short"></i></span><span class="np-name">PACMPL (POPL, PLDI, ICFP, OOPSLA)</span><span class="np-meta">ACM</span></span>
+              </span>
+            </div>
+            <div class="np-details">
+              <p class="np-chosen"><span class="np-thumb t-acm"><b></b><i class="short"></i><i class="t-box"></i><i></i><i></i></span><span class="np-chosen-text"><b>POPL 2027</b><small>PACMPL (POPL, PLDI, ICFP, OOPSLA)</small></span><span class="np-button"><span lang="en">Change…</span><span lang="zh-CN">更改…</span></span></p>
+              <p class="np-label"><span lang="en">Paper name</span><span lang="zh-CN">论文名称</span></p>
+              <p class="np-field"><span class="np-typed"></span></p>
+              <p class="np-label"><span lang="en">Save in</span><span lang="zh-CN">保存到</span></p>
+              <p class="np-location"><svg class="ic"><use href="#i-folder"/></svg><span class="np-chosen-text"><b>Papers</b><small>~/Papers</small></span><span class="np-button"><span lang="en">Change…</span><span lang="zh-CN">更改…</span></span></p>
+              <p class="np-status"><span class="np-spinner"></span><span lang="en">Creating your paper…</span><span lang="zh-CN">正在创建论文…</span></p>
+              <p class="np-foot"><span class="np-target">~/Papers/<b></b></span><span class="np-create"><span lang="en">Create paper</span><span lang="zh-CN">创建论文</span></span></p>
+            </div>
+          </div>
+          <span class="app-cursor"><svg viewBox="0 0 24 24"><path d="M5.5 2.5v17.2l4.3-4.1 2.9 6.6 3.1-1.3-2.9-6.5h6z"/></svg></span>
+        </div>
+      </figure>
+    </article>
   </div>
 </section>
 
@@ -1359,7 +1423,7 @@ const pick = (chat, texts) => {
 
 // Live sync with Overleaf. The change is accepted on the PDF and committed
 // from the chat; its words cross the bridge into the coauthor's editor. Then
-// Ada types on Overleaf, and her sentence crosses back into the PDF as it
+// Ada types on Overleaf, and the sentence crosses back into the PDF as it
 // rebuilds. On a phone the save step is on the Chat tab.
 {
   const stage = document.querySelector('[data-scene=overleaf]'), play = player(stage);
@@ -1495,6 +1559,80 @@ const pick = (chat, texts) => {
     stage.dataset.step = 'synced';
     await play.sleep(3600);
     await play.restart([stage.querySelector('.sync-app'), stage.querySelector('.ol-window')], begin);
+  });
+}
+
+// Review from your phone: a tap on the capsule accepts the current change and
+// the next one becomes current; once both are decided the capsule gives way
+// to the annotation tools. A finger taps where the other windows' pointer
+// glides.
+{
+  const app = document.querySelector('[data-scene=phone]'), play = player(app);
+  const changes = [...app.querySelectorAll('.review-change')], decisions = changes.map(review);
+  const accept = app.querySelector('.m-accept'), count = app.querySelector('.phone-count'), badge = app.querySelector('.phone-badge');
+  const at = i => {
+    changes.forEach((change, j) => change.classList.toggle('current', j === i));
+    count.textContent = `${Math.min(i + 1, changes.length)} / ${changes.length}`;
+    badge.textContent = changes.length - i || '';
+  };
+  const begin = () => instantly([app], () => { for (const change of changes) change.dataset.state = 'pending'; at(0); });
+  const tap = async el => {
+    play.cursor.style.transform = play.point(el, .5, .5);
+    play.cursor.classList.add('shown');
+    await play.sleep(280);
+    await play.press(el);
+    play.cursor.classList.remove('shown');
+  };
+  play.loop(begin, async () => {
+    for (let i = 0; i < changes.length; i++) {
+      await play.sleep(i ? 1500 : 1800);
+      await tap(accept);
+      decisions[i]('accepted');
+      at(i + 1);
+    }
+    await play.sleep(3200);
+    await play.restart([app.querySelector('.phone-pdf')], begin);
+  });
+}
+
+// Start from a template: in the New paper dialog the search finds the
+// conference's template, the paper gets a name, and Create paper sets it up;
+// the dialog closes on the new paper's first page.
+{
+  const app = document.querySelector('[data-scene=template]'), play = player(app);
+  const dialog = app.querySelector('.np-dialog'), search = app.querySelector('.np-search'), query = search.querySelector('.np-query');
+  const card = app.querySelector('.np-popl'), typed = app.querySelector('.np-typed'), target = app.querySelector('.np-target b'), create = app.querySelector('.np-create');
+  const venue = query.textContent, name = 'soundness';
+  const begin = () => instantly([app], () => {
+    app.dataset.step = 'gallery'; query.textContent = typed.textContent = target.textContent = '';
+    search.classList.remove('focus'); card.classList.remove('hover');
+  });
+  play.loop(begin, async () => {
+    await play.sleep(1200);
+    play.show(dialog);
+    await play.glide(() => play.point(search, .3, .5), 700);
+    await play.press(search);
+    search.classList.add('focus');
+    await play.type(query, venue, 600);
+    app.dataset.step = 'found';
+    await play.sleep(900);
+    await play.glide(() => play.point(card.querySelector('.np-thumb')), 650);
+    card.classList.add('hover');
+    await play.sleep(350);
+    await play.press(card);
+    app.dataset.step = 'details';
+    await play.sleep(600);
+    for (const letter of name) { typed.textContent += letter; target.textContent += letter; await play.sleep(85); }
+    await play.sleep(500);
+    await play.glide(() => play.point(create), 650);
+    await play.press(create);
+    app.dataset.step = 'creating';
+    await play.sleep(1400);
+    app.dataset.step = 'created';
+    await play.sleep(500);
+    play.cursor.classList.remove('shown');
+    await play.sleep(3000);
+    await play.restart([dialog, app.querySelector('.app-pdf')], begin);
   });
 }
 

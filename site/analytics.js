@@ -6,12 +6,12 @@
   const pagePath = new URL(document.querySelector('link[rel=canonical]').href).pathname;
   const placement = element => element.closest('.topbar') ? 'header' : element.closest('.hero') ? 'hero' : element.closest('.footer') ? 'footer' : 'download';
   const languages = ['en', 'zh-CN', 'zh-Hant', 'ja', 'ko', 'de', 'fr', 'es', 'pt', 'it', 'sv'];
-  const sections = ['hero', 'agents', 'why', 'features', 'download', 'feature_notes', 'feature_revise', 'feature_record'];
+  const sections = ['hero', 'features', 'overleaf', 'record', 'anywhere', 'download', 'feature_notes', 'feature_revise', 'feature_overleaf', 'feature_models', 'feature_record', 'feature_phone', 'feature_template'];
   const schema = {
     download_click: { placement: ['hero', 'download'], platform: ['mac', 'linux', 'windows'], arch: ['arm64', 'x64'], format: ['dmg', 'AppImage', 'deb', 'exe', 'portable-exe'] },
     copy_install: { placement: ['hero', 'download'] },
     copy_install_failed: { placement: ['hero', 'download'] },
-    navigation: { target: ['hero', 'agents', 'why', 'features', 'download'], placement: ['header', 'hero', 'footer'] },
+    navigation: { target: ['hero', 'features', 'download'], placement: ['header', 'hero', 'footer'] },
     outbound_click: { destination: ['github', 'discord', 'releases', 'npm', 'readme', 'guide', 'changelog', 'license', 'discussions', 'mactex', 'texlive'], placement: ['header', 'hero', 'download', 'footer'] },
     menu_open: { menu: ['download', 'language'], placement: ['header', 'hero', 'download'] },
     language_change: { language: languages },
@@ -116,7 +116,8 @@
     ['https://github.com/PapilotAI/papilot', 'github'], ['https://discord.gg/WdgZDDAvwj', 'discord'],
     ['https://github.com/PapilotAI/papilot/releases/latest', 'releases'], ['https://www.npmjs.com/package/papilot', 'npm'],
     ['https://github.com/PapilotAI/papilot/discussions', 'discussions'], ['https://github.com/PapilotAI/papilot/blob/main/LICENSE', 'license'],
-    ['https://github.com/PapilotAI/papilot/blob/main/docs/guide.md', 'guide'], ['https://github.com/PapilotAI/papilot/blob/main/docs/guide.md#agents', 'guide'],
+    ['https://github.com/PapilotAI/papilot/blob/main/docs/guide.md', 'guide'],
+    ...['agents', 'workflow', 'sync-with-overleaf', 'remote-access-with-tailscale'].map(section => [`https://github.com/PapilotAI/papilot/blob/main/docs/guide.md#${section}`, 'guide']),
     ['https://github.com/PapilotAI/papilot/blob/main/CHANGELOG.md', 'changelog'], ['https://www.tug.org/mactex/', 'mactex'], ['https://www.tug.org/texlive/', 'texlive'],
     ['https://github.com/PapilotAI/papilot#readme', 'readme'],
     ...languages.filter(language => language !== 'en').map(language => [`https://github.com/PapilotAI/papilot/blob/main/docs/readme/README.${language}.md`, 'readme']),

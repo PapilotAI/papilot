@@ -50,13 +50,14 @@ try {
   await page.evaluate(() => document.fonts.ready);
 
   // The first screen is the headline, the window and the downloads; the
-  // arrow sits on it and the agents start just below.
+  // arrow sits on it and leads to the features just below.
   const fold = await page.evaluate(() => ({
     cue: document.querySelector('.scroll-cue').getBoundingClientRect().bottom,
-    agents: document.querySelector('#agents').getBoundingClientRect().top,
+    features: document.querySelector('#features').getBoundingClientRect().top,
     inner: innerHeight,
   }));
-  assert.ok(fold.cue <= fold.inner && fold.agents >= fold.inner - 1, 'the first screen holds the hero');
+  assert.ok(fold.cue <= fold.inner && fold.features >= fold.inner - 1, 'the first screen holds the hero');
+  assert.equal(await page.locator('.scroll-cue').getAttribute('href'), '#features');
   assert.equal(await page.locator('video').count(), 0);
 
   // The left navigation is just Universe and the blog; the demo stays on the right.
@@ -101,9 +102,11 @@ try {
   await page.locator(`${change} .review-latex`).click();
   assert.equal(await page.locator(`${change} .review-source`).isVisible(), true);
 
-  // Every agent shows at once; on screen they arrive, then one at a time lights up.
+  // Every agent is listed under Any Agent, Any Model and shows at once; on
+  // screen they arrive, then one at a time lights up.
   const grid = page.locator('.agent-grid');
   await checkAgentRoster(page);
+  assert.equal(await page.locator('.feature:has([data-scene=models]) .feature-text > .agent-grid').count(), 1, 'the agents are listed with any agent, any model');
   await grid.scrollIntoViewIfNeeded();
   await page.waitForFunction(() => document.querySelector('.agent-grid.arrived'));
   const view = await page.evaluate(() => innerHeight);
@@ -112,9 +115,9 @@ try {
   // The feature windows are pictures: named, with nothing to focus inside,
   // and each plays its round once on screen, at a fixed height.
   const scenes = page.locator('.scene');
-  assert.equal(await scenes.count(), 4);
+  assert.equal(await scenes.count(), 6);
   assert.equal(await page.locator('.scene-art :is(a, button, input, textarea, [tabindex])').evaluateAll(nodes => nodes.filter(node => !node.closest('[inert]')).length), 0);
-  for (const name of ['notes', 'revise', 'models', 'record']) {
+  for (const name of ['notes', 'revise', 'models', 'record', 'phone', 'template']) {
     const scene = page.locator(`[data-scene=${name}]`);
     assert.equal(await scene.getAttribute('role'), 'img');
     assert.ok(await scene.getAttribute('aria-label'));
@@ -148,9 +151,10 @@ try {
   assert.equal((await sync.boundingBox()).height, syncHeight, 'the sync stage keeps its height');
   await sync.screenshot({ path: 'test-results/site/overleaf-desktop.png' });
 
-  // The README's reasons follow the agents in its order, then the downloads.
-  const order = await page.evaluate(() => ['#agents', '#features', '#overleaf', '#record', '#anywhere', '#download'].map(id => document.querySelector(id).getBoundingClientRect().top));
+  // The README's reasons follow the hero in its order, then the downloads.
+  const order = await page.evaluate(() => ['#features', '#overleaf', '#record', '#anywhere', '#download'].map(id => document.querySelector(id).getBoundingClientRect().top));
   assert.deepEqual([...order].sort((a, b) => a - b), order, 'the reasons, in order, then the downloads');
+  assert.deepEqual(await page.locator('.scene').evaluateAll(apps => apps.map(app => app.dataset.scene)), ['notes', 'revise', 'models', 'record', 'phone', 'template'], 'each reason is a feature, in order');
 
   // Picking another agent's model in the menu reruns the request, in a task
   // that says where it was restarted from.
@@ -163,6 +167,30 @@ try {
   assert.equal(await models.locator('.models-restart').isVisible(), true, 'the rerun says where it restarted from');
   assert.equal(await models.locator('.models-chip b').innerText(), 'Claude');
 
+  // On the phone a tap accepts each change in turn, and the capsule then
+  // gives way to the annotation tools.
+  const handset = page.locator('[data-scene=phone]');
+  await handset.scrollIntoViewIfNeeded();
+  await page.mouse.move(1, 1);
+  await page.waitForFunction(() => document.querySelectorAll('[data-scene=phone] .review-change[data-state=accepted]').length === 1);
+  assert.equal(await handset.locator('.phone-count').innerText(), '2 / 2', 'the next change is current');
+  await page.waitForFunction(() => document.querySelectorAll('[data-scene=phone] .review-change[data-state=accepted]').length === 2);
+  assert.equal(await handset.locator('.phone-tools').isVisible(), true, 'the tools return once nothing is left to decide');
+  assert.equal(await handset.locator('.phone-decide').isVisible(), false);
+
+  // Searching a conference in the New paper dialog finds the template its
+  // call for papers asks for; Create paper opens the new paper.
+  const template = page.locator('[data-scene=template]'), templateStep = step => page.waitForFunction(value => document.querySelector('[data-scene=template]').dataset.step === value, step);
+  await template.scrollIntoViewIfNeeded();
+  await page.mouse.move(1, 1);
+  await templateStep('found');
+  assert.deepEqual(await template.locator('.np-found .np-name').allInnerTexts(), ['POPL 2027', 'PACMPL (POPL, PLDI, ICFP, OOPSLA)']);
+  await templateStep('details');
+  assert.equal(await template.locator('.np-chosen .np-chosen-text b').innerText(), 'POPL 2027');
+  await templateStep('created');
+  assert.equal(await template.locator('.np-new').isVisible(), true, 'the new paper is in the PDF');
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('[data-scene=template] .np-dialog')).visibility === 'hidden');
+
   // Every reason to use Papilot leads somewhere: the agents' setup, a next
   // step for each feature, Overleaf sync, templates and remote access, and
   // each guide link names a section the guide has.
@@ -170,8 +198,8 @@ try {
   for (const [selector, href] of [['.feature:has([data-scene=models]) .feature-link a', `${guide}#agents`], ['.hero-overleaf', '#overleaf'], ['#overleaf .section-links a', `${guide}#sync-with-overleaf`], ['.get-links a:first-child', guide]]) {
     assert.equal(await page.locator(selector).getAttribute('href'), href, selector);
   }
-  assert.equal(await page.locator('.feature-link a').count(), 4, 'each feature has a next step');
-  assert.deepEqual(await page.locator('#anywhere footer a').evaluateAll(links => links.map(link => link.getAttribute('href'))), [universe, `${guide}#remote-access-with-tailscale`]);
+  assert.equal(await page.locator('.feature-link a').count(), 6, 'each feature has a next step');
+  assert.deepEqual(await page.locator('#anywhere .feature-link a').evaluateAll(links => links.map(link => link.getAttribute('href'))), [`${guide}#remote-access-with-tailscale`, universe]);
   const slug = heading => heading.trim().toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s/g, '-');
   const sections = new Set(fs.readFileSync('docs/guide.md', 'utf8').split('\n').filter(line => /^#{1,6} /.test(line)).map(line => slug(line.replace(/^#+ /, ''))));
   for (const href of await page.locator(`a[href^="${guide}#"]`).evaluateAll(links => links.map(link => link.getAttribute('href')))) {
@@ -190,6 +218,9 @@ try {
   assert.equal(await calmPage.locator('.agent-grid.waiting').count(), 0, 'the agents stand in colour');
   assert.equal(await calmPage.locator('[data-scene=overleaf]').getAttribute('data-step'), 'synced', 'the sync shows where its round ends');
   for (const selector of ['.ol-new', '.theirs', '.sync-committed']) assert.equal(await calmPage.locator(`[data-scene=overleaf] ${selector}`).isVisible(), true, selector);
+  assert.equal(await calmPage.locator('[data-scene=phone] .review-change[data-state=pending]').count(), 2, 'the phone shows the changes to decide');
+  assert.equal(await calmPage.locator('[data-scene=template]').getAttribute('data-step'), 'found', 'the dialog shows the search');
+  assert.equal(await calmPage.locator('[data-scene=template] .np-query').innerText(), 'POPL');
   await calmPage.locator(`${change} .review-accept`).click();
   assert.equal(await calmPage.locator(`${change} .before`).isVisible(), false, 'decisions are immediate');
   for (const width of [1440, 390]) for (const colorScheme of ['light', 'dark']) for (const locale of ['en', 'zh-CN']) {
@@ -218,7 +249,7 @@ try {
   const noJs = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1440, height: 900 } });
   const staticPage = await noJs.newPage();
   await staticPage.goto(origin);
-  for (const selector of [`${change} .before`, `${change} .after`, `${hero} .chat-bubble`, '[data-scene=record] .git-pushed', '[data-scene=overleaf] .ol-new', '[data-scene=overleaf] .theirs', '[data-scene=models] .models-restart']) assert.equal(await staticPage.locator(selector).isVisible(), true, selector);
+  for (const selector of [`${change} .before`, `${change} .after`, `${hero} .chat-bubble`, '[data-scene=record] .git-pushed', '[data-scene=overleaf] .ol-new', '[data-scene=overleaf] .theirs', '[data-scene=models] .models-restart', '[data-scene=phone] .review-change:last-of-type .before', '[data-scene=phone] .phone-decide', '[data-scene=template] .np-popl']) assert.equal(await staticPage.locator(selector).isVisible(), true, selector);
   await staticPage.locator(hero).screenshot({ path: 'test-results/site/no-js.png' });
   await noJs.close();
 
@@ -344,7 +375,7 @@ try {
       await page.evaluate(() => document.fonts.ready);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${locale}/${width}: no sideways scroll`);
       await page.locator('#download-button').click();
-      for (const selector of ['.topbar-inner', '.topbar .brand', '.nav', '.topbar-universe', '.topbar-demo', '.topbar .github-link', '.hero-overleaf', '.hero-universe', '.hero-star', '#download-button', '#download-list', '.agent-grid', '.agent-grid li', '.app-window', '.sync-stage', '.sync-points li', '.more-card', '.tpl-shelf']) {
+      for (const selector of ['.topbar-inner', '.topbar .brand', '.nav', '.topbar-universe', '.topbar-demo', '.topbar .github-link', '.hero-overleaf', '.hero-universe', '.hero-star', '#download-button', '#download-list', '.agent-grid', '.agent-grid li', '.app-window', '.sync-stage', '.sync-points li', '.phone', '.np-dialog']) {
         const boxes = await page.locator(selector).evaluateAll(nodes => nodes.map(el => ({ width: el.clientWidth, scroll: el.scrollWidth, left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right })));
         for (const box of boxes) {
           assert.ok(box.scroll <= box.width + 1, `${locale}/${width}: ${selector} contents fit`);
@@ -356,7 +387,7 @@ try {
       // sides, which fonts wider than this machine's would push off screen.
       assert.ok(await page.locator('.hero-note').evaluate(note => { const box = note.getBoundingClientRect(); return [...note.children].every(link => { const r = link.getBoundingClientRect(); return r.left >= box.left - 1 && r.right <= box.right + 1; }); }), `${locale}/${width}: the hero note's links fit inside it`);
       const panels = await page.locator('.scene').evaluateAll(apps => apps.map(app => {
-        const [paneSelector, targetSelector] = { notes: ['.app-pdf', '.scene-figure'], revise: ['.app-pdf', '.review-change'], models: ['.app-chat', '.chat-composer'], record: ['.app-history', '.git-new'] }[app.dataset.scene];
+        const [paneSelector, targetSelector] = { notes: ['.app-pdf', '.scene-figure'], revise: ['.app-pdf', '.review-change'], models: ['.app-chat', '.chat-composer'], record: ['.app-history', '.git-new'], phone: ['.phone-pdf', '.review-change:last-of-type'], template: ['.np-dialog', '.np-all .np-name'] }[app.dataset.scene];
         const pane = app.querySelector(paneSelector).getBoundingClientRect(), target = app.querySelector(targetSelector).getBoundingClientRect();
         return { scene: app.dataset.scene, bottom: target.bottom - pane.top, height: pane.height };
       }));
@@ -379,7 +410,7 @@ try {
   assert.equal(await orbit.evaluate(el => getComputedStyle(el).animationName), 'none');
   assert.deepEqual(errors, []);
   assert.equal(requests.some(url => /\.(mp4|gif|jpe?g)|feature-.*\.png/.test(url)), false);
-  console.log('Site checks passed: annotations during scroll and resize, first screen, the hero round and takeover, feature windows, Overleaf sync both ways, the rerun from the model menu, next steps and guide anchors, reduced motion, no-JS, Universe links and keyboard navigation, all language URLs and SEO, saved language, both download menus, and layouts from 320px to 1440px including header breakpoints.');
+  console.log('Site checks passed: annotations during scroll and resize, first screen, the hero round and takeover, feature windows, Overleaf sync both ways, the rerun from the model menu, changes accepted on the phone, a paper from a template, next steps and guide anchors, reduced motion, no-JS, Universe links and keyboard navigation, all language URLs and SEO, saved language, both download menus, and layouts from 320px to 1440px including header breakpoints.');
 } finally {
   await browser.close();
   await server.close();

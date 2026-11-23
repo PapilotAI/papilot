@@ -9,6 +9,11 @@
     "textHash": "0164c95456286e3404df0543bf50d8d4ceda7f83b321d5576d47cd8f7bd27950",
     "model": "gemini-4-argon-high"
   },
+  "<del>Reduction preserves types.</del>": {
+    "revision": "95599a7325e3a0da8b484e3ac963e92bb6475253f06bfd787ebb1bc0b5b02bf2",
+    "textHash": "73922100bbeff81854a9d8bf28b9f6fc5bd36ab20debe520cbc3308583069ae4",
+    "model": "gemini-4-argon-medium"
+  },
   "<del>The type of <span class=\"math\">λ<i>x</i>. <i>e</i></span> is determined by the types of <i>x</i> and its body <i>e</i>.</del>": {
     "revision": "3f34091db3074a1e9371289af5b4d2df8123f61c300b9cc529fed421b874609b",
     "textHash": "63432f77409901ae4299d838bc3183c6b870d754d042a00de00b87a5193635a0",
@@ -18,6 +23,11 @@
     "revision": "bf6ef42b82d0d205188430a4b898798bb39365fc45ec4e266afc7fe1fdb07356",
     "textHash": "900719951888a16a1a248c67f42b0af6a99f6fd18402ab6761f770660a4e0f03",
     "model": "gemini-4-argon-high"
+  },
+  "<ins>If Γ ⊢ <i>e</i> : <i>τ</i> and <i>e</i> ⟶ <i>e</i>′, then Γ ⊢ <i>e</i>′ : <i>τ</i>.</ins>": {
+    "revision": "fc528c26747aad58d925dbe5afccde900d2fa2f2d4702245817bed947fc72d3e",
+    "textHash": "ea8eda1f3ca8a03509db7218e3f4201ce676320519a829afe857c9cbdfeabfab",
+    "model": "gemini-4-argon-medium"
   },
   "A Modern <ins>Agentic</ins> <span class=\"latex\">L<sup>a</sup>T<sub>e</sub>X</span> Editor": {
     "revision": "9e830c85bd9d959ad3f75b4a526d02965026316747eef973dc29037d1655f822",
@@ -104,15 +114,15 @@
     "textHash": "0197244045daeabae2b0f0c221ac1620de3b12ed58c9c1b7292620df402c1f0e",
     "model": "gemini-4-argon-medium"
   },
-  "CV": {
-    "revision": "00b2249d417b0d300079e66cadf28e2a88bbd862068c39f96dc8bb576ce736a7",
-    "textHash": "0f5fed1791e0ff940512ad291bde94d79f4c52cf05a4f3e705588f3207373731",
-    "model": "gemini-4-argon-medium"
-  },
   "Change 1": {
     "revision": "1390c19d04f7ed0d1cadc487d5240eec8a13baaef3c1c8b910b5fa71d280ef19",
     "textHash": "ea50a39ce8323de97755ac8a13b87cd999543c0be8539a1bbbb453bd4163a0e5",
     "model": "gemini-4-argon-high"
+  },
+  "Change 2": {
+    "revision": "6ba62ed9968713bdfa728ac625d42b5124fbc8ef050816a615cd78ad4fdf2a87",
+    "textHash": "e027dcc0feada05caf23a54f18e32a323852bb12dae6044b0fc4fe32c3cb3a13",
+    "model": "gemini-4-argon-medium"
   },
   "Changelog": {
     "revision": "e50eecdc0ed7e3e5331fc356f6f05bc6a3d37003c2fc8ae4e23297826c6683a7",
@@ -127,11 +137,6 @@
   "Committed to main": {
     "revision": "7eeb4c9ac709a22d480c6e8f102729eec6f6d2961db259802b5eab9bff370734",
     "textHash": "e04cbb1283db5c9fbe5dc8a1e2e3bf4acb65641f0a9d7daf847309a9f520c0d5",
-    "model": "gemini-4-argon-medium"
-  },
-  "Conference": {
-    "revision": "aa18eda7e4e03bd8f672980d7171b215dd8d8694fbd0debf1eb556c226577287",
-    "textHash": "6fb55f629eff56eba474582283d3d18c211a68de1df084f4e5e44161aeaf53c0",
     "model": "gemini-4-argon-medium"
   },
   "Copy the commands": {
@@ -234,11 +239,6 @@
     "textHash": "800c227aab6c9088beb0256a6606268ed26469c143c80d3e477173df0de31858",
     "model": "gemini-4-argon-medium"
   },
-  "Journal": {
-    "revision": "43752307af9b6615949c6916f3d237279c82e0132fc497c56279317cde25c473",
-    "textHash": "bee471f4632b0084de18b6753af48024dd94b14ca69f7676c43e056581593a97",
-    "model": "gemini-4-argon-medium"
-  },
   "Keep in sync, or import a copy": {
     "revision": "a014217ebbd22fb8e9f83b76e972b167870ae80b1849ea395dbc460f2b6d4519",
     "textHash": "97f177796a9591597e9120a1d02e341e06597bb5db68399dba535f7e0d83003c",
@@ -294,6 +294,11 @@
     "textHash": "716a3a805469ddc7e984078aee94d35f7df15dfabfd321090b479198db97e5da",
     "model": "gemini-4-argon-high"
   },
+  "New paper from a template: searching POPL finds the PACMPL template its call for papers asks for, and Create paper sets it up, ready to compile": {
+    "revision": "eccdce1b805f3c8e6539ad4b5aaae38bf042ec1cc514823cc26b3e815939bd6f",
+    "textHash": "7b7a4cdea53e8bc40e70e5e1a5385517bc8970eb989f68dac83a2992d5002576",
+    "model": "gemini-4-argon-medium"
+  },
   "Note on the PDF": {
     "revision": "705c42089f0ffba3246b78084c61b6985f26bc37fe0ff79488cf510d290f1247",
     "textHash": "994a806ab352b61c6878ba2bb64e2a9a9ea2f3afc082062c4f6c625ac433db0f",
@@ -329,6 +334,11 @@
     "textHash": "d739fea580cf2b7a529a9393c003533e754f74dabcb5f7f34cb6aadfc6545213",
     "model": "gemini-4-argon-medium"
   },
+  "Papilot on a phone: two changes shown typeset on the page, each accepted with a tap": {
+    "revision": "c86979a8c276e03b080e068f7b9439fc542d2875c845bb8370c97a4b7789ca18",
+    "textHash": "21b9b28b7292fc22be4aaa415030238f6bbdb30164df55c014acd9abde167e3e",
+    "model": "gemini-4-argon-medium"
+  },
   "Papilot · A Modern Agentic LaTeX Editor": {
     "revision": "d3fe5001db044e54c094e99e5bf9bb83bd29618cce363375e1e71cc1f98836a6",
     "textHash": "9caffba6a31f505a1cd5c28be11f662d7b6fb1deeb39081bebe86b18d04322e5",
@@ -337,6 +347,11 @@
   "Paste a project link to keep it in sync. A read-only link imports a one-time copy instead.": {
     "revision": "7a42f55cc71b612301c34a4af8b48bc088fa2d89deac98714827bf99b844309c",
     "textHash": "bb43550b94f769a0a0918b41b1675e9f217bac3fc816d31a00f48a99072b6cf2",
+    "model": "gemini-4-argon-medium"
+  },
+  "Phone": {
+    "revision": "6989a008c54837644b8da5bd87b24aaffbd3b512a49c25556858a6e8917542a9",
+    "textHash": "0b9e69d9d6168b211cb36a6b07c0e6073ce015f0a97568c93ae510d50accbc72",
     "model": "gemini-4-argon-medium"
   },
   "Pick a model from any connected agent below the chat. Switch to another agent and Papilot reruns your request with it, with the same notes. Bring the login or API key you already have, or use the built-in Papilot Writer.": {
@@ -353,11 +368,6 @@
     "revision": "3855df76b4c06e038784527ffaab558ca6a5278e38fe3761cbfacf07ea42f853",
     "textHash": "7a284f295eef9f239fe857fad19531db732300b7cb685183b8258f11238f3dc6",
     "model": "manual"
-  },
-  "Poster": {
-    "revision": "6deab082a338c465cd165ce8688fafc3e827fb01543c95d89ca15e1bf075777b",
-    "textHash": "b729990be8aa5689829132a7ada81c6acf521b214432e86e555c1467f13fd3b5",
-    "model": "gemini-4-argon-medium"
   },
   "Proof.": {
     "revision": "366c6ce5dbfa4df400ca587b9e227755c0e1a76c9de6592d5c7ecd864b6c225c",
@@ -469,15 +479,10 @@
     "textHash": "c73f877680611cc8b0c44c3daf68170e469de6b5ac8c5b34bfe459e3a1e1cf8b",
     "model": "gemini-4-argon-medium"
   },
-  "Start from a Template, Review from Anywhere": {
-    "revision": "37d3c1f06cc68363791ffbebcf357ad82bc30b01d44f18e118bc3d1eccebe024",
-    "textHash": "40e98065681f83f9fc5a57047514a04adb9f3670ecced0a3533c57e1dc415a59",
-    "model": "gemini-4-argon-medium"
-  },
   "Supported Coding Agents": {
-    "revision": "5842bca498583bc11c588e1293fa1dbb42dff502e698a2072a871f4064f96e69",
-    "textHash": "9b82b3b6bd08139ef2ef2049e3fd826e707cd37954c67e23a700cfab52b9e332",
-    "model": "gemini-4-argon-high"
+    "revision": "f5e83f8b5099852c4e47dcc172773102bfb40e4a0f3c37d4cd1278bcb0a21341",
+    "textHash": "0d923d0cb9c11279a8471bae6a99ba78319f5030d7107d40de276fc318f6c681",
+    "model": "gemini-4-argon-medium"
   },
   "Terminal": {
     "revision": "8ed4052fcb707614bb1a57707a3cd303cca24dd6431f3f340edf8938311e415d",
@@ -499,6 +504,16 @@
     "textHash": "b771edd393329d6880bdcc042d2297d4ac6ae3125e4bf65d199e537a9934e468",
     "model": "gemini-4-argon-medium"
   },
+  "The proof is by induction on <del><i>e</i></del>.": {
+    "revision": "ebb2636038f38a30c891b675285dd9cab99d1b1f91577ef1eab6c87752011d2c",
+    "textHash": "eddb1aee7f8b9820f09249b9890056c1b24a988c5a4b423d28289dd456797324",
+    "model": "gemini-4-argon-medium"
+  },
+  "The proof is by induction on <ins>the typing derivation</ins>.": {
+    "revision": "87af0173e702f5a6c495a8b9a9ab2d58b37cb6a9958e591128186516fe368e3b",
+    "textHash": "147fcd4bfa449bc8222f2c3a1d16cf98c7d5daab898b3521b6c02cbcbdae612c",
+    "model": "gemini-4-argon-medium"
+  },
   "The type system markedly increases the expressiveness of the language while keeping type checking decidable.": {
     "revision": "7b8dc1c9e3b93aa00d7bcb147229852a1e0d35d9bfd93cf88a2f72192e57479e",
     "textHash": "9e7e50eadf4222682133f7c95396f5168511fd9e88608069074e91c2b91c4512",
@@ -507,11 +522,6 @@
   "Theorem 1": {
     "revision": "957ba32abfbf78e958476380b7406ba951b9d3a3f3717fca100d1ef1b980a4fb",
     "textHash": "6384ebf489ffbbc287584ecf880dbdde5498cff0ab72ce29ed44eafe697939a6",
-    "model": "gemini-4-argon-medium"
-  },
-  "Thesis": {
-    "revision": "6d5ee03933c67f0bfa42cb6a918996c7d4e5a0354a057935b8d07ad6dcf1b899",
-    "textHash": "fc5bb2fbba3e195f16eab1c8fe8aafce09b3c0e7eaca0a533ee4213ef5d15d0f",
     "model": "gemini-4-argon-medium"
   },
   "Thesis draft": {
@@ -569,11 +579,6 @@
     "textHash": "5172c8aa539ece13c63787c15516465ed01a36b64d136c9df5ab5e02ca65b78e",
     "model": "gemini-4-argon-high"
   },
-  "Why Papilot": {
-    "revision": "4928a6b68ae05f33fb6a1a3d7b9f598c0182b6f519a225df8d8f1187c59303db",
-    "textHash": "0fb712d725bd437dbd2d3073d13797df99ed15c65b6d2f5624b660dc52cd072f",
-    "model": "gemini-4-argon-medium"
-  },
   "Write T-Abs as a rule": {
     "revision": "fe2a8d8fb11d3cde00d2f508f1ab381953cfcd29ce157cc32e0c9a9b4c1d1e55",
     "textHash": "1038bbeb362b63f7ddba596649ddd13a75ab1aebb5a28e9d956d456bcbe4d96f",
@@ -612,11 +617,6 @@
   "Your coauthors, on Overleaf": {
     "revision": "7f960b0de2b3aa2c28a88d875ab1b48b18034cf3af9c155825c18427bfc3f76e",
     "textHash": "7d954279f77e3e502cfc08a2319d250160353d776dc4384823f20b9fda6767bb",
-    "model": "gemini-4-argon-medium"
-  },
-  "conferences mapped to their template": {
-    "revision": "d6942c4ca9e8e02cb0ef84022377567a5194d8343af1701a56ef92214e3abb08",
-    "textHash": "0f73ae8f13e9c5c5b15027475ff643c064ce516af542bb0c8823c3a290191ba7",
     "model": "gemini-4-argon-medium"
   },
   "line 6": {

@@ -56,7 +56,7 @@
   --float:0 1px 2px rgb(0 0 0/.3),0 24px 48px -16px rgb(0 0 0/.6);
   color-scheme:dark;
 }
-.app-window,.phone,.tpl-page{
+.app-window,.phone{
   /* Use the workspace palette in the page's resolved color scheme, including
      system changes and the no-script page. PDF ink stays softer in the dark. */
   --bg:light-dark(#ffffff,#2c2c2c);--bg-subtle:light-dark(#fafafa,#303030);--bg-muted:light-dark(#f5f5f5,#383838);--bg-hover:light-dark(#f0f0f0,#383838);--bg-active:light-dark(#e6e6e6,#444444);
@@ -501,16 +501,14 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .agent.codebuddy{--logo:url("assets/agents/codebuddy.svg")}
 .agent.workbuddy{--logo:url("assets/agents/workbuddy.svg")}
 
-/* The agents under the hero: every logo pill at once, wrapping. With
-   script they wait out of sight and arrive one after another. */
-.logos{padding:72px 0 8px}
-.logos h2{text-align:center;font:500 13.5px/1.4 var(--sans);letter-spacing:.02em;color:var(--text-3)}
-.agent-grid{list-style:none;display:flex;flex-wrap:wrap;justify-content:center;gap:12px;max-width:940px;margin:24px auto 0;padding:0}
-.agent-grid li{display:inline-flex;align-items:center;gap:10px;flex:none;height:52px;padding:0 20px 0 8px;border:1px solid var(--line);border-radius:999px;background:var(--bg);font-size:15.5px;font-weight:500;color:var(--text);white-space:nowrap;transition:opacity .5s ease,transform .5s cubic-bezier(.25,.8,.25,1)}
-.agent-grid .agent i{width:36px;height:36px;border-radius:999px}
-.agent-grid .agent i::before{width:20px;height:20px}
-.agent-grid.waiting li{opacity:0;transform:translateY(12px) scale(.96)}
-.agent-grid.waiting.arrived li{opacity:1;transform:none;transition-delay:calc(var(--i) * 70ms)}
+/* Every supported agent, listed under Any Agent, Any Model. The first time
+   they come on screen they arrive one after another. */
+.agent-grid{list-style:none;display:flex;flex-wrap:wrap;gap:8px;margin:24px 0 0;padding:0}
+.agent-grid li{display:inline-flex;align-items:center;gap:7px;flex:none;height:34px;padding:0 12px 0 4px;border:1px solid var(--line);border-radius:999px;background:var(--bg);font-size:13.5px;font-weight:500;color:var(--text);white-space:nowrap;transition:opacity .5s ease,transform .5s cubic-bezier(.25,.8,.25,1)}
+.agent-grid .agent i{width:26px;height:26px;border-radius:999px}
+.agent-grid .agent i::before{width:15px;height:15px}
+.agent-grid.waiting li{opacity:0;transform:translateY(8px) scale(.96)}
+.agent-grid.waiting.arrived li{opacity:1;transform:none;transition-delay:calc(var(--i) * 45ms)}
 /* Desktop downloads: one button, a menu of builds for each system */
 .download{position:relative}
 .download-button{min-width:212px}
@@ -795,7 +793,7 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .chip-dot{position:absolute;top:50%;left:50%;display:grid;place-items:center;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;background:var(--bg);box-shadow:0 0 0 2px var(--chip),0 0 14px color-mix(in srgb,var(--chip) 55%,transparent);opacity:0;will-change:transform,opacity}
 /* The round's steps: the change under review, accepted with Commit
    waiting, committed and crossing, arrived on Overleaf, the coauthor
-   typing, her sentence crossing back (the PDF rebuilds), and both in sync. */
+   typing, the sentence crossing back (the PDF rebuilds), and both in sync. */
 .sync-stage:not([data-step=accepted]) .sync-commit:not(.folding),.sync-stage:is([data-step=review],[data-step=accepted]) .sync-committed{display:none}
 .sync-stage[data-step=review] .count-1,.sync-stage:not([data-step=review]) .count-0{display:none}
 .sync-stage:is([data-step=review],[data-step=accepted],[data-step=sending]) .ol-new,.sync-stage:not(:is([data-step=review],[data-step=accepted],[data-step=sending])) .ol-old{display:none}
@@ -851,93 +849,177 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .model-option.hover,.model-option.pressed{background:var(--bg-hover)}
 .models-chip.pressed{background:var(--bg-hover);border-radius:6px}
 
-/* Templates and the phone: two cards, each with a drawing over its text. */
-.more-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
-.more-card{container-type:inline-size;display:flex;flex-direction:column;min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--bg)}
-.more-art{position:relative;height:300px;overflow:hidden;border-bottom:1px solid var(--line);background:var(--bg-subtle);user-select:none;-webkit-user-select:none}
-.more-card h3{margin:26px 28px 0;font:400 28px/1.2 var(--serif);letter-spacing:-.01em}
-.more-card>p{margin:10px 28px 0;font-size:16px;line-height:1.6;color:var(--text-2);text-wrap:pretty}
-.more-card footer{margin:auto 28px 0;padding:18px 0 26px;font-size:15px;font-weight:500}
-/* A shelf of templates, each a small page of its kind, under the count of
-   conferences Universe maps; the chosen one is outlined and checked. */
-.universe-art{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:30px;padding:0 16px}
-.tpl-shelf{display:flex;align-items:flex-end;justify-content:center;gap:14px}
-.tpl{position:relative;display:flex;flex-direction:column;align-items:center;gap:10px;flex:none}
-.tpl em{font:500 11.5px/1 var(--sans);font-style:normal;color:var(--text-3);white-space:nowrap}
-.tpl-page{display:flex;flex-direction:column;gap:4px;width:64px;height:86px;padding:9px 8px;border-radius:3px;background:var(--pdf-page);box-shadow:0 0 0 1px rgb(0 0 0/.05),0 2px 4px rgb(15 23 42/.06),0 12px 24px -12px rgb(15 23 42/.28)}
-.tpl-page i,.tpl-page b{display:block;flex:none;height:3px;border-radius:2px;background:var(--line-strong)}
-.tpl-page b{width:70%;height:4px;margin:2px auto 3px;background:var(--text-3)}
-.tpl-page i.short,.tpl-page .t-line.short{width:60%}
-.tpl-page .t-line{width:84%;margin-inline:auto}
-.tpl.chosen .tpl-page{box-shadow:0 0 0 2px var(--accent),0 12px 28px -10px rgb(37 99 235/.35)}
-.tpl.chosen em{color:var(--accent)}
-.tpl.chosen::after{content:"";position:absolute;top:-7px;right:-7px;width:18px;height:18px;border-radius:50%;background:var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center/11px no-repeat;box-shadow:0 0 0 2px var(--bg-subtle)}
-.tpl-thesis .tpl-page{justify-content:center;gap:6px}
-.tpl-thesis .crest{width:18px;height:18px;margin:0 auto 5px;border:2px solid var(--accent);border-radius:50%;background:none}
-.cols{display:grid;grid-template-columns:1fr 1fr;gap:4px}
-.cols>span{display:flex;flex-direction:column;gap:4px}
-.cols.three{grid-template-columns:repeat(3,1fr);gap:3px}
-.tpl-page .fig{height:10px;background:var(--figure-blue)}
-.tpl-page .eq{width:70%;margin-inline:auto;background:var(--text-3)}
-.tpl-page .abstract{height:13px;margin:2px 3px;border-radius:2px;background:var(--bg-muted)}
-.tpl-slides .tpl-page{display:grid;grid-template-columns:1fr 26px;grid-template-rows:auto 1fr;gap:5px 7px;width:96px;height:56px;padding:7px 9px}
-.tpl-slides b{grid-column:1/-1;width:55%;margin:0}
-.slide-body{display:flex;flex-direction:column;gap:4px}
-.tpl-slides .slide-fig{height:100%;border-radius:2px;background:var(--figure-orange)}
-.tpl-poster .tpl-page{width:60px;height:84px;gap:5px;padding:7px 6px}
-.tpl-page .block{height:13px;background:var(--figure-blue)}
-.tpl-page .block.tall{height:24px;background:var(--figure-orange)}
-.cv-row{display:grid;grid-template-columns:12px 1fr;gap:4px;margin-top:3px}
-.cv-row i:first-child{background:var(--accent-line)}
-.tpl-cv b{margin-left:0;width:56%}
-.tpl-cv .t-line{margin-left:0}
-.tpl-venues{display:inline-flex;align-items:baseline;gap:8px;max-width:100%;padding:7px 16px;border-radius:18px;text-align:center;text-wrap:balance;background:var(--bg);box-shadow:0 0 0 1px var(--line),0 8px 20px -12px rgb(15 23 42/.25);font-size:13.5px;color:var(--text-2)}
-.tpl-venues b{font:400 19px/1 var(--serif);color:var(--accent)}
-/* The phone app, as on the opening window at phone width: the frosted
-   navigation bar, a change on the page, and Accept, Reject and Comment in
-   the capsule floating over it. The phone rises from the bottom edge. */
-.phone-art{display:flex;justify-content:center;background:radial-gradient(60% 70% at 50% 100%,var(--accent-soft),transparent 70%),var(--bg-subtle)}
-.phone{position:relative;display:flex;flex-direction:column;width:176px;height:330px;margin-top:28px;overflow:hidden;border:6px solid light-dark(#1d1d1f,#3a3a3c);border-radius:34px;background:var(--canvas);box-shadow:0 2px 6px rgb(15 23 42/.12),0 30px 50px -24px rgb(15 23 42/.4);font:10px/1 var(--sans);color:var(--text-2)}
-.phone-island{position:absolute;top:7px;left:50%;width:52px;height:15px;transform:translateX(-50%);border-radius:999px;background:#000}
-.phone-nav{display:flex;justify-content:center;padding:30px 8px 8px;border-bottom:1px solid var(--line);background:var(--bg)}
-.phone-seg{display:flex;padding:2px;border-radius:9px;background:var(--bg-muted)}
-.phone-seg b{display:flex;align-items:center;gap:4px;height:22px;padding:0 9px;border-radius:7px;font-weight:500}
-.phone-seg b.on{background:var(--thumb);color:var(--text);box-shadow:0 1px 2px rgb(0 0 0/.06),0 0 0 1px var(--line)}
-.phone-seg .ic{width:11px;height:11px}
-.phone-seg b.on .ic{color:var(--accent)}
-.phone-page{display:flex;flex:1;flex-direction:column;gap:6px;margin:10px 8px 0;padding:14px 12px 0;background:var(--pdf-page);box-shadow:var(--page-shadow)}
-.phone-page i,.phone-side i{display:block;flex:none;height:4px;border-radius:2px;background:var(--line)}
-.phone-page i.short,.phone-side i.short{width:62%}
-.phone-head{display:flex;align-items:center;gap:6px;margin-bottom:3px;font:700 9px/1 var(--serif);color:var(--text-3)}
-.phone-head i{width:44%;height:5px;background:var(--line-strong)}
-.phone-change{display:grid;margin:3px -12px;box-shadow:0 0 0 1px var(--accent)}
-.phone-side{display:grid;gap:5px;padding:8px 12px;border-left:2px solid}
-.phone-side.before{border-color:var(--before-edge);background:var(--before)}
-.phone-side.before i{background:var(--deleted)}
-.phone-side.after{border-color:var(--after-edge);background:var(--after)}
-.phone-side.after i{background:var(--inserted)}
-.phone-side i.mid{width:80%}
-.phone-eq{display:flex;align-items:center;justify-content:center;gap:5px;margin:4px 0;font:10px/1 var(--serif);color:var(--text-3)}
-.phone-eq>i{width:16px;height:5px;background:var(--line-strong)}
-.phone-eq .frac{gap:2px}
-.phone-eq .frac>i{width:30px;height:5px;background:var(--line-strong)}
-.phone-decide{position:absolute;left:50%;bottom:52px;display:flex;gap:5px;padding:4px;transform:translateX(-50%);border:.5px solid var(--line-strong);border-radius:999px;background:color-mix(in srgb,var(--bg) 88%,transparent);-webkit-backdrop-filter:saturate(180%) blur(16px);backdrop-filter:saturate(180%) blur(16px);box-shadow:0 4px 14px rgb(0 0 0/.08),0 10px 24px rgb(0 0 0/.14)}
-.phone-decide i{display:grid;place-items:center;width:34px;height:26px;border-radius:999px}
-.phone-decide .ic{width:14px;height:14px}
-.phone-decide .ok{background:var(--green-soft);color:var(--accept)}
-.phone-decide .no{background:var(--red-soft);color:var(--reject)}
-.phone-decide .talk{background:var(--accent-soft);color:var(--comment)}
-/* Narrower cards keep fewer templates. */
-@container (max-width:520px){
-  .tpl-journal,.tpl-poster{display:none}
-}
-@container (max-width:400px){
-  .tpl-cv{display:none}
-}
-@container (max-width:360px){
-  .more-card h3{margin-inline:22px;font-size:25px}
-  .more-card>p,.more-card footer{margin-inline:22px}
-}
+/* Review from your phone: the phone app at the size of a phone, as the
+   opening window draws it below 720px. The frosted navigation bar, the page
+   with its changes, and the capsule floating over it, which gives way to the
+   annotation tools once nothing is left to decide. A finger's touch stands in
+   for the pointer. */
+.phone-scene{position:relative;display:flex;justify-content:center;box-shadow:none}
+.phone{position:relative;display:flex;flex-direction:column;width:min(292px,100%);height:584px;overflow:hidden;border:9px solid light-dark(#1d1d1f,#3a3a3c);border-radius:46px;background:var(--canvas);box-shadow:0 0 0 1px light-dark(rgb(0 0 0/.06),rgb(255 255 255/.1)),0 2px 6px rgb(15 23 42/.1),0 40px 70px -34px rgb(15 23 42/.45);color:var(--text-2);text-align:left;user-select:none;-webkit-user-select:none}
+.phone-island{position:absolute;top:9px;left:50%;z-index:3;width:80px;height:23px;border-radius:999px;background:#000;translate:-50% 0}
+.phone-home{position:absolute;bottom:7px;left:50%;z-index:3;width:100px;height:4px;border-radius:2px;background:var(--text);opacity:.8;translate:-50% 0}
+.phone-nav{display:flex;flex:none;align-items:center;gap:2px;height:84px;padding:38px 4px 0 2px;border-bottom:1px solid var(--line);background:var(--bg);font:500 12.5px/1 var(--sans);overflow:hidden;white-space:nowrap}
+.phone-nav .tb-seg{flex:0 1 auto;min-width:0}
+.phone-nav .tb-seg>b{min-width:0}
+.phone-nav .tb-seg>b>[lang]{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.phone-nav .tb-icon{width:34px;height:34px}
+.phone-nav .tb-icon .ic{width:18px;height:18px}
+.phone-nav .tb-seg{border-radius:10px}
+.phone-nav .tb-seg>b{gap:5px;height:28px;padding:0 9px;border-radius:7px}
+.phone-nav .tb-seg>b .ic{width:14px;height:14px}
+.phone-nav .tb-seg>b.on{background:var(--bg);box-shadow:0 1px 2px rgb(0 0 0/.06),0 0 0 1px var(--line)}
+.phone-nav .tb-seg>b.on .ic{color:var(--accent)}
+.phone-badge{min-width:16px;height:16px;padding:0 4px;font-size:10px;line-height:16px}
+.phone-badge:empty{display:none}
+.phone-pdf{position:relative;display:flex;flex:1;flex-direction:column;min-height:0;padding:12px 10px 0;overflow:hidden}
+.phone .phone-pdf .review-page{padding-top:16px;font-size:13px;line-height:1.5}
+.phone .phone-pdf :is(.sheet-lines,.sheet-head){padding:0 14px}
+.phone .phone-pdf .sheet-lines{gap:8px}
+.phone .phone-pdf .sheet-lines i{height:5px}
+.phone .phone-pdf .sheet-head{margin-bottom:10px}
+.phone .phone-pdf .sheet-head b{font-size:11px}
+.phone .phone-pdf .sheet-head i{height:7px}
+.phone .phone-pdf .review-change{margin-block:12px}
+.phone .phone-pdf .review-change+.sheet-lines{margin-top:0}
+.phone .phone-pdf .review-head{flex-wrap:nowrap;gap:0;min-height:30px;padding:2px 4px 2px 12px;font-size:11.5px}
+.phone .phone-pdf .review-number{margin-right:auto;padding-left:0;font-size:11.5px}
+.phone .phone-pdf .review-head>i{display:inline-grid;flex:none;place-items:center;width:24px;height:24px;color:var(--text-2)}
+.phone .phone-pdf .review-head .ic{width:13px;height:13px}
+.phone .phone-pdf .review-side{padding:15px 14px 8px 12px}
+.phone .phone-pdf .review-label{top:4px;right:8px;font-size:9.5px}
+.phone-decide,.phone-tools{position:absolute;left:50%;bottom:22px;z-index:2;display:flex;align-items:center;translate:-50% 0;border:.5px solid color-mix(in srgb,var(--line-strong) 82%,transparent);border-radius:999px;background:color-mix(in srgb,var(--bg) 88%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);box-shadow:0 4px 14px rgb(0 0 0/.08),0 12px 32px rgb(0 0 0/.16);color:var(--text-2);white-space:nowrap}
+.playing :is(.phone-decide,.phone-tools){animation:chat-in .25s ease-out}
+.phone-decide{gap:4px;height:44px;padding:4px 6px}
+.phone-decide>i{display:grid;flex:none;place-items:center;width:16px;color:var(--text-3)}
+.phone-decide>span{margin:0 3px;font:500 12.5px var(--sans);color:var(--text);font-variant-numeric:tabular-nums}
+.phone-decide>:is(.m-accept,.m-reject,.m-talk){width:40px;height:34px;border-radius:999px;transition:scale .12s}
+.phone-decide .ic{width:16px;height:16px}
+.phone-decide>.pressed{scale:.88}
+.phone .m-accept{background:var(--green-soft);color:var(--accept)}
+.phone .m-reject{background:var(--red-soft);color:var(--reject)}
+.phone .m-talk{background:var(--accent-soft);color:var(--comment)}
+.phone-tools{gap:1px;height:40px;padding:3px 5px}
+.phone-tools>i{display:grid;place-items:center;width:30px;height:32px;border-radius:999px}
+.phone-tools .ic{width:15px;height:15px}
+.phone-tools .on{background:var(--button);color:#fff}
+.phone-pdf:has(.review-change[data-state=pending]) .phone-tools,.phone-pdf:not(:has(.review-change[data-state=pending])) .phone-decide{display:none}
+.app-cursor.touch{width:34px;height:34px;margin:-15px 0 0 -12px;filter:none;transition:opacity .18s}
+.app-cursor.touch::before{content:"";position:absolute;inset:0;border-radius:50%;background:rgb(120 120 128/.32);box-shadow:inset 0 0 0 1.5px rgb(255 255 255/.7);transition:scale .12s}
+.app-cursor.touch.down::before{scale:.82}
+@media(hover:hover){.phone-scene:hover .app-cursor{opacity:0}}
+
+/* Start from a template: the New paper dialog over the workspace, as the
+   app draws it. Templates are searched and grouped above a grid of first
+   pages, each drawn after its kind; a conference finds the template its call
+   for papers asks for. Picking one asks for a name and a folder, and Create
+   paper closes the dialog on the new paper's first page. */
+.scene .np-body{grid-template-columns:minmax(0,1fr) var(--side)}
+.np-body .chat-thread{flex:1}
+.np-new,[data-scene=template][data-step=created] .np-old{display:none}
+[data-scene=template][data-step=created] .np-new{display:flex}
+.playing[data-step=created] .np-new{animation:np-in .5s ease-out}
+.np-new{padding:26px 26px 0}
+.np-paper-title{font:700 17px/1.25 var(--sans);color:var(--pdf-text);letter-spacing:-.01em}
+.np-authors{display:flex;gap:14px;margin:12px 0 16px}
+.np-authors i{display:block;width:64px;height:6px;border-radius:3px;background:var(--line-strong)}
+.np-abstract,.np-acm{display:grid;gap:7px}
+.np-new i{display:block;height:6px;border-radius:3px;background:var(--line)}
+.np-acm{margin:16px 0 18px;padding:9px 10px;border-block:1px solid var(--line)}
+.np-acm i{height:5px}
+.np-new .sheet-lines{padding:0}
+.np-section{display:block;width:30%;height:8px;margin-bottom:4px;border-radius:4px;background:var(--line-strong)}
+.np-dialog{position:absolute;top:58px;left:50%;z-index:2;display:flex;flex-direction:column;width:min(560px,calc(100% - 40px));height:calc(100% - 78px);overflow:hidden;translate:-50% 0;border-radius:12px;background:var(--bg);box-shadow:0 0 0 1px var(--line),0 24px 60px -18px rgb(15 23 42/.45),0 0 0 100vmax rgb(15 23 42/.22);font:12px/1.4 var(--sans);color:var(--text-2);text-align:left;user-select:none;-webkit-user-select:none;transition:opacity .3s,scale .3s,visibility .3s}
+[data-scene=template][data-step=created] .np-dialog{visibility:hidden;opacity:0;scale:.97}
+.np-title{display:flex;flex:none;align-items:center;justify-content:space-between;height:44px;padding:0 14px 0 16px}
+.np-title b{font-size:14px;font-weight:600;color:var(--text)}
+.np-title .ic{width:15px;height:15px;color:var(--text-3)}
+.np-tabs{display:flex;flex:none;gap:16px;height:34px;padding:0 16px;border-bottom:1px solid var(--line);font-weight:500;color:var(--text-3);white-space:nowrap}
+.np-tabs>span{min-width:0;margin-bottom:-1px;overflow:hidden;border-bottom:2px solid transparent;line-height:31px;text-overflow:ellipsis}
+.np-tabs>.on{flex:none;border-color:var(--text);color:var(--text)}
+.np-pick,.np-details{display:flex;flex:1;flex-direction:column;min-height:0;padding:14px 16px 0}
+.np-search{display:flex;flex:none;align-items:center;gap:6px;width:240px;max-width:100%;height:28px;padding:0 8px;border:1px solid transparent;border-radius:6px;background:var(--bg-muted);color:var(--text-3);white-space:nowrap;transition:background-color .15s,border-color .15s}
+.np-search.focus{border-color:var(--accent);background:var(--bg)}
+.np-search .ic{width:14px;height:14px}
+.np-query{color:var(--text)}
+.np-query:not(:empty)+.np-hint{display:none}
+.np-search.focus .np-query::after{content:"";display:inline-block;width:1px;height:14px;margin-left:1px;vertical-align:-2px;background:var(--text);animation:np-caret 1s steps(1) infinite}
+.np-groups{display:flex;flex:none;align-self:flex-start;max-width:100%;margin:12px 0 14px;padding:2px;overflow:hidden;border-radius:6px;background:var(--bg-muted);white-space:nowrap}
+.np-groups b{flex:none;height:22px;padding:0 9px;border-radius:5px;font-weight:500;line-height:22px}
+.np-groups .on{background:var(--thumb);color:var(--text);box-shadow:0 0 0 1px var(--line)}
+.np-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 12px;min-height:0;overflow:hidden;-webkit-mask:linear-gradient(#000 calc(100% - 40px),transparent);mask:linear-gradient(#000 calc(100% - 40px),transparent)}
+.np-found,[data-scene=template][data-step=found] .np-all{display:none}
+[data-scene=template][data-step=found] .np-found{display:grid}
+.playing[data-step=found] .np-found{animation:np-in .3s ease-out}
+.np-card{display:flex;flex-direction:column;gap:2px;min-width:0}
+.np-name{overflow:hidden;font-weight:500;line-height:1.4;color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.np-meta{overflow:hidden;font-size:11px;color:var(--text-3);white-space:nowrap;text-overflow:ellipsis}
+.np-card.hover .np-thumb{box-shadow:0 0 0 1px var(--line-hover)}
+.np-card.pressed .np-thumb,[data-scene=template]:not(.playing)[data-step=found] .np-popl .np-thumb{box-shadow:0 0 0 2px var(--accent)}
+/* A first page of each kind, drawn small. */
+.np-thumb{display:flex;flex-direction:column;gap:4px;aspect-ratio:3/4;margin-bottom:6px;padding:12% 11% 0;overflow:hidden;border-radius:8px;background:var(--pdf-page);box-shadow:0 0 0 1px var(--line);transition:box-shadow .15s}
+.np-thumb i,.np-thumb b{display:block;flex:none;height:3px;border-radius:2px;background:var(--line-strong)}
+.np-thumb b{width:72%;height:5px;margin:0 auto 3px;background:var(--text-3)}
+.np-thumb i.short{width:58%;margin-inline:auto}
+.np-thumb .t-box{height:16px;margin:3px 6%;border-radius:2px;background:var(--bg-muted)}
+.np-thumb .cols{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.np-thumb .cols>span{display:flex;flex-direction:column;gap:4px}
+.np-thumb .cols.three{grid-template-columns:repeat(3,1fr);gap:4px}
+.np-thumb .t-fig{height:14px;background:var(--figure-blue)}
+.t-thesis{justify-content:center;gap:6px;padding-top:0}
+.t-thesis .crest{width:22px;height:22px;margin:0 auto 6px;border:2px solid var(--accent);border-radius:50%;background:none}
+.t-thesis .t-foot{display:grid;gap:4px;width:50%;margin:14px auto 0}
+.t-authors{display:flex;justify-content:center;gap:6px;margin-bottom:5px}
+.t-authors i{width:28%}
+.t-neurips .t-head{width:24%;margin:2px auto}
+.t-indent{display:grid;gap:4px;margin:0 10% 4px}
+.t-slides{gap:8px;padding:10%}
+.t-slide{display:flex;flex-direction:column;gap:3px;aspect-ratio:4/3;padding:0 0 6px;overflow:hidden;border-radius:2px;box-shadow:0 0 0 1px var(--line)}
+.t-slide b{width:100%;height:12px;margin:0 0 3px;border-radius:0;background:#23373b}
+.t-slide i{width:70%;margin-left:10%}
+.t-slide .t-fig{flex:1;width:60%;height:auto;margin:2px auto 0;background:var(--figure-orange)}
+.t-poster{padding:0 0 0;gap:6px}
+.t-poster>b{width:100%;height:18%;margin:0;border-radius:0;background:#4a6fa5}
+.t-poster .cols{padding:0 8%}
+.np-thumb .t-block{height:22px;background:var(--figure-blue)}
+.np-thumb .t-block.tall{height:40px;background:var(--figure-orange)}
+.t-cv b{width:50%}
+.t-cv .t-rule{height:1.5px;margin-top:5px;background:var(--text-3)}
+.t-book{padding:0;gap:6px;background:light-dark(#f4efe6,#2a2722)}
+.t-book .t-cover{height:52%;background:linear-gradient(135deg,#3a6a8c,#76a1b9)}
+.t-book b{width:60%;margin-top:8px}
+.t-lncs{padding-inline:18%}
+.t-acm b{width:80%;margin-left:0}
+.t-acm i.short{margin-left:0}
+.np-thumb .t-acm-box{height:10px;margin:2px 0;background:none;border-block:1px solid var(--line-strong);border-radius:0}
+/* The template is chosen: a name, a folder, and Create paper. */
+.np-details{display:none;gap:0}
+:is([data-scene=template][data-step=details],[data-scene=template][data-step=creating],[data-scene=template][data-step=created]) .np-pick{display:none}
+:is([data-scene=template][data-step=details],[data-scene=template][data-step=creating],[data-scene=template][data-step=created]) .np-details{display:flex}
+.playing[data-step=details] .np-details{animation:np-in .2s ease-out}
+.np-chosen,.np-location{display:flex;flex:none;align-items:center;gap:12px;padding:8px;border-radius:8px;background:var(--bg-muted)}
+.np-chosen{margin-bottom:12px}
+.np-chosen .np-thumb{flex:none;width:36px;height:48px;margin:0;padding:6px 5px 0;gap:3px;border-radius:4px}
+.np-chosen .np-thumb .t-box{height:7px}
+.np-location{padding:8px 8px 8px 12px;background:none;box-shadow:inset 0 0 0 1px var(--line)}
+.np-location .ic{width:16px;height:16px;color:var(--text-3)}
+.np-chosen-text{display:flex;flex:1;flex-direction:column;gap:2px;min-width:0}
+.np-chosen-text b{overflow:hidden;font-weight:500;color:var(--text);white-space:nowrap;text-overflow:ellipsis}
+.np-chosen-text small{overflow:hidden;font-size:11px;color:var(--text-3);white-space:nowrap;text-overflow:ellipsis}
+.np-button{flex:none;padding:4px 9px;border-radius:5px;font-weight:500;color:var(--text)}
+.np-label{margin:0 0 5px;font-weight:500;color:var(--text)}
+.np-field{display:flex;align-items:center;height:30px;margin-bottom:12px;padding:0 9px;border:1px solid var(--line-strong);border-radius:6px;color:var(--text)}
+[data-scene=template][data-step=details] .np-typed::after{content:"";display:inline-block;width:1px;height:14px;margin-left:1px;vertical-align:-2px;background:var(--text);animation:np-caret 1s steps(1) infinite}
+.np-status{display:none;align-items:center;gap:8px;margin-top:12px;color:var(--text-2)}
+:is([data-scene=template][data-step=creating],[data-scene=template][data-step=created]) .np-status{display:flex}
+.np-spinner{width:12px;height:12px;border:2px solid var(--accent-line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+.np-foot{display:flex;align-items:center;gap:12px;margin:auto -16px 0;padding:12px 16px;border-top:1px solid var(--line)}
+.np-target{flex:1;min-width:0;overflow:hidden;font:11px var(--mono);color:var(--text-3);white-space:nowrap;text-overflow:ellipsis}
+.np-target b{font-weight:400;color:var(--text)}
+.np-create{flex:none;padding:6px 12px;border-radius:6px;background:var(--button);font-weight:500;color:#fff;transition:background-color .1s,opacity .2s}
+.np-create.pressed{background:var(--button-hover)}
+:is([data-scene=template][data-step=creating],[data-scene=template][data-step=created]) .np-create{opacity:.5}
+@keyframes np-in{from{opacity:0}}
+@keyframes np-caret{50%{opacity:0}}
 
 /* The closing download section echoes the hero's backdrop. */
 .get{padding:112px 0;background:var(--backdrop)}
@@ -1057,11 +1139,6 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
   .download-list{width:100%}
   .install code{font-size:15px}
   .demo{margin-top:44px}
-  .logos{padding-top:52px}
-  .agent-grid{gap:8px}
-  .agent-grid li{height:42px;padding:0 14px 0 5px;font-size:14px}
-  .agent-grid .agent i{width:32px;height:32px}
-  .agent-grid .agent i::before{width:18px;height:18px}
   .section{padding:80px 0}
   .section-head{margin-bottom:40px}
   .features{padding-top:8px}
@@ -1153,7 +1230,6 @@ html[lang=ja] .hero h1{overflow-wrap:normal;line-break:strict}
 }
 @media(max-width:960px){
   .sync-points{grid-template-columns:repeat(2,minmax(0,1fr));gap:28px 32px;max-width:720px;margin-inline:auto}
-  .more-cards{grid-template-columns:minmax(0,1fr);max-width:560px;margin-inline:auto}
 }
 @media(max-width:720px){
   .sync-eyebrow{font-size:13px}
@@ -1187,9 +1263,12 @@ html[lang=ja] .hero h1{overflow-wrap:normal;line-break:strict}
   .ol-code p{padding-left:38px}
   .ol-code p::before{width:26px}
   .sync-points{grid-template-columns:minmax(0,1fr);gap:22px;margin-top:48px}
-  .more-art{height:280px}
-  .phone{margin-top:22px}
   .model-menu{left:8px;right:8px;bottom:8px;width:auto;padding:8px;border-radius:16px;transform-origin:50% 100%}
   #features{padding-top:64px}
   .features-more{padding-top:40px}
+  .scene .np-body{grid-template-columns:minmax(0,1fr)}
+  .np-dialog{top:56px;width:calc(100% - 20px);height:calc(100% - 66px)}
+  .np-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 10px}
+  .np-pick,.np-details{padding-inline:14px}
+  .np-foot{margin-inline:-14px;padding-inline:14px}
 }

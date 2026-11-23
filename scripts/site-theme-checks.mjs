@@ -15,8 +15,10 @@ export async function checkSiteTheme(browser, origin, watch = () => {}) {
       ['.app-window, .app-chat, .app-git, .demo-note', dark ? 'rgb(44, 44, 44)' : 'rgb(255, 255, 255)'],
       ['.review-page', dark ? 'rgb(41, 41, 41)' : 'rgb(255, 255, 255)'],
       ['.app-pdf', dark ? 'rgb(30, 30, 30)' : 'rgb(245, 245, 245)'],
-      // Each drawn change is the current one, its header in the selection colour.
-      ['.review-head', dark ? 'rgb(28, 58, 87)' : 'rgb(229, 243, 255)'],
+      // The current change's header is in the selection colour; another
+      // change still to decide keeps the window's.
+      ['.review-change.current .review-head', dark ? 'rgb(28, 58, 87)' : 'rgb(229, 243, 255)'],
+      ['.review-change:not(.current) .review-head', dark ? 'rgb(44, 44, 44)' : 'rgb(255, 255, 255)'],
       ['.draft-note', dark ? 'rgb(48, 48, 48)' : 'rgb(250, 250, 250)'],
       ['.chat-bubble', dark ? 'rgb(56, 56, 56)' : 'rgb(245, 245, 245)'],
     ];
@@ -63,7 +65,7 @@ export async function checkSiteTheme(browser, origin, watch = () => {}) {
   await nightPage.screenshot({ path: 'test-results/site/dark.png' });
   await nightPage.locator(`${change} .review-accept`).click();
   await nightPage.waitForFunction(selector => getComputedStyle(document.querySelector(selector)).backgroundColor === 'rgb(41, 41, 41)', `${change} .after`);
-  for (const selector of ['#overleaf', '[data-scene=notes]', '[data-scene=revise]', '[data-scene=models]', '[data-scene=record]']) {
+  for (const selector of ['#overleaf', '[data-scene=notes]', '[data-scene=revise]', '[data-scene=models]', '[data-scene=record]', '[data-scene=phone]', '[data-scene=template]']) {
     await nightPage.locator(selector).screenshot({ animations: 'disabled', style: '.topbar{visibility:hidden!important}', path: `test-results/site/dark-${selector.replace(/[^a-z]/g, '')}.png` });
   }
   await nightPage.setViewportSize({ width: 390, height: 844 });

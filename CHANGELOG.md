@@ -6,7 +6,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
-- Lead the homepage with the README's reasons to use Papilot, in its order, in place of the three-eras comparison. Live Overleaf sync gets a section of its own: Papilot and a coauthor's Overleaf editor side by side, with a committed change travelling through the pipe between them into Overleaf and the coauthor's sentence travelling back into the PDF. A new window shows another agent's model picked below the chat and the request rerun. Cards cover Universe templates and phone review, and each reason links to the demo or the guide. ([#259](https://github.com/PapilotAI/papilot/issues/259))
+- Lead the homepage with the README's reasons to use Papilot, in its order, in place of the three-eras comparison. Live Overleaf sync gets a section of its own: Papilot and a coauthor's Overleaf editor side by side, with a committed change travelling through the pipe between them into Overleaf and the coauthor's sentence travelling back into the PDF. A new window shows another agent's model picked below the chat and the request rerun, with every supported agent listed beside it. Phone review and Universe templates are features of their own too: changes accepted with taps on a phone, and a conference's template found and created in the New paper dialog. Each reason links to the demo, the guide or Universe. ([#259](https://github.com/PapilotAI/papilot/issues/259))
 
 ## [0.13.0] - 2026-11-22
 
