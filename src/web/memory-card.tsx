@@ -11,25 +11,38 @@ export const OPEN_MEMORY = 'papilot:open-memory';
 export const failureText = (failure: unknown) => failure instanceof Error ? failure.message : String(failure);
 export const memoryScopeName = (scope: MemoryScope) => scope === 'paper' ? t('This paper') : scope === 'shared' ? t('Shared with coauthors') : t('All papers');
 
+// Which of a task's suggestions to show: those waiting for an answer, and
+// those remembered here, so Undo stays at hand until the author moves on.
+// answered holds what the author answered in this session.
+export const shownSuggestions = (task: Task, answered: ReadonlySet<string> | undefined) =>
+  (task.memory || []).filter(suggestion => suggestion.status === 'pending' || (suggestion.status === 'saved' && answered?.has(suggestion.id)));
+
 // What Papilot noticed in the author's reviews, offered beside the task's
 // save step as they commit or apply it: never in the way of saving, and
 // gone once answered. The wording and where it is kept can be changed in
-// Settings → Memory after Remember.
-export function MemoryNudge({ task, api }: { task: Task; api: API }) {
-  const [memory, setMemory] = useState(task.memory || []);
-  useEffect(() => setMemory(task.memory || []), [task.memory]);
+// Settings → Memory after Remember. onChange reads the task again.
+export function MemoryNudge({ task, answered, api, onChange }: { task: Task; answered: Set<string>; api: API; onChange: () => void }) {
+  const [current, setCurrent] = useState(task);
+  useEffect(() => setCurrent(task), [task]);
   const section = useRef<HTMLElement>(null);
-  const shown = memory.filter(suggestion => suggestion.status !== 'dismissed');
+  const shown = shownSuggestions(current, answered);
   if (!shown.length) return null;
-  // Dismissing the last suggestion removes this section; the review's own card keeps the focus.
-  const update = (next: MemorySuggestion[]) => {
-    const card = section.current?.closest<HTMLElement>('.review-complete');
-    setMemory(next);
-    if (card && !next.some(suggestion => suggestion.status !== 'dismissed')) requestAnimationFrame(() => card.focus());
+  const update = (id: string, memory: MemorySuggestion[]) => {
+    answered.add(id);
+    const next = { ...current, memory }, left = shownSuggestions(next, answered);
+    // Focus stays near: the next suggestion, else the save step's field, the review's card or the chat's input.
+    const save = section.current?.closest('.review-complete, .task-delivery');
+    const target = left.length ? null : save?.querySelector<HTMLElement>('.task-commit textarea') || save?.closest<HTMLElement>('.review-complete') || document.querySelector<HTMLElement>('#conversation-panel .composer textarea');
+    setCurrent(next);
+    onChange();
+    requestAnimationFrame(() => {
+      if (left.length) { if (!section.current?.contains(section.current.ownerDocument.activeElement)) section.current?.querySelector<HTMLElement>('button')?.focus(); }
+      else target?.focus();
+    });
   };
   return <section ref={section} className="task-commit memory-nudge" aria-label={t('Writing memory')}>
     <header><Icon name="brain" size={14}/><span>{shown.some(suggestion => suggestion.status === 'pending') ? t('Remember for later tasks?') : t('Remembered')}</span></header>
-    {shown.map(suggestion => <Suggestion key={suggestion.id} taskId={task.id} suggestion={suggestion} api={api} onChange={update}/>)}
+    {shown.map(suggestion => <Suggestion key={suggestion.id} taskId={task.id} suggestion={suggestion} api={api} onChange={memory => update(suggestion.id, memory)}/>)}
   </section>;
 }
 

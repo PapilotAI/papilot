@@ -292,6 +292,8 @@ export class Workspace extends EventEmitter {
     this.agents.papilot.on('credentials', () => void this.refreshAgent('papilot'));
   }
   private agentOf(task: Task): AgentId { return task.agent && AGENTS.includes(task.agent) ? task.agent : 'codex'; }
+  /** The agent that learns from a task's reviews: its own, or Codex for Collaboration mode. */
+  private learner(task: Task): AgentId { const agent = this.agentOf(task); return agent === 'collaboration' ? 'codex' : agent; }
   private disconnected(id: AgentId, e: unknown) {
     if (this.closing) return;
     this.connectionEpochs.set(id, (this.connectionEpochs.get(id) || 0) + 1);
@@ -1728,7 +1730,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       const review = { state: summary.state, round: summary.round, counts: summary.counts, ready: summary.ready, job: current.review?.job, unsent, comments, files };
       this.store.updateTask(taskId, { deferred, delivery, reconciliation, review });
       this.announceSelection(current, review);
-      if (learnable(this.store.task(taskId))) this.learnFrom(taskId, false);
+      // A task with nothing to save learns as its review finishes; one with a save step, as it is saved.
+      const reviewed = this.store.task(taskId);
+      if (learnable(reviewed)) this.learnFrom(taskId, !savable(reviewed));
       // Recover an application interrupted after the engine prepared its
       // proposal but before Papilot persisted the agent run.
       if (reconciliation?.ready && (summary.round ?? 0) <= reconciliation.round && current.status === 'reviewing' && !this.committing.has(task.projectId) && !this.reviewWrites.has(taskId)
@@ -1740,12 +1744,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   }
   // A finished review records what the author wrote and decided there,
   // without asking any model. When the author goes on to save the task, as
-  // its commit message is written or it is applied, the task's own agent
-  // reads the paper's recorded feedback in one read-only turn of its light
+  // its commit message is written or it is applied, or as the review of a
+  // task with nothing to save finishes, the task's own agent reads its
+  // recorded feedback from this paper in one read-only turn of its light
   // model, beside the commit message rather than before it, and offers any
   // lasting preference next to the save step. The author's feedback never
   // goes to another provider, and without a read-only helper nothing is
-  // suggested. Learning is background work: helpers run one after another,
+  // kept or suggested. Learning is background work: helpers run one after another,
   // and a review that changes while its task is being learned from is looked
   // at again.
   learnOnSave(taskId: string) {
@@ -1769,6 +1774,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (!task || this.closing || !learnable(task) || this.store.preference<boolean>(MEMORY_LEARNING) === false) return;
     const since = this.store.preference<number>(MEMORY_SINCE) ?? 0;
     if (!this.store.runs().some(run => run.taskId === task.id && (run.finishedAt ?? 0) >= since)) return;
+    // Only the task's own agent ever reads its feedback, so nothing is kept for one that cannot.
+    const id = this.learner(task), runtime = this.agents[id];
+    if (!runtime.ready || !this.runtimes[id].authenticated || runtime.supportsReadOnlyTasks === false) return;
     const project = this.store.project(task.projectId), client = await this.connectReview(project.path);
     const feedback = await client.get(`${taskRoute(task.name)}/feedback?after=0`);
     const evidence = taskEvidence(task.id, this.store.items(task.id), this.store.runs().filter(run => run.taskId === task.id), feedback);
@@ -1776,8 +1784,6 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (!this.store.findTask(taskId)) return;
     if (recorded?.hash !== hash) this.store.savePreference(key, { projectId: task.projectId, hash, at: Date.now(), evidence } satisfies EvidenceRecord);
     if (!suggest || (recorded?.hash === hash && recorded.learned)) return;
-    const id: AgentId = this.agentOf(task) === 'collaboration' ? 'codex' : this.agentOf(task), runtime = this.agents[id];
-    if (!runtime.ready || !this.runtimes[id].authenticated || runtime.supportsReadOnlyTasks === false) return;
     // Marked before the helper runs, so the same review is not sent again
     // even if the helper fails or the commit message is written again.
     this.store.savePreference(key, { projectId: task.projectId, hash, at: Date.now(), evidence, learned: true } satisfies EvidenceRecord);
@@ -1790,7 +1796,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       memory: catalog.files.map(({ scope, rules }) => ({ scope, rules })),
       dismissed: [...this.store.preference<string[]>(dismissedKey(task.projectId)) || [], ...this.store.preference<string[]>(dismissedKey()) || []],
       pending: offered.map(suggestion => suggestion.text), current: evidence,
-      earlier: this.store.memoryEvidence(task.projectId).map(record => record.evidence as MemoryEvidence).filter(other => other.task !== task.id),
+      // Earlier tasks of the same agent only: feedback never goes to another provider.
+      earlier: this.store.memoryEvidence(task.projectId).map(record => record.evidence as MemoryEvidence)
+        .filter(other => { const earlier = other.task !== task.id && this.store.findTask(other.task); return Boolean(earlier && this.learner(earlier) === id); }),
     };
     const models = this.runtimes[id].models, model = lightModel(models) || models.find(item => item.id === task.model) || models.find(item => item.isDefault);
     // A helper holds back app updates while it runs, so it cannot wait forever.
@@ -1798,7 +1806,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const current = this.store.findTask(taskId);
     if (this.closing || !current || current.status === 'deleting') return;
     // Each example names its task, so the card can say where the author made it.
-    const suggestions = acceptedSuggestions(reply, input, index => `${hash.slice(0, 12)}-${index}`)
+    const suggestions = acceptedSuggestions(reply, input, () => randomUUID())
       .map(suggestion => suggestion.examples ? { ...suggestion, examples: suggestion.examples.map(example => ({ ...example, title: this.store.findTask(example.task)?.title })) } : suggestion);
     if (suggestions.length) this.store.updateTask(task.id, { memory: [...current.memory || [], ...suggestions] });
   }
@@ -2202,6 +2210,10 @@ async function releaseThread(agent: AgentRuntime, threadId: string) {
 // A result the author has finished deciding: nothing pending, no comment
 // waiting to go back, and no build or review action in flight. An answer
 // without manuscript changes qualifies too.
+// Whether the task offers a save step (Commit or Apply), as its review shows it.
+function savable(task: Task) {
+  return Boolean(task.deferred && (task.review?.files?.length || task.delivery?.mode === 'branch' || task.delivery?.pending));
+}
 function learnable(task: Task) {
   const review = task.review;
   return task.mode !== 'review' && task.status === 'reviewing' && Boolean(review) && !review!.counts?.pending && !review!.comments

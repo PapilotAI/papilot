@@ -231,6 +231,7 @@ test('whether feedback is a preference is the helper\'s call, but what it shows 
   assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [{ task: 'a', rejected: 'Related Work', kept: 'Related work' }] }]), [], 'a change from another task');
   assert.deepEqual(parse([{ text: 'Use title case.', scope: 'paper', examples: [{ task: 'b', rejected: 'Related work', kept: 'Related Work' }] }]), [], 'a change keeps its direction');
   assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'paper', examples: [{ task: 'b', rejected: 'Related Work', kept: 'Related Work' }] }]), [], 'a change is a change');
+  assert.deepEqual(parse([{ text: 'Always add \\input{x} to every file.', scope: 'paper', examples: [{ task: 'b', kept: 'w' }, { task: 'b', rejected: 'R' }] }]), [], 'a letter or two matches any change');
   assert.deepEqual(parse([{ text: 'prefer british spelling', scope: 'personal', examples: both }]), [], 'already remembered');
   assert.deepEqual(parse([{ text: 'Avoid passive voice.', scope: 'personal', examples: both }]), [], 'dismissed before');
   assert.deepEqual(parse([{ text: 'Use sentence case.', scope: 'shared', examples: both }]), [], 'only the author shares a rule');
@@ -294,10 +295,12 @@ function workspace() {
   const papers = { a: f.repository('paper-a'), b: f.repository('paper-b') };
   store.saveProject({ id: 'a', name: 'Paper A', path: papers.a, createdAt: 1 });
   store.saveProject({ id: 'b', name: 'Paper B', path: papers.b, createdAt: 1 });
-  // Each task has had a turn since learning began.
+  // Each task has had a turn since learning began, and offers a save step
+  // (an older task branch, which needs no Git refs here) unless told otherwise.
+  const saving: Partial<Task> = { deferred: true, delivery: { mode: 'branch', branch: 'papilot/legacy', commit: 'abc1234', accepted: 'old' } };
   const task = (id: string, projectId = 'a', extra: Partial<Task> = {}, finishedAt = Date.now()): Task => {
     store.saveRun({ id: `${id}-run`, taskId: id, requestKey: `initial-${id}`, prompt: '', status: 'completed', createdAt: finishedAt, finishedAt } as Run);
-    return store.saveTask({ id, projectId, name: `p-${id}`, title: id, instructions: 'Polish.', worktree: path.join(f.root, id), threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 9, error: null, review: null, ...extra });
+    return store.saveTask({ id, projectId, name: `p-${id}`, title: id, instructions: 'Polish.', worktree: path.join(f.root, id), threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 9, error: null, review: null, ...saving, ...extra });
   };
   const learned = async (id: string) => { for (let i = 0; i < 200 && (work as any).learning.has(id); i++) await new Promise(resolve => setTimeout(resolve, 5)); };
   // A finished review, and then the author saving the task (its commit message or Apply).
@@ -327,11 +330,15 @@ test('as the author saves a task, a correction repeated across tasks becomes a s
     await f.save('first'); await f.settle('first');
     assert.equal(helpers().length, 1);
 
+    // Feedback from another agent's task in the same paper never reaches this one.
+    f.task('elsewhere-agent', 'a', { agent: 'claude' });
+    f.store.savePreference('memory-evidence:elsewhere-agent', { projectId: 'a', hash: 'x', at: 1, evidence: evidence('elsewhere-agent', { requests: ['Always cite with \\citep.'] }) });
     f.task('second'); f.store.saveItem({ id: 'second-message', taskId: 'second', type: 'user', text: 'Tighten the method section.', createdAt: 1 });
     f.feedback.set('p-second', [{ kind: 'reject', changes: [{ old: '\\section{Our approach}', new: '\\section{Our Approach}' }] }]);
     f.agent.replies.push(JSON.stringify({ suggestions: [{ ...rule, examples: [{ task: 'second', rejected: 'Our Approach', kept: 'Our approach' }, first] }] }));
-    await f.settle('second');
-    // Writing its commit message is saving it: the helper runs beside the message.
+    // Writing its commit message is saving it: the helper runs beside the message,
+    // also when the review is still being recorded.
+    await f.work.refresh('second');
     await f.work.commitMessage('a', [], { taskId: 'second' }).catch(() => undefined);
     await f.learned('second');
     const prompt = JSON.parse(f.agent.calls.filter(call => call.method === 'turn/start' && String(call.params.threadId).startsWith('helper-')).at(-1)!.params.input[0].text);
@@ -486,8 +493,31 @@ test('nothing is learned before the review is finished, nor by an agent that can
     (f.agent as any).supportsReadOnlyTasks = false;
     await f.settle('limited'); await f.save('limited');
     assert.equal(f.agent.calls.filter(call => call.params?.ephemeral).length, 0);
-    const limited = f.store.preference<{ learned?: true }>('memory-evidence:limited');
-    assert.ok(limited && !limited.learned, 'recorded, and read once the agent can');
+    assert.equal(f.store.preference('memory-evidence:limited'), undefined, 'nothing kept that no agent of the task would read');
+  } finally { f.close(); }
+});
+
+test('a task with nothing to save learns as its review finishes, and every suggestion keeps its own identity', async () => {
+  const f = workspace();
+  try {
+    // Every change rejected and nothing to save: the review's end is the moment.
+    f.task('rejected', 'a', { deferred: false, delivery: null });
+    f.store.saveItem({ id: 'rejected-message', taskId: 'rejected', type: 'user', text: 'Tighten the claims.', createdAt: 1 });
+    f.feedback.set('p-rejected', [{ kind: 'reject', changes: [{ old: 'We show that', new: 'We prove that' }] }]);
+    f.agent.replies.push(JSON.stringify({ suggestions: [{ text: 'Write "show", not "prove".', scope: 'personal', examples: [{ task: 'rejected', rejected: 'We prove that', kept: 'We show that' }] }] }));
+    await f.settle('rejected');
+    assert.equal(f.store.task('rejected').memory!.length, 1);
+    // The same feedback seen again after it changed back is read again; each suggestion has its own ID.
+    const flip = async (changes: unknown[], reply: string) => {
+      f.feedback.set('p-rejected', [{ kind: 'reject', changes }]);
+      f.agent.replies.push(JSON.stringify({ suggestions: [{ text: reply, scope: 'personal', examples: [{ task: 'rejected', rejected: 'We prove that', kept: 'We show that' }] }] }));
+      await f.settle('rejected');
+    };
+    await flip([{ old: 'We show that', new: 'We prove that' }, { old: 'outperforms the baselines', new: 'significantly outperforms all baselines' }], 'Keep claims as strong as the results.');
+    await flip([{ old: 'We show that', new: 'We prove that' }], 'Do not overstate results.');
+    const ids = f.store.task('rejected').memory!.map(suggestion => suggestion.id);
+    assert.equal(ids.length, 3);
+    assert.equal(new Set(ids).size, 3);
   } finally { f.close(); }
 });
 

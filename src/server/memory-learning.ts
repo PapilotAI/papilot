@@ -121,14 +121,16 @@ function example(value: any, tasks: Map<string, MemoryEvidence>): { example: Mem
     const index = telling(quote) ? authorWords(evidence).findIndex(word => loose(word).includes(loose(quote))) : -1;
     return index < 0 ? undefined : { example: { task: evidence.task, said: quote }, source: `${evidence.task}\0said\0${index}` };
   }
-  const index = rejected === kept ? -1 : evidence.rejected.findIndex(change => plain(change.new).includes(plain(rejected)) && plain(change.old).includes(plain(kept)));
+  // A change, like the author's words, has to say something: a letter or two matches any change.
+  const index = rejected === kept || !telling(`${rejected} ${kept}`) ? -1 : evidence.rejected.findIndex(change => plain(change.new).includes(plain(rejected)) && plain(change.old).includes(plain(kept)));
   return index < 0 ? undefined : { example: { task: evidence.task, ...(rejected ? { rejected } : {}), ...(kept ? { kept } : {}) }, source: `${evidence.task}\0rejected\0${index}` };
 }
 // Whether feedback amounts to a preference is the helper's judgment. What it
 // shows the author is checked here rather than trusted: only examples found
 // in the tasks it was shown are kept, and a proposal without one is dropped,
-// so neither an invented reason nor text in a manuscript can put a rule in
-// front of the author. Known, dismissed and already offered proposals are dropped.
+// so every suggestion the author sees comes with real evidence they can
+// judge, and nothing is saved until they choose Remember. Known, dismissed
+// and already offered proposals are dropped.
 export function acceptedSuggestions(text: string, input: LearningInput, id: (index: number) => string): MemorySuggestion[] {
   const value = reply(text), proposals = Array.isArray(value?.suggestions) ? value.suggestions : [];
   const known = new Set([...input.memory.flatMap(file => file.rules), ...input.dismissed, ...input.pending || []].map(ruleKey));

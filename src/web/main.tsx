@@ -56,7 +56,7 @@ import { SourceTab, useSourceEdit } from './source-panel.tsx';
 import type { OpenSource, ReviewChanges } from '../../engine/src/web/review-events.ts';
 import { useTheme } from './theme.tsx';
 import { SettingsDialog, type SettingsInitialPage } from './settings.tsx';
-import { MemoryNudge, OPEN_MEMORY } from './memory-card.tsx';
+import { MemoryNudge, OPEN_MEMORY, shownSuggestions } from './memory-card.tsx';
 import { WorkspaceSwitcher } from './workspace-switcher.tsx';
 import { workspaceModifier, workspaceShortcutLabel } from './workspace-switch.ts';
 import { useSystemRequirements, missingTools, RequirementsBanner } from './system-requirements.tsx';
@@ -1345,6 +1345,8 @@ function App() {
   const folderRequest = useRef(false);
   // Commit drafts survive switching tasks or moving between review and chat.
   const applyStates = useRef(new Map<string, { key: string; draft: TaskApplyState }>());
+  // Suggestions the author answered in this session, per task, so a remembered one keeps its Undo.
+  const memoryAnswers = useRef(new Map<string, Set<string>>());
   const newTaskInput = useRef<HTMLTextAreaElement>(null);
   const [newDraft, setNewDraft] = useState(() => browserStorage.getItem('papilot:new-task') || '');
   const [newSkill, setNewSkill] = useState<Skill | null>(null);
@@ -2409,7 +2411,8 @@ function App() {
     : saved === 'committed' && task.delivery ? savedResult(t('Committed {hash} to {branch}', { hash: task.delivery.commit?.slice(0, 7) || '', branch: task.delivery.branch || '' }))
     : saved === 'applied' ? savedResult(t('Applied to manuscript')) : null);
   // What Papilot noticed in the author's reviews comes up beside saving, below the save step.
-  const memoryNudge = task && task.memory?.some(suggestion => suggestion.status !== 'dismissed') ? <MemoryNudge key={task.id} task={task} api={api}/> : null;
+  const answered = task ? memoryAnswers.current.get(task.id) || memoryAnswers.current.set(task.id, new Set()).get(task.id)! : undefined;
+  const memoryNudge = task && answered && shownSuggestions(task, answered).length ? <MemoryNudge key={task.id} task={task} answered={answered} api={api} onChange={() => void refresh(true)}/> : null;
   const completion = applicationStep || memoryNudge ? <>{applicationStep}{memoryNudge}</> : null;
   const reviewFeedback = (card: boolean) => task?.mode === 'review' ? (card && task.aiReview?.notes ? <button type="button" className="ai-review-link" onClick={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }}><Icon name="notes" size={14}/>{tn(task.aiReview.notes, 'View {n} review suggestion', 'View {n} review suggestions')}<Icon name="arrowRight" size={13}/></button> : null) : null;
   const sidebarToggle = (narrow || !sidebarVisible) && <button className="icon-button sidebar-toggle" aria-label={t('Show task list')} title={t('Show task list')} aria-expanded={sidebarShown} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(true) : setSidebarVisible(true)}><Icon name={narrow ? 'menu' : 'sidebar'} size={20}/>{addedTask && !sidebarShown && <span key={addedTask.id} className="task-added-dot" aria-hidden="true"/>}</button>;

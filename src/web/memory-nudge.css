@@ -4,6 +4,7 @@
    tokens but not the app's utilities. */
 .memory-nudge{gap:6px}
 .memory-nudge>header{display:flex;align-items:center;gap:6px;color:var(--text-2)}
+.memory-nudge>header>span{color:var(--text-2)}
 .memory-nudge>header>svg{flex:none;color:var(--purple)}
 .memory-nudge-suggestion{display:flex;flex-direction:column;gap:4px;min-width:0}
 .memory-nudge-rule{margin:0;color:var(--text);font-size:13px;line-height:1.5;overflow-wrap:anywhere}
@@ -28,7 +29,8 @@
 .memory-examples{margin-top:6px}
 .memory-examples>li{display:grid;gap:2px}
 .memory-examples small{font-size:11px;color:var(--text-3)}
-.memory-nudge .memory-examples li li{color:var(--text);overflow-wrap:anywhere}
+/* The viewer mutes every span in its completion card; the examples and the label keep their colours. */
+.memory-nudge .memory-examples li li,.memory-nudge .memory-examples li li span:not(.memory-arrow){color:var(--text);overflow-wrap:anywhere}
 .memory-examples del{color:var(--text-3);text-decoration-color:var(--red)}
 .memory-arrow{color:var(--text-3)}
 @media(max-width:520px){.memory-nudge-foot>small{flex-basis:100%}}
