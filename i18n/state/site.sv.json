@@ -274,6 +274,11 @@
     "textHash": "ebe7d8bad3da6404c5e55221daabe415e2acfa381e15176747c35924b7bdf8aa",
     "model": "gemini-4-argon-high"
   },
+  "Make it shorter": {
+    "revision": "333427fbb17534384425b3e3cde56a489d168a774143cb63194bc491b40d3567",
+    "textHash": "a26b0c6dfb00ea94ac2fb4d10b5d6b5138689f89bdd594ee9a7c30113ae75568",
+    "model": "gemini-4-argon-high"
+  },
   "Mark up the compiled PDF and the coding agent you choose edits the LaTeX source. Each change comes back as a typeset before-and-after for you to accept or reject.": {
     "revision": "674f6bdbd267df414c0b3901ff9034215da35a1367072d91473ae5fe46558ab9",
     "textHash": "3fd31b18af462c4fa1f178691a8a7ec42da45a7163706fa467e1dc1cd0bdefa1",
@@ -354,10 +359,10 @@
     "textHash": "b4964e6e81352bb293fb54b85075b0fc492a679f2db15140944d6faa6e7b783b",
     "model": "gemini-4-argon-medium"
   },
-  "Pick a model from any connected agent below the chat. Switch to another agent and Papilot reruns your request with it, with the same notes. Bring the login or API key you already have, or use the built-in Papilot Writer.": {
-    "revision": "75d88f8a95b50d253e957def1c258480908bac339abee89c90563b42a9ff2bbe",
-    "textHash": "111656b12195a2a94b8296c0df349cb40ee6190dd983abd4ab81107a15184e1a",
-    "model": "gemini-4-argon-medium"
+  "Pick a model from any connected agent below the chat. Switch to another agent partway through, and the task keeps its conversation and changes: the new agent picks up where the last one stopped. Bring the login or API key you already have, or use the built-in Papilot Writer.": {
+    "revision": "3ce1968bb925fabde498bae5761df791d229bf20902be45b9a6039a331511c4a",
+    "textHash": "b500a1c2a6160c69b4541468cc2b7c0543d1ddb479d57c61b449eb1e0dc01f52",
+    "model": "gemini-4-argon-high"
   },
   "Point at the Page": {
     "revision": "fb9ae5904e763088e0ffb434bf1f208899ab12926232f108d490438468d41269",
@@ -382,11 +387,6 @@
   "Read the guide": {
     "revision": "eb1ae6d6ef92b4f8ff5fa58e12313bf2398498453140e90585f1382108b7127c",
     "textHash": "8d099f925d900ddb8ba29392c4bc34dc17a1d425b9d4c2b86d27391dbeb9a7fc",
-    "model": "gemini-4-argon-medium"
-  },
-  "Restarted from": {
-    "revision": "e2af94cd387e43c834dcaf5d6253a4f282101ba043eede65a225477095895047",
-    "textHash": "755e67d66fff978b3b891861b9522223226847f7ef65b5e22b7a37f763f39759",
     "model": "gemini-4-argon-medium"
   },
   "Review": {
@@ -499,10 +499,10 @@
     "textHash": "6cb1b9a0bedb15f7af24c1d755a1f64be0e18ec5005c5cdd47efb19f62bf7764",
     "model": "manual"
   },
-  "The model menu below the chat: choosing Claude's Opus 5.5 instead of Codex reruns the request with the same notes": {
-    "revision": "76164632afc980191a85a7c6dd97f022108908d7458561d3f84e52a43ed09131",
-    "textHash": "d62e7636ea4004c8b9accc9be232d5f555027b4e63c5921cc9ca413c3d7bdb3d",
-    "model": "gemini-4-argon-medium"
+  "The model menu below the chat: switching from Codex to Claude's Opus 5.5 keeps the conversation, and Claude answers the next request": {
+    "revision": "5fc7d5ead5ce323bfe1293d101cc719e1083389f1437fff9aa101f0ba2d37f84",
+    "textHash": "b2ca8501a035333ce4bc12f673316b844f40f4437d081b7c1d29fef72fd5f1d3",
+    "model": "gemini-4-argon-high"
   },
   "The proof is by induction on <del><i>e</i></del>.": {
     "revision": "2589665b022e860b4d334537c9ad8bade96667857e4876722e9029a759782a3f",

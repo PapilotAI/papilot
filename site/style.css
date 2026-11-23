@@ -820,18 +820,18 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .sync-points p{margin-top:8px;font-size:14.5px;line-height:1.6;color:var(--text-2);text-wrap:pretty}
 
 /* Any agent, any model: the composer's model menu as the app draws it
-   (search, each agent's models under its mark, the current one checked and
-   other agents' marked as restarting the task). Picking one reruns the
-   request in a task that says where it was restarted from. */
+   (search, each agent's models under its mark, the current one checked).
+   Picking another agent's model keeps the task and its conversation; the
+   next request typed in the composer goes to the new agent. */
 .features-more{padding-top:56px}
 #features{padding-top:88px}
 .scene .models-chip small{display:block}
 .models-noted{margin-top:4px;padding:6px 10px;border:1.5px solid var(--accent);border-radius:3px;background:color-mix(in srgb,var(--accent) 7%,transparent)}
 .note-n{position:absolute;top:50%;left:-11px;width:20px;height:20px;margin-top:-10px;border-radius:50%;background:var(--button);font:600 11px/20px var(--sans);color:#fff;text-align:center}
-.models-restart{display:flex;align-items:center;gap:6px;padding:0 4px;font:12px/1.4 var(--sans);color:var(--text-3);animation:chat-in .25s ease-out}
-.models-restart .ic{width:13px;height:13px}
-.models-restart b{font-weight:500;color:var(--accent)}
-.scene[data-scene=models]:not([data-step=rerun]) .models-restart{display:none}
+.scene[data-scene=models]:is([data-step=codex],[data-step=menu],[data-step=switched]) :is(.models-follow,.models-answer){display:none}
+.playing :is(.models-follow,.models-answer){animation:chat-in .25s ease-out}
+.models-typed{overflow:hidden;font:13px/20px var(--sans);color:var(--text);text-overflow:ellipsis}
+.models-typed:not(:empty)~i{display:none}
 .model-menu{position:absolute;right:12px;bottom:78px;z-index:4;display:none;width:260px;padding:6px;border-radius:12px;background:var(--bg);box-shadow:0 0 0 1px var(--line),0 18px 40px -12px rgb(15 23 42/.35);font:12.5px/1.3 var(--sans);color:var(--text);transform-origin:40% 100%}
 .model-menu.open{display:block;animation:pop .18s ease-out}
 .model-search{display:flex;align-items:center;gap:8px;margin-bottom:2px;padding:7px 10px;border-radius:8px;background:var(--bg-muted);color:var(--text-3)}
@@ -842,10 +842,8 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .model-option{display:flex;align-items:center;gap:8px;padding:6px 10px 6px 34px;border-radius:7px;transition:background-color .15s}
 .model-option small{font-size:10.5px;color:var(--text-3)}
 .model-option .ic{width:13px;height:13px;color:var(--text-3)}
-.model-option .model-restart{margin-left:auto}
-.model-option .model-check{display:none;width:14px;height:14px;color:var(--accent)}
-.model-codex small{margin-right:auto}
-.scene[data-scene=models]:not([data-step=rerun]) .model-codex .model-check,.scene[data-scene=models][data-step=rerun] .model-opus .model-check{display:block}
+.model-option .model-check{display:none;width:14px;height:14px;margin-left:auto;color:var(--accent)}
+.scene[data-scene=models]:is([data-step=codex],[data-step=menu]) .model-codex .model-check,.scene[data-scene=models]:not([data-step=codex],[data-step=menu]) .model-opus .model-check{display:block}
 .model-option.hover,.model-option.pressed{background:var(--bg-hover)}
 .models-chip.pressed{background:var(--bg-hover);border-radius:6px}
 
@@ -918,7 +916,7 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .np-new,[data-scene=template][data-step=created] .np-old{display:none}
 [data-scene=template][data-step=created] .np-new{display:flex}
 .playing[data-step=created] .np-new{animation:np-in .5s ease-out}
-.np-new{padding:26px 26px 0}
+.scene .np-new{padding:26px 26px 0}
 .np-paper-title{font:700 17px/1.25 var(--sans);color:var(--pdf-text);letter-spacing:-.01em}
 .np-authors{display:flex;gap:14px;margin:12px 0 16px}
 .np-authors i{display:block;width:64px;height:6px;border-radius:3px;background:var(--line-strong)}
@@ -926,7 +924,7 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .np-new i{display:block;height:6px;border-radius:3px;background:var(--line)}
 .np-acm{margin:16px 0 18px;padding:9px 10px;border-block:1px solid var(--line)}
 .np-acm i{height:5px}
-.np-new .sheet-lines{padding:0}
+.scene .np-new .sheet-lines{padding:0}
 .np-section{display:block;width:30%;height:8px;margin-bottom:4px;border-radius:4px;background:var(--line-strong)}
 .np-dialog{position:absolute;top:58px;left:50%;z-index:2;display:flex;flex-direction:column;width:min(560px,calc(100% - 40px));height:calc(100% - 78px);overflow:hidden;translate:-50% 0;border-radius:12px;background:var(--bg);box-shadow:0 0 0 1px var(--line),0 24px 60px -18px rgb(15 23 42/.45),0 0 0 100vmax rgb(15 23 42/.22);font:12px/1.4 var(--sans);color:var(--text-2);text-align:left;user-select:none;-webkit-user-select:none;transition:opacity .3s,scale .3s,visibility .3s}
 [data-scene=template][data-step=created] .np-dialog{visibility:hidden;opacity:0;scale:.97}

@@ -156,16 +156,20 @@ try {
   assert.deepEqual([...order].sort((a, b) => a - b), order, 'the reasons, in order, then the downloads');
   assert.deepEqual(await page.locator('.scene').evaluateAll(apps => apps.map(app => app.dataset.scene)), ['notes', 'revise', 'models', 'record', 'phone', 'template'], 'each reason is a feature, in order');
 
-  // Picking another agent's model in the menu reruns the request, in a task
-  // that says where it was restarted from.
+  // Picking another agent's model in the menu keeps the task's conversation,
+  // and the next request goes to the new agent.
   const models = page.locator('[data-scene=models]'), modelsStep = step => page.waitForFunction(value => document.querySelector('[data-scene=models]').dataset.step === value, step);
   await models.scrollIntoViewIfNeeded();
   await page.mouse.move(1, 1);
   await modelsStep('menu');
   assert.equal(await models.locator('.model-menu').isVisible(), true, 'the model menu opens below the chat');
-  await modelsStep('rerun');
-  assert.equal(await models.locator('.models-restart').isVisible(), true, 'the rerun says where it restarted from');
+  await modelsStep('switched');
   assert.equal(await models.locator('.models-chip b').innerText(), 'Claude');
+  assert.equal(await models.locator('.chat-bubble').first().isVisible(), true, 'the conversation stays in the task');
+  assert.equal(await models.locator('.chat-reply.chat-old').isVisible(), true, "the first agent's reply stays too");
+  await modelsStep('done');
+  assert.deepEqual(await models.locator('.chat-thread > *').evaluateAll(items => items.filter(item => item.checkVisibility()).map(item => item.className)), ['chat-bubble', 'chat-reply chat-old', 'chat-bubble models-follow', 'chat-reply models-answer'], 'the next request and its answer follow the same conversation');
+  assert.equal(await models.getByText(/Restarted/).count(), 0, 'switching agents does not restart the task');
 
   // On the phone a tap accepts each change in turn, and the capsule then
   // gives way to the annotation tools.
@@ -184,9 +188,15 @@ try {
   await template.scrollIntoViewIfNeeded();
   await page.mouse.move(1, 1);
   await templateStep('found');
+  assert.equal(await template.locator('.np-found').isVisible(), true, 'the search shows its results');
+  assert.equal(await template.locator('.np-all').isVisible(), false);
   assert.deepEqual(await template.locator('.np-found .np-name').allInnerTexts(), ['POPL 2027', 'PACMPL (POPL, PLDI, ICFP, OOPSLA)']);
   await templateStep('details');
+  assert.equal(await template.locator('.np-details').isVisible(), true, 'picking the template asks for a name and a folder');
+  assert.equal(await template.locator('.np-pick').isVisible(), false);
   assert.equal(await template.locator('.np-chosen .np-chosen-text b').innerText(), 'POPL 2027');
+  await templateStep('creating');
+  assert.equal(await template.locator('.np-target b').innerText(), 'soundness', 'the paper is named before it is created');
   await templateStep('created');
   assert.equal(await template.locator('.np-new').isVisible(), true, 'the new paper is in the PDF');
   await page.waitForFunction(() => getComputedStyle(document.querySelector('[data-scene=template] .np-dialog')).visibility === 'hidden');
@@ -249,7 +259,7 @@ try {
   const noJs = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1440, height: 900 } });
   const staticPage = await noJs.newPage();
   await staticPage.goto(origin);
-  for (const selector of [`${change} .before`, `${change} .after`, `${hero} .chat-bubble`, '[data-scene=record] .git-pushed', '[data-scene=overleaf] .ol-new', '[data-scene=overleaf] .theirs', '[data-scene=models] .models-restart', '[data-scene=phone] .review-change:last-of-type .before', '[data-scene=phone] .phone-decide', '[data-scene=template] .np-popl']) assert.equal(await staticPage.locator(selector).isVisible(), true, selector);
+  for (const selector of [`${change} .before`, `${change} .after`, `${hero} .chat-bubble`, '[data-scene=record] .git-pushed', '[data-scene=overleaf] .ol-new', '[data-scene=overleaf] .theirs', '[data-scene=models] .models-follow', '[data-scene=phone] .review-change:last-of-type .before', '[data-scene=phone] .phone-decide', '[data-scene=template] .np-popl']) assert.equal(await staticPage.locator(selector).isVisible(), true, selector);
   await staticPage.locator(hero).screenshot({ path: 'test-results/site/no-js.png' });
   await noJs.close();
 
@@ -386,6 +396,18 @@ try {
       // The hero note's links wrap inside it rather than spilling over its
       // sides, which fonts wider than this machine's would push off screen.
       assert.ok(await page.locator('.hero-note').evaluate(note => { const box = note.getBoundingClientRect(); return [...note.children].every(link => { const r = link.getBoundingClientRect(); return r.left >= box.left - 1 && r.right <= box.right + 1; }); }), `${locale}/${width}: the hero note's links fit inside it`);
+      // The New paper dialog's later steps fit as well as its gallery.
+      for (const step of ['found', 'details', 'created']) {
+        const fit = await page.locator('[data-scene=template]').evaluate((app, step) => {
+          const before = app.dataset.step;
+          app.classList.add('instant'); app.dataset.step = step;
+          const dialog = app.querySelector('.np-dialog'), page = app.querySelector('.np-new'), last = step === 'details' ? app.querySelector('.np-foot') : null;
+          const result = { across: dialog.scrollWidth <= dialog.clientWidth, down: !last || last.getBoundingClientRect().bottom <= dialog.getBoundingClientRect().bottom + 1, page: step !== 'created' || page.scrollWidth <= page.clientWidth };
+          app.dataset.step = before; app.classList.remove('instant');
+          return result;
+        }, step);
+        assert.deepEqual(fit, { across: true, down: true, page: true }, `${locale}/${width}: the template's ${step} step fits`);
+      }
       const panels = await page.locator('.scene').evaluateAll(apps => apps.map(app => {
         const [paneSelector, targetSelector] = { notes: ['.app-pdf', '.scene-figure'], revise: ['.app-pdf', '.review-change'], models: ['.app-chat', '.chat-composer'], record: ['.app-history', '.git-new'], phone: ['.phone-pdf', '.review-change:last-of-type'], template: ['.np-dialog', '.np-all .np-name'] }[app.dataset.scene];
         const pane = app.querySelector(paneSelector).getBoundingClientRect(), target = app.querySelector(targetSelector).getBoundingClientRect();
@@ -410,7 +432,7 @@ try {
   assert.equal(await orbit.evaluate(el => getComputedStyle(el).animationName), 'none');
   assert.deepEqual(errors, []);
   assert.equal(requests.some(url => /\.(mp4|gif|jpe?g)|feature-.*\.png/.test(url)), false);
-  console.log('Site checks passed: annotations during scroll and resize, first screen, the hero round and takeover, feature windows, Overleaf sync both ways, the rerun from the model menu, changes accepted on the phone, a paper from a template, next steps and guide anchors, reduced motion, no-JS, Universe links and keyboard navigation, all language URLs and SEO, saved language, both download menus, and layouts from 320px to 1440px including header breakpoints.');
+  console.log('Site checks passed: annotations during scroll and resize, first screen, the hero round and takeover, feature windows, Overleaf sync both ways, switching agents from the model menu, changes accepted on the phone, a paper from a template, next steps and guide anchors, reduced motion, no-JS, Universe links and keyboard navigation, all language URLs and SEO, saved language, both download menus, and layouts from 320px to 1440px including header breakpoints.');
 } finally {
   await browser.close();
   await server.close();

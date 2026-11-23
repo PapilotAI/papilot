@@ -261,7 +261,7 @@
          like the opening window, with the rest of the app as bars, and plays
          what the opening round leaves out: two notes added to a task and sent
          together, a comment that sends a change back for another round,
-         another agent's model picked and the request rerun, the accepted
+         another agent's model picked mid-task and the conversation carried on, the accepted
          change committed and synced in Version Management, changes accepted
          on a phone, and a paper created from a template. On a phone the PDF
          and the chat take turns, switched in the navigation bar, as in the
@@ -507,7 +507,7 @@
       <div class="feature-text">
         <p class="step"><span lang="en">Agents</span><span lang="zh-CN">智能体</span></p>
         <h3><span lang="en">Any Agent, Any Model</span><span lang="zh-CN">用你顺手的智能体和模型</span></h3>
-        <p><span lang="en">Pick a model from any connected agent below the chat. Switch to another agent and Papilot reruns your request with it, with the same notes. Bring the login or API key you already have, or use the built-in Papilot Writer.</span><span lang="zh-CN">对话框下方能选所有已连接智能体的模型。换成另一个智能体的模型，Papilot 会带着同样的批注重新做一遍。登录和 API Key 用你现有的就行，也可以用内置的 Papilot Writer。</span></p>
+        <p><span lang="en">Pick a model from any connected agent below the chat. Switch to another agent partway through, and the task keeps its conversation and changes: the new agent picks up where the last one stopped. Bring the login or API key you already have, or use the built-in Papilot Writer.</span><span lang="zh-CN">对话框下方能选所有已连接智能体的模型。做到一半换个智能体，任务里的对话和改动都还在，新的智能体接着往下做。登录和 API Key 用你现有的就行，也可以用内置的 Papilot Writer。</span></p>
         <ul class="agent-grid" id="agents" role="list" aria-label="Supported Coding Agents" data-zh-aria-label="支持的编程智能体">
           <li class="agent pi"><i aria-hidden="true"></i>Pi</li>
           <li class="agent codex"><i aria-hidden="true"></i>Codex</li>
@@ -527,7 +527,7 @@
         </ul>
         <p class="feature-link"><a href="https://github.com/PapilotAI/papilot/blob/main/docs/guide.md#agents"><span lang="en">Set up an agent</span><span lang="zh-CN">配置智能体（英文）</span></a></p>
       </div>
-      <figure class="app-window scene" data-scene="models" data-tab="side" data-step="rerun" role="img" aria-label="The model menu below the chat: choosing Claude's Opus 5.5 instead of Codex reruns the request with the same notes" data-zh-aria-label="对话框下方的模型菜单：把 Codex 换成 Claude 的 Opus 5.5，同样的批注重新做一遍">
+      <figure class="app-window scene" data-scene="models" data-tab="side" data-step="done" role="img" aria-label="The model menu below the chat: switching from Codex to Claude's Opus 5.5 keeps the conversation, and Claude answers the next request" data-zh-aria-label="对话框下方的模型菜单：从 Codex 换成 Claude 的 Opus 5.5，之前的对话还在，下一条请求由 Claude 接着回答">
         <div class="scene-art" aria-hidden="true" inert>
           <div class="app-bar"><span class="lights"><i></i><i></i><i></i></span></div>
           <div class="app-top">
@@ -547,16 +547,17 @@
             </div>
             <div class="app-chat">
               <div class="chat-thread">
-                <p class="models-restart"><svg class="ic"><use href="#i-refresh"/></svg><span><span lang="en">Restarted from</span><span lang="zh-CN">原任务</span>: <b><span lang="en">Say it more plainly</span><span lang="zh-CN">说得直白一点</span></b></span></p>
                 <div class="chat-bubble">
                   <span class="chat-note-head"><svg class="ic"><use href="#i-notes"/></svg><span lang="en">Note on the PDF</span><span lang="zh-CN">PDF 上的批注</span></span>
                   <span class="chat-quote"><b>1</b><em><span lang="en">Page 2 · main.tex:24</span><span lang="zh-CN">第 2 页 · main.tex:24</span></em></span>
                   <p class="chat-comment"><span lang="en">Say it more plainly</span><span lang="zh-CN">说得直白一点</span></p>
                 </div>
-                <div class="chat-reply"><span class="chat-dots"><i></i><i></i><i></i></span><span class="chat-lines"><i style="width:100%"></i><i style="width:86%"></i><i style="width:52%"></i></span></div>
+                <div class="chat-reply chat-old"><span class="chat-lines"><i style="width:100%"></i><i style="width:86%"></i><i style="width:52%"></i></span></div>
+                <div class="chat-bubble models-follow"><p class="chat-comment"><span lang="en">Make it shorter</span><span lang="zh-CN">再短一点</span></p></div>
+                <div class="chat-reply models-answer"><span class="chat-dots"><i></i><i></i><i></i></span><span class="chat-lines"><i style="width:100%"></i><i style="width:64%"></i></span></div>
               </div>
               <div class="chat-composer">
-                <span class="chat-input"><i></i></span>
+                <span class="chat-input"><span class="models-typed"></span><i></i></span>
                 <span class="chat-foot"><i class="chat-plus"><svg class="ic"><use href="#i-plus"/></svg></i><span class="chat-agent agent claude models-chip"><i></i><b>Claude</b><small>Opus 5.5</small><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="chat-send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></span>
               </div>
             </div>
@@ -566,10 +567,10 @@
             <p class="model-group agent codex"><i></i>Codex</p>
             <p class="model-option model-codex"><span lang="en">Default model</span><span lang="zh-CN">默认模型</span><small><span lang="en">Default</span><span lang="zh-CN">默认</span></small><svg class="ic model-check"><use href="#i-check"/></svg></p>
             <p class="model-group agent claude"><i></i>Claude</p>
-            <p class="model-option model-opus">Opus 5.5<svg class="ic model-restart"><use href="#i-refresh"/></svg><svg class="ic model-check"><use href="#i-check"/></svg></p>
-            <p class="model-option">Sonnet 5.5<svg class="ic model-restart"><use href="#i-refresh"/></svg></p>
+            <p class="model-option model-opus">Opus 5.5<svg class="ic model-check"><use href="#i-check"/></svg></p>
+            <p class="model-option">Sonnet 5.5</p>
             <p class="model-group agent glm"><i></i>GLM</p>
-            <p class="model-option">GLM-5.3<svg class="ic model-restart"><use href="#i-refresh"/></svg></p>
+            <p class="model-option">GLM-5.3</p>
           </div>
           <span class="app-cursor"><svg viewBox="0 0 24 24"><path d="M5.5 2.5v17.2l4.3-4.1 2.9 6.6 3.1-1.3-2.9-6.5h6z"/></svg></span>
         </div>
@@ -1345,17 +1346,19 @@ const pick = (chat, texts) => {
 }
 
 // Any agent, any model: the pointer opens the model menu below the chat and
-// picks another agent's model; the request reruns in a task that says where
-// it was restarted from, and the agent answers again.
+// picks another agent's model. The task keeps its conversation, and the next
+// request goes to the new agent, which answers it with everything said so far.
 {
   const app = document.querySelector('[data-scene=models]'), play = player(app);
   const chat = app.querySelector('.app-chat'), chip = app.querySelector('.models-chip');
   const name = chip.querySelector('b'), model = chip.querySelector('small');
   const menu = app.querySelector('.model-menu'), opus = menu.querySelector('.model-opus');
-  const standard = menu.querySelector('.model-codex > span').textContent;
+  const input = chat.querySelector('.chat-input'), typed = input.querySelector('.models-typed'), send = chat.querySelector('.chat-send');
+  const standard = menu.querySelector('.model-codex > span').textContent, follow = chat.querySelector('.models-follow').textContent;
   const agent = (id, label, choice) => { chip.className = `chat-agent agent ${id} models-chip`; name.textContent = label; model.textContent = choice; };
   const begin = () => instantly([app, chat], () => {
     agent('codex', 'Codex', standard); menu.classList.remove('open'); opus.classList.remove('hover');
+    typed.textContent = ''; chat.classList.remove('ready');
     app.dataset.step = 'codex'; chat.dataset.step = 'done';
   });
   play.loop(begin, async () => {
@@ -1373,9 +1376,19 @@ const pick = (chat, texts) => {
     await chip.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-6px)' }], { duration: 140, easing: 'ease-in' }).finished;
     agent('claude', 'Claude', 'Opus 5.5');
     chip.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'ease-out' });
-    app.dataset.step = 'rerun'; chat.dataset.step = 'sent';
-    await play.sleep(1700);
-    chat.dataset.step = 'done';
+    app.dataset.step = 'switched';
+    await play.sleep(900);
+    await play.glide(() => play.point(input, .25, .5), 600);
+    await play.press(input);
+    await play.type(typed, follow, 700);
+    chat.classList.add('ready');
+    await play.sleep(350);
+    await play.glide(() => play.point(send), 500);
+    await play.press(send);
+    typed.textContent = ''; chat.classList.remove('ready');
+    app.dataset.step = chat.dataset.step = 'sent';
+    await play.sleep(1600);
+    app.dataset.step = chat.dataset.step = 'done';
     await play.sleep(500);
     play.cursor.classList.remove('shown');
     await play.sleep(2600);
