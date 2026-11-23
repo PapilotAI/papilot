@@ -48,6 +48,18 @@ const DECIDED: Record<ActionKind, Decision> = {
   comment: "commented",
 };
 const LIVE = new Set(["queued", "applying", "applied", "undoing"]);
+
+/** `text` with each [start, end) range replaced, or an error if they overlap. */
+function replaceRanges(text: Buffer | null, ranges: [number, number, string][]) {
+  if (!text) throw new Error("The proposal source is unavailable.");
+  let result = text.toString("utf8"), boundary = result.length;
+  for (const [start, end, replacement] of [...ranges].sort((a, b) => b[0] - a[0] || b[1] - a[1])) {
+    if (start < 0 || start > end || end > boundary) throw new Error("These changes overlap and must be revised together.");
+    result = result.slice(0, start) + replacement + result.slice(end);
+    boundary = start;
+  }
+  return Buffer.from(result);
+}
 export class Conflict extends Error {}
 const snippet = (text: string) => {
   text = text.replace(/\n+$/, "");
@@ -244,7 +256,16 @@ export class Review {
         if (action.kind === "comment") comments[change] = action.body;
       }
     }
-    return { decisions, comments };
+    const variants = this.variants(name, round.number);
+    return { decisions, comments, ...(Object.keys(variants).length ? { variants } : {}) };
+  }
+  /** The wording of this round's changes accepted with a note option. */
+  variants(name: string, number: number) {
+    const result: Record<string, string> = {};
+    for (const action of this.actions(name, number))
+      if (action.kind === "accept" && LIVE.has(action.status))
+        for (const edit of action.detail.edits ?? []) result[edit.unit] = edit.text;
+    return result;
   }
   /** `seen`: the page asking is on screen, so the author reads this task. */
   pageState(name: string, number?: number, seen = true): PageState {
@@ -280,7 +301,7 @@ export class Review {
       waiting: round ? round.units.filter(unit => !comparable(round, rendered(this.app, name, round.number), unit.id)).map(unit => unit.id) : [],
       ...(again.length ? { reviewAgain: again } : {}),
       undo: undo
-        ? { id: undo.id, kind: undo.kind, changes: undo.changes, ...(undo.republish ? { republish: true as const } : {}), ...(undo.status === "queued" ? { queued: true as const } : {}) }
+        ? { id: undo.id, kind: undo.kind, changes: undo.changes, ...(undo.republish ? { republish: true as const } : {}), ...(undo.status === "queued" ? { queued: true as const } : {}), ...(undo.detail.edits ? { worktree: true as const } : {}) }
         : null,
       ...(round ? (() => {
         const queued = this.queuedActions(name).filter((a) => a.round === round.number).flatMap((a) => a.changes);
@@ -547,11 +568,11 @@ export class Review {
        *  turn to end. */
       queue?: boolean;
       noteKey?: string;
+      /** Accept these changes with a note option's wording. */
+      edits?: { unit: string; text: string }[];
     },
-    // A note option's checkmark was given with the option's own PDF preview.
-    options: { previewed?: boolean } = {},
   ) {
-    return this.app.exclusive(() => this.decideNow(name, data, options));
+    return this.app.exclusive(() => this.decideNow(name, data));
   }
   private async decideNow(
     name: string,
@@ -563,8 +584,8 @@ export class Review {
       body?: string;
       queue?: boolean;
       noteKey?: string;
+      edits?: { unit: string; text: string }[];
     },
-    options: { previewed?: boolean },
   ) {
     const task = this.app.tasks.get(name),
       kind = data.action;
@@ -576,6 +597,11 @@ export class Review {
       throw new Error("The action must be accept, reject or comment.");
     if (data.noteKey !== undefined && (kind !== 'reject' || typeof data.noteKey !== 'string' || data.noteKey.length > 200))
       throw new Error("Invalid note key.");
+    const edits = data.edits;
+    if (edits !== undefined && (kind !== "accept" || !Array.isArray(edits) || !edits.length || edits.length > 100 || !Array.isArray(data.changes)
+      || edits.some((edit) => !edit || typeof edit.unit !== "string" || typeof edit.text !== "string" || edit.text.includes("\0") || edit.text.length > 20000)
+      || JSON.stringify(edits.map((edit) => edit.unit)) !== JSON.stringify(data.changes)))
+      throw new Error("Invalid note option.");
     const identity = data.id || randomUUID();
     if (!/^[A-Za-z0-9-]{1,80}$/.test(identity))
       throw new Error("Invalid action id.");
@@ -592,6 +618,7 @@ export class Review {
         sent.round !== data.round ||
         previous.kind !== kind ||
         previous.detail.noteKey !== data.noteKey ||
+        JSON.stringify(previous.detail.edits ?? null) !== JSON.stringify(edits ?? null) ||
         (kind === "comment" && previous.body !== (data.body || "").trim()) ||
         JSON.stringify(sent.changes) !== JSON.stringify(chosen)
       )
@@ -609,6 +636,8 @@ export class Review {
       seen: Record<string, { round: number; change: string }> = {},
       requested: ActionDetail["requested"];
     if (data.round !== latest.number) {
+      // An option's wording replaces its own round's proposal.
+      if (edits) throw new Error("A newer round is available. Reload the options.");
       // Changes decided on an earlier round's page apply to their exact
       // versions in the latest round, when each has exactly one there.
       const translated = valid && data.round < latest.number ? await this.translate(name, data.round, chosen, latest, kind !== "comment") : null;
@@ -621,19 +650,24 @@ export class Review {
       throw new Error("These changes were already decided. Reload the page.");
     const body = (data.body || "").trim();
     if (kind === "comment" && !body) throw new Error("Write a comment first.");
-    if (!requested && (latest.visuals ?? "ready") !== "ready") {
+    // An option is decided on its own wording, whose PDF is prepared
+    // separately: the round's comparison of its proposal is not what the
+    // author chose.
+    if (!requested && !edits && (latest.visuals ?? "ready") !== "ready") {
       // The author decides with a PDF comparison: the round's own, or one an
       // earlier round rendered of the same version, until its own arrives.
       const shown = rendered(this.app, name, latest.number);
-      if (kind !== "comment" && !options.previewed && ids.some((id) => !comparable(latest, shown, id)))
+      if (kind !== "comment" && ids.some((id) => !comparable(latest, shown, id)))
         throw new Error("Wait for the PDF comparison of this change before accepting or rejecting it.");
       for (const id of ids) {
         const found = origin(latest, shown, id);
         if (found) seen[id] = found;
       }
     }
-    const extra: ActionDetail = { ...(data.noteKey ? { noteKey: data.noteKey } : {}), ...(requested ? { requested } : {}), ...(Object.keys(seen).length ? { seen } : {}) };
+    const extra: ActionDetail = { ...(data.noteKey ? { noteKey: data.noteKey } : {}), ...(requested ? { requested } : {}), ...(Object.keys(seen).length ? { seen } : {}), ...(edits ? { edits } : {}) };
     const selected = ids.map((c) => latest.units.find((u) => u.id === c)!);
+    if (edits && selected.some((unit) => unit.truncated || unit.whole_file || unit.kind !== "text" || unit.text_ops?.length !== 1))
+      throw new Error("This change cannot be replaced independently.");
     if (kind === "accept") await this.accept(task, latest, identity, selected, extra);
     else if (kind === "reject" && data.queue)
       // Shown rejected now; its files are reverted when the agent stops.
@@ -701,9 +735,28 @@ export class Review {
       conflicts: string[] = [],
       groups = this.byFile(units),
       files = Object.keys(groups),
-      [before, after, records] = await Promise.all([round.before, round.after, task.accepted].map((rev) => app.repo.blobsAsync(rev, files)));
+      [before, after, records] = await Promise.all([round.before, round.after, task.accepted].map((rev) => app.repo.blobsAsync(rev, files))),
+      option = extra.edits && new Map(extra.edits.map((edit) => [edit.unit, edit.text]));
     for (const [file, group] of Object.entries(groups)) {
-      const proposed = applyUnits(before[file], after[file], group),
+      // A note option's wording replaces the proposal of these changes. The
+      // task's files take it too, so the next round does not propose the
+      // round's wording again; nothing else in them changes.
+      if (option) {
+        // The offsets must name exactly the change's two wordings in these
+        // files; otherwise writing them would corrupt the text.
+        const old = before[file]?.toString("utf8"), next = after[file]?.toString("utf8");
+        if (group.some((unit) => { const [, i, j, x, y] = unit.text_ops![0]; return old?.slice(i, j) !== unit.old_text || next?.slice(x, y) !== unit.new_text; }))
+          throw new Error("This change cannot be replaced independently.");
+        const variant = replaceRanges(after[file], group.map((unit) => [unit.text_ops![0][3], unit.text_ops![0][4], option.get(unit.id)!])),
+          target = safePath(task.worktree, file),
+          current = readBytes(target),
+          [merged, conflict] = await merge3Async(current, after[file], variant);
+        if (conflict || !current || !merged) throw new Error("The source changed since these options were prepared. Reload the review.");
+        if (!same(merged, current)) writes.push([target, current, merged]);
+      }
+      const proposed = option
+          ? replaceRanges(before[file], group.map((unit) => [unit.text_ops![0][1], unit.text_ops![0][2], option.get(unit.id)!]))
+          : applyUnits(before[file], after[file], group),
         target = task.deferred ? "" : safePath(app.root, file),
         current = task.deferred ? records[file] : readBytes(target),
         [merged, conflict] = await merge3Async(current, before[file], proposed),

@@ -84,6 +84,9 @@ test('review proxy only exposes review routes and keeps assets on the remote ori
   assert.equal(allowedReviewRoute('/api/tasks/p-test/rounds/1/references/confirm', 'GET'), false);
   assert.ok(allowedReviewRoute('/api/tasks/p-test/rounds/1/mixed', 'POST'));
   assert.equal(allowedReviewRoute('/api/tasks/p-test/rounds/1/mixed', 'GET'), false);
+  // The page reads an accepted note option's comparison; options are chosen through Papilot.
+  assert.ok(allowedReviewRoute('/api/tasks/p-test/source/options/preview', 'POST'));
+  assert.equal(allowedReviewRoute('/api/tasks/p-test/source/options', 'POST'), false);
   const mixedKey = 'a'.repeat(64);
   assert.ok(allowedReviewRoute(`/mixed-files/p-test/1/${mixedKey}/strip.svg`, 'GET'));
   assert.equal(allowedReviewRoute(`/mixed-files/p-test/1/${mixedKey}/strip.svg`, 'POST'), false);

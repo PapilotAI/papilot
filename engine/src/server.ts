@@ -11,8 +11,7 @@ import { buildOverridesFile, compilerFile, documentsFile, loadProject, projectFo
 import { Store } from "./core/store.ts";
 import { Tasks } from "./core/tasks.ts";
 import { Review } from "./core/review.ts";
-import { useNoteOption, type OptionInput } from "./core/note-options.ts";
-import { previewNoteOption } from "./core/option-preview.ts";
+import { previewNoteOption, type OptionInput } from "./core/option-preview.ts";
 import { previewMixedBlock, type MixedPreviewInput } from "./core/mixed-preview.ts";
 import { SourceEdits } from "./core/source-edit.ts";
 import { Reconciliations } from "./core/reconcile.ts";
@@ -339,8 +338,6 @@ export function createServer(app: App) {
         return fs.createReadStream(target);
       },
     );
-    server.post<{ Params: { name: string }; Body: OptionInput }>("/api/tasks/:name/source/options",
-      request => useNoteOption(app, app.tasks.get(request.params.name).name, request.body));
     server.get<{ Params: { name: string; number: string }; Querystring: { proposedFor?: string } }>(
       "/api/tasks/:name/rounds/:number",
       async (request) => ({
@@ -536,6 +533,7 @@ export function createServer(app: App) {
         body?: string;
         queue?: boolean;
         noteKey?: string;
+        edits?: { unit: string; text: string }[];
       };
     }>(
       "/api/tasks/:name/decide",
@@ -552,6 +550,12 @@ export function createServer(app: App) {
               body: { type: "string" },
               queue: { type: "boolean" },
               noteKey: { type: "string", minLength: 1, maxLength: 200 },
+              edits: {
+                type: "array",
+                minItems: 1,
+                maxItems: 100,
+                items: { ...objectSchema, required: ["unit", "text"], properties: { unit: { type: "string" }, text: { type: "string", maxLength: 20000 } } },
+              },
             },
           },
         },

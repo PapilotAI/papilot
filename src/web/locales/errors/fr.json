@@ -324,7 +324,6 @@
   "The option changes source outside this note.": "Cette option modifie du code source hors de cette annotation.",
   "The option has overlapping patches.": "Cette option comporte des modifications qui se chevauchent.",
   "The option includes an invalid change. Try again.": "L’option contient une modification non valide. Réessayez.",
-  "The option save could not be confirmed. Check task status before retrying.": "L’enregistrement de l’option n’a pas pu être confirmé. Vérifiez l’état de la tâche avant de réessayer.",
   "The option source is missing or ambiguous.": "La source de cette option est introuvable ou ambiguë.",
   "The option targets an unrelated source file.": "Cette option vise un fichier source sans rapport.",
   "The paper folder is missing. Syncing resumes when it is back.": "Le dossier de l'article est introuvable. La synchronisation reprendra dès qu'il sera de retour.",

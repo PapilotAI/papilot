@@ -35,7 +35,7 @@ import { type Listener, equals, guard } from './access.ts';
 import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type Annotation, type AnnotationBatch, type AnnotationBatchResult, type NoteReturnState, type NoteSummary, type QuickNote, type SourceFile, type Task } from '../shared.ts';
 import type { SourceFileRead } from '../../engine/src/types.ts';
 import { parseGroupInstructions } from '../note-groups.ts';
-import { noteOptionContext, noteOptionsKey } from './note-options.ts';
+import { noteOptionContext, noteOptionsKey, replacesProposal } from './note-options.ts';
 import { notesForRejection, taskNoteResults } from './note-results.ts';
 import { noteOptionsSummary } from './prepared-note-options.ts';
 import type { Updates } from './updates.ts';
@@ -644,7 +644,7 @@ export async function buildApp(options: AppOptions) {
   // it from the task's worktree and reviews a save in a new round; a save
   // waits like any review action that writes the task's files. The editor
   // works on \n line breaks, so a CRLF file shows no changes in its text.
-  const taskSource = (read: SourceFileRead): SourceFile => ({ file: read.file, revision: read.revision, text: read.text, base: read.base, round: read.round, before: read.before, reviewed: read.reviewed && !read.text.includes('\r'), reverted: read.reverted, passage: [0, 0], focus: [0, 0], drifted: false });
+  const taskSource = (read: SourceFileRead): SourceFile => ({ file: read.file, revision: read.revision, text: read.text, base: read.base, round: read.round, before: read.before, reviewed: read.reviewed && !read.text.includes('\r'), reverted: read.reverted, ...(read.worded ? { worded: read.worded } : {}), passage: [0, 0], focus: [0, 0], drifted: false });
   app.get<{ Params: { id: string }; Querystring: { file?: string } }>('/api/tasks/:id/source', task, async request => {
     const current = store.task(request.params.id), file = string(request.query.file, 'Source file', 1024);
     return retryReviewRead(connectReview, store.project(current.projectId).path, async client =>
@@ -679,9 +679,11 @@ export async function buildApp(options: AppOptions) {
       const context = await noteOptionContext(store, current, string(request.query.key, 'Note key', 200), client);
       if (context.options.round !== Number(request.query.round)) throw new Error('The review changed. Reload the options.');
       if (request.query.comparison && request.query.comparison !== context.options.comparisonKey) throw new Error('The review changed. Reload the options.');
-      if (request.query.option === context.options.selected && (!context.rejected.length || context.options.locked)) return rewriteReviewJson(context.detail, `/review/${current.projectId}`);
-      if (context.options.locked) throw new Error(context.options.locked);
       const option = context.options.options.find(option => option.id === request.query.option);
+      // An accepted alternative keeps its own comparison; the round shows the proposal.
+      const accepted = Boolean(option && option.id === context.options.selected && replacesProposal(option, context.units));
+      if (request.query.option === context.options.selected && !accepted && (!context.rejected.length || context.options.locked)) return rewriteReviewJson(context.detail, `/review/${current.projectId}`);
+      if (context.options.locked && !accepted) throw new Error(context.options.locked);
       if (!option) throw new Error('This option is no longer available.');
       if (option.previewError && request.query.retry !== '1') throw new Error(option.previewError);
       const detail = await client.post(`${taskRoute(current.name)}/source/options/preview`, { id: option.id, round: context.options.round, edits: option.edits, rejected: context.rejected, background: request.query.background === '1' }, 1850000);
@@ -705,40 +707,26 @@ export async function buildApp(options: AppOptions) {
     if (body.option) {
       const option = context.options.options.find(option => option.id === body.option);
       if (!option) throw new Error('This option is no longer available.');
-      // Reject the note's published edits directly, even if an uncommitted
-      // alternative is being previewed. No candidate build or feedback draft.
-      if (body.reject || option.id === context.options.selected) {
-        if (!body.accept && !body.reject) return context.options;
-        const route = `${taskRoute(current.name)}/decide`, input = { id: string(body.id, 'Review action ID', 80), round: body.round, changes: option.edits.map(edit => edit.unit), action: body.reject ? 'reject' : 'accept', ...(body.reject ? { noteKey: body.key } : {}) };
-        const copy = body.reject && context.note.note.id && !context.note.note.anchor?.round ? returnCopy(current, context.note.note.id, { id: input.id, key: body.key }) : undefined;
-        const readReturn = copy && observeReturn(copy);
-        const result = await workspace.reviewWrite(current.id, true, async () => {
-          const response = await fetch(client.url + route, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': client.token }, body: JSON.stringify(input), signal: AbortSignal.timeout(120000) });
-          const value = await response.json() as { error?: string };
-          if (!confirmedReviewResponse(response.status, value, current.name)) throw new Error('The review action could not be confirmed. Check task status before retrying.');
-          return value;
-        }, { route, body: input, ...(copy ? { returnNote: copy } : {}) });
-        if (result.error) throw new Error(result.error);
-        const noteReturn = readReturn?.();
-        await workspace.refresh(current.id);
-        const options = (await noteOptionContext(store, store.task(current.id), body.key, client)).options;
-        return noteReturn ? { ...options, noteReturn } : options;
-      }
-      const route = `${taskRoute(current.name)}/source/options`, input = { id: string(body.id, 'Option request ID', 80), round: body.round, edits: option.edits, ...(body.accept ? { accept: true } : {}) };
-      // Keep the annotation's original association before the engine starts
-      // its build, including when the save response is interrupted.
-      for (const run of store.runs().filter(run => run.taskId === current.id && run.reviewRound === body.round)) {
-        const origins = context.notes.filter(note => note.itemId === run.id && note.changes.length && !run.noteRounds?.[note.index]);
-        if (origins.length) store.saveRun({ ...run, noteRounds: { ...run.noteRounds, ...Object.fromEntries(origins.map(note => [note.index, body.round])) } });
-      }
-      const value = await workspace.reviewWrite(current.id, true, async () => {
+      if (!body.accept && !body.reject) return context.options;
+      // Reject the note's published edits directly, even if an alternative is
+      // being previewed. Accepting an alternative is a decision in this round
+      // with the alternative's wording: no new round or build, so the other
+      // notes stay open and keep their prepared PDFs. No feedback draft.
+      const wording = body.accept && replacesProposal(option, context.units) ? { edits: option.edits } : {};
+      const route = `${taskRoute(current.name)}/decide`, input = { id: string(body.id, 'Review action ID', 80), round: body.round, changes: option.edits.map(edit => edit.unit), action: body.reject ? 'reject' : 'accept', ...(body.reject ? { noteKey: body.key } : {}), ...wording };
+      const copy = body.reject && context.note.note.id && !context.note.note.anchor?.round ? returnCopy(current, context.note.note.id, { id: input.id, key: body.key }) : undefined;
+      const readReturn = copy && observeReturn(copy);
+      const result = await workspace.reviewWrite(current.id, true, async () => {
         const response = await fetch(client.url + route, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': client.token }, body: JSON.stringify(input), signal: AbortSignal.timeout(120000) });
         const value = await response.json() as { error?: string };
-        if (!confirmedReviewResponse(response.status, value, current.name)) throw new Error('The option save could not be confirmed. Check task status before retrying.');
+        if (!confirmedReviewResponse(response.status, value, current.name)) throw new Error('The review action could not be confirmed. Check task status before retrying.');
         return value;
-      }, { route, body: input });
-      if (value.error) throw new Error(value.error);
-      return { building: true };
+      }, { route, body: input, ...(copy ? { returnNote: copy } : {}) });
+      if (result.error) throw new Error(result.error);
+      const noteReturn = readReturn?.();
+      await workspace.refresh(current.id);
+      const options = (await noteOptionContext(store, store.task(current.id), body.key, client)).options;
+      return noteReturn ? { ...options, noteReturn } : options;
     }
     throw new Error('Select an existing option.');
   });
@@ -1382,7 +1370,11 @@ export async function buildApp(options: AppOptions) {
         if (!equals(String(request.headers['x-review-token'] || ''), client.token)) return reply.code(403).send({ error: 'This review page has expired. Refresh it and try again.' });
       }
       const reviewTask = request.method === 'POST' ? store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]) : undefined;
-      const writesFiles = /\/source(?:\/options)?$/.test(route) || route.endsWith('/undo') || (route.endsWith('/decide') && (request.body as any)?.action !== 'comment');
+      const writesFiles = /\/source$/.test(route) || route.endsWith('/undo') || (route.endsWith('/decide') && (request.body as any)?.action !== 'comment');
+      // A comparison the page asks for reads the review and changes nothing,
+      // and it can take as long as a build: it is neither a review action nor
+      // the task's error.
+      const comparison = /\/(?:rounds\/\d+\/mixed|source\/options\/preview)$/.test(route);
       if (request.method === 'POST' && writesFiles) string((request.body as any)?.id, 'Review action ID', 80);
       // The next poll waits for the summary a write is still reading.
       if (request.method === 'GET' && /^\/api\/tasks\/[a-z0-9-]+\/state$/.test(route)) {
@@ -1394,11 +1386,12 @@ export async function buildApp(options: AppOptions) {
       // an accept of an earlier round publishes a round of the worktree, so
       // it waits like rejecting.
       // A reject waits for the turn to end in the engine, and so does
-      // undoing one still waiting.
+      // undoing one still waiting. Accepting a note option writes its
+      // wording into the worktree, and so does undoing it: both wait.
       const besideAgent = Boolean(reviewTask?.deferred && AGENT_TURN.includes(reviewTask.status)) && (route.endsWith('/decide')
-        ? ['accept', 'reject'].includes((request.body as any)?.action)
-        : route.endsWith('/undo') && await client.get<{ undo?: { id: string; kind: string; republish?: boolean; queued?: boolean } | null }>(`${taskRoute(reviewTask!.name)}/state`)
-          .then(state => state.undo?.id === (request.body as any)?.id && (state.undo?.kind !== 'reject' || Boolean(state.undo?.queued)) && !state.undo?.republish, () => false));
+        ? ['accept', 'reject'].includes((request.body as any)?.action) && !(request.body as any)?.edits
+        : route.endsWith('/undo') && await client.get<{ undo?: { id: string; kind: string; republish?: boolean; queued?: boolean; worktree?: boolean } | null }>(`${taskRoute(reviewTask!.name)}/state`)
+          .then(state => state.undo?.id === (request.body as any)?.id && (state.undo?.kind !== 'reject' || Boolean(state.undo?.queued)) && !state.undo?.republish && !state.undo?.worktree, () => false));
       if (besideAgent && route.endsWith('/decide') && (request.body as any)?.action === 'reject') (request.body as any).queue = true;
       const input = request.body as { noteKey?: string; action?: string; changes?: string[]; round?: number } | undefined;
       const returns = new Map<string, { key: string; copy: Annotation }>();
@@ -1429,12 +1422,12 @@ export async function buildApp(options: AppOptions) {
         if (type.includes('application/json')) {
           const value = await response.json();
           if (reviewTask && writesFiles && !confirmedReviewResponse(response.status, value, reviewTask.name)) throw new Error('The review engine could not confirm this action. Select Check status before continuing.');
-          if (!response.ok && request.method === 'POST' && (value as any).error) {
+          if (!response.ok && request.method === 'POST' && !comparison && (value as any).error) {
             const task = store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]);
             if (task) store.updateTask(task.id, { error: 'Review action failed: ' + (value as any).error });
           }
           // Saying what the page shows changes nothing about the task.
-          if (response.ok && request.method === 'POST' && !route.endsWith('/references/confirm') && !route.endsWith('/look')) {
+          if (response.ok && request.method === 'POST' && !comparison && !route.endsWith('/references/confirm') && !route.endsWith('/look')) {
             const task = store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]);
             if (task) {
               store.updateTask(task.id, { error: null });
@@ -1459,7 +1452,7 @@ export async function buildApp(options: AppOptions) {
       const readReturns = [...returns.values()].map(({ key, copy }) => ({ key, read: observeReturn(copy) }));
       const readUndo = reviewTask && route.endsWith('/undo') ? observeReturnUndo(reviewTask, String((request.body as any).id)) : undefined;
       let result: unknown;
-      try { result = await (reviewTask ? workspace.reviewWrite(reviewTask.id, writesFiles, forward, writesFiles ? { route, body: request.body as Record<string, unknown>, ...(returns.size ? { returnNotes: [...returns.values()].map(entry => entry.copy) } : {}) } : undefined, besideAgent) : forward()); }
+      try { result = await (reviewTask && !comparison ? workspace.reviewWrite(reviewTask.id, writesFiles, forward, writesFiles ? { route, body: request.body as Record<string, unknown>, ...(returns.size ? { returnNotes: [...returns.values()].map(entry => entry.copy) } : {}) } : undefined, besideAgent) : forward()); }
       finally { if (settles) settle(workspace, settles); }
       if ((readUndo || readReturns.length) && confirmedReviewResponse(200, result, reviewTask!.name)) {
         const noteReturns = readUndo?.() ?? readReturns.map(({ key, read }) => ({ key, ...read() }));
