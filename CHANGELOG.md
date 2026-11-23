@@ -6,7 +6,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
-- **Accepting a note's alternative no longer holds up the rest of the review.** Accepting an alternative used to wait for its PDF, then compile the whole task into a new round while every other note stayed locked, and the new round discarded the PDFs prepared for the other notes' alternatives. Now it takes effect at once in the current review, like accepting any change, even before the alternative's PDF is ready, and Undo reverses it. The change's card shows the alternative's PDF once it is compiled. The other notes stay open and keep their prepared PDFs, which show the rest of the round as proposed.
+- **Accepting a note's alternative no longer holds up the rest of the review.** Accepting an alternative used to wait for its PDF, then compile the whole task into a new round while every other note stayed locked, and the new round discarded the PDFs prepared for the other notes' alternatives. Now it takes effect at once in the current review, like accepting any change, even before the alternative's PDF is ready, and Undo reverses it. The change's card shows the alternative's PDF once it is compiled. The other notes stay open and keep their prepared PDFs, which show the rest of the round as proposed. ([#329](https://github.com/PapilotAI/papilot/pull/329))
 
 ## [0.14.0] - 2026-11-23
 
