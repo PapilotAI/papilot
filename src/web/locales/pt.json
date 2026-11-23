@@ -1453,7 +1453,7 @@
   "Uses Qwen Code and its saved login through ACP.": "Usa o Qwen Code e o login salvo via ACP.",
   "Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.": "Usa um inicializador ACP do WorkBuddy configurado. O login deve estar disponível para o inicializador.",
   "Uses the Cursor SDK with CURSOR_API_KEY. Papilot installs the SDK on first use.": "Usa o Cursor SDK com CURSOR_API_KEY. O Papilot instala o SDK no primeiro uso.",
-  "Uses the current conversation or new-task settings. Your choice only applies to Git conflicts.": "Usa as configurações da conversa atual ou da nova tarefa. A escolha se aplica somente a conflitos do Git.",
+  "Uses the current conversation or new-task settings. Your choice resolves Git conflicts and prepares merge suggestions for tasks that overlap the manuscript.": "Usa a conversa atual ou as configurações de nova tarefa. Sua escolha resolve conflitos do Git e prepara sugestões de mesclagem para tarefas que se sobrepõem ao manuscrito.",
   "Uses the local Antigravity CLI and its saved Google login.": "Usa o Antigravity CLI local e o login do Google salvo.",
   "Uses the local Codex CLI and its saved login.": "Usa a CLI do Codex local e o login salvo.",
   "Uses your Pi CLI, providers, skills and extensions. Tools run on the host with Pi’s permissions.": "Usa a sua CLI do Pi, fornecedores, competências e extensões. As ferramentas são executadas no anfitrião com as permissões do Pi.",

@@ -42,6 +42,8 @@ export interface TaskReconciliation {
 // Adapter-owned IDs; workspace is the backwards-compatible default.
 export type TaskPermissions = string;
 export interface TaskPermissionOption { value: TaskPermissions; label: string; detail: string }
+/** An agent chosen for a helper step, such as resolving conflicts. */
+export interface HelperChoice { agent: AgentId; model?: string; effort?: string; serviceTier?: string }
 export interface Task {
   // Papilot 0.13 and earlier switched agents by replaying a task's original
   // request in a new task; such a task links to the one it replaced.
@@ -54,6 +56,13 @@ export interface Task {
   aiReview?: { key: string; notes?: number; revision?: number };
   // Accepted changes remain isolated until the author applies them.
   reconciliation?: TaskReconciliation | null;
+  /** The conflict-resolution agent the author chose when applying: it
+   *  prepares the merge suggestion if the manuscript changed in overlapping
+   *  passages. Absent, the task's own agent does. */
+  mergeAgent?: HelperChoice | null;
+  /** The agent the task goes back to once the merge suggestion that the
+   *  conflict-resolution agent prepared is resolved. */
+  mergeReturn?: { agent: AgentId; model: string | null; effort?: string | null; serviceTier?: string; permissions?: TaskPermissions } | null;
   deferred?: boolean;
   delivery?: { mode: 'workspace' | 'commit' | 'branch'; accepted: string; branch?: string; commit?: string; pending?: boolean } | null;
   id: string; projectId: string; name: string; title: string; instructions: string;

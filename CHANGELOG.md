@@ -6,6 +6,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
+- **The conflict-resolution agent prepares merge suggestions too.** When saving a task finds that the manuscript changed in overlapping passages, the agent chosen under **Settings → Git → Conflict-resolution agent** now prepares the merge suggestion instead of the task's own agent. It takes over the task's conversation for the merge and can ask about passages it cannot settle. The merge waits until that agent is connected; if it cannot take the task, the merge ends with an error instead of running on another agent. Once the merge is saved, the task returns to its own agent and settings. With **Follow current conversation**, the task's agent prepares it as before. ([#331](https://github.com/PapilotAI/papilot/pull/331))
 - **Accepting a note's alternative no longer holds up the rest of the review.** Accepting an alternative used to wait for its PDF, then compile the whole task into a new round while every other note stayed locked, and the new round discarded the PDFs prepared for the other notes' alternatives. Now it takes effect at once in the current review, like accepting any change, even before the alternative's PDF is ready, and Undo reverses it. The change's card shows the alternative's PDF once it is compiled. The other notes stay open and keep their prepared PDFs, which show the rest of the round as proposed. ([#329](https://github.com/PapilotAI/papilot/pull/329))
 
 ### Fixed

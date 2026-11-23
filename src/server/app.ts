@@ -552,7 +552,9 @@ export async function buildApp(options: AppOptions) {
     const body = (request.body || {}) as any;
     if (!isAgentId(body.agent)) throw new Error('Choose a valid destination agent.');
     for (const key of ['model', 'effort', 'serviceTier']) if (body[key] !== undefined && typeof body[key] !== 'string') throw new Error('Choose valid destination model settings.');
-    return workspace.switchTaskAgent(request.params.id, { agent: body.agent, model: body.model, effort: body.effort, serviceTier: body.serviceTier, permissions: body.permissions, stop: body.stop === true });
+    return workspace.switchTaskAgent(request.params.id, { agent: body.agent, model: body.model, effort: body.effort, serviceTier: body.serviceTier, permissions: body.permissions, stop: body.stop === true })
+      // The author's own choice stands after a merge, too.
+      .then(task => task.mergeReturn ? store.updateTask(task.id, { mergeReturn: null }) : task);
   });
   app.get<{ Params: { id: string }; Querystring: { since?: string } }>('/api/tasks/:id/items', task, request => {
     store.task(request.params.id);
@@ -830,7 +832,11 @@ export async function buildApp(options: AppOptions) {
     const task = store.task(request.params.id), b = (request.body || {}) as any;
     if (b.mode !== undefined && b.mode !== 'workspace' && b.mode !== 'commit') throw new Error('Invalid save action.');
     const retryCommit = b.message === undefined && task.delivery?.mode === 'commit' && task.delivery.pending;
-    const result = await serialGit(task.projectId, () => workspace.applyTask(task.id, b.keepCurrent === true, b.mode === 'commit' ? { message: retryCommit ? undefined : string(b.message, 'Commit message', 5000), ...(b.confirmation ? { confirmation: string(b.confirmation, 'Commit confirmation', 100) } : {}) } : undefined));
+    // The conflict-resolution agent chosen in Settings → Git, for a merge suggestion.
+    const conflict = b.conflictAgent;
+    if (conflict !== undefined && (!conflict || typeof conflict !== 'object' || !isAgentId(conflict.agent))) throw new Error('Choose a supported agent.');
+    const mergeAgent = conflict ? { agent: agent(conflict.agent), ...helperModelSettings(conflict) } : undefined;
+    const result = await serialGit(task.projectId, () => workspace.applyTask(task.id, b.keepCurrent === true, b.mode === 'commit' ? { message: retryCommit ? undefined : string(b.message, 'Commit message', 5000), ...(b.confirmation ? { confirmation: string(b.confirmation, 'Commit confirmation', 100) } : {}) } : undefined, mergeAgent));
     if (delivered(result.delivery)) refreshManuscript(task.projectId);
     // Applied without a commit message, the task still offers what Papilot noticed.
     workspace.learnOnSave(task.id);

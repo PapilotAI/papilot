@@ -109,9 +109,12 @@ test('switching a task agent forwards destination permissions and model settings
   f.workspace.switchTaskAgent = async (_task, choice) => { choices.push(choice); return f.store.task('thesis-task'); };
   try {
     const choice = { agent: 'claude', model: 'opus', effort: 'high', permissions: 'full', stop: true };
+    // During a merge, the author's own choice replaces the agent the task would return to.
+    f.store.updateTask('thesis-task', { mergeReturn: { agent: 'codex', model: 'codex-model' } });
     const response = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/agent', headers: f.as, payload: choice });
     assert.equal(response.statusCode, 200, response.body);
     assert.deepEqual(choices, [{ ...choice, serviceTier: undefined }]);
+    assert.equal(f.store.task('thesis-task').mergeReturn, null);
     for (const payload of [{ agent: 'unknown' }, { agent: 'claude', model: 5 }]) {
       const rejected = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/agent', headers: f.as, payload });
       assert.equal(rejected.statusCode, 400, rejected.body);
@@ -2062,9 +2065,13 @@ test('review decisions avoid manuscript refreshes until the task is applied', as
         await review(route, action);
         assert.equal(refreshed.length, 0, `${route} does not refresh the manuscript`);
       }
-      f.workspace.applyTask = async () => ({ delivery: { mode: 'workspace', accepted: 'accepted' } }) as any;
-      const applied = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/apply', headers, payload: { mode: 'workspace' } });
+      const merges: unknown[] = [];
+      f.workspace.applyTask = async (_id: string, _keep?: boolean, _commit?: unknown, mergeAgent?: unknown) => { merges.push(mergeAgent); return { delivery: { mode: 'workspace', accepted: 'accepted' } } as any; };
+      const invalid = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/apply', headers, payload: { mode: 'workspace', conflictAgent: { agent: 'unknown' } } });
+      assert.equal(invalid.statusCode, 400, 'an unsupported conflict-resolution agent is refused');
+      const applied = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/apply', headers, payload: { mode: 'workspace', conflictAgent: { agent: 'claude', model: 'opus', effort: 'high' } } });
       assert.equal(applied.statusCode, 200, applied.body);
+      assert.deepEqual(merges, [{ agent: 'claude', model: 'opus', effort: 'high', serviceTier: undefined }], 'the chosen conflict-resolution agent reaches the merge');
       await new Promise(resolve => setImmediate(resolve));
       assert.deepEqual(refreshed, [['thesis', '/unused/thesis']], 'application starts one manuscript refresh');
     } finally { engine.closeAllConnections(); await new Promise<void>(resolve => engine.close(() => resolve())); }
