@@ -6,7 +6,8 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Fixed
 
-
+- **Comparing PDFs with gradient fills no longer fails or misses drawing changes at random.** Comparing the drawings of a PDF with a shading, such as a TikZ or Beamer gradient, released the shading while the PDF reader still used it once memory was reclaimed. The PDF comparison could then fail with "Rendering the PDF comparison failed." or leave out a changed drawing. ([#328](https://github.com/PapilotAI/papilot/pull/328))
+- **Typing a paper name right away no longer clears where the paper is saved.** In **New paper**, the default folder arrives just after the dialog opens; typing the name at that moment could put back the empty folder from before it arrived. The import dialog's fields update the same safe way. ([#330](https://github.com/PapilotAI/papilot/pull/330))
 
 ## [0.14.0] - 2026-11-23
 
