@@ -211,7 +211,7 @@ export const zhCN: Record<string, string> = {
   'Papilot cannot find npm on this computer. Updates are unavailable until npm is installed.': 'Papilot 未能在这台电脑上找到 npm，安装 npm 后即可更新。',
   'Conflict-resolution agent': '冲突解决代理',
   'Follow current conversation for conflicts': '解决冲突时跟随当前会话',
-  'Uses the current conversation or new-task settings. Your choice only applies to Git conflicts.': '使用当前会话或新任务的设置。选择仅用于解决 Git 冲突。',
+  'Uses the current conversation or new-task settings. Your choice resolves Git conflicts and prepares merge suggestions for tasks that overlap the manuscript.': '使用当前会话或新任务的设置。选择用于解决 Git 冲突，并为与稿件重叠的任务准备合并建议。',
   'Change conflict agent': '更换冲突解决代理',
   'Generate task title': '生成任务标题', 'Generating task title…': '正在生成任务标题…', 'Retry title generation': '重新生成任务标题',
   "Pin task": "置顶任务",

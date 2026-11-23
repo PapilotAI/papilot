@@ -2790,6 +2790,109 @@ test('application conflicts automatically queue one AI suggestion and require re
   } finally { f.close(); await disk.close(); }
 });
 
+async function conflictAgentFixture() {
+  const { Fixture, METHOD, fakeRound } = await import(new URL('../engine/tests/ts/helpers.ts', import.meta.url).href);
+  const disk = new Fixture(), app = disk.app(), claude = new FakeCodex();
+  const f = fixture(async (method, route, body: any) => {
+    if (route.includes('/feedback')) return app.review.feedback('p-task');
+    if (method === 'POST' && route.endsWith('/apply')) return await app.delivery.apply('p-task', body.keepCurrent, body.mode, body.message);
+    return app.taskInfo('p-task');
+  }, { claude });
+  claude.handler = async (method: string) => method === 'turn/start' ? { turn: { id: 'claude-turn' } } : { thread: { id: 'claude-thread' } };
+  f.workspace.runtimes.claude = { connected: true, authenticated: false, account: null, error: null, models: [{ id: 'opus', name: 'Opus', isDefault: true, efforts: ['high'], defaultEffort: 'high' }] };
+  const target = app.tasks.create('p-task', 'Conflicting revision', [], ['paper'], true);
+  disk.edit(target, METHOD, 'Method sentence 2.', 'Accepted proposal.');
+  const round = fakeRound(app, target.name);
+  await app.review.decide(target.name, { id: 'accept-before-conflict', action: 'accept', round: round.number, changes: round.units.map((unit: any) => unit.id) });
+  disk.write(METHOD, disk.read(METHOD).replace('Method sentence 2.', 'Latest manuscript.'));
+  f.store.saveProject({ id: f.task.projectId, name: 'Paper', path: disk.root, createdAt: 1 });
+  f.store.updateTask(f.task.id, { worktree: target.worktree, agent: 'codex', model: 'codex-model', effort: 'xhigh' });
+  f.store.saveRun({ id: 'first', taskId: f.task.id, requestKey: 'initial-' + f.task.id, prompt: 'Original request.', status: 'completed', createdAt: 1, finishedAt: 2 });
+  await f.workspace.refresh(f.task.id);
+  const settle = async () => { for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve)); };
+  const wake = async () => { (f.workspace as unknown as { schedule(): void }).schedule(); await settle(); };
+  return { f, disk, app, claude, target, METHOD, fakeRound, settle, wake };
+}
+
+test('the chosen conflict-resolution agent takes over a merge suggestion once it can, then the task returns to its agent', async () => {
+  const { f, disk, app, claude, target, METHOD, fakeRound, settle, wake } = await conflictAgentFixture();
+  try {
+    // Saving queues the merge at once; it waits for the chosen agent, as a run waits for its agent.
+    const result = await f.workspace.applyTask(f.task.id, false, undefined, { agent: 'claude', model: 'opus', effort: 'high' });
+    assert.ok(result.reconciliation);
+    await settle();
+    const run = f.store.runs().find(run => run.requestKey === 'merge-review-' + result.reconciliation!.id)!;
+    assert.equal(run.status, 'queued');
+    assert.equal(f.store.task(f.task.id).agent, 'codex', 'nothing changes before the chosen agent can run');
+    claude.ready = true; f.workspace.runtimes.claude.authenticated = true;
+    await wake();
+    const merging = f.store.task(f.task.id);
+    assert.equal(merging.agent, 'claude'); assert.equal(merging.model, 'opus'); assert.equal(merging.effort, 'high');
+    assert.equal(merging.permissions, 'workspace', 'the conflict agent starts from workspace access, not the task\'s');
+    assert.equal(merging.handoff, true);
+    assert.deepEqual(merging.mergeReturn, { agent: 'codex', model: 'codex-model', effort: 'xhigh' });
+    assert.ok(claude.calls.some(call => call.method === 'turn/start'), 'the merge turn runs on the chosen agent');
+    // The author reviews the suggestion and saves; the task goes back to its agent, even while that one is offline.
+    await (f.workspace as any).notification({ method: 'turn/completed', params: { threadId: 'claude-thread', turn: { id: 'claude-turn', status: 'interrupted' } } }, 'claude');
+    await settle();
+    f.store.saveRun({ ...f.store.runs().find(item => item.id === run.id)!, status: 'completed' });
+    f.store.updateTask(f.task.id, { status: 'reviewing' });
+    disk.edit(target, METHOD, 'Latest manuscript.', 'Reviewed combined wording.');
+    const next = fakeRound(app, target.name);
+    await app.review.decide(target.name, { id: 'accept-combination', action: 'accept', round: next.number, changes: next.units.map((unit: any) => unit.id) });
+    await f.workspace.refresh(f.task.id);
+    assert.equal(f.store.task(f.task.id).agent, 'claude', 'the merge is not resolved until it is saved');
+    const applied = await f.workspace.applyTask(f.task.id, false, undefined, { agent: 'claude', model: 'opus', effort: 'high' });
+    assert.equal(applied.delivery?.mode, 'workspace');
+    const back = f.store.task(f.task.id);
+    assert.equal(back.reconciliation, null);
+    assert.equal(back.agent, 'codex'); assert.equal(back.model, 'codex-model'); assert.equal(back.effort, 'xhigh');
+    assert.equal(back.mergeReturn, null);
+    assert.equal(back.handoff, true, 'the task\'s agent is told what happened during the merge');
+  } finally { f.close(); await disk.close(); }
+});
+
+test('a conflict-resolution agent that cannot take the task fails the merge run instead of using another agent', async () => {
+  const { f, disk, claude, settle, wake } = await conflictAgentFixture();
+  try {
+    claude.ready = true; f.workspace.runtimes.claude.authenticated = true;
+    const result = await f.workspace.applyTask(f.task.id, false, undefined, { agent: 'claude', model: 'retired-model' });
+    await settle(); await wake();
+    const run = f.store.runs().find(run => run.requestKey === 'merge-review-' + result.reconciliation!.id)!;
+    assert.equal(run.status, 'failed');
+    const task = f.store.task(f.task.id);
+    assert.equal(task.status, 'failed');
+    assert.match(task.error ?? '', /The selected conflict-resolution agent is unavailable/);
+    assert.equal(task.agent, 'codex'); assert.equal(task.mergeReturn, undefined);
+    assert.equal(claude.calls.filter(call => call.method === 'turn/start').length, 0);
+  } finally { f.close(); await disk.close(); }
+});
+
+test('without a chosen conflict-resolution agent, the task\'s own agent prepares the merge suggestion', async () => {
+  const { Fixture, METHOD, fakeRound } = await import(new URL('../engine/tests/ts/helpers.ts', import.meta.url).href);
+  const disk = new Fixture(), app = disk.app();
+  const f = fixture(async (method, route, body: any) => {
+    if (route.includes('/feedback')) return app.review.feedback('p-task');
+    if (method === 'POST' && route.endsWith('/apply')) return await app.delivery.apply('p-task', body.keepCurrent, body.mode, body.message);
+    return app.taskInfo('p-task');
+  });
+  try {
+    const target = app.tasks.create('p-task', 'Conflicting revision', [], ['paper'], true);
+    disk.edit(target, METHOD, 'Method sentence 2.', 'Accepted proposal.');
+    const round = fakeRound(app, target.name);
+    await app.review.decide(target.name, { id: 'accept-before-conflict', action: 'accept', round: round.number, changes: round.units.map((unit: any) => unit.id) });
+    disk.write(METHOD, disk.read(METHOD).replace('Method sentence 2.', 'Latest manuscript.'));
+    f.store.saveProject({ id: f.task.projectId, name: 'Paper', path: disk.root, createdAt: 1 });
+    f.store.updateTask(f.task.id, { worktree: target.worktree, agent: 'codex', model: 'codex-model' });
+    await f.workspace.refresh(f.task.id);
+    const result = await f.workspace.applyTask(f.task.id);
+    assert.ok(result.reconciliation);
+    const task = f.store.task(f.task.id);
+    assert.equal(task.agent, 'codex'); assert.equal(task.model, 'codex-model');
+    assert.equal(task.mergeReturn, undefined);
+  } finally { f.close(); await disk.close(); }
+});
+
 for (const recovery of ['lost-response', 'restart', 'legacy-manual'] as const) test(`merge suggestions recover after ${recovery} without duplicate agent runs`, async () => {
   const { Fixture, METHOD, fakeRound } = await import(new URL('../engine/tests/ts/helpers.ts', import.meta.url).href);
   const disk = new Fixture(), app = disk.app();

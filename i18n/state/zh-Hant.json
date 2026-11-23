@@ -6044,6 +6044,11 @@
     "textHash": "57fd58d5247526e96eb9e4c526f88ed2bc392f4189fc7ab730004059e44d8069",
     "model": "gemini-4-argon-medium"
   },
+  "Uses the current conversation or new-task settings. Your choice resolves Git conflicts and prepares merge suggestions for tasks that overlap the manuscript.": {
+    "revision": "912b9127ac2298e86241752338ff01a33dc3437cf982e695071c58539860b586",
+    "textHash": "36f67e08da7e8726bf7c0caea481ad0f6c0fcf741709788c48486a9483c5849f",
+    "model": "gemini-4-argon-medium"
+  },
   "Uses the local Antigravity CLI and its saved Google login.": {
     "revision": "76d2cc1274606836866c55a7b47cbb72d850ae296568616c10dfbfcd8f1ef35c",
     "textHash": "d11e6b227169614e57b72f9f5330e574073dc5bc2ec818551eff8f8300551924",

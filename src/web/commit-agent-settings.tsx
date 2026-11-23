@@ -16,7 +16,7 @@ export function CommitAgentSettings(props: AgentSettingsProps) {
 export function ConflictAgentSettings(props: AgentSettingsProps) {
   return <HelperAgentSettings {...props} preference={useConflictAgent()} save={saveConflictAgent}
     label={t('Conflict-resolution agent')} pickerLabel={t('Conflict-resolution agent')} follow={t('Follow current conversation for conflicts')}
-    detail={t('Uses the current conversation or new-task settings. Your choice only applies to Git conflicts.')}/>;
+    detail={t('Uses the current conversation or new-task settings. Your choice resolves Git conflicts and prepares merge suggestions for tasks that overlap the manuscript.')}/>;
 }
 
 function HelperAgentSettings({ current, agents, reconnect, refreshUsage, preference, save, label, pickerLabel, follow, detail }: AgentSettingsProps & {

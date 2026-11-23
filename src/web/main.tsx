@@ -2379,7 +2379,9 @@ function App() {
   }
   const saveTask = async (mode: 'workspace' | 'commit', message?: string, confirmation?: string) => {
     if (!task) return;
-    const result = await api<{ git?: GitStatus; commitReview?: TaskCommitReview }>(`/tasks/${task.id}/apply`, { mode, message, confirmation, keepCurrent: mergeWaiting && merging?.ready });
+    // An overlap with the manuscript is merged by the chosen conflict-resolution agent.
+    const result = await api<{ git?: GitStatus; commitReview?: TaskCommitReview }>(`/tasks/${task.id}/apply`, { mode, message, confirmation, keepCurrent: mergeWaiting && merging?.ready,
+      ...(conflictPreference === 'conversation' ? {} : { conflictAgent: conflictPreference }) });
     if (result.git) updateGit(task.projectId, result.git);
     await refresh(true);
     return result;

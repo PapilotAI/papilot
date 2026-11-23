@@ -4,13 +4,15 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
-### Fixed
-
-- **Text can be selected anywhere on a review's whole-paper PDF.** Only the changes' before and after rows could be selected, because the rest of each page was drawn as an image. The pages now carry a text layer, as the manuscript's PDF does, and a drag through the margin stops at the line's end.
-
 ### Changed
 
+- **The conflict-resolution agent prepares merge suggestions too.** When saving a task finds that the manuscript changed in overlapping passages, the agent chosen under **Settings → Git → Conflict-resolution agent** now prepares the merge suggestion instead of the task's own agent. It takes over the task's conversation for the merge and can ask about passages it cannot settle. The merge waits until that agent is connected; if it cannot take the task, the merge ends with an error instead of running on another agent. Once the merge is saved, the task returns to its own agent and settings. With **Follow current conversation**, the task's agent prepares it as before. ([#331](https://github.com/PapilotAI/papilot/pull/331))
 - **"Preparing the full PDF…" no longer floats over the review's pages.** While the complete PDF compiles and an earlier version shows, a small progress indicator beside the page count says so, with the elapsed time on hover.
+
+### Fixed
+
+- **Comparing PDFs with gradient fills no longer fails or misses drawing changes at random.** Comparing the drawings of a PDF with a shading, such as a TikZ or Beamer gradient, released the shading while the PDF reader still used it once memory was reclaimed. The PDF comparison could then fail with "Rendering the PDF comparison failed." or leave out a changed drawing. ([#328](https://github.com/PapilotAI/papilot/pull/328))
+- **Text can be selected anywhere on a review's whole-paper PDF.** Only the changes' before and after rows could be selected, because the rest of each page was drawn as an image. The pages now carry a text layer, as the manuscript's PDF does, and a drag through the margin stops at the line's end.
 
 ## [0.14.0] - 2026-11-23
 
