@@ -563,14 +563,21 @@ function Card({ title, headline, wide, children }: { title: string; headline?: R
   </section>;
 }
 
-// Kept against rejected changes: the accepted share in green, the rest in red.
+// Accepted against rejected changes, in the accent shades the calendar uses,
+// with a small gap where the two arcs meet.
+const RING_CIRCUMFERENCE = 2 * Math.PI * 42, RING_GAP = 3;
+
 function AcceptanceRing({ accepted, rejected }: { accepted: number; rejected: number }) {
-  const total = accepted + rejected, rate = total ? accepted / total : 0, circumference = 2 * Math.PI * 42;
+  const total = accepted + rejected, rate = total ? accepted / total : 0;
+  const gap = accepted && rejected ? RING_GAP : 0, split = rate * RING_CIRCUMFERENCE;
+  const arc = (className: string, start: number, length: number) => <circle className={className} cx="50" cy="50" r="42" strokeDasharray={`${Math.max(length, 0)} ${RING_CIRCUMFERENCE}`} strokeDashoffset={-start}/>;
   return <figure className="activity-ring">
     <div className="activity-ring-chart">
       <svg viewBox="0 0 100 100" aria-hidden="true">
-        <circle className={total ? 'activity-ring-reject' : 'activity-ring-track'} cx="50" cy="50" r="42"/>
-        {total > 0 && <circle className="activity-ring-accept" cx="50" cy="50" r="42" strokeDasharray={`${rate * circumference} ${circumference}`}/>}
+        {total ? <>
+          {rejected > 0 && arc('activity-ring-reject', split + gap / 2, RING_CIRCUMFERENCE - split - gap)}
+          {accepted > 0 && arc('activity-ring-accept', gap / 2, split - gap)}
+        </> : <circle className="activity-ring-track" cx="50" cy="50" r="42"/>}
       </svg>
       <strong>{total ? `${Math.round(rate * 100)}%` : '—'}</strong>
     </div>

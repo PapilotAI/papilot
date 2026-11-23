@@ -415,11 +415,11 @@
 }
 
 .activity-ring-reject {
-  stroke: color-mix(in oklab, var(--red) 85%, var(--activity-surface));
+  stroke: var(--heat-1);
 }
 
 .activity-ring-accept {
-  stroke: var(--green);
+  stroke: var(--heat-3);
 }
 
 .activity-ring-chart strong {
