@@ -1,4 +1,4 @@
-import { PaperTools } from './paper-tools.ts';
+import { PaperTools, searchPaper } from './paper-tools.ts';
 import { buildActivityReport, type ActivityEventRow } from './activity.ts';
 import { canonicalGroup, isNoteGroup, regroupAnnotation, sameAnnotationGroup } from '../note-groups.ts';
 import { isCommitMessageLanguage, type CommitMessageLanguage } from '../commit.ts';
@@ -1047,6 +1047,34 @@ export async function buildApp(options: AppOptions) {
     if (!input) throw Object.assign(new Error('This entry is no longer in the bibliography. Refresh the library.'), { statusCode: 404 });
     papers().remove(input);
     return { ok: true };
+  });
+  // Words or a phrase in the PDFs of the works the paper cites, as passages
+  // with their lines, a page of results at a time. No model is involved.
+  app.get<{ Params: { id: string }; Querystring: { q?: string; cursor?: string } }>('/api/projects/:id/library/search', project(), async request => {
+    const query = String(request.query.q || '').trim(), shelf = papers();
+    if (!query) return { matches: [], nextCursor: null };
+    const { entries } = await libraryInputs(store.project(request.params.id).path, false);
+    const works = entries.flatMap(input => { const found = shelf.pdfOf(input); return found ? [{ input, hash: found.hash }] : []; });
+    let [work, line] = request.query.cursor ? String(request.query.cursor).split(':').map(Number) : [0, 0];
+    if (!Number.isSafeInteger(work) || !Number.isSafeInteger(line)) throw Object.assign(new Error('Search again.'), { statusCode: 400 });
+    const matches: unknown[] = []; let size = 0;
+    for (; work < works.length; work++, line = 0) {
+      const snapshot = await shelf.text(works[work].hash);
+      if (!snapshot) continue;
+      const index = new Map(snapshot.lines.map((item, at) => [item.id, at]));
+      const found = searchPaper(snapshot, query, line);
+      for (const match of found.matches) {
+        const from = index.get(match.start)!, to = index.get(match.end)!;
+        // The passage as the PDF prints it: the matched lines and one on each side.
+        const around = snapshot.lines.slice(Math.max(0, from - 1), to + 2).filter(item => item.page === snapshot.lines[from].page).map(item => item.text).join(' ').replace(/\s+/g, ' ').trim();
+        const item = { entry: works[work].input.id, key: works[work].input.key, hash: works[work].hash, page: match.page, text: around, marks: snapshot.lines.slice(from, to + 1).map(item => ({ page: item.page + 1, rect: item.rect })) };
+        // A page of results is bounded by what one response carries, not by the library's size.
+        if (matches.length && size > 60000) return { matches, nextCursor: `${work}:${from}` };
+        matches.push(item); size += JSON.stringify(item).length;
+      }
+      if (found.nextCursor !== null) return { matches, nextCursor: `${work}:${found.nextCursor}` };
+    }
+    return { matches, nextCursor: null };
   });
   // Only PDFs of the paper's own entries are served for it.
   app.get<{ Params: { id: string; hash: string } }>('/api/projects/:id/library/pdfs/:hash', project(), async (request, reply) => {

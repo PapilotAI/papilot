@@ -195,13 +195,22 @@ export interface PdfHistoryActions {
 
 /** The first page of a PDF, drawn small, as a reference manager shows a
  * work on its shelf. Decorative: the work's title says what it is. */
-export function PdfThumbnail({ url, width }: { url: string; width: number }) {
-  const canvas = useRef<HTMLCanvasElement>(null), [failed, setFailed] = useState(false);
+/** A page of a PDF drawn small: the first by default, with the given marks
+ * on it. Lazy thumbnails wait until they scroll into view. */
+export function PdfThumbnail({ url, width, page: number = 1, marks, lazy }: { url: string; width: number; page?: number; marks?: Rect[]; lazy?: boolean }) {
+  const canvas = useRef<HTMLCanvasElement>(null), [failed, setFailed] = useState(false), [visible, setVisible] = useState(!lazy);
   useEffect(() => {
+    if (visible || !canvas.current) return;
+    const observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { setVisible(true); observer.disconnect(); } }, { rootMargin: '200px' });
+    observer.observe(canvas.current);
+    return () => observer.disconnect();
+  }, [visible]);
+  useEffect(() => {
+    if (!visible) return;
     let cancelled = false, render: { cancel(): void } | undefined;
     const task = pdfjs.getDocument({ url, enableXfa: false, BinaryDataFactory: CMapData });
     void (async () => {
-      const page = await (await task.promise).getPage(1), element = canvas.current;
+      const page = await (await task.promise).getPage(number), element = canvas.current;
       if (cancelled || !element) return;
       const ratio = window.devicePixelRatio || 1, base = page.getViewport({ scale: 1 }), viewport = page.getViewport({ scale: width / base.width * ratio });
       element.width = Math.round(viewport.width); element.height = Math.round(viewport.height);
@@ -211,8 +220,10 @@ export function PdfThumbnail({ url, width }: { url: string; width: number }) {
       await drawing.promise;
     })().catch(() => { if (!cancelled) setFailed(true); });
     return () => { cancelled = true; render?.cancel(); void task.destroy(); };
-  }, [url, width]);
-  return failed ? null : <canvas ref={canvas} className="pdf-thumbnail" style={{ width }} aria-hidden="true"/>;
+  }, [url, width, number, visible]);
+  if (failed) return null;
+  const drawn = <canvas ref={canvas} className="pdf-thumbnail" style={{ width, aspectRatio: '612 / 792' }} aria-hidden="true"/>;
+  return marks?.length ? <span className="pdf-thumbnail-marked" style={{ width }}>{drawn}{marks.map((rect, index) => <span key={index} className="pdf-thumbnail-mark" style={percent(rect)}/>)}</span> : drawn;
 }
 
 export const PdfView = forwardRef<PdfHandle, {

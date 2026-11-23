@@ -207,3 +207,20 @@
   .library-tally dt>span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .library-tally>div{justify-items:center}
 }
+
+/* Passages of the cited works' PDFs that the search found, each with its page. */
+.library-found{display:grid;gap:6px;padding:0 2px 8px;border-bottom:1px solid var(--line)}
+.library-found>h3{display:flex;align-items:center;gap:6px;margin:0;font-size:11px;font-weight:600;color:var(--text-2)}
+.library-found>h3 .count{font-weight:500;color:var(--text-3)}
+.library-found>.button{justify-self:start}
+.library-snippets{display:grid;gap:4px;max-height:min(46vh,420px);margin:0;padding:0;overflow:auto;list-style:none}
+.library-snippet{display:flex;align-items:flex-start;gap:10px;width:100%;padding:6px;border:0;border-radius:8px;background:none;font:inherit;color:var(--text);text-align:left;cursor:pointer}
+.library-snippet:hover{background:var(--bg-subtle)}
+.library-snippet .pdf-thumbnail,.library-snippet .pdf-thumbnail-marked{flex-shrink:0;border-radius:3px;box-shadow:var(--shadow-xs);background:#fff}
+.library-snippet-text{display:grid;gap:2px;min-width:0}
+.library-snippet-head{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--text-3)}
+.library-snippet-head>span:first-child{font-weight:600;color:var(--text-2)}
+.library-snippet-quote{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;color:var(--text-2)}
+.library-snippet-quote mark{border-radius:2px;background:var(--accent-soft);color:var(--text)}
+.pdf-thumbnail-marked{position:relative;display:block}
+.pdf-thumbnail-mark{position:absolute;border-radius:1px;background:color-mix(in srgb,var(--accent) 35%,transparent)}

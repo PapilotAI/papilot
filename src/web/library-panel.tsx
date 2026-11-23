@@ -75,7 +75,7 @@ export function useLibrary(projectId: string, version: string, load: Load, enabl
   }, [projectId, version, round, load, enabled]);
   const refresh = useCallback(() => setRound(n => n + 1), []);
   return {
-    report, error, unmatched, adding, refresh,
+    report, error, unmatched, adding, refresh, load,
     lookAgain() { retry.current = true; refresh(); },
     async confirm(id: string, on: boolean) {
       try { setReport(await load<LibraryReport>(`/projects/${projectId}/references/confirm?${options()}`, { id, confirmed: on })); refresh(); }
@@ -205,6 +205,13 @@ function TallyDots({ tally }: { tally: Tally }) {
     {shown.map(verdict => <span key={verdict} data-verdict={verdict} aria-hidden="true"><Icon name={verdictIcon[verdict]} size={10}/>{tally[verdict]}</span>)}
   </span>;
 }
+/** A passage with the searched words marked, as a search shows it. */
+function Highlighted({ text, query }: { text: string; query: string }) {
+  const wanted = query.trim().replace(/\s+/g, ' ').toLocaleLowerCase(), at = text.toLocaleLowerCase().indexOf(wanted);
+  if (!wanted || at < 0) return <>{text}</>;
+  return <>{text.slice(0, at)}<mark>{text.slice(at, at + wanted.length)}</mark>{text.slice(at + wanted.length)}</>;
+}
+interface LibraryMatch { entry: string; key: string; hash: string; page: number; text: string; marks: { page: number; rect: [number, number, number, number] }[] }
 /** The verdicts as one segmented bar, red to green, with what is left to check. */
 function EvidenceBar({ tally }: { tally: Tally }) {
   const order: (CitationVerdict | 'unchecked')[] = ['unsupported', 'partial', 'unclear', 'supported', 'unchecked'];
@@ -235,6 +242,21 @@ export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onF
   const show = (next: Partial<typeof view>) => setView(present => { const value = { ...present, ...next }; if (place) savePlace(place + ':view', value); return value; });
   const [reading, setReading] = useState<{ entry: BibliographyEntry; hash: string; passage?: PdfPassage } | null>(null);
   const [query, setQuery] = useState(''), [detail, setDetail] = useState(false);
+  // Words or a phrase in the cited works' PDFs, as passages, read as the author types.
+  const [found, setFound] = useState<{ query: string; matches: LibraryMatch[]; next: string | null; loading: boolean }>({ query: '', matches: [], next: null, loading: false });
+  const findText = useCallback(async (text: string, cursor?: string) => {
+    setFound(present => ({ ...present, query: text, loading: true, ...(cursor ? {} : { matches: [], next: null }) }));
+    try {
+      const result = await data.load<{ matches: LibraryMatch[]; nextCursor: string | null }>(`/projects/${projectId}/library/search?q=${encodeURIComponent(text)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+      setFound(present => present.query === text ? { query: text, matches: cursor ? [...present.matches, ...result.matches] : result.matches, next: result.nextCursor, loading: false } : present);
+    } catch { setFound(present => present.query === text ? { ...present, loading: false } : present); }
+  }, [data.load, projectId]);
+  useEffect(() => {
+    const text = query.trim();
+    if (text.length < 2) { setFound({ query: '', matches: [], next: null, loading: false }); return; }
+    const timer = setTimeout(() => void findText(text), 300);
+    return () => clearTimeout(timer);
+  }, [query, findText]);
   const list = useRef<HTMLUListElement>(null), picker = useRef<HTMLInputElement>(null), target = useRef<string | undefined>(undefined), opener = useRef<string | null>(null);
   const [dropping, setDropping] = useState<string | null>(null), initial = useRef<Filter | null>(null);
   const progressId = useId(), searchId = useId();
@@ -394,8 +416,26 @@ export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onF
       <section className="library-list-pane" aria-label={t('Works')}>
         <div className="library-search">
           <Icon name="search" size={15}/>
-          <input id={searchId} type="search" aria-label={t('Search the library')} placeholder={t('Search titles, authors, keys')} value={query} onChange={event => setQuery(event.target.value)}/>
+          <input id={searchId} type="search" aria-label={t('Search the library')} placeholder={t('Search works and their PDFs')} value={query} onChange={event => setQuery(event.target.value)}/>
         </div>
+        {found.query && (found.matches.length > 0 || found.loading) && <section className="library-found" aria-label={t('In the PDFs')}>
+          <h3>{t('In the PDFs')}<span className="count">{found.matches.length}{found.next ? '+' : ''}</span>{found.loading && <span className="spinner"/>}</h3>
+          <ul className="library-snippets">{found.matches.map((match, index) => {
+            const entry = report.entries.find(item => item.id === match.entry), first = match.marks[0];
+            if (!entry) return null;
+            const passage = { page: first.page - 1, marks: match.marks.filter(mark => mark.page === first.page).map(mark => mark.rect) };
+            return <li key={`${match.hash}:${index}`}>
+              <button type="button" className="library-snippet" data-opener={`snippet:${index}`} onClick={() => read(entry, match.hash, passage, `snippet:${index}`)}>
+                <Suspense fallback={null}><PdfThumbnail url={`/api/projects/${projectId}/library/pdfs/${match.hash}`} width={56} page={first.page} marks={passage.marks} lazy/></Suspense>
+                <span className="library-snippet-text">
+                  <span className="library-snippet-head"><span>{byline(entry) || entry.key}</span><span>{t('p. {page}', { page: match.page })}</span></span>
+                  <span className="library-snippet-quote"><Highlighted text={match.text} query={found.query}/></span>
+                </span>
+              </button>
+            </li>;
+          })}</ul>
+          {found.next && !found.loading && <button type="button" className="button ghost compact" onClick={() => void findText(found.query, found.next!)}>{t('Show more')}</button>}
+        </section>}
         <div className="library-filter" role="tablist" aria-label={t('Show')}>
           {tabs.map(([id, label, count]) => <button key={id} type="button" role="tab" id={`${progressId}-${id}`} aria-selected={filter === id} onClick={() => show({ filter: id })}>{label}<span className="count">{count}</span></button>)}
         </div>

@@ -39,7 +39,7 @@ const report = {
 };
 let zotero = { local: { chosen: null, state: 'ready', dataDir: '/Users/researcher/Zotero', items: 1204, withPdf: 873, citationKeys: 1204 }, account: null, use: true };
 const account = { username: 'researcher', libraries: [{ name: null, items: 310, withPdf: 288, citationKeys: 12 }, { name: 'Lab', items: 40, withPdf: 31, citationKeys: 0 }], syncing: false, synced: Date.UTC(2026, 10, 23, 9, 30), problem: null };
-const quick = [], uploads = [], removals = [], forgotten = [], errors = [], keys = [], switched = [], looks = [], located = [];
+const quick = [], searches = [], uploads = [], removals = [], forgotten = [], errors = [], keys = [], switched = [], looks = [], located = [];
 fs.mkdirSync('test-results', { recursive: true });
 try {
   const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 800 } });
@@ -64,6 +64,10 @@ try {
       forgotten.push([id, key]);
       delete report.citations.find(sentence => sentence.id === id).findings[key];
       return route.fulfill({ json: report });
+    }
+    if (url.pathname === '/api/projects/paper/library/search') {
+      searches.push(url.searchParams.get('q'));
+      return route.fulfill({ json: { matches: url.searchParams.get('q') === 'total-fit' ? [{ entry: 'refs.bib#knuth', key: 'knuth', hash, page: 1, text: 'TeX breaks paragraphs into lines with a total-fit algorithm.', marks: [{ page: 1, rect: [0.1, 0.1, 0.9, 0.16] }] }] : [], nextCursor: null } });
     }
     if (url.pathname === '/api/projects/paper/citations/quick-check' && request.method() === 'POST') {
       const body = request.postDataJSON();
@@ -162,6 +166,20 @@ try {
   await back.click();
   await quote.waitFor();
   assert.ok(await quote.evaluate(button => button === document.activeElement), 'Back returns focus to the quote');
+
+  // The search also finds words in the works' PDFs, as passages with their
+  // page; a passage opens its PDF there.
+  await page.getByRole('searchbox', { name: 'Search the library' }).fill('total-fit');
+  const snippet = page.locator('.library-snippet');
+  await snippet.getByText('p. 1', { exact: true }).waitFor();
+  assert.equal(await snippet.locator('mark').textContent(), 'total-fit');
+  assert.equal(searches.at(-1), 'total-fit');
+  await page.screenshot({ path: 'test-results/library-search-pdfs.png', animations: 'disabled' });
+  await snippet.click();
+  await page.locator('.library-reader .source-mark').first().waitFor();
+  await page.getByRole('button', { name: 'Back to the library', exact: true }).click();
+  await page.getByRole('searchbox', { name: 'Search the library' }).fill('');
+  await page.locator('.library-found').waitFor({ state: 'detached' });
 
   // Check citations runs the quick model in place, with its progress, and
   // the finding it records names that model.
