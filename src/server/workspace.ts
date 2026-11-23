@@ -52,7 +52,7 @@ const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 // Source saves start a build in the review engine, and so does undoing an
 // accept of an earlier round, which inserts the next round.
-const startsBuild = (route: string, value: unknown) => /\/source(?:\/options|\/file)?$/.test(route) || (route.endsWith('/undo') && (value as { republished?: unknown } | null)?.republished === true);
+const startsBuild = (route: string, value: unknown) => /\/source(?:\/file)?$/.test(route) || (route.endsWith('/undo') && (value as { republished?: unknown } | null)?.republished === true);
 const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 // A Codex model/list entry with the reasoning efforts it supports.
 export const agentModel = (m: any): AgentModel => {
@@ -1718,7 +1718,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         const status = going ? current.status : this.store.runs().some(r => r.taskId === task.id && r.status === 'queued') ? 'queued' : reached.previousStatus;
         this.store.updateTask(task.id, { pendingReview: null, status, error: !response.ok ? value.error || 'Check the review result before continuing.' : going ? null : reached.previousError ?? null });
         if (response.ok) this.settleReviewNotes(task, pending);
-        if (sourceBuild) this.rememberSourceBuild(task.id, value, pending);
+        if (sourceBuild) this.rememberSourceBuild(task.id, value);
       });
       // So does the build held after the agent's turn for this action, and a
       // build whose connection was lost meanwhile.
@@ -1763,7 +1763,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       this.store.transaction(() => {
         if (pending && confirmedReviewResponse(200, result, task.name)) this.settleReviewNotes(task, pending);
         if (pending) this.store.updateTask(taskId, { pendingReview: null });
-        if (sourceBuild) this.rememberSourceBuild(taskId, result, pending);
+        if (sourceBuild) this.rememberSourceBuild(taskId, result);
       });
       if (sourceBuild) void this.resumeBuild(taskId);
       return result;
@@ -1799,18 +1799,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   // A save during the build after the agent's turn replaces that build's job,
   // which includes the turn's edits: the newer job keeps the turn's result
   // links and its repair of a build the turn broke.
-  private rememberSourceBuild(taskId: string, value: unknown, pending?: { route: string; body: Record<string, unknown> }) {
+  private rememberSourceBuild(taskId: string, value: unknown) {
     const job = (value as { job?: { id?: string } } | null)?.job;
     if (!job?.id) throw new Error('The review engine could not confirm this action. Select Check status before continuing.');
-    const runs = pending?.route.endsWith('/source/options') ? this.store.runs().filter(run => run.taskId === taskId && run.status === 'completed' && run.reviewRound === pending.body.round).map(run => run.id) : [];
-    const optionAccept = pending?.route.endsWith('/source/options') && pending.body.accept === true
-      ? {
-          actionId: `note-accept-${createHash('sha256').update(`option-${String(pending.body.id)}`).digest('hex')}`,
-          count: Array.isArray(pending.body.edits) ? Math.max(1, pending.body.edits.length) : 1,
-        }
-      : undefined;
     const building = this.store.task(taskId).pendingBuild;
-    this.store.updateTask(taskId, { status: 'building', error: null, pendingBuild: { requestId: randomUUID(), job: job.id, runs: [...new Set([...building?.runs ?? [], ...runs])], sendBack: building?.sendBack ?? false, restarts: 0, ...(optionAccept ? { optionAccept } : {}) } });
+    this.store.updateTask(taskId, { status: 'building', error: null, pendingBuild: { requestId: randomUUID(), job: job.id, runs: building?.runs ?? [], sendBack: building?.sendBack ?? false, restarts: 0 } });
   }
   // A build is automatic after the agent's run `after` completes. When its
   // edits break the build, the agent gets the error in a new turn, once.
@@ -1926,19 +1919,6 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
           if (this.closing) return;
           const latest = this.store.task(taskId).pendingBuild;
           if (latest && latest.job !== pending.job) { pending = follow(latest); continue; }
-          if (pending.optionAccept && !current.superseded && !current.result?.superseded) {
-            const latestTask = this.store.task(taskId), projectName = this.projectName(latestTask.projectId);
-            this.store.recordActivity({
-              key: `decision:${taskId}:${pending.optionAccept.actionId}`,
-              at: Date.now(),
-              kind: 'review_decision',
-              projectId: latestTask.projectId,
-              taskId,
-              agent: this.agentOf(latestTask),
-              model: latestTask.model,
-              data: { action: 'accept', count: pending.optionAccept.count, source: 'task', ...(projectName ? { projectName } : {}) },
-            });
-          }
           this.holdForReview(taskId, { status: this.store.runs().some(r => r.taskId === taskId && r.status === 'queued') ? 'queued' : 'reviewing', error: null, pendingBuild: null,
             review: { ...this.store.task(taskId).review!, job: { ...current, id: pending.job } } });
           break;

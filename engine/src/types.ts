@@ -137,6 +137,9 @@ export interface ActionDetail {
   republish?: number;
   /** A reject made while the agent worked, which waited for its turn to end. */
   queued?: true;
+  /** An accept of a note option: the wording each change was accepted with
+   *  instead of the round's proposal. */
+  edits?: { unit: string; text: string }[];
 }
 export interface Action {
   seq: number;
@@ -584,6 +587,8 @@ export interface PageState {
   renderJob?: string;
   decisions: Record<string, Decision>;
   comments: Record<string, string>;
+  /** Changes accepted with a note option's wording: the accepted text. */
+  variants?: Record<string, string>;
   /** The round's own comparison is still rendering, or failed. */
   rendering?: "pending" | "failed";
   /** Changes still waiting for a comparison, even though the round exists. */
@@ -591,8 +596,9 @@ export interface PageState {
   /** Decided changes whose comparison changed after the decision. */
   reviewAgain?: string[];
   /** republish: the decision belongs to an earlier round, so undoing it
-   *  inserts a round with its change pending again. */
-  undo: { id: string; kind: ActionKind; changes: string[]; republish?: true; queued?: true } | null;
+   *  inserts a round with its change pending again. worktree: undoing it
+   *  writes the task's files, as undoing a reject does. */
+  undo: { id: string; kind: ActionKind; changes: string[]; republish?: true; queued?: true; worktree?: true } | null;
   /** Changes rejected while the agent works: shown rejected, reverted in its
    *  files once its turn ends. */
   queued?: string[];
@@ -634,6 +640,8 @@ export interface SourceFileRead {
   before: string | null;
   reviewed: boolean;
   reverted: string[];
+  /** Changes accepted in a note option's wording: the text the file has. */
+  worded?: Record<string, string>;
 }
 /** Replaces a whole file of a task, which must still be at `revision`, and
  *  reviews the result in a new round. `round` is the one the file was read in. */

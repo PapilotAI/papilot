@@ -59,6 +59,7 @@ import {
   commentScope,
   pendingUnits,
   progress,
+  mixedKey,
   resolvedSide,
   stopState,
   STATUS,
@@ -222,6 +223,9 @@ export function ReviewApp({
     [mixedPreviews, setMixedPreviews] = useState<
       Record<string, { status: "loading" | "ready" | "error"; files?: string; strips?: Strip[] }>
     >({}),
+    // Comparisons of blocks with an edit accepted in a note option's wording,
+    // by that wording.
+    [optionBlocks, setOptionBlocks] = useState<Record<string, RoundDetail>>({}),
     // A note can reveal a decided change without opening the history controls.
     [linkedChange] = useState(() => {
       const value = Number(new URLSearchParams(location.search).get("change") ?? -1);
@@ -370,9 +374,13 @@ export function ReviewApp({
     if (window.dispatchEvent(new Event('papilot:review:help', { cancelable: true }))) setHelp(true);
   }
   snapshot.current = { state, detail: publishedDetail, busy, composer, current, open: openSource };
+  // Changes accepted in a note option's wording, on the open latest round
+  // where that wording's comparison can be shown with it.
+  const variants = detail && state && detail.round === state.latest && !state.closed && !changes ? state.variants : undefined;
   const units = useMemo(
-      () => new Map(detail?.units.map((u) => [u.id, u]) ?? []),
-      [detail],
+      // A change accepted in a note option's wording reads as that wording.
+      () => new Map(detail?.units.map((u) => [u.id, variants && Object.hasOwn(variants, u.id) ? { ...u, new_text: variants[u.id] } : u]) ?? []),
+      [detail, variants],
     ),
     // Changes whose PDF comparison has not arrived: the author decides with
     // the comparison, so these cannot be accepted or rejected yet.
@@ -498,8 +506,9 @@ export function ReviewApp({
   // Undoing an accept of an earlier round publishes the task's files as a
   // new round, so like a rejection it waits while the agent edits them.
   // Undoing an applied rejection writes the task's files, like a source
-  // edit; a reject still waiting for the agent's turn to end touched none.
-  const undoKind = (value: PageState | null | undefined): Kind | "source" => (value?.undo?.kind === "reject" && !value.undo.queued) || value?.undo?.republish ? "source" : "accept";
+  // edit, and so does undoing a note option's wording; a reject still
+  // waiting for the agent's turn to end touched none.
+  const undoKind = (value: PageState | null | undefined): Kind | "source" => (value?.undo?.kind === "reject" && !value.undo.queued) || value?.undo?.republish || value?.undo?.worktree ? "source" : "accept";
   function blocked(kind: Kind | "source"): boolean {
     if (previewNow.current) { setToast(t("Confirm this option before reviewing its changes.")); return true; }
     const reason = lockOf(snapshot.current.state, kind);
@@ -1033,13 +1042,10 @@ export function ReviewApp({
     if (!detail || changes || history || transport || previewing || detail.sourceOnly || detail.rendering) return;
     const gen = mixedGen.current;
     for (const { block, index } of placed) {
-      if (block.units.length < 2) continue;
       if (pendingUnits(stops[index], decisions).length) continue;
-      if (!block.units.every((id) => decisions[id] === "accepted" || decisions[id] === "rejected")) continue;
+      const key = mixedKey(detail.round, index, block.units, decisions, variants);
+      if (!key) continue;
       const accepted = block.units.filter((id) => decisions[id] === "accepted").sort();
-      const rejected = block.units.filter((id) => decisions[id] === "rejected");
-      if (!accepted.length || !rejected.length) continue;
-      const key = `${detail.round}:${index}:${accepted.join(",")}`;
       if (mixedRequested.current.has(key)) continue;
       mixedRequested.current.add(key);
       setMixedPreviews((prev) => ({ ...prev, [key]: { status: "loading" } }));
@@ -1063,7 +1069,30 @@ export function ReviewApp({
           setMixedPreviews((prev) => ({ ...prev, [key]: { status: "error" } }));
         });
     }
-  }, [detail, placed, stops, decisions, changes, history, transport, previewing]);
+  }, [detail, placed, stops, decisions, variants, changes, history, transport, previewing]);
+  // A block with an edit accepted in a note option's wording shows the
+  // option's own comparison, the one its preview showed, until the block is
+  // decided with rejections too. The engine compiles each wording once.
+  const optionKey = (units: string[]) => {
+    const edits = (detail?.units ?? []).filter((unit) => units.includes(unit.id) && variants && Object.hasOwn(variants, unit.id))
+      .map((unit) => ({ unit: unit.id, text: variants![unit.id] }));
+    return edits.length ? JSON.stringify([detail!.round, edits]) : null;
+  };
+  const optionRequested = useRef(new Set<string>());
+  // The engine prepares an option's comparison while no build runs; one asked
+  // for is not asked again on this page, failed or not.
+  const building = state?.job?.status === "queued" || state?.job?.status === "running";
+  useEffect(() => {
+    if (!detail || changes || transport || previewing || detail.sourceOnly || building) return;
+    for (const { block } of placed) {
+      const key = optionKey(block.units);
+      if (!key || optionRequested.current.has(key)) continue;
+      optionRequested.current.add(key);
+      const [round, edits] = JSON.parse(key) as [number, { unit: string; text: string }[]];
+      void api<RoundDetail>(`/source/options/preview`, { id: "accepted", round, edits, background: true })
+        .then((value) => setOptionBlocks((prev) => ({ ...prev, [key]: value })), () => {});
+    }
+  }, [detail, placed, variants, changes, transport, previewing, building]);
   // Clear stale selectedUnit if its unit disappeared or its block resolved.
   const multiUnitAt = (index: number) => {
     const meta = blockUnitStatic.get(index),
@@ -1073,21 +1102,13 @@ export function ReviewApp({
     const status = stopState(block.units, decisions),
       reviewed = !pendingUnits(stop, decisions).length,
       expanded = browsing || index === linkedChange || block.units.some((id) => again.has(id)),
-      acceptedMixed =
-        !changes && !history && reviewed && block.units.every((id) => decisions[id] === "accepted" || decisions[id] === "rejected")
-          ? block.units.filter((id) => decisions[id] === "accepted").sort()
-          : [],
-      mixedKey =
-        detail && acceptedMixed.length > 0 && acceptedMixed.length < block.units.length
-          ? `${detail.round}:${index}:${acceptedMixed.join(",")}`
-          : null,
-      mixedReady = Boolean(mixedKey && mixedPreviews[mixedKey]?.status === "ready" && mixedPreviews[mixedKey]?.strips?.length),
+      key = detail && !changes && !history && reviewed ? mixedKey(detail.round, index, block.units, decisions, variants) : null,
+      mixedReady = Boolean(key && mixedPreviews[key]?.status === "ready" && mixedPreviews[key]?.strips?.length),
       resolved = history || index === linkedChange
         ? undefined
         : changes
           ? (status === "rejected" ? "before" : undefined)
-          : resolvedSide(block.units, decisions) ||
-            (status === "commented" ? "after" : mixedReady ? "mixed" : undefined);
+          : mixedReady ? "mixed" : resolvedSide(block.units, decisions) || (status === "commented" ? "after" : undefined);
     if (resolved || (reviewed && !expanded)) return null;
     return meta;
   };
@@ -1494,7 +1515,8 @@ export function ReviewApp({
       if (optionActive && (action === "accept" || action === "reject" || action === "comment")) {
         const reason = lockOf(snapshot.current.state, action);
         if (reason) { setToast(t(reason)); return; }
-        if (optionPreview?.busy || (action === "accept" && !optionPreview?.detail)) return;
+        // Accepting an option does not wait for its PDF; the change shows it once ready.
+        if (optionPreview?.busy) return;
         window.dispatchEvent(new CustomEvent("papilot:option-action", { detail: { key: optionPreview!.key, action } }));
         return;
       }
@@ -1573,7 +1595,6 @@ export function ReviewApp({
           optionDisabled = optionActive
             ? Boolean(
                 optionPreview?.busy ||
-                  (kind === "accept" && !optionPreview?.detail) ||
                   Boolean(lock),
               )
             : busy || !latest || Boolean(lock);
@@ -1811,12 +1832,13 @@ export function ReviewApp({
     index: number,
     inline: boolean,
   ): ReactNode {
-    const blockOptionPreview =
+    const accepted = optionKey(block.units),
+      blockOptionPreview =
       previewing &&
       optionPreview?.detail &&
       (!optionPreview.units?.length || block.units.some((id) => optionPreview.units!.includes(id)))
         ? optionPreview.detail
-        : null;
+        : (accepted && optionBlocks[accepted]) || null;
     const previewBlock = blockOptionPreview
       ? ([
           ...blockOptionPreview.sections.flatMap((s) =>
@@ -1825,8 +1847,12 @@ export function ReviewApp({
           ...blockOptionPreview.loose,
         ].find((b) => b.units.some((id) => block.units.includes(id))) ?? null)
       : null;
-    const displayBefore = previewBlock ? previewBlock.before : block.before,
-      displayAfter = previewBlock ? previewBlock.after : block.after,
+    // An accepted option that restores the original wording leaves nothing to
+    // compare in its PDF: the passage reads as before.
+    const restored = Boolean(!previewBlock && blockOptionPreview && !previewing &&
+        block.units.every((id) => variants && Object.hasOwn(variants, id) && variants[id] === units.get(id)?.old_text)),
+      displayBefore = previewBlock ? previewBlock.before : block.before,
+      displayAfter = previewBlock ? previewBlock.after : restored ? block.before : block.after,
       stripBase = previewBlock && blockOptionPreview ? blockOptionPreview.files : detail!.files;
     const known = (blockOptionPreview
       ? block.units.map((id) => blockOptionPreview.units.find((u) => u.id === id) ?? units.get(id)!)
@@ -1847,27 +1873,17 @@ export function ReviewApp({
       expanded = focusedBlock || browsing || index === linkedChange || reviewAgain,
       // A reverted change shows the text that is back on disk; staged and
       // unstaged ones keep their before and after.
-      acceptedMixed =
-        !changes && !history && reviewed && block.units.every((id) => decisions[id] === "accepted" || decisions[id] === "rejected")
-          ? block.units.filter((id) => decisions[id] === "accepted").sort()
-          : [],
-      mixedKey =
-        acceptedMixed.length > 0 && acceptedMixed.length < block.units.length
-          ? `${detail!.round}:${index}:${acceptedMixed.join(",")}`
-          : null,
-      mixedPreview = mixedKey ? mixedPreviews[mixedKey] : undefined,
+      key = !changes && !history && reviewed ? mixedKey(detail!.round, index, block.units, decisions, variants) : null,
+      mixedPreview = key ? mixedPreviews[key] : undefined,
       resolved = focusedBlock || history || index === linkedChange
         ? undefined
         : changes
           ? status === "rejected"
             ? "before"
             : undefined
-          : resolvedSide(block.units, decisions) ||
-            (status === "commented"
-              ? "after"
-              : mixedPreview?.status === "ready" && mixedPreview.strips?.length
-                ? "mixed"
-                : undefined),
+          : mixedPreview?.status === "ready" && mixedPreview.strips?.length
+            ? "mixed"
+            : resolvedSide(block.units, decisions) || (status === "commented" ? "after" : undefined),
       source = openSource.has(index),
       hasStrips = block.before.length > 0 || block.after.length > 0,
       blockEffects = known.filter((u) => u.effects && firstStop.get(u.id) === index),

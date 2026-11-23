@@ -324,7 +324,6 @@
   "The option changes source outside this note.": "此方案修改了本批註範圍之外的原始碼。",
   "The option has overlapping patches.": "此方案包含重疊的修改。",
   "The option includes an invalid change. Try again.": "方案包含無效修改，請重試。",
-  "The option save could not be confirmed. Check task status before retrying.": "無法確認方案是否已儲存。重試前請檢查任務狀態。",
   "The option source is missing or ambiguous.": "無法唯一定位此方案的原始碼。",
   "The option targets an unrelated source file.": "此方案涉及無關的原始檔。",
   "The paper folder is missing. Syncing resumes when it is back.": "找不到論文資料夾。資料夾恢復後將繼續同步。",

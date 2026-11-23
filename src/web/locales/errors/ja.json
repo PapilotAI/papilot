@@ -324,7 +324,6 @@
   "The option changes source outside this note.": "この案はこの注釈の範囲外のソースを変更します。",
   "The option has overlapping patches.": "この案には重複する変更が含まれています。",
   "The option includes an invalid change. Try again.": "この案には無効な変更が含まれています。もう一度お試しください。",
-  "The option save could not be confirmed. Check task status before retrying.": "案の保存を確認できませんでした。再試行する前にタスクの状態を確認してください。",
   "The option source is missing or ambiguous.": "この案のソースが見つからないか、一意に特定できません。",
   "The option targets an unrelated source file.": "この案は関係のないソースファイルを対象としています。",
   "The paper folder is missing. Syncing resumes when it is back.": "論文フォルダが見つかりません。フォルダが戻ると同期が再開されます。",

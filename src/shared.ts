@@ -23,7 +23,7 @@ export interface UpdateStatus {
 // accepted changes touched since its last commit, relative to the repository root.
 export interface ReviewJob { id?: string; phase: string; status: string; error?: string; details?: string[]; createdAt?: number; options?: { completed: number; total: number }; progress?: Partial<Record<'baseline' | 'revised', Omit<BuildProgress, 'startedAt'>>> }
 export interface ReviewSummary { ready?: number; state: string; round: number | null; counts: Record<string, number>; unsent?: number; comments?: number; files?: string[]; next?: string; job?: ReviewJob | null }
-export interface PendingBuild { requestId: string; job?: string; runs: string[]; sendBack: boolean; restarts: number; optionAccept?: { actionId: string; count: number } }
+export interface PendingBuild { requestId: string; job?: string; runs: string[]; sendBack: boolean; restarts: number }
 // previousStatus and previousError are where Check status returns the task
 // once the engine confirms the action.
 export interface PendingReview { returnNote?: Annotation; returnNotes?: Annotation[]; route: string; body: Record<string, unknown>; previousStatus: TaskStatus; previousError?: string | null }
@@ -349,7 +349,7 @@ export interface Manuscript { git: GitStatus; build: ManuscriptBuild; document?:
 // review round that shows it, which a save continues; `reviewed` says that
 // round shows this very text, but for the rejected changes in `reverted`
 // whose text came back; its changes replaced parts of `before`.
-export interface SourceFile { file: string; revision: string; text: string; base: string | null; passage: [number, number]; focus: [number, number]; drifted: boolean; round?: number; before?: string | null; reviewed?: boolean; reverted?: string[]; authors?: SourceAuthor[] }
+export interface SourceFile { file: string; revision: string; text: string; base: string | null; passage: [number, number]; focus: [number, number]; drifted: boolean; round?: number; before?: string | null; reviewed?: boolean; reverted?: string[]; worded?: Record<string, string>; authors?: SourceAuthor[] }
 // A task's saved file, and the review after the save.
 export interface TaskSourceSave { source: SourceFile; state: unknown }
 // A saved file, the lines that changed, the working tree whose build shows

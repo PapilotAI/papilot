@@ -84,6 +84,22 @@ export function stopState(
       ? "pending"
       : "mixed";
 }
+/** The build that shows a block decided with some edits accepted and others
+ *  rejected, or null. An edit accepted in a note option's wording builds
+ *  with that wording, so choosing another option asks for another build. */
+export function mixedKey(
+  round: number,
+  index: number,
+  units: string[],
+  decisions: Record<string, Decision>,
+  variants: Record<string, string> = {},
+) {
+  if (!units.every((id) => decisions[id] === "accepted" || decisions[id] === "rejected")) return null;
+  const accepted = units.filter((id) => decisions[id] === "accepted").sort(),
+    worded = accepted.filter((id) => Object.hasOwn(variants, id));
+  if (!accepted.length || accepted.length === units.length) return null;
+  return `${round}:${index}:${accepted.join(",")}${worded.length ? ":" + JSON.stringify(worded.map((id) => [id, variants[id]])) : ""}`;
+}
 export function resolvedSide(
   units: string[],
   decisions: Record<string, Decision>,

@@ -202,12 +202,18 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
     if (!file.reviewed || before == null || !changes || changes.round !== file.round) { view.showReview(null); return; }
     // Rejected changes whose text came back are gone from the file; the
     // changes after them moved by the difference.
-    const reverted = new Set(file.reverted ?? []), mine = changes.changes.filter(change => change.file === file.file);
+    // Changes accepted in a note option's wording hold that wording instead.
+    const reverted = new Set(file.reverted ?? []), worded = file.worded ?? {}, mine = changes.changes.filter(change => change.file === file.file);
     const parts = (change: ReviewChanges['changes'][number]) => change.ops.filter(op => op[0] !== 'equal');
-    const shifts = mine.filter(change => reverted.has(change.id)).flatMap(parts).map(([, from, to, at, end]) => ({ end, by: (to - from) - (end - at) }));
-    const place = (at: number) => at + shifts.reduce((sum, shift) => shift.end <= at ? sum + shift.by : sum, 0);
+    const shifts = [
+      ...mine.filter(change => reverted.has(change.id)).flatMap(change => parts(change).map(([, from, to, at, end]) => ({ id: change.id, end, by: (to - from) - (end - at) }))),
+      ...mine.filter(change => Object.hasOwn(worded, change.id)).flatMap(change => parts(change).map(([, , , at, end]) => ({ id: change.id, end, by: worded[change.id].length - (end - at) }))),
+    ];
+    // A change's own new length moves what follows it, not the change itself.
+    const place = (at: number, own: string) => at + shifts.reduce((sum, shift) => shift.id !== own && shift.end <= at ? sum + shift.by : sum, 0);
     view.showReview({ key: `${file.file}:${file.revision}:${changes.round}`, text: file.text, before, labels: changes.labels, cards: changes.stops,
-      parts: new Map(mine.filter(change => !reverted.has(change.id)).map(change => [change.id, parts(change).map(([, from, to, at, end]) => ({ from, to, at: place(at), end: place(end) }))])),
+      parts: new Map(mine.filter(change => !reverted.has(change.id)).map(change => [change.id, parts(change).map(([, from, to, at, end]) =>
+        ({ from, to, at: place(at, change.id), end: Object.hasOwn(worded, change.id) ? place(at, change.id) + worded[change.id].length : place(end, change.id) }))])),
       decisions: new Map(mine.map(change => [change.id, change.decision])) });
   }
   useEffect(showReview, [review?.changes]);
@@ -393,7 +399,7 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
       // Typing begun while the file was read keeps its text; saving it then
       // reports that the file changed.
       if (file.revision !== now.revision && (unsaved() || saving.current)) return;
-      if (file.revision !== now.revision || file.base !== now.base || file.round !== now.round || file.reviewed !== now.reviewed || String(file.reverted) !== String(now.reverted))
+      if (file.revision !== now.revision || file.base !== now.base || file.round !== now.round || file.reviewed !== now.reviewed || String(file.reverted) !== String(now.reverted) || JSON.stringify(file.worded) !== JSON.stringify(now.worded))
         settle(value => value.file?.file === file.file ? { ...value, file } : value);
     }, () => undefined);
   }, [build?.tree, head, version]);

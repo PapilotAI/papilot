@@ -93,7 +93,7 @@ it("serves note preview assets only inside the cache for a recorded task", async
     expect(response.body, url).not.toContain("outside-secret");
   }
   expect((await server.inject({ url: base + "preview.svg", headers: { ...headers(), origin: "https://evil.example" } })).statusCode).toBe(403);
-  for (const suffix of ["/source/options", "/source/options/preview"]) {
+  for (const suffix of ["/source/options/preview"]) {
     expect((await server.inject({ method: "POST", url: `/api/tasks/${task.name}${suffix}`, headers: { host: "127.0.0.1:9" }, payload: {} })).statusCode).toBe(403);
     expect((await server.inject({ method: "POST", url: `/api/tasks/..%2Foutside${suffix}`, headers: headers(), payload: {} })).statusCode).toBe(400);
   }

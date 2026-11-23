@@ -4,6 +4,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Changed
+
+- **Accepting a note's alternative no longer holds up the rest of the review.** Accepting an alternative used to wait for its PDF, then compile the whole task into a new round while every other note stayed locked, and the new round discarded the PDFs prepared for the other notes' alternatives. Now it takes effect at once in the current review, like accepting any change, even before the alternative's PDF is ready, and Undo reverses it. The change's card shows the alternative's PDF once it is compiled. The other notes stay open and keep their prepared PDFs, which show the rest of the round as proposed.
+
 ## [0.14.0] - 2026-11-23
 
 Teach agents your writing preferences across tasks, switch task agents in place without losing context, curate which agents and models appear in menus, and inspect local workspace activity statistics. See the [release notes](docs/releases/0.14.0/release-notes.md) for update instructions.

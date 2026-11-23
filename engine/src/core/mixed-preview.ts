@@ -8,6 +8,7 @@ import { Builder, buildDate, type BuildPriority } from "./build.ts";
 import { roundFolder } from "./carry.ts";
 import { readJson, writeJson } from "./files.ts";
 import { renderMixed } from "./publish.ts";
+import { optionCandidate } from "./option-preview.ts";
 
 export interface MixedPreviewInput {
   units: string[];
@@ -62,7 +63,9 @@ export async function previewMixedBlock(
     round = app.review.round(name, roundNumber);
   if (round.summary.sourceOnly) return { files: "", strips: [], unavailable: true };
   const unitSet = new Set(input.units),
-    acceptedSet = new Set(input.accepted);
+    acceptedSet = new Set(input.accepted),
+    variants = app.review.variants(name, round.number),
+    edits = [...acceptedSet].sort().filter((id) => Object.hasOwn(variants, id)).map((id) => ({ unit: id, text: variants[id] }));
   if (!acceptedSet.size || acceptedSet.size >= unitSet.size) {
     throw new Error("Invalid mixed preview request.");
   }
@@ -98,11 +101,12 @@ export async function previewMixedBlock(
   const key = createHash("sha256")
     .update(
       JSON.stringify([
-        2,
+        3,
         round.before,
         round.after,
         [...unitSet].sort(),
         [...acceptedSet].sort(),
+        edits,
         useBefore ? "before" : "after",
         refStrips,
         project,
@@ -129,11 +133,14 @@ export async function previewMixedBlock(
   const priority: () => BuildPriority = () => "background";
   const work = (async (): Promise<MixedPreviewResult> => {
     try {
-      const files: Record<string, Buffer | null> = {};
+      const files: Record<string, Buffer | null> = {},
+        option = edits.length ? optionCandidate(round.units, edits, (file) => app.repo.blob(round.after, file)!.toString("utf8")) : null;
       for (const file of new Set(acceptedUnits.map((u) => u.file))) {
-        const before = app.repo.blob(round.before, file),
-          after = app.repo.blob(round.after, file),
-          group = acceptedUnits.filter((u) => u.file === file);
+        // An accepted option's wording takes the place of the round's.
+        const worded = option && Object.hasOwn(option.files, file),
+          before = app.repo.blob(round.before, file),
+          after = worded ? option.files[file] : app.repo.blob(round.after, file),
+          group = worded ? option.units.filter((u) => u.file === file && acceptedSet.has(u.id)) : acceptedUnits.filter((u) => u.file === file);
         files[file] = applyUnits(before, after, group);
       }
       const mixedCommit = await app.repo.commitWithAsync(

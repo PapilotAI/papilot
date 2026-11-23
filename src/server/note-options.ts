@@ -21,6 +21,11 @@ export function rebaseNoteOptions(options: NoteOption[], previous: NoteRound['un
   });
 }
 
+/** Whether an option's wording differs from the round's proposal. */
+export function replacesProposal(option: NoteOption, units: { id: string; new_text: string }[]) {
+  return option.edits.some(edit => units.find(unit => unit.id === edit.unit)?.new_text !== edit.text);
+}
+
 export function selectedNoteOptions(choices: NoteOption[], current: NoteOption) {
   const selected = choices.find(option => option.edits.length === current.edits.length && option.edits.every(edit => current.edits.some(actual => actual.unit === edit.unit && actual.text === edit.text)));
   // Overlapping notes can produce a combination that is none of this note's
@@ -61,7 +66,7 @@ export async function noteOptionContext(store: Store, task: Task, key: string, c
   if (!note?.round || !note.changes.length) throw new Error('This note has no linked changes.');
   const [detail, state] = await Promise.all([
     readRound(client, task, note.round),
-    client.get<{ decisions: Record<string, string>; latest: number; closed: boolean }>(`${taskRoute(task.name)}/state?round=${note.round}`),
+    client.get<{ decisions: Record<string, string>; variants?: Record<string, string>; latest: number; closed: boolean }>(`${taskRoute(task.name)}/state?round=${note.round}`),
   ]);
   const ids = new Set(note.changes.filter(change => change.round === note.round).flatMap(change => change.units)), units = detail.units.filter(unit => ids.has(unit.id));
   let locked: string | undefined;
@@ -70,6 +75,8 @@ export async function noteOptionContext(store: Store, task: Task, key: string, c
   else if (units.some(unit => unit.text_ops?.length !== 1 || unit.truncated || unit.whole_file || (unit.kind && unit.kind !== 'text'))) locked = 'Options are not available for this source range yet.';
   else if (task.status !== 'reviewing' || task.pendingReview || task.delivery?.pending || task.reconciliation) locked = 'Wait for the current task and review actions to finish.';
   const current: NoteOption = { id: 'current', label: 'Current proposal', edits: units.map(unit => ({ unit: unit.id, text: unit.new_text })) };
+  // The wording in effect: an accepted option's, otherwise the proposal.
+  const actual: NoteOption = { ...current, edits: units.map(unit => ({ unit: unit.id, text: state.variants?.[unit.id] ?? unit.new_text })) };
   const cacheKey = noteOptionsKey(task.id, key, note.round);
   let cached = store.preference<NoteOptions>(cacheKey);
   const origin = store.runs().find(run => run.id === note.itemId)?.noteRounds?.[note.index];
@@ -94,6 +101,6 @@ export async function noteOptionContext(store: Store, task: Task, key: string, c
   const choices = cached?.options.filter(option => option.id === 'current' || (option.id !== 'latest' && typeof option.reason === 'string' && option.reason.trim())) || [current];
   const rejected = Object.keys(state.decisions).filter(id => state.decisions[id] === 'rejected').sort();
   const comparisonKey = createHash('sha256').update(JSON.stringify([detail.after, rejected])).digest('hex');
-  const options: NoteOptions = { before: Object.fromEntries(units.map(unit => [unit.id, unit.old_text])), round: note.round, key, comparisonKey, ...selectedNoteOptions(choices.length ? choices : [current], current), ...(locked ? { locked } : {}) };
+  const options: NoteOptions = { before: Object.fromEntries(units.map(unit => [unit.id, unit.old_text])), round: note.round, key, comparisonKey, ...selectedNoteOptions(choices.length ? choices : [current], actual), ...(locked ? { locked } : {}) };
   return { note, notes, units, options, detail, rejected };
 }
