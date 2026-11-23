@@ -73,13 +73,16 @@ test('the ledger carries color-group directions and the author\'s own requests t
 test('workers and the audit receive the author\'s writing memory', async () => {
   const f = paper(), memory = '<author-memory>\n- Use sentence case for headings.\n</author-memory>';
   try {
-    let delegated = '', audited = '';
-    await delegateTo(f.root, notes, delegateArgs, async (_worker, prompt, _signal, edit) => { delegated = prompt; fs.writeFileSync(path.join(edit!.cwd, 'main.tex'), 'First paragraph, polished.\n\nSecond paragraph.\n'); return 'Done.'; }, signal(), () => true, role => routes[role], {}, memory);
+    let delegated = '', audited = '', delegateActivity: unknown, auditActivity: unknown;
+    const activity = () => undefined;
+    await delegateTo(f.root, notes, delegateArgs, async (_worker, prompt, _signal, edit, _onStep, onActivity) => { delegated = prompt; delegateActivity = onActivity; fs.writeFileSync(path.join(edit!.cwd, 'main.tex'), 'First paragraph, polished.\n\nSecond paragraph.\n'); return 'Done.'; }, signal(), () => true, role => routes[role], { activity }, memory);
     assert.match(delegated.slice(0, delegated.indexOf('\n')), /Follow the author's saved writing preferences in authorMemory\./);
     assert.equal(JSON.parse(delegated.slice(delegated.indexOf('\n') + 1)).authorMemory, memory);
-    await auditWorkflow(f.root, notes, { outcomes: outcomes() }, async (worker, prompt, abort) => { audited = prompt; return verified(worker, prompt, abort); }, signal(), auditor, [], memory);
+    assert.equal(delegateActivity, activity, 'delegateWorkflow forwards progress.activity to generate');
+    await auditWorkflow(f.root, notes, { outcomes: outcomes() }, async (worker, prompt, abort, _edit, _onStep, onActivity) => { audited = prompt; auditActivity = onActivity; return verified(worker, prompt, abort); }, signal(), auditor, [], memory, activity);
     assert.match(audited.slice(0, audited.indexOf('\n')), /Edits that follow the author's saved writing preferences in authorMemory are expected/);
     assert.equal(JSON.parse(audited.slice(audited.indexOf('\n') + 1)).authorMemory, memory);
+    assert.equal(auditActivity, activity, 'auditWorkflow forwards activity to generate');
     // Without memory nothing changes for them.
     await delegateTo(f.root, notes, delegateArgs, async (_worker, prompt, _signal, edit) => { delegated = prompt; fs.writeFileSync(path.join(edit!.cwd, 'main.tex'), 'First paragraph, again.\n\nSecond paragraph.\n'); return 'Done.'; }, signal(), () => true, role => routes[role]);
     assert.equal(JSON.parse(delegated.slice(delegated.indexOf('\n') + 1)).authorMemory, undefined);
