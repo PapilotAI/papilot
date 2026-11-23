@@ -22,6 +22,9 @@ interface PagePaint {
   list: mupdf.DisplayList;
   operations: Operation[];
 }
+const shadeFinalizer = () =>
+  (mupdf.Shade as unknown as { _finalizer: FinalizationRegistry<number> })
+    ._finalizer;
 const hash = (value: string | Uint8Array | Uint8ClampedArray) =>
   createHash("sha256").update(value).digest("hex");
 const box =
@@ -260,6 +263,10 @@ function collect(
       );
     },
     fillShade(shade, matrix, alpha) {
+      // mupdf.js wraps the shading without taking a reference yet frees it
+      // when the wrapper is collected, releasing a shading the document's
+      // resource cache still holds. The callback only borrows it.
+      shadeFinalizer().unregister(shade);
       if (!omit.has(sequence)) target.fillShade(shade, matrix, alpha);
       const rect = intersect(
           mupdf.Rect.transform(shade.getBounds(), matrix),
