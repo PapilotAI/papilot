@@ -51,7 +51,7 @@ import { npmCli } from '../../bin/npm-cli.mjs';
 import { agentSdkFolder, managedInstall } from '../../bin/installation.mjs';
 export { agentDirs, findExecutable };
 
-export interface Thread { permissions?: TaskPermissions; readOnly?: boolean; ephemeral?: boolean; webSearch?: boolean; cwd: string; instructions: string; model: string | null; started: boolean }
+export interface Thread { permissions?: TaskPermissions; readOnly?: boolean; ephemeral?: boolean; webSearch?: boolean; mcp?: { command: string; args: string[] }; cwd: string; instructions: string; model: string | null; started: boolean }
 export interface Turn { id: string; threadId: string; clientId?: string; status: 'inProgress' | 'completed' | 'interrupted' | 'failed'; stop: () => void }
 export interface Item { id: string; type: string; [key: string]: unknown }
 
@@ -78,7 +78,7 @@ export abstract class Adapter extends EventEmitter implements AgentRuntime {
       const id = method === 'thread/start' ? randomUUID() : String(params.threadId);
       const known = this.threads.get(id);
       const model = params.model || known?.model || null;
-      this.threads.set(id, { permissions: params.taskPermissions, readOnly: params.sandbox === 'read-only', ephemeral: Boolean(params.ephemeral || known?.ephemeral), webSearch: params.sandbox !== 'read-only' && params.config?.web_search === 'live', cwd: params.cwd, instructions: params.developerInstructions || '', model, started: method === 'thread/resume' || Boolean(known?.started) });
+      this.threads.set(id, { permissions: params.taskPermissions, readOnly: params.sandbox === 'read-only', ephemeral: Boolean(params.ephemeral || known?.ephemeral), webSearch: params.sandbox !== 'read-only' && params.config?.web_search === 'live', ...(params.sandbox !== 'read-only' && params.mcp ? { mcp: params.mcp } : {}), cwd: params.cwd, instructions: params.developerInstructions || '', model, started: method === 'thread/resume' || Boolean(known?.started) });
       return { thread: { id }, model };
     }
     if (method === 'turn/start') {
@@ -195,6 +195,9 @@ export const CLAUDE_CLI_MODELS = [
 interface ClaudeLogin { loggedIn?: boolean; authMethod?: string; apiProvider?: string; email?: string; subscriptionType?: string }
 type Launch = (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => ChildProcess;
 
+// Tools Claude may use without asking: web search when the task allows it,
+// and Papilot's own tools, which only reach this paper's PDF, library and memory.
+const allowed = (thread: Thread) => [...(thread.webSearch ? ['WebSearch', 'WebFetch'] : []), ...(thread.mcp ? ['mcp__papilot'] : [])];
 export class ClaudeAgent extends Adapter {
   permissionOptions(): TaskPermissionOption[] {
     return [
@@ -375,7 +378,8 @@ export class ClaudeAgent extends Adapter {
       const permissions = this.nativePermissions(thread);
       const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
         ...(thread.readOnly ? ['--tools', ''] : []),
-        ...(thread.webSearch ? ['--allowedTools', 'WebSearch,WebFetch'] : []),
+        ...(allowed(thread).length ? ['--allowedTools', allowed(thread).join(',')] : []),
+        ...(thread.mcp ? ['--mcp-config', JSON.stringify({ mcpServers: { papilot: { type: 'stdio', ...thread.mcp } } })] : []),
         '--permission-mode', permissions.permissionMode, ...(permissions.allowDangerouslySkipPermissions ? ['--dangerously-skip-permissions'] : []), '--permission-prompts', 'none', '--setting-sources', thread.readOnly ? '' : 'project',
         '--settings', JSON.stringify({ sandbox: permissions.sandbox }),
         // A question cannot be answered in -p; Claude asks in its reply instead.
@@ -421,7 +425,8 @@ export class ClaudeAgent extends Adapter {
         ...(thread.started ? { resume: turn.threadId } : { sessionId: turn.threadId }),
         systemPrompt: { type: 'preset', preset: 'claude_code', append: thread.instructions },
         settingSources: thread.readOnly ? [] : ['project'], ...this.nativePermissions(thread), ...(thread.readOnly ? { tools: [] } : {}),
-        ...(thread.webSearch ? { allowedTools: ['WebSearch', 'WebFetch'] } : {}),
+        ...(allowed(thread).length ? { allowedTools: allowed(thread) } : {}),
+        ...(thread.mcp ? { mcpServers: { papilot: { type: 'stdio' as const, ...thread.mcp } } } : {}),
         canUseTool: (name, input, { signal, title, decisionReason }) => new Promise<PermissionResult>(resolve => {
           // Native permissionMode/allowedTools handle automatic approvals.
           // Calls still reaching this callback require a decision, including

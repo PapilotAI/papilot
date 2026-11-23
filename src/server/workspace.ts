@@ -1109,7 +1109,10 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       const scope = task.mode === 'review' ? [] : await this.reviewScope(task), codex = usesCodex(this.agentOf(task));
       const freshThread = !task.threadId;
       let viewPdf = task.mode !== 'review' && codex && (task.threadId ? Boolean(task.viewPdf) : !this.noViewPdf);
-      const options = (tool: boolean) => ({ cwd: task.worktree, approvalPolicy: 'on-request', sandbox: 'workspace-write', ...permissions?.thread, ...reviewer, config: { web_search: 'live', 'sandbox_workspace_write.network_access': true }, developerInstructions: this.instructions(task, scope, tool, memory) + (this.agentOf(task) === 'collaboration' ? '\n\n' + workflowInstructions(this.collaborationRoutes) : ''), ...(task.model ? { model: task.model } : {}) });
+      // Agents that start MCP servers get Papilot's tools natively; the
+      // others use the JSON client named in each turn's instructions.
+      const mcp = this.paperTools && task.mode !== 'review' && !codex && this.agentOf(task) !== 'papilot' ? { command: process.execPath, args: [path.join(ROOT, 'bin/papilot-mcp.mjs'), this.toolBridge.file(task.id)] } : undefined;
+      const options = (tool: boolean) => ({ cwd: task.worktree, approvalPolicy: 'on-request', sandbox: 'workspace-write', ...permissions?.thread, ...reviewer, ...(mcp ? { mcp } : {}), config: { web_search: 'live', 'sandbox_workspace_write.network_access': true }, developerInstructions: this.instructions(task, scope, tool, memory) + (this.agentOf(task) === 'collaboration' ? '\n\n' + workflowInstructions(this.collaborationRoutes) : ''), ...(task.model ? { model: task.model } : {}) });
       let result;
       if (task.threadId) result = await agent.request('thread/resume', { ...options(viewPdf), threadId: task.threadId, excludeTurns: true });
       else {
@@ -1162,7 +1165,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       if (this.agentOf(task) !== 'papilot') {
         const file = await this.toolBridge.open(task.id, current, (tool, args) => this.paperTools!(this.store.task(task.id), tool, args, current));
         // JSON quoting is for the model to see arguments, never executed as shell code here.
-        paperInstructions += `\nUse native paper tools when available. Otherwise run the local JSON client: ${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(ROOT, 'bin/paper-tools.mjs'))} ${JSON.stringify(file)} TOOL JSON. Use help for schemas; pass @FILE or - (stdin) to avoid shell quoting of comments. The session file is private; do not print it. It works only during this turn.`;
+        paperInstructions += `\nUse native paper tools when available (the papilot MCP server's tools). Otherwise run the local JSON client: ${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(ROOT, 'bin/paper-tools.mjs'))} ${JSON.stringify(file)} TOOL JSON. Use help for schemas; pass @FILE or - (stdin) to avoid shell quoting of comments. The session file is private; do not print it. It works only during this turn.`;
       }
       if (!current()) return;
     }

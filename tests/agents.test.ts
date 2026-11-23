@@ -1079,3 +1079,27 @@ for (const transport of ['sdk', 'cli'] as const) test(`Claude ${transport} match
     assert.deepEqual(seen.filter(e => e.method === 'item/completed' && e.params.item.type === 'agentMessage').map(e => e.params.item.id), ['msg_reply:1', 'msg_reply:2', 'msg_reply:2']);
   } finally { agent.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('Claude task threads get Papilot\'s MCP server and may use its tools; read-only helpers do not', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-claude-mcp-'));
+  const mcp = { command: process.execPath, args: ['/papilot/bin/papilot-mcp.mjs', path.join(dir, 'task.json')] };
+  let agent: ClaudeAgent | undefined;
+  try {
+    const fake = fakeClaudeCli(dir, { loggedIn: true, authMethod: 'claude.ai' }, [[{ type: 'result', subtype: 'success', is_error: false, result: 'Done.' }], [{ type: 'result', subtype: 'success', is_error: false, result: 'Done.' }]]);
+    agent = new ClaudeAgent(async () => { throw Error('No SDK needed'); }, () => fake.bin, fake.launch as any);
+    await agent.start(); let seen = events(agent);
+    const { thread } = await agent.request('thread/start', { cwd: dir, sandbox: 'workspace-write', config: { web_search: 'live' }, mcp });
+    await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Remember that I prefer "we".' }] });
+    assert.equal((await completed(seen)).status, 'completed');
+    let args = fake.launches[0].args;
+    assert.deepEqual(JSON.parse(args[args.indexOf('--mcp-config') + 1]), { mcpServers: { papilot: { type: 'stdio', ...mcp } } });
+    assert.equal(args[args.indexOf('--allowedTools') + 1], 'WebSearch,WebFetch,mcp__papilot');
+    seen = events(agent);
+    const helper = await agent.request('thread/start', { cwd: dir, sandbox: 'read-only', developerInstructions: 'Reply only.', mcp });
+    await agent.request('turn/start', { threadId: helper.thread.id, input: [{ type: 'text', text: 'Write a title.' }] });
+    assert.equal((await completed(seen)).status, 'completed');
+    args = fake.launches[1].args;
+    assert.equal(args.includes('--mcp-config'), false);
+    assert.equal(args.includes('--allowedTools'), false);
+  } finally { agent?.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});

@@ -283,18 +283,18 @@ export class AcpAgent extends Adapter {
       // After reconnecting, the CLI may restore a different model from disk.
       const retained = resumed ? this.threads.get(String(params.threadId)) : undefined;
       const known = resumed && this.sessions.has(String(params.threadId)) ? retained : undefined;
-      const session = await this.session(resumed ? String(params.threadId) : null, params.cwd, params.model, permissions);
+      const session = await this.session(resumed ? String(params.threadId) : null, params.cwd, params.model, permissions, readOnly ? undefined : params.mcp);
       const model = params.model || known?.model || sessionModel(session) || null;
-      this.threads.set(session.sessionId, { cwd: params.cwd, instructions: params.developerInstructions || '', model, started: retained?.started ?? resumed, permissions, readOnly });
+      this.threads.set(session.sessionId, { cwd: params.cwd, instructions: params.developerInstructions || '', model, started: retained?.started ?? resumed, permissions, readOnly, ...(params.mcp && !readOnly ? { mcp: params.mcp } : {}) });
       return { thread: { id: session.sessionId }, model };
     }
     return super.request(method, params);
   }
-  private async session(id: string | null, cwd: string, model?: string | null, permissions: TaskPermissions = 'workspace'): Promise<Session> {
+  private async session(id: string | null, cwd: string, model?: string | null, permissions: TaskPermissions = 'workspace', mcp?: { command: string; args: string[] }): Promise<Session> {
     let session = id ? this.sessions.get(id) : undefined;
     if (!session) {
       if (id && !this.capabilities.loadSession && !this.capabilities.sessionCapabilities?.resume) throw new Error(`This ${this.name} version cannot resume sessions. Update it.`);
-      const result = await this.rpc(id ? this.capabilities.sessionCapabilities?.resume ? 'session/resume' : 'session/load' : 'session/new', { ...(id ? { sessionId: id } : {}), cwd, mcpServers: [], ...(this.profile.sessionMeta ? { _meta: this.profile.sessionMeta } : {}) });
+      const result = await this.rpc(id ? this.capabilities.sessionCapabilities?.resume ? 'session/resume' : 'session/load' : 'session/new', { ...(id ? { sessionId: id } : {}), cwd, mcpServers: mcp ? [{ name: 'papilot', command: mcp.command, args: mcp.args, env: [] }] : [], ...(this.profile.sessionMeta ? { _meta: this.profile.sessionMeta } : {}) });
       session = { ...result, sessionId: id || result.sessionId };
       if (!session!.sessionId) throw new Error(`${this.name} did not return a session ID.`);
       this.sessions.set(session!.sessionId, session!);
@@ -440,7 +440,7 @@ export class AcpAgent extends Adapter {
     };
     try {
       const permissions = thread.readOnly ? (this.profile.id === 'deepseek' ? 'read-only' : 'workspace') : thread.permissions;
-      const session = await this.session(turn.threadId, thread.cwd, thread.model, permissions);
+      const session = await this.session(turn.threadId, thread.cwd, thread.model, permissions, thread.mcp);
       const option = session.configOptions?.find(option => option.category === 'thought_level' || option.id === 'thinking');
       const defaultEffort = choices(option).some(choice => choice.value === 'default') ? 'default' : this.catalog.find(model => model.model === thread.model)?.defaultReasoningEffort;
       const chosenEffort = effort || defaultEffort;

@@ -212,7 +212,7 @@ export async function buildApp(options: AppOptions) {
     },
     citations: async projectId => (await citations(store.project(projectId).path, papers())).sentences,
     record: (projectId, record) => recordFinding(store.project(projectId).path, record, papers()),
-  });
+  }, { memory: () => workspace.memory, changed: projectId => refreshManuscript(projectId) });
   workspace.paperTools = async (...args) => {
     const result = await paperTools.call(...args);
     if (['annotation_create', 'annotation_update', 'annotation_delete', 'annotation_restore'].includes(args[1])) manuscripts.emit('change');
