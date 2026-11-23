@@ -2351,12 +2351,16 @@ export function ReviewApp({
     document.addEventListener("visibilitychange", look);
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", look); };
   }, [task, paperView, changes, Boolean(state?.csrf)]);
-  // A host shows its PDF navigation controls while the whole paper is shown.
+  // A host shows its PDF navigation controls while the whole paper is shown,
+  // and keeps their place while the round's comparison renders again.
+  const paperPending = !paperView && !paperUnavailable && !detail?.sourceOnly
+    && (detail?.rendering === "pending" || Boolean(state?.job && ["queued", "running"].includes(state.job.status)));
   useEffect(() => {
     const root = document.documentElement;
     if (paperView) root.dataset.fullPaper = "available";
+    else if (paperPending) root.dataset.fullPaper = "pending";
     else delete root.dataset.fullPaper;
-  }, [paperView]);
+  }, [paperView, paperPending]);
   useEffect(() => {
     const root = document.documentElement;
     if (detail?.round) {

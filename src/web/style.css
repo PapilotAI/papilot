@@ -775,10 +775,8 @@ body.resizing iframe{pointer-events:none}
 .pdf-pager input{width:40px;height:24px;padding:0 4px;text-align:center;border:1px solid transparent;border-radius:var(--r);font-size:12px;font-variant-numeric:tabular-nums;outline:none;background:var(--bg-muted)}
 .pdf-pager input:focus{border-color:var(--accent);box-shadow:none;background:var(--bg)}
 .pdf-pager input:hover:not(:focus){border-color:var(--line)}
-/* The complete PDF still compiles while an earlier version shows: an
-   indeterminate progress in a slot of its own, so the toolbar keeps its width. */
-.pdf-preparing-slot{display:inline-flex;align-items:center;justify-content:center;flex:none;width:20px;height:16px}
-progress.pdf-preparing{appearance:none;width:12px;height:12px;border:2px solid var(--line-strong);border-top-color:var(--text-2);border-radius:50%;background:none;animation:spin .8s linear infinite}
+/* The complete PDF still compiles while an earlier version shows: an indeterminate progress. */
+progress.pdf-preparing{appearance:none;flex:none;width:12px;height:12px;margin:0 4px;border:2px solid var(--line-strong);border-top-color:var(--text-2);border-radius:50%;background:none;animation:spin .8s linear infinite}
 progress.pdf-preparing::-webkit-progress-bar,progress.pdf-preparing::-webkit-progress-value{background:none}
 progress.pdf-preparing::-moz-progress-bar{background:none}
 .pdf-pages{min-width:34px;padding-left:4px;color:var(--text-3);font-variant-numeric:tabular-nums}

@@ -26,9 +26,8 @@ function PdfPreparing({ since }: { since: number }) {
 
 export function PdfPageControls({ page, pages, zoom, preparing, onPage, onZoom, onZoomBy }: {
   page: number; pages: number; zoom: { value: string; scale: number };
-  /** Since when the complete PDF has compiled while an earlier one shows;
-   *  null keeps the indicator's place for when it does. */
-  preparing?: number | null;
+  /** Since when the complete PDF has compiled while an earlier one shows. */
+  preparing?: number;
   onPage: (page: number) => void; onZoom: (value: string) => void; onZoomBy: (factor: number) => void;
 }) {
   const [input, setInput] = useState(String(page));
@@ -47,7 +46,7 @@ export function PdfPageControls({ page, pages, zoom, preparing, onPage, onZoom, 
         e.currentTarget.blur();
       }}/>
       <span className="pdf-pages">/ {pages || '–'}</span>
-      {preparing !== undefined && <span className="pdf-preparing-slot">{preparing !== null && <PdfPreparing since={preparing}/>}</span>}
+      {preparing !== undefined && <PdfPreparing since={preparing}/>}
       <button type="button" className="icon-button" aria-label={t('Next page')} disabled={page >= pages} onClick={() => onPage(page + 1)}><Icon name="chevronDown" size={16}/></button>
     </div>
     <div className="pdf-zoom">
@@ -58,8 +57,8 @@ export function PdfPageControls({ page, pages, zoom, preparing, onPage, onZoom, 
   </>;
 }
 
-export function PdfFindButton({ open, onClick, className = 'icon-button' }: { open: boolean; onClick: () => void; className?: string }) {
-  return <button type="button" className={className + (open ? ' active' : '')} aria-label={t('Find in PDF')} aria-pressed={open} title={t('Find (⌘F)')} onClick={onClick}><Icon name="search" size={16}/></button>;
+export function PdfFindButton({ open, onClick, disabled = false, className = 'icon-button' }: { open: boolean; onClick: () => void; disabled?: boolean; className?: string }) {
+  return <button type="button" className={className + (open ? ' active' : '')} aria-label={t('Find in PDF')} aria-pressed={open} title={t('Find (⌘F)')} disabled={disabled} onClick={onClick}><Icon name="search" size={16}/></button>;
 }
 
 export function PdfFind({ inputRef, query, matches, notFound, onQuery, onNext, onClose }: {

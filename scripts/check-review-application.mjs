@@ -225,8 +225,10 @@ try {
     assert.deepEqual(await viewer().locator('body').evaluate(() => window.readyWhileUnavailable), [], 'no transient ready toast while comparisons build or fail');
   };
   f.edit(retry, 'paper/first.tex', 'Recovery first', 'Updated first');
-  // Platform fonts can wrap the toolbar; compilation keeps whatever height it has.
+  // Platform fonts can wrap the toolbar; compilation keeps whatever height it
+  // has once the whole paper and its PDF controls are shown.
   const bar = viewer().locator('.bar');
+  await expect(page.locator('.review-host-bar').getByRole('textbox', { name: 'Page number', exact: true })).toBeVisible();
   await bar.evaluate(el => el.ownerDocument.fonts.ready);
   const barHeight = await bar.evaluate(el => el.offsetHeight);
   fs.writeFileSync(hold, '');

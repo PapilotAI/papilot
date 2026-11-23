@@ -12,6 +12,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 ### Fixed
 
 - **Comparing PDFs with gradient fills no longer fails or misses drawing changes at random.** Comparing the drawings of a PDF with a shading, such as a TikZ or Beamer gradient, released the shading while the PDF reader still used it once memory was reclaimed. The PDF comparison could then fail with "Rendering the PDF comparison failed." or leave out a changed drawing. ([#328](https://github.com/PapilotAI/papilot/pull/328))
+- **A review's toolbar no longer jumps between one and two rows when the comparison rebuilds.** The PDF controls left the toolbar while the round's comparison rendered again, so on a narrow window the toolbar changed rows and moved the pages. They now stay in place, disabled, until the whole paper is back. ([#332](https://github.com/PapilotAI/papilot/pull/332))
 - **Text can be selected anywhere on a review's whole-paper PDF.** Only the changes' before and after rows could be selected, because the rest of each page was drawn as an image. The pages now carry a text layer, as the manuscript's PDF does, and a drag through the margin stops at the line's end. ([#332](https://github.com/PapilotAI/papilot/pull/332))
 
 ## [0.14.0] - 2026-11-23
