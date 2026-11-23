@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import v8 from "node:v8";
+import vm from "node:vm";
 import { Strips } from "../../src/render/inline.ts";
 import { changesOf, shownBy, renderPlace } from "../../src/render/effects.ts";
 import type { Build } from "../../src/render/locate.ts";
@@ -218,6 +220,34 @@ it("handles unbounded axial shading within finite page bounds", () => {
       },
     }));
   expect(paintChanges(shaded([0, 0, 1]), shaded([0, 1, 0]))).toHaveLength(1);
+});
+it("keeps a document's shading usable after garbage collection", async () => {
+  v8.setFlagsFromString("--expose-gc");
+  const gc = vm.runInNewContext("gc") as () => void;
+  const shaded = (end: number[]) =>
+    pdf("/Sh sh", () => ({
+      Shading: {
+        Sh: {
+          ShadingType: 2,
+          ColorSpace: "DeviceRGB",
+          Coords: [0, 0, 300, 0],
+          Function: {
+            FunctionType: 2,
+            Domain: [0, 1],
+            C0: [1, 0, 0],
+            C1: end,
+            N: 1,
+          },
+        },
+      },
+    }));
+  const before = shaded([0, 0, 1]),
+    after = shaded([0, 1, 0]);
+  for (let round = 0; round < 3; round++) {
+    expect(paintChanges(before, after)).toHaveLength(1);
+    gc();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 });
 
 it.each([

@@ -6,7 +6,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Fixed
 
-- **Typing a paper name right away no longer clears where the paper is saved.** In **New paper**, the default folder arrives just after the dialog opens; typing the name at that moment could put back the empty folder from before it arrived. The import dialog's fields update the same safe way. ([#330](https://github.com/PapilotAI/papilot/pull/330))
+
 
 ## [0.14.0] - 2026-11-23
 
