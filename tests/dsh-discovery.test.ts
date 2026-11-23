@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
-import { findExecutable, WINDOWS } from '../bin/agent-paths.mjs';
+import { agentDirs, findExecutable, WINDOWS } from '../bin/agent-paths.mjs';
 
 function fixture(t: test.TestContext) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-dsh-中文 & '));
@@ -85,4 +85,13 @@ test('non-Windows executable lookup does not query the Windows registry', { skip
   const query = f.registry(() => { throw new Error('Windows discovery must not run'); });
   assert.equal(findExecutable('dsh', f.env), null);
   assert.equal(query.mock.callCount(), 0);
+});
+
+test('the dsh command inside the DeepSeek Harness app for macOS is found after the usual places', () => {
+  const home = path.join(os.tmpdir(), 'papilot-dsh-home');
+  const dirs = agentDirs({ HOME: home, USERPROFILE: home });
+  const bundle = (apps: string) => path.join(apps, 'DeepSeek Harness.app/Contents/Resources/runtime/cli/bin');
+  const system = dirs.indexOf(bundle('/Applications')), personal = dirs.indexOf(bundle(path.join(home, 'Applications')));
+  assert.ok(system > dirs.indexOf('/usr/local/bin'), 'a dsh installed on PATH or with Homebrew comes first');
+  assert.ok(personal > system);
 });

@@ -356,6 +356,7 @@ export class Workspace extends EventEmitter {
         data: { role: task.mode === 'review' ? 'review' : 'edit', status: 'interrupted', finishedAt, ...(this.projectName(task.projectId) ? { projectName: this.projectName(task.projectId) } : {}) },
       }, true);
       this.settleHandoff(task, task.turnId, false);
+      this.store.settleSteps(taskId);
       this.holdForReview(taskId, { status: 'interrupted', turnId: null, error: `${AGENT_NAMES[id]} disconnected. You can resume the same task.` });
     }
     if (usesCodex(id)) { this.loaded.clear(); this.codexUsage.clear(); }
@@ -1074,6 +1075,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     this.stopWorkflow(run.taskId);
     this.active.delete(run.taskId);
     this.earlyCompletions.delete(run.taskId); this.earlyRequests.delete(run.taskId);
+    this.store.settleSteps(run.taskId);
     const finishedAt = Date.now(), task = this.store.task(run.taskId), id = this.agentOf(task);
     this.store.saveRun({ ...run, status: 'failed', finishedAt });
     this.store.recordActivity({
@@ -1305,6 +1307,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         data: { role: latestTask.mode === 'review' ? 'review' : 'edit', status, finishedAt, ...(this.projectName(latestTask.projectId) ? { projectName: this.projectName(latestTask.projectId) } : {}) },
       }, true);
       this.settleHandoff(task, eventTurn, status === 'completed');
+      if (status !== 'completed') this.store.settleSteps(task.id);
       const ended = { turnId: null, pendingRunId: null, error: p.turn.error?.message || null };
       // A completed turn builds; publish() holds that build for the action.
       if (status === 'completed') this.store.updateTask(task.id, { ...ended, status: 'building' });

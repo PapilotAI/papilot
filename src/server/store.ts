@@ -201,6 +201,10 @@ export class Store extends EventEmitter {
     this.itemRevisions.delete(id);
     this.emit('change');
   }
+  // A turn that ended without finishing its steps leaves none of them running.
+  settleSteps(taskId: string) {
+    for (const item of this.items(taskId)) if (item.status === 'inProgress') this.saveItem({ ...item, status: 'interrupted' });
+  }
   transaction<T>(fn: () => T): T { this.db.exec('BEGIN IMMEDIATE'); try { const result = fn(); this.db.exec('COMMIT'); return result; } catch (e) { this.db.exec('ROLLBACK'); throw e; } }
   recover() {
     this.transaction(() => {
@@ -210,6 +214,7 @@ export class Store extends EventEmitter {
       for (const r of this.runs().filter(r => r.status === 'running')) {
         const finishedAt = Date.now();
         this.saveRun({ ...r, status: 'interrupted', finishedAt });
+        this.settleSteps(r.taskId);
         const task = this.findTask(r.taskId);
         this.recordActivity({ key: `turn:${r.id}`, at: r.createdAt, kind: 'agent_turn', projectId: task?.projectId, taskId: r.taskId, agent: task?.agent || 'codex', model: task?.model, data: { role: task?.mode === 'review' ? 'review' : 'edit', status: 'interrupted', finishedAt } }, true);
       }
