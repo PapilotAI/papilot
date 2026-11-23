@@ -44,17 +44,6 @@ export class AttachmentDraft {
     if (files.length) this.storage.setItem(this.key, JSON.stringify(files)); else this.storage.removeItem(this.key);
     for (const listener of this.listeners) listener();
   }
-  // A replacement can be opened before its restart response arrives. Merge
-  // copied files into that live draft without discarding new files or uploads.
-  restore(files: Attachment[]) {
-    const ids = new Set(this.entries.flatMap(entry => entry.attachment ? [entry.attachment.id] : []));
-    for (const file of files) {
-      if (ids.has(file.id)) continue;
-      ids.add(file.id);
-      this.entries = [...this.entries, { key: file.id, name: file.name, size: file.size, attachment: file, uploading: false }];
-    }
-    this.changed();
-  }
   async add(files: File[], upload: UploadAttachment) {
     this.error = '';
     const added: DraftAttachment[] = [];

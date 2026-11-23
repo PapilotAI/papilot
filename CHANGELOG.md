@@ -8,6 +8,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 - Add **Settings → Statistics**, which shows what Papilot has done for you across all papers or per paper. Big figures for accepted and rejected changes, agent working time, and tasks started sit above an activity calendar with active days and streaks that pages back through history. Cards follow with your acceptance rate, token usage and provider-reported or API-equivalent spend, a weekday-by-hour heatmap of active hours, and agents and models. **Share** turns the figures and recent activity into an image to save or copy. Activity records are stored locally in SQLite, backfilled from existing workspace history on upgrade, and preserved when tasks or papers are removed.
 
+### Changed
+
+- Switch a task to another agent without leaving it. Choosing another agent's model in the menu below the chat keeps the conversation, changes, review and unsent drafts in the same task, instead of rerunning the first request in a new task. The next turn starts that agent's session with the conversation so far, so it continues from where the previous agent stopped. A turn in progress stops first, and instructions queued behind it go to the new agent. A task whose repository moved also hands its conversation to the next session.
+
 ## [0.13.0] - 2026-11-22
 
 Review changes directly in place on the full PDF, decide individual annotations that share a paragraph, sort and organize manuscript notes, and choose a dedicated Git conflict-resolution agent. See the [release notes](docs/releases/0.13.0/release-notes.md) for update instructions.

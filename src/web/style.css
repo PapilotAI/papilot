@@ -585,9 +585,6 @@ body.resizing iframe{pointer-events:none}
 .model-option-agent{margin-left:auto}
 .model-option-agent+svg{margin-left:0}
 .model-option-agent.warn{color:var(--amber-text)}
-.model-option-restart{display:flex;flex:none;margin-left:auto;color:var(--text-3)}
-.model-option-restart svg{stroke-width:1.5}
-.model-option-agent+.model-option-restart{margin-left:0}
 .model-empty{padding:14px 8px;font-size:12px;color:var(--text-3)}
 .agent-picker-panel>.agent-connection{margin:8px 2px 2px}
 .agent-picker-panel>.agent-effort,.agent-picker-panel>.agent-fast{margin-left:0;margin-right:0;padding-left:6px;padding-right:6px}

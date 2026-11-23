@@ -1,8 +1,6 @@
 // Simplified Chinese for the workspace, keyed by the English text (see i18n.ts).
 // Chinese text keeps a space around numbers and Latin words: "修改 2", "PDF 批注".
 export const zhCN: Record<string, string> = {
-  'Stopping and restarting…': '正在停止并重新开始…',
-  'Restart task': '重新开始任务',
   'Restarted from': '原任务',
   'Replacement task': '替代任务',
   'Switch tasks and manuscript': '快速切换任务和稿件',

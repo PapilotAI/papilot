@@ -43,8 +43,12 @@ export interface TaskReconciliation {
 export type TaskPermissions = string;
 export interface TaskPermissionOption { value: TaskPermissions; label: string; detail: string }
 export interface Task {
-  // A fresh session replaying another task's original request. Provider sessions are never reused.
+  // Papilot 0.13 and earlier switched agents by replaying a task's original
+  // request in a new task; such a task links to the one it replaced.
   restart?: { taskId: string; draftAttachments?: Attachment[] };
+  // The agent's session has not seen the task's earlier conversation, as
+  // after switching agents; its next turn is given it.
+  handoff?: boolean;
   permissions?: TaskPermissions;
   mode?: 'edit' | 'review';
   aiReview?: { key: string; notes?: number; revision?: number };
@@ -84,7 +88,8 @@ export function taskFinished(task: Task) {
 // reviewRound is 0 while awaiting a result, null when no changes were produced,
 // or the published round. Older runs omit it. model is the one the turn started
 // with; usage records keep it when the task's model changes during the turn.
-export interface Run { workflowAudit?: { fingerprint: string; report: string; files: string[] }; id: string; taskId: string; requestKey: string; prompt: string; model?: string | null; attachments?: Attachment[]; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; finishedAt: number | null; reviewRound?: number | null; noteRounds?: Record<number, number>; noteOptionsRequested?: boolean; noteOptions?: PreparedNoteOptions[] }
+// startedAt: when Papilot sent the run to its agent; a run cancelled while queued has none.
+export interface Run { workflowAudit?: { fingerprint: string; report: string; files: string[] }; id: string; taskId: string; requestKey: string; prompt: string; model?: string | null; attachments?: Attachment[]; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; startedAt?: number; finishedAt: number | null; reviewRound?: number | null; noteRounds?: Record<number, number>; noteOptionsRequested?: boolean; noteOptions?: PreparedNoteOptions[] }
 /** One part of what fills the context window; ids are named in the web app. */
 export interface ContextPart { id: string; tokens: number }
 /** breakdown: the parts, when the agent can tell them apart, adding up to the window. */
