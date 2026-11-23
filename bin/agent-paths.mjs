@@ -39,6 +39,9 @@ export function agentDirs(env = process.env) {
     '/etc/profiles/per-user/' + path.basename(home) + '/bin', '/run/current-system/sw/bin', '/nix/var/nix/profiles/default/bin',
     ...['.local/bin', '.claude/local', '.kimi-code/bin', '.grok/bin', '.opencode/bin', '.bun/bin', '.npm-global/bin'].map(dir => path.join(home, dir)),
     '/opt/homebrew/bin', '/usr/local/bin',
+    // The DeepSeek Harness app for macOS carries its dsh command inside the
+    // bundle, off PATH until the author registers it; a dsh found above wins.
+    ...['/Applications', path.join(home, 'Applications')].map(apps => path.join(apps, 'DeepSeek Harness.app/Contents/Resources/runtime/cli/bin')),
     ...(WINDOWS ? [path.join(appData, 'npm'), path.join(localAppData, 'Programs'), path.join(home, '.volta/bin'),
       path.join(localAppData, 'agy/bin'), path.join(localAppData, 'Programs/DeepSeek Harness/resources/runtime/cli/bin'),
       path.join(home, 'scoop/shims'), path.join(programData, 'chocolatey/bin'), path.join(programFiles, 'nodejs'),

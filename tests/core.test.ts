@@ -17,9 +17,13 @@ test('restart preserves queued instructions and marks in-flight work interrupted
     const task: Task = { id: 'task', projectId: 'paper', name: 'task', title: 'Example', instructions: 'Edit', worktree: '/tmp/example', threadId: 'thread', turnId: 'turn', model: null, status: 'running', createdAt: 1, updatedAt: 1, feedbackCursor: 42, error: null, review: null };
     store.saveTask(task);
     const run: Run = { id: 'run', taskId: task.id, requestKey: 'request', prompt: 'Keep this feedback', status: 'running', createdAt: 1, finishedAt: null };
-    store.saveRun(run); store.saveRun({ ...run, id: 'next', requestKey: 'next-request', status: 'queued' }); store.close();
+    store.saveRun(run); store.saveRun({ ...run, id: 'next', requestKey: 'next-request', status: 'queued' });
+    store.saveItem({ id: 'search', taskId: task.id, type: 'tool', text: 'grep', status: 'inProgress', createdAt: 2 });
+    store.saveItem({ id: 'read', taskId: task.id, type: 'tool', text: 'read', status: 'completed', createdAt: 3 });
+    store.close();
     const restarted = new Store(path.join(folder, 'state.sqlite')); restarted.recover();
     assert.equal(restarted.task('task').status, 'interrupted');
+    assert.deepEqual(restarted.items('task').map(item => item.status), ['interrupted', 'completed'], 'no step of the interrupted turn keeps running');
     assert.equal(restarted.task('task').threadId, 'thread');
     assert.equal(restarted.task('task').feedbackCursor, 42);
     assert.equal(restarted.runByKey('next-request')?.status, 'queued');

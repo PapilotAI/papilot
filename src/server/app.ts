@@ -30,6 +30,7 @@ import { captureAnchor, resolveAnchors, isSourceAnchor } from './manuscript-anch
 import { gitOverview } from './git-overview.ts';
 import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import { registerSkillRoutes } from './skill-routes.ts';
+import { registerMemoryRoutes } from './memory-routes.ts';
 import { type Listener, equals, guard } from './access.ts';
 import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type Annotation, type AnnotationBatch, type AnnotationBatchResult, type NoteReturnState, type NoteSummary, type QuickNote, type SourceFile, type Task } from '../shared.ts';
 import type { SourceFileRead } from '../../engine/src/types.ts';
@@ -234,6 +235,7 @@ export async function buildApp(options: AppOptions) {
   await app.register(compress);
   app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
   registerSkillRoutes(app, store);
+  registerMemoryRoutes(app, store, () => workspace.memory, refreshManuscript);
   registerAiReviewRoutes(app, store, manuscripts);
   const project = (param = 'id') => ({ config: { resource: { project: param } } }), task = { config: { resource: { task: 'id' } } };
   registerOverleafRoutes(app, overleaf, () => project(), request => isLocalRequest(request.headers, listener.port));
@@ -842,6 +844,8 @@ export async function buildApp(options: AppOptions) {
     const retryCommit = b.message === undefined && task.delivery?.mode === 'commit' && task.delivery.pending;
     const result = await serialGit(task.projectId, () => workspace.applyTask(task.id, b.keepCurrent === true, b.mode === 'commit' ? { message: retryCommit ? undefined : string(b.message, 'Commit message', 5000), ...(b.confirmation ? { confirmation: string(b.confirmation, 'Commit confirmation', 100) } : {}) } : undefined));
     if (delivered(result.delivery)) refreshManuscript(task.projectId);
+    // Applied without a commit message, the task still offers what Papilot noticed.
+    workspace.learnOnSave(task.id);
     return result;
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/commit-message', task, request => {

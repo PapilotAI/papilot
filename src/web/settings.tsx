@@ -27,20 +27,21 @@ import { LatexSettings } from './latex-settings.tsx';
 import { ExperimentSettings } from './experiment-settings.tsx';
 import { UpdateSettings, versionLabel, type UpdateApi } from './update-notice.tsx';
 import { SkillLibraryPanel, type SkillLibraryControls, type SkillLibraryOptions } from './skill-library.tsx';
+import { MemorySettings, type MemorySettingsOptions } from './memory-settings.tsx';
 import type { CollaborationSettingsProps } from './collaboration-settings.tsx';
 import { ModelDefaultSettings, type ModelDefaultSettingsProps } from './model-default-settings.tsx';
 import { ActivitySettings, type LoadActivity } from './activity-settings.tsx';
 import { OverleafAccounts } from './overleaf.tsx';
 import type { OverleafState } from '../shared.ts';
 
-type SettingsPage = 'general' | 'appearance' | 'notifications' | 'review' | 'quickNotes' | 'shortcuts' | 'statistics' | 'about' | 'licenses' | 'agents' | 'git' | 'latex' | 'skills' | 'updates' | 'overleaf' | 'experiments';
-export type SettingsInitialPage = 'general' | 'shortcuts' | 'quickNotes' | 'statistics' | 'git' | 'git-conflicts' | 'latex' | 'agents';
+type SettingsPage = 'general' | 'appearance' | 'notifications' | 'review' | 'quickNotes' | 'shortcuts' | 'statistics' | 'about' | 'licenses' | 'agents' | 'git' | 'latex' | 'skills' | 'memory' | 'updates' | 'overleaf' | 'experiments';
+export type SettingsInitialPage = 'general' | 'shortcuts' | 'quickNotes' | 'statistics' | 'git' | 'git-conflicts' | 'latex' | 'agents' | 'memory';
 type SettingsEntry = { page: SettingsPage; label: string; icon: string; keywords?: string };
 
 // Shared with the review page's bibliography checks.
 const REFERENCE_CHECKS = 'papilot:review:references';
 
-export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppearance, onClose, diagnostics, requirements, skills, activity, updates, modelDefaults, workflow, overleaf, commitWriter, conflictWriter, refreshUsage, initialPage = 'general' }: AppearanceSettingsProps & { onClose: () => void; diagnostics?: DiagnosticsSettingsProps; requirements?: { state: RequirementsState; online: boolean }; skills?: SkillLibraryOptions; activity?: LoadActivity; updates?: UpdateApi; modelDefaults: ModelDefaultSettingsProps; commitWriter: CommitMessageChoice; conflictWriter: CommitMessageChoice; refreshUsage?: RefreshUsage; workflow?: CollaborationSettingsProps; overleaf?: { api: UpdateApi; state: OverleafState | undefined }; initialPage?: SettingsInitialPage }) {
+export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppearance, onClose, diagnostics, requirements, skills, activity, updates, modelDefaults, workflow, overleaf, commitWriter, conflictWriter, refreshUsage, memory, initialPage = 'general' }: AppearanceSettingsProps & { onClose: () => void; diagnostics?: DiagnosticsSettingsProps; requirements?: { state: RequirementsState; online: boolean }; skills?: SkillLibraryOptions; activity?: LoadActivity; memory?: MemorySettingsOptions; updates?: UpdateApi; modelDefaults: ModelDefaultSettingsProps; commitWriter: CommitMessageChoice; conflictWriter: CommitMessageChoice; refreshUsage?: RefreshUsage; workflow?: CollaborationSettingsProps; overleaf?: { api: UpdateApi; state: OverleafState | undefined }; initialPage?: SettingsInitialPage }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const skillControls = useRef<SkillLibraryControls>(null);
   const focusConflictAgent = useRef(initialPage === 'git-conflicts');
@@ -91,14 +92,14 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
       { page: 'general', label: t('General'), icon: 'settings', keywords: `${t('Language')} ${t('Default model')} ${t('Default reasoning effort')}` },
       { page: 'appearance', label: t('Appearance'), icon: 'sun', keywords: `${t('Light')} ${t('Dark')} ${t('System')} ${t('Theme')} ${t('Accent')} ${t('Background')} ${t('Foreground')}` },
       { page: 'notifications', label: t('Notifications'), icon: 'bell' },
-      { page: 'review', label: t('Review preferences'), icon: 'diff', keywords: `${t('Check references online')} ${t('Track indirect changes')} ${t('Prepare alternatives for PDF notes')}` },
-      { page: 'quickNotes', label: t('Quick notes'), icon: 'toolMagic', keywords: `${t('Magic pen')} ${t('Polish')} ${t('Shorten')} ${t('Runt')} ${t('Connect')} ${t('Verify')}` },
       { page: 'shortcuts', label: t('Keyboard shortcuts'), icon: 'keyboard' },
     ] },
-    { label: t('Workspace'), entries: [
-      ...(activity ? [{ page: 'statistics' as const, label: t('Statistics'), icon: 'chart', keywords: `${t('Tokens')} ${t('Spend')} ${t('Agent runs')} ${t('Active hours')} ${t('Accept / Reject')} ${t('Annotations')} ${t('Daily breakdown')}` }] : []),
+    // How agents write and review for the author: their review, quick notes, skills and memory.
+    { label: t('Writing and review'), entries: [
+      { page: 'review', label: t('Review preferences'), icon: 'diff', keywords: `${t('Check references online')} ${t('Track indirect changes')} ${t('Prepare alternatives for PDF notes')}` },
+      { page: 'quickNotes', label: t('Quick notes'), icon: 'toolMagic', keywords: `${t('Magic pen')} ${t('Polish')} ${t('Shorten')} ${t('Runt')} ${t('Connect')} ${t('Verify')}` },
       ...(skills ? [{ page: 'skills' as const, label: t('Skills'), icon: 'spark' }] : []),
-      ...(overleaf ? [{ page: 'overleaf' as const, label: 'Overleaf', icon: 'overleaf', keywords: `${t('Sync with Overleaf…')} ${t('Sign in')} ${t('Sign out')}` }] : []),
+      ...(memory ? [{ page: 'memory' as const, label: t('Memory'), icon: 'brain', keywords: `${t('Learn from reviews')} ${t('Writing memory')} ${t('Shared with coauthors')}` }] : []),
     ] },
     { label: t('Runtime'), entries: [
       { page: 'git', label: 'Git', icon: 'git', keywords: `${t('Version history')} ${t('Show advanced Git features')} ${t('Commit-message agent')} ${t('Commit message language')} ${t('Conflict-resolution agent')}` },
@@ -106,8 +107,10 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
         { page: 'agents', label: t('Agents'), icon: 'terminal', keywords: `${t('Agent configuration')} ${t('Available models')} ${t('Usage & limits')}` },
         { page: 'latex', label: 'LaTeX', icon: 'paper', keywords: 'TeX Live MacTeX BasicTeX MiKTeX' },
       ] as SettingsEntry[] : []),
+      ...(overleaf ? [{ page: 'overleaf' as const, label: 'Overleaf', icon: 'overleaf', keywords: `${t('Sync with Overleaf…')} ${t('Sign in')} ${t('Sign out')}` }] : []),
     ] },
     { label: t('Application'), entries: [
+      ...(activity ? [{ page: 'statistics' as const, label: t('Statistics'), icon: 'chart', keywords: `${t('Tokens')} ${t('Spend')} ${t('Agent runs')} ${t('Active hours')} ${t('Accept / Reject')} ${t('Annotations')} ${t('Daily breakdown')}` }] : []),
       ...(updates ? [{ page: 'updates' as const, label: t('Updates'), icon: 'refresh' }] : []),
       ...(diagnostics?.compiler || workflow || window.papilotDesktop?.platform === 'darwin' ? [{ page: 'experiments' as const, label: t('Experiments'), icon: 'flask', keywords: `Typeless PhiTeX ${t('Compile with PhiTeX')} ${t('Enable collaboration mode')}` }] : []),
       { page: 'about', label: t('About Papilot'), icon: 'info', keywords: t('Third-party licenses') },
@@ -203,6 +206,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
         {page === 'overleaf' && overleaf && <div className="settings-page"><OverleafAccounts api={overleaf.api} overleaf={overleaf.state}/></div>}
         {page === 'skills' && skills && <SkillLibraryPanel {...skills} controls={skillControls} onClose={onClose}/>}
         {page === 'statistics' && activity && <ActivitySettings load={activity} initialProjectId={skills?.project?.id || diagnostics?.project?.id}/>}
+        {page === 'memory' && memory && <MemorySettings {...memory}/>}
       </div>
     </section>
   </dialog>;

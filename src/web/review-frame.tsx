@@ -1,5 +1,6 @@
 import { isPlayground } from './playground-mode.ts';
 import taskCommitStyles from './task-commit.css?inline';
+import memoryNudgeStyles from './memory-nudge.css?inline';
 import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import type { Task } from '../shared.ts';
@@ -226,7 +227,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     @container review-bar (max-width:340px){.bar .batch-count{display:none}.bar :is(.accept-all,.reject-all){padding:0 7px}.bar .bar-end{gap:4px}}
   `;
   syncAppearance(window.document.documentElement, doc.documentElement);
-  style.textContent += taskCommitStyles;
+  style.textContent += taskCommitStyles + memoryNudgeStyles;
   doc.head.append(style);
 }
 

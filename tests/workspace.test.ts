@@ -856,6 +856,19 @@ test('a decision whose response is lost after the build ended returns to the sta
   } finally { lost.resolve(); await b.close(); }
 });
 
+for (const ending of ['disconnected', 'failed', 'interrupted'] as const) test(`steps still running when a turn is ${ending} show as stopped`, async () => {
+  const f = fixture();
+  try {
+    await agentTurn(f);
+    f.store.saveItem({ id: 'search', taskId: f.task.id, type: 'tool', text: 'grep prop:rounds', status: 'inProgress', createdAt: Date.now() });
+    f.store.saveItem({ id: 'read', taskId: f.task.id, type: 'tool', text: 'read main.tex', status: 'completed', createdAt: Date.now() });
+    if (ending === 'disconnected') f.codex.emit('disconnected', new Error('closed'));
+    else if (ending === 'failed') (f.workspace as any).failRun((f.workspace as any).active.get(f.task.id), new Error('The agent could not start.'));
+    else await (f.workspace as any).notification({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn-new', status: 'interrupted' } } });
+    assert.deepEqual(['search', 'read'].map(id => f.store.item(f.task.id, id)!.status), ['interrupted', 'completed']);
+  } finally { f.close(); }
+});
+
 for (const ending of ['disconnected', 'failed to start'] as const) test(`an accept the engine did not confirm asks for Check status when the agent ${ending}`, async () => {
   const server = await reviewServer((_request, response) => {
     response.writeHead(200, { 'Content-Type': 'application/json' });

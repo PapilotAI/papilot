@@ -149,6 +149,11 @@
     "textHash": "0fe407f30e79835e1e3c12a5532cbfee547f63f10cde117ed7866400e3a7bd66",
     "model": "codex"
   },
+  "Choose Remember, Dismiss or Undo.": {
+    "revision": "75d05bfe77f364c6b88f585fdfb9c1f6b341743b03cab0f79919bece1effbea1",
+    "textHash": "43b9141eb29522e6f5be56cefdccc1aaf461e559f5bc81f0badeef1a84225902",
+    "model": "gemini-4-argon-medium"
+  },
   "Choose a Pi provider and model.": {
     "revision": "bf8e6760e0e2dfc8b03f28b09b597ee635ebb30940ecf4afd0b71199b2cd3ced",
     "textHash": "97413fc6dfa3e217f92826985865231797d21b11669a1ce517f1f042a802dba1",
@@ -188,6 +193,11 @@
     "revision": "abd79fccb7fb03c7737c60b40cd35236595b53121e0198c0053fb4d66d34d2c1",
     "textHash": "c778b27d7d063ff60c30c8731bc62ee4ddd6b5d518ef63efc197783b84e90039",
     "model": "manual"
+  },
+  "Choose a supported language for preferences.": {
+    "revision": "daeb236d5eee829b6661519252bbaa36303ae9e30e537780176c1a186ae32a84",
+    "textHash": "a3be350b148f494b3f284561ce088ab4c0a03e4af1e2ab13c3738e89a4accfbe",
+    "model": "gemini-4-argon-medium"
   },
   "Choose a supported worker for each collaboration role.": {
     "revision": "357edecdd929c2d393336cfb770d19b0d352854834d65fa79603ed846e7e8829",
@@ -247,6 +257,16 @@
   "Choose the quick, polish or rigorous role.": {
     "revision": "aec254c9d466074ec67ca1592b5e62aa8d921de6991e4cbae1b9c5e0f8c5e466",
     "textHash": "e72611ef892980e16dc8c0e40bffe1a5a1a0f3f9e6e59ab5cf82c93bc31b1c80",
+    "model": "gemini-4-argon-medium"
+  },
+  "Choose where to keep this preference.": {
+    "revision": "d644e154e458683272425cf12bf53a8ca19cbfba1540325853a7e7be15798fa9",
+    "textHash": "ea8e1fa769f757523b901902cba3af71b04e522b5c995ccbb66fa2e967d2ffde",
+    "model": "gemini-4-argon-medium"
+  },
+  "Choose whether Papilot learns from reviews.": {
+    "revision": "7668dc8dd109f3334e689e469d061d5a1ccbc72b7edf5570bb940a8d013e89b4",
+    "textHash": "603b7d63dd4ee1d5b26497baf0f31583ada5702042acab17a99486095f49e8de",
     "model": "gemini-4-argon-medium"
   },
   "Choose whether to archive or restore the task.": {
@@ -499,6 +519,11 @@
     "textHash": "63858c0193f62e8f9b3c46fde0bb6f95e55a9339badfaff35887e57ef016e03a",
     "model": "gemini-4-argon-medium"
   },
+  "Git ignores .papilot/memory.md in this repository, so coauthors would not receive it.": {
+    "revision": "7a6aabb6e4cfccd83e46b60e14b743a4baa8e6fc743e9a562ac876c3676df627",
+    "textHash": "3b8f7389850a4cd51d12def07db2f801671ea93b4e1b39775c209aea51a39709",
+    "model": "gemini-4-argon-medium"
+  },
   "GitHub could not download this repository. Check that it is public and the link is correct, or upload the source ZIP.": {
     "revision": "8f8a1497c1717fc91ae0573c932890c06cfaaa57da34fbfc60410be0b9eb4fa1",
     "textHash": "e8d5a8ac626f99c8d71a70859736775b334301b0784ec4e5f96fcb8907ea36af",
@@ -644,9 +669,19 @@
     "textHash": "aad33c106a4b1aa7a63fe0bd092b9147534a49db0172d3069bebabf003ce34bb",
     "model": "gemini-4-argon-medium"
   },
+  "Linked memory files are not used. Replace the link with a regular file.": {
+    "revision": "e75b7773891d2a3a760922420e3da305d48ba4d3d68a95adf959338b94b89f1a",
+    "textHash": "a5a26f0d9efdbe00807d6b572cbdb71f175575bd2986f110fd5117172337d10b",
+    "model": "gemini-4-argon-medium"
+  },
   "Manage this suggestion in its AI review task, or copy it to the manuscript first.": {
     "revision": "2e9034354bc05ea79ff5957e34a3a4342f4bb022c9e0e9e560cd8cd0b0e86f90",
     "textHash": "e60820a174a406992817fbf5568d301ff174ea826fde40545b86c1828c3b6cdb",
+    "model": "gemini-4-argon-medium"
+  },
+  "Memory changed on disk. Reload it before saving.": {
+    "revision": "a1a73aa2cdab8b2c509e71b0b9e191a28743b98c157e4726f761b53447a981db",
+    "textHash": "88fd1d85f2f609680de17c80d8d9ff6e01f18357ddbd8c98fe48fd9f36f7d14d",
     "model": "gemini-4-argon-medium"
   },
   "Missing update restart job.": {
@@ -703,6 +738,11 @@
     "revision": "5c9dc60dc7d430432b0650c024fa827b344aff38b6fd96a611ea03a2941541b4",
     "textHash": "7879ec34b1195cb1db4a57f08c2aa1c388b92f15ba8c256f2c22370183158626",
     "model": "gemini-4-argon-high"
+  },
+  "Open a paper to keep preferences for it.": {
+    "revision": "d5269ce2378ac0594b308052a7124c2be74c591d8362216d97ab5f762cc362a2",
+    "textHash": "36868b63cf11491632c3b74aa8de1e1bbd92805989d32a6d6e574f56f58afbb9",
+    "model": "gemini-4-argon-medium"
   },
   "Overleaf answered unexpectedly. Papilot keeps trying.": {
     "revision": "b9d5f2d04626071de3e5baa8e68fab1c4aff582c1cb088531a1084d421ac11d8",
@@ -1699,6 +1739,21 @@
     "textHash": "29d334bd8cbff1c1ddba843fd33e99d2a742455e845d36de339306fb45f20045",
     "model": "gemini-4-argon-medium"
   },
+  "This preference changed after it was saved. Edit it in Settings → Memory.": {
+    "revision": "eb02156e57620faa81e51f79c1f7d1df05dea51646f06425d9edd9ca2b4f42d3",
+    "textHash": "528fe858825e94a220961c204f4fe2833c33a89e9bd095dfaac4ffc4d0cdb7ee",
+    "model": "gemini-4-argon-medium"
+  },
+  "This preference changed on disk. Reload memory before editing it.": {
+    "revision": "6108a67f1f9985380746dc66f5c18747db46ca77bebccd6dd44aed18259286fb",
+    "textHash": "b53466bfbbb8158b82a91151e5f8f52f13a1a41802b748b2f080bc0fe8dddc54",
+    "model": "gemini-4-argon-medium"
+  },
+  "This preference changed on disk. Reload memory before moving it.": {
+    "revision": "ac343ae6097b60b32374186551139fe1247f4fffd5650e7becdfa79763691e02",
+    "textHash": "8a809847bb1c7bc899495a0dabb740b5bf85fb60b2a5126654586b9414a5e538",
+    "model": "gemini-4-argon-medium"
+  },
   "This repository has no commits yet. Commit once to compare later changes in the PDF.": {
     "revision": "a474d9f44b1df7010232ff56a48a7d1ab465959dec1051901a912b2470555254",
     "textHash": "89f5f636033891a841bdc3f93abc5acd59c6b665cfd92de7dacedd2d432212c2",
@@ -1752,6 +1807,11 @@
   "This suggestion does not belong to this review task.": {
     "revision": "660e3972c1c8bbbd44c3050cd2d5ca3259c86ccb8ace7d0addc7788d0d631b0f",
     "textHash": "e3b34de2f8367ccc2ab9bc9e7dc0d1952da496fe9a410a59289edc421a09e2e5",
+    "model": "gemini-4-argon-medium"
+  },
+  "This suggestion is no longer available.": {
+    "revision": "3cc29374f98478c1f03db8f08825faa42da47c4eceed68c380e6a400ce55ed42",
+    "textHash": "0df85f32e27266ba7f6873b1224b001c06ce633f59605a281151a74ad6b78b47",
     "model": "gemini-4-argon-medium"
   },
   "This suggestion was ignored while copying. Restore it first.": {
@@ -1942,6 +2002,11 @@
   "Wait for this task to switch agents before sending more instructions.": {
     "revision": "e0061c71095bc944229338e5a7daa5a459cb11a1ae31d93b63ee2c97fc796bc2",
     "textHash": "4facf1dcba8bc68a044f6234d19c4c9cf5c421cec4cd97b9fdbf5131639bfb4c",
+    "model": "gemini-4-argon-medium"
+  },
+  "Write the preference as text.": {
+    "revision": "d1a2b4456cb1697d5b6782ed7aed3b79c159261ceba24dcce91c9ae45d21f62f",
+    "textHash": "f2afc67bafee56e944208013900e09827beff5db049277fd02b9ba2d5cdce345",
     "model": "gemini-4-argon-medium"
   },
   "ZIP links and special files are not supported.": {

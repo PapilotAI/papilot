@@ -20,6 +20,7 @@ import { PdfReader } from './pdf-reader.ts';
 import { annotatePdf, type ExportNote } from './annotated-pdf.ts';
 import { collectProblems, countProblems, locateProblems, scrubLog, sortProblems, syncView, type StoredProblem } from './build-problems.ts';
 import { parseLatexRepair } from './latex-repair.ts';
+import { MEMORY_PATHS } from './memory.ts';
 // Where a note comes from in the source, worked out in the PDF reader's worker.
 export { anchor, followLines, parseSynctex, settleLines, sourceExcerpt, type Anchor } from './note-location.ts';
 
@@ -329,6 +330,9 @@ export async function workingTree(root: string) {
   const snapshot = async (seed: string | null | undefined) => {
     if (!seed || !await copyIndex(seed, index)) { await fs.promises.rm(index, { force: true }); await git(root, ['read-tree', 'HEAD'], env).catch(() => git(root, ['read-tree', '--empty'], env)); }
     await git(root, ['add', '-A'], env);
+    // Writing memory is not part of the paper: the snapshot keeps the
+    // committed copy, so saving a shared preference compiles nothing.
+    await git(root, ['reset', '-q', 'HEAD', '--', MEMORY_PATHS.shared], env).catch(() => undefined);
     return (await git(root, ['write-tree'], env)).trim();
   };
   try {
