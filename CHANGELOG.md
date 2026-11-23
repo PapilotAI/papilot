@@ -6,7 +6,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Fixed
 
-- **Comparing PDFs with gradient fills no longer fails at random.** Comparing the drawings of a PDF with a shading, such as a TikZ or Beamer gradient, released the shading while the PDF reader still used it once memory was reclaimed, so a later comparison could fail with a memory error or stop the review engine. ([#328](https://github.com/PapilotAI/papilot/pull/328))
+- **Comparing PDFs with gradient fills no longer fails or misses drawing changes at random.** Comparing the drawings of a PDF with a shading, such as a TikZ or Beamer gradient, released the shading while the PDF reader still used it once memory was reclaimed. The PDF comparison could then fail with "Rendering the PDF comparison failed." or leave out a changed drawing. ([#328](https://github.com/PapilotAI/papilot/pull/328))
 
 ## [0.14.0] - 2026-11-23
 
