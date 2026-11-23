@@ -4285,6 +4285,8 @@ test('hidden models stay out of automatic choices, and reset turns every agent o
     assert.equal(helper({}, true).model.id, 'gpt-6.1-sol', 'a light helper does not pick a hidden model');
     f.workspace.setHiddenModels('codex', ['gpt-6.1-sol']);
     assert.equal(helper({}).model.id, 'gpt-6-luna', 'hiding the default model lets helpers pick another offered model');
+    const created = await f.workspace.createTask({ id: 'codex-default-hidden-1', projectId: 'paper', title: 'Task', instructions: 'Edit', agent: 'codex' });
+    assert.equal(created.model, 'gpt-6-luna', 'a new task without an explicit model skips a hidden default model');
     f.workspace.setHiddenModels('codex', ['gpt-6.1-sol', 'gpt-6-luna']);
     assert.equal(f.workspace.snapshot().runtimes?.codex?.hidden, true, 'hiding every model of an agent turns the agent off');
     assert.equal(f.workspace.snapshot().runtimes?.codex?.hiddenModels, undefined, 'turning an agent off by hiding all models clears its hidden list');

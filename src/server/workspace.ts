@@ -642,7 +642,9 @@ export class Workspace extends EventEmitter {
     this.validateTaskPermissions(input.permissions ?? 'workspace', input.agent || 'codex', Boolean(input.prepareReview));
     if (input.prepareReview && (input.annotations?.length || input.attachments?.length)) throw new Error('AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.');
     // Pin the model shown to the author, including for clients using the default.
-    input = { ...input, model: input.model || this.runtimes[input.agent || 'codex'].models.find(model => model.isDefault)?.id };
+    const taskAgent = input.agent || 'codex', agentModels = this.runtimes[taskAgent].models, hidden = this.hiddenModels[taskAgent] || [];
+    const offered = agentModels.filter(model => !hidden.includes(model.id));
+    input = { ...input, model: input.model || offered.find(model => model.isDefault)?.id || offered[0]?.id || agentModels.find(model => model.isDefault)?.id };
     if (input.serviceTier !== undefined) {
       if (input.agent && input.agent !== 'codex') throw new Error('Service tiers are only available for Codex.');
       const models = this.runtimes.codex.models;

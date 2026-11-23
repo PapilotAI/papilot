@@ -123,9 +123,18 @@ try {
       await expect(card('claude')).toHaveAttribute('data-availability', 'ready');
       await card('codex').locator('.diagnostic-agent-button').click();
       await expect(models.getByRole('button', { name: 'GPT-6 Luna' })).toHaveAttribute('aria-pressed', 'true');
-      // Deselecting every model one by one turns the agent switch off; turning it back on restores all models.
+      // Hiding only the default model removes it from the new-task picker and selects the next offered model.
       await models.getByRole('button', { name: 'GPT-6.1 Sol' }).click();
       await expect(models.getByRole('button', { name: 'GPT-6.1 Sol' })).toHaveAttribute('aria-pressed', 'false');
+      await page.locator('.modal-close').click();
+      await expect(picker).toContainText('GPT-6 Luna');
+      await picker.click();
+      await expect(option('GPT-6.1 Sol · Codex'), 'a hidden default model leaves the new-task picker').toHaveCount(0);
+      await expect(option('GPT-6 Luna · Codex')).toHaveCount(1);
+      await menu.press('Escape');
+      await openAgents();
+      await card('codex').locator('.diagnostic-agent-button').click();
+      // Deselecting the remaining models turns the agent switch off; turning it back on restores all models.
       await models.getByRole('button', { name: 'GPT-6 Luna' }).click();
       await models.getByRole('button', { name: 'GPT-6 Nova' }).click();
       assert.deepEqual(changes.at(-1), { agent: 'codex', enabled: false, hiddenModels: [] });
