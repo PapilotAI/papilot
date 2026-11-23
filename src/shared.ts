@@ -525,12 +525,21 @@ export interface LibraryEntry { pdf: LibraryPdf | null; find: 'waiting' | 'searc
 // made on another PDF of the work than the library now has is stale.
 export type CitationVerdict = 'supported' | 'partial' | 'unsupported' | 'unclear';
 export interface CitationEvidence { quote: string; page: number; marks: { page: number; rect: [number, number, number, number] }[] }
-export interface CitationFinding { verdict: CitationVerdict; note: string; evidence: CitationEvidence[]; pdf: string; checkedAt: number; stale?: boolean }
+// by: the quick model that checked it; an agent's finding has none.
+export interface CitationFinding { verdict: CitationVerdict; note: string; evidence: CitationEvidence[]; pdf: string; checkedAt: number; by?: string; stale?: boolean }
+// A checked citing sentence where it prints in the paper's PDF: its lines,
+// and the findings for the works it cites, with each work's library PDF.
+export interface EvidenceMark { id: string; page: number; rects: [number, number, number, number][]; sentence: string; file: string; line: number;
+  findings: (CitationFinding & { key: string; entry: string; title: string; hash: string })[] }
+// A paper's quick citation check: how far it got, the model doing it, and why it stopped early.
+export interface CitationCheckState { running: boolean; done: number; total: number; failed: number; model: string | null; error: string | null; finishedAt: number | null }
 /** A sentence of the paper that cites works, with what was found for each. */
 export interface CitingSentence { id: string; keys: string[]; file: string; line: number; section: string | null; sentence: string; findings: Record<string, CitationFinding> }
 export interface LibraryReport extends BibliographyReport {
   library: { entries: Record<string, LibraryEntry>; pending: number };
   citations: CitingSentence[];
+  // The quick check of this paper's citations, and whether it starts by itself.
+  quickCheck?: CitationCheckState | null; autoCheck?: boolean;
 }
 // The Zotero libraries the Library takes PDFs from. On this host: none, one
 // whose database cannot be read, or one with its counts. The account: its

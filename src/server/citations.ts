@@ -65,7 +65,8 @@ const refuse = (message: string) => Object.assign(new Error(message), { statusCo
 
 /** Record what an agent found for one work a sentence cites: the evidence
  * is the PDF's lines from each start anchor to its end anchor. */
-export async function recordCitation(sentences: CitingSentence[], inputs: LibraryInput[], library: Library, checks: CitationChecks, record: CitationRecord, now = Date.now()) {
+/** by names the quick model that made a quick check; an agent's finding has none. */
+export async function recordCitation(sentences: CitingSentence[], inputs: LibraryInput[], library: Library, checks: CitationChecks, record: CitationRecord, now = Date.now(), by?: string) {
   const sentence = sentences.find(item => item.id === record.id);
   if (!sentence) throw refuse(`No citing sentence has the ID ${record.id}; the paper may have changed. Use citations_list.`);
   if (!sentence.keys.includes(record.key)) throw refuse(`This sentence cites ${sentence.keys.join(', ')}, not ${record.key}.`);
@@ -83,7 +84,7 @@ export async function recordCitation(sentences: CitingSentence[], inputs: Librar
     const lines = snapshot.lines.slice(Math.min(from, to), Math.max(from, to) + 1);
     return { quote: lines.map(line => line.text).join(' ').replace(/\s+/g, ' ').trim(), page: lines[0].page + 1, marks: lines.map(line => ({ page: line.page + 1, rect: line.rect })) };
   });
-  const finding = { verdict, note: record.note.trim(), evidence, pdf: found.hash, checkedAt: now };
+  const finding = { verdict, note: record.note.trim(), evidence, pdf: found.hash, checkedAt: now, ...(by ? { by } : {}) };
   checks.set(sentence.sentence, record.key, finding);
   return finding;
 }

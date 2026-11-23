@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
 import type { OutlineItem, PdfHandle, PdfPassage } from './pdf-view.tsx';
-import type { BibliographyEntry, CitationFinding, CitationVerdict, CitingSentence, LibraryEntry, LibraryReport, ReferenceCheck } from '../shared.ts';
+import type { BibliographyEntry, CitationEvidence, CitationFinding, CitationVerdict, CitingSentence, LibraryEntry, LibraryReport, ReferenceCheck } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { language, t, tn } from './i18n.ts';
 import { browserStorage } from './storage.ts';
@@ -38,7 +38,7 @@ const readable = (text: string) => text
   .replace(/\\([uvHckr])(?:\s*\{\s*(\\?[A-Za-z])\s*\}|\s+(\\?[A-Za-z]))/g, (_, accent: string, braced?: string, bare?: string) => (braced ?? bare)!.replace('\\', '') + ACCENTS[accent])
   .replace(/\\(ss|ae|AE|oe|OE|aa|AA|o|O|l|L|i)(?![A-Za-z])\s*/g, (_, letter: string) => LETTERS[letter])
   .replace(/\\[a-zA-Z]+\s*/g, '').replace(/[{}$]/g, '').replace(/\s+/g, ' ').trim().normalize('NFC');
-const pending = (report: LibraryReport | null) => Boolean(report && (report.pending || report.library.pending));
+const pending = (report: LibraryReport | null) => Boolean(report && (report.pending || report.library.pending || report.quickCheck?.running));
 const hasPdf = (report: LibraryReport, entry: BibliographyEntry) => Boolean(report.library.entries[entry.id]?.pdf);
 const isPdf = (file: File) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
 
@@ -102,6 +102,15 @@ export function useLibrary(projectId: string, version: string, load: Load, enabl
     },
     async forget(id: string, key: string) {
       try { setReport(await load<LibraryReport>(`/projects/${projectId}/citations/forget?${options()}`, { id, key })); }
+      catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    },
+    /** Checks the citations with the quick model, in place; stop ends the run after its current batch. */
+    async quickCheck(stop = false) {
+      try { setReport(await load<LibraryReport>(`/projects/${projectId}/citations/quick-check?${options()}`, stop ? { stop: true } : {})); refresh(); }
+      catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    },
+    async autoCheck(enabled: boolean) {
+      try { setReport(await load<LibraryReport>(`/projects/${projectId}/citations/auto-check?${options()}`, { enabled })); refresh(); }
       catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     },
   };
@@ -196,6 +205,13 @@ function TallyDots({ tally }: { tally: Tally }) {
     {shown.map(verdict => <span key={verdict} data-verdict={verdict} aria-hidden="true"><Icon name={verdictIcon[verdict]} size={10}/>{tally[verdict]}</span>)}
   </span>;
 }
+/** The verdicts as one segmented bar, red to green, with what is left to check. */
+function EvidenceBar({ tally }: { tally: Tally }) {
+  const order: (CitationVerdict | 'unchecked')[] = ['unsupported', 'partial', 'unclear', 'supported', 'unchecked'];
+  const total = order.reduce((sum, verdict) => sum + tally[verdict], 0);
+  if (!total) return null;
+  return <div className="library-bar" aria-hidden="true">{order.filter(verdict => tally[verdict]).map(verdict => <span key={verdict} data-verdict={verdict === 'unchecked' ? 'none' : verdict} style={{ flexGrow: tally[verdict] }}/>)}</div>;
+}
 // A sentence as it reads, its citations set apart and this work's marked.
 function Sentence({ text, cited }: { text: string; cited: string }) {
   const parts: ReactNode[] = [];
@@ -211,7 +227,9 @@ function Sentence({ text, cited }: { text: string; cited: string }) {
   return <>{parts}</>;
 }
 
-export function LibraryPanel({ projectId, data, onInvestigate, place }: { projectId: string; data: LibraryData; onInvestigate: (text: string) => void; place?: string }) {
+/** A cited work to show, from a citation check in the paper's PDF: at the quoted lines when one is given. */
+export interface LibraryFocus { entry: string; hash: string; evidence?: CitationEvidence; at: number }
+export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onFocused }: { projectId: string; data: LibraryData; onInvestigate: (text: string) => void; place?: string; focus?: LibraryFocus | null; onFocused?: () => void }) {
   const { report, error, unmatched, adding } = data;
   const [view, setView] = useState<{ filter: Filter | null; open: string }>(() => (place && readPlace<{ filter: Filter | null; open: string }>(place + ':view')) || { filter: null, open: '' });
   const show = (next: Partial<typeof view>) => setView(present => { const value = { ...present, ...next }; if (place) savePlace(place + ':view', value); return value; });
@@ -239,6 +257,15 @@ export function LibraryPanel({ projectId, data, onInvestigate, place }: { projec
     const control = !reading && opener.current ? document.querySelector<HTMLElement>(`[data-opener="${CSS.escape(opener.current)}"]`) : null;
     if (control?.getClientRects().length) { control.focus(); opener.current = null; }
   }, [reading, detail]);
+  // A quote opened from the paper's PDF: its work, and its PDF at the quoted lines.
+  useEffect(() => {
+    const entry = focus && report?.entries.find(item => item.id === focus.entry);
+    if (!focus || !entry) return;
+    show({ filter: 'all', open: entry.id });
+    const first = focus.evidence?.marks[0];
+    if (focus.evidence) setReading({ entry, hash: focus.hash, passage: first ? { page: first.page - 1, marks: focus.evidence.marks.filter(mark => mark.page === first.page).map(mark => mark.rect) } : undefined });
+    onFocused?.();
+  }, [focus, report]);
   if (reading) return <LibraryReader projectId={projectId} entry={reading.entry} hash={reading.hash} passage={reading.passage} onClose={() => setReading(null)}/>;
   if (error && !report) return <section className="library-panel"><p className="inline-error" role="alert">{error}</p></section>;
   if (!report) return <section className="library-panel"><p className="library-empty">{t('Reading the bibliography…')}</p></section>;
@@ -248,6 +275,7 @@ export function LibraryPanel({ projectId, data, onInvestigate, place }: { projec
   // An entry BibTeX cannot read has no PDF to find; Problems lists it.
   const missing = report.entries.filter(entry => !entry.error && !entries[entry.id]?.pdf);
   const withPdf = report.entries.filter(entry => entries[entry.id]?.pdf).length, busy = pending(report);
+  const quick = report.quickCheck, checking = Boolean(quick?.running);
   const tallyOf = (key: string) => {
     const tally = empty(), pdf = hasPdfOf(key);
     for (const sentence of citing.get(key) ?? []) {
@@ -337,16 +365,27 @@ export function LibraryPanel({ projectId, data, onInvestigate, place }: { projec
           </p>}
         </div>
       </div>
+      <EvidenceBar tally={totals}/>
       <dl className="library-tally" aria-label={t('Citations checked against their works')}>
         {VERDICTS.map(verdict => <div key={verdict} data-verdict={verdict}><dt><Icon name={verdictIcon[verdict]} size={12}/><span>{verdictName(verdict)}</span></dt><dd>{totals[verdict]}</dd></div>)}
         <div data-verdict="none"><dt><Icon name="checklist" size={12}/><span>{t('To check')}</span></dt><dd>{totals.unchecked}</dd></div>
       </dl>
       <div className="library-actions">
-        {report.citations.length > 0 && <button type="button" className="button primary compact" onClick={() => checkCitations()}><Icon name="checklist" size={14}/>{t('Check citations…')}</button>}
+        {report.citations.length > 0 && (checking
+          ? <button type="button" className="button secondary compact" onClick={() => void data.quickCheck(true)}><Icon name="stop" size={14}/>{t('Stop checking')}</button>
+          : <button type="button" className="button primary compact" disabled={!totals.unchecked} onClick={() => void data.quickCheck()}><Icon name="checklist" size={14}/>{t('Check citations')}</button>)}
+        {report.citations.length > 0 && <button type="button" className="button ghost compact" onClick={() => checkCitations()}>{t('Ask an agent…')}</button>}
         <button type="button" className="button secondary compact" onClick={() => pick()}><Icon name="plus" size={14}/>{t('Add PDFs…')}</button>
         {!busy && lookAgain && online() && <button type="button" className="button ghost compact" onClick={data.lookAgain}><Icon name="refresh" size={14}/>{t('Look again')}</button>}
-        <span className="library-progress-text" role="status">{busy || adding ? <><span className="spinner"/>{adding ? tn(adding, 'Adding {n} PDF…', 'Adding {n} PDFs…') : t('Finding PDFs…')}</> : null}</span>
+        <span className="library-progress-text" role="status">{busy || adding ? <><span className="spinner"/>{adding ? tn(adding, 'Adding {n} PDF…', 'Adding {n} PDFs…') : checking ? t('Checking citations: {done} of {total}', { done: quick!.done, total: quick!.total }) : t('Finding PDFs…')}</> : null}</span>
       </div>
+      {report.citations.length > 0 && <label className="library-auto">
+        <input type="checkbox" role="switch" className="switch" checked={Boolean(report.autoCheck)} onChange={event => void data.autoCheck(event.target.checked)}/>
+        <span>{t('Check new citations automatically')}</span>
+        {quick?.model && <span className="library-auto-model">{quick.model}</span>}
+      </label>}
+      {quick && !quick.running && quick.error && <p className="inline-error" role="alert">{quick.error}</p>}
+      {quick && !quick.running && !quick.error && quick.failed > 0 && <p className="library-note" role="status">{tn(quick.failed, '{n} citation could not be checked quickly. Ask an agent to check it.', '{n} citations could not be checked quickly. Ask an agent to check them.')}</p>}
       {!online() && <p className="library-note">{t('Online lookups are off in Settings: only PDFs from Zotero and the ones you add are used.')}</p>}
       {unmatched.length > 0 && <p className="library-note" role="status">{tn(unmatched.length, '{names} matches no entry. Drop it on its entry.', '{names} match no entry. Drop each on its entry.', { names: unmatched.join(', ') })}</p>}
       {error && <p className="inline-error" role="alert">{error}</p>}
@@ -437,6 +476,7 @@ function WorkDetail({ projectId, entry, state, report, sentences, item, onRead, 
             {finding && <>
               {finding.stale && <p className="library-note">{t('Checked on an earlier PDF of this work; check again.')}</p>}
               {finding.note && <p className="library-claim-note">{finding.note}</p>}
+              <p className="library-claim-by">{finding.by ? t('Quick check by {model}', { model: finding.by }) : t('Checked by an agent')}</p>
               {finding.evidence.map((evidence, i) => {
                 const first = evidence.marks[0], from = `evidence:${sentence.id}:${i}`;
                 return <button key={i} type="button" className="library-evidence" data-opener={from} disabled={!pdf || finding.stale}

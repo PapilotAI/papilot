@@ -1,0 +1,40 @@
+/* Checked citations in the paper's PDF: a thin bar in the margin beside the
+   sentence, one segment per cited work, worst first, and a card beside it. */
+.evidence-tag{position:absolute;z-index:3;display:flex;flex-direction:column;gap:2px;width:14px;min-height:12px;padding:0 5px;border:0;background:none;cursor:pointer;pointer-events:auto}
+.evidence-tag>span{flex:1;min-height:4px;border-radius:2px;background:var(--text-3)}
+.evidence-tag>[data-verdict=supported]{background:var(--green)}
+.evidence-tag>[data-verdict=partial]{background:var(--amber)}
+.evidence-tag>[data-verdict=unsupported]{background:var(--red)}
+.evidence-tag:hover>span,.evidence-tag[aria-expanded=true]>span{box-shadow:0 0 0 1px var(--raised),0 0 0 2px currentColor}
+.evidence-tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:3px}
+@media(pointer:coarse){.evidence-tag{width:24px;padding:0 9px;margin-left:-5px}}
+@media(forced-colors:active){.evidence-tag>span{forced-color-adjust:none;background:CanvasText}}
+
+.evidence-card{position:absolute;z-index:6;display:grid;gap:8px;width:min(340px,92%);max-height:55%;padding:10px 12px 12px;overflow:auto;border-radius:12px;background:var(--raised);box-shadow:var(--float);pointer-events:auto;font:12px/1.45 var(--sans);color:var(--text);text-align:left;cursor:auto;user-select:text}
+.evidence-card:focus{outline:none}
+.evidence-card:focus-visible{outline:2px solid var(--accent)}
+.evidence-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;font-weight:600;color:var(--text-2)}
+.evidence-card-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.evidence-card-list>li{display:grid;gap:4px;padding-left:10px;box-shadow:inset 3px 0 0 var(--text-3)}
+.evidence-card-list>li[data-verdict=supported]{box-shadow:inset 3px 0 0 var(--green)}
+.evidence-card-list>li[data-verdict=partial]{box-shadow:inset 3px 0 0 var(--amber)}
+.evidence-card-list>li[data-verdict=unsupported]{box-shadow:inset 3px 0 0 var(--red)}
+.evidence-card-verdict{display:flex;align-items:center;gap:5px;margin:0}
+.evidence-card-verdict code{margin-left:auto;font-size:11px;color:var(--text-3)}
+li[data-verdict=supported] .evidence-card-verdict{color:var(--green)}
+li[data-verdict=partial] .evidence-card-verdict{color:var(--amber-text)}
+li[data-verdict=unsupported] .evidence-card-verdict{color:var(--red)}
+li[data-verdict=unclear] .evidence-card-verdict{color:var(--text-2)}
+.evidence-card-title{margin:0;font-weight:500;color:var(--text)}
+.evidence-card-note,.evidence-card-by{margin:0;color:var(--text-2)}
+.evidence-card-by{font-size:11px;color:var(--text-3)}
+.evidence-card-quote{display:flex;align-items:flex-start;gap:6px;width:100%;padding:6px 8px;border:0;border-radius:8px;background:var(--bg-subtle);font:inherit;color:var(--text-2);text-align:left;cursor:pointer}
+.evidence-card-quote:hover{background:var(--bg-muted)}
+.evidence-card-quote q{flex:1;font-style:italic}
+.evidence-card-quote span{flex-shrink:0;font-size:11px;color:var(--accent)}
+.evidence-card footer{display:flex;justify-content:flex-end}
+/* The sentence a card is about, tinted with its worst verdict. */
+.evidence-sentence{position:absolute;z-index:2;border-radius:2px;background:color-mix(in srgb,var(--text-3) 16%,transparent);pointer-events:none}
+.evidence-sentence[data-verdict=supported]{background:color-mix(in srgb,var(--green) 16%,transparent)}
+.evidence-sentence[data-verdict=partial]{background:color-mix(in srgb,var(--amber) 20%,transparent)}
+.evidence-sentence[data-verdict=unsupported]{background:color-mix(in srgb,var(--red) 16%,transparent)}

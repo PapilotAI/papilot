@@ -39,7 +39,7 @@ const report = {
 };
 let zotero = { local: { chosen: null, state: 'ready', dataDir: '/Users/researcher/Zotero', items: 1204, withPdf: 873, citationKeys: 1204 }, account: null, use: true };
 const account = { username: 'researcher', libraries: [{ name: null, items: 310, withPdf: 288, citationKeys: 12 }, { name: 'Lab', items: 40, withPdf: 31, citationKeys: 0 }], syncing: false, synced: Date.UTC(2026, 10, 23, 9, 30), problem: null };
-const uploads = [], removals = [], forgotten = [], errors = [], keys = [], switched = [], looks = [], located = [];
+const quick = [], uploads = [], removals = [], forgotten = [], errors = [], keys = [], switched = [], looks = [], located = [];
 fs.mkdirSync('test-results', { recursive: true });
 try {
   const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 800 } });
@@ -63,6 +63,16 @@ try {
       const { id, key } = request.postDataJSON();
       forgotten.push([id, key]);
       delete report.citations.find(sentence => sentence.id === id).findings[key];
+      return route.fulfill({ json: report });
+    }
+    if (url.pathname === '/api/projects/paper/citations/quick-check' && request.method() === 'POST') {
+      const body = request.postDataJSON();
+      quick.push(body);
+      report.quickCheck = body.stop ? { ...report.quickCheck, running: false, finishedAt: 1 } : { running: true, done: 0, total: 1, failed: 0, model: 'DeepSeek V4.1 Flash UltraFast', error: null, finishedAt: null };
+      return route.fulfill({ json: report });
+    }
+    if (url.pathname === '/api/projects/paper/citations/auto-check' && request.method() === 'POST') {
+      report.autoCheck = request.postDataJSON().enabled;
       return route.fulfill({ json: report });
     }
     if (url.pathname.startsWith('/api/projects/paper/library/pdfs/')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
@@ -152,6 +162,30 @@ try {
   await back.click();
   await quote.waitFor();
   assert.ok(await quote.evaluate(button => button === document.activeElement), 'Back returns focus to the quote');
+
+  // Check citations runs the quick model in place, with its progress, and
+  // the finding it records names that model.
+  await page.getByRole('button', { name: 'Check citations', exact: true }).click();
+  await panel.getByText('Checking citations: 0 of 1', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Stop checking', exact: true }).waitFor();
+  assert.deepEqual(quick, [{}]);
+  await page.screenshot({ path: 'test-results/library-quick-checking.png', animations: 'disabled' });
+  report.citations[1].findings.knuth = { verdict: 'partial', note: 'The book breaks lines optimally but says nothing of linear values.', evidence: supported.evidence, pdf: hash, checkedAt: 2, by: 'DeepSeek V4.1 Flash UltraFast' };
+  report.quickCheck = { running: false, done: 1, total: 1, failed: 0, model: 'DeepSeek V4.1 Flash UltraFast', error: null, finishedAt: 3 };
+  await claims.nth(1).getByText('Quick check by DeepSeek V4.1 Flash UltraFast', { exact: true }).waitFor();
+  assert.equal(await claims.nth(1).locator('.library-verdict').textContent(), 'Partly supported');
+  assert.equal(await claims.nth(0).locator('.library-claim-by').textContent(), 'Checked by an agent');
+  // Red to green, then wadler's citation, whose PDF was just added, still to check.
+  assert.deepEqual(await page.locator('.library-bar > span').evaluateAll(spans => spans.map(span => span.dataset.verdict)), ['partial', 'supported', 'none']);
+  const auto = page.getByRole('switch', { name: 'Check new citations automatically' });
+  assert.equal(await auto.isChecked(), false);
+  await auto.click();
+  await page.waitForFunction(() => document.querySelector('.library-auto input')?.checked === true);
+  assert.equal(report.autoCheck, true);
+  await page.screenshot({ path: 'test-results/library-quick-checked.png', animations: 'disabled' });
+  delete report.citations[1].findings.knuth;
+  report.quickCheck = null; report.autoCheck = false;
+  await page.getByRole('button', { name: 'Check citations', exact: true }).waitFor();
 
   // The author dismisses a finding they judge otherwise.
   await claims.nth(0).getByRole('button', { name: 'Dismiss', exact: true }).click();
@@ -249,7 +283,7 @@ try {
   // So do the citations, to check against the works.
   await page.evaluate(() => localStorage.removeItem('papilot:new-task'));
   await openLibrary();
-  await page.getByRole('button', { name: 'Check citations…', exact: true }).click();
+  await page.getByRole('button', { name: 'Ask an agent…', exact: true }).click();
   await page.waitForFunction(() => (localStorage.getItem('papilot:new-task') || '').includes('citation_record'));
   draft = await page.evaluate(() => localStorage.getItem('papilot:new-task'));
   assert.match(draft, /citations_list/);

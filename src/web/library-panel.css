@@ -36,6 +36,18 @@
 .library-tally>[data-verdict=partial] dt{color:var(--amber-text)}
 .library-tally>[data-verdict=unsupported] dt{color:var(--red)}
 .library-header>.library-note,.library-header>.inline-error{grid-column:1/-1;margin:0}
+/* The verdicts as one bar, red to green, then what is left to check. */
+.library-bar{grid-column:1/-1;display:flex;gap:2px;height:6px;margin:-4px 0 -6px;border-radius:3px;overflow:hidden}
+.library-bar>span{min-width:4px;background:var(--bg-active)}
+.library-bar>[data-verdict=supported]{background:var(--green)}
+.library-bar>[data-verdict=partial]{background:var(--amber)}
+.library-bar>[data-verdict=unsupported]{background:var(--red)}
+.library-bar>[data-verdict=unclear]{background:var(--text-3)}
+@media(forced-colors:active){.library-bar{display:none}}
+/* Automatic checks: a switch with the quick model that does them. */
+.library-auto{grid-column:1/-1;display:flex;align-items:center;gap:8px;min-width:0;color:var(--text-2)}
+.library-auto-model{height:20px;padding:0 8px;border-radius:10px;background:var(--bg-muted);font-size:11px;line-height:20px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.library-claim-by{margin:2px 0 0;font-size:11px;color:var(--text-3)}
 .library-note{margin:6px 0 0;font-size:11px;color:var(--text-3)}
 
 /* Body: the works and the selected one */

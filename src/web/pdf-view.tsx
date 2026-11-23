@@ -2,12 +2,13 @@ import type { NoteGroup } from '../note-groups.ts';
 import { GroupPicker, GroupAction, groupName, groupStyle } from './note-groups.tsx';
 import { forwardRef, Fragment, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { EvidenceMarks, type OpenEvidence } from './evidence-marks.tsx';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import { EventBus, FindState, LinkTarget, PDFFindController, PDFLinkService, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
 import viewerStyles from 'pdfjs-dist/web/pdf_viewer.css?inline';
 import worker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { isTaskReviewNote, type Annotation, type InFlightMark, type MarkKind, type SourcePlace } from '../shared.ts';
+import { isTaskReviewNote, type Annotation, type EvidenceMark, type InFlightMark, type MarkKind, type SourcePlace } from '../shared.ts';
 import { loadStamps, useStamps, type Stamp } from './stamps.ts';
 import { StampWheel } from './stamp-wheel.tsx';
 import { PdfToolRail, TOOL_KEYS, type PdfTool, type PdfToolRailHandle } from './pdf-tool-rail.tsx';
@@ -248,6 +249,8 @@ export const PdfView = forwardRef<PdfHandle, {
   onComment?: (target: Target, comment: string, key?: string) => void;
   /** Passages commented on in the chat's unsent message, kept marked. */
   comments?: PdfComment[];
+  /** Checked citations beside their sentences, on the PDF named `pdfKey`; a quote opens the cited work. */
+  evidence?: EvidenceMark[]; onEvidence?: OpenEvidence;
 }>(function PdfView(props, ref) {
   const latest = useRef(props); latest.current = props;
   const root = useRef<HTMLDivElement>(null), container = useRef<HTMLDivElement>(null), inner = useRef<HTMLDivElement>(null), findInput = useRef<HTMLInputElement>(null);
@@ -1133,6 +1136,7 @@ export const PdfView = forwardRef<PdfHandle, {
         {comment.rects.map((rect, index) => <div key={index} className="pdf-comment-mark" data-comment={comment.id} style={percent(rect)}/>)}
         <span className="pdf-comment-tag" style={{ left: `${comment.rects[0][0] * 100}%`, top: `${comment.rects[0][1] * 100}%` }} aria-hidden>{comment.number}</span>
       </Fragment>)}
+      {props.evidence?.some(mark => mark.page === number - 1) && shown.key === props.pdfKey && <EvidenceMarks marks={props.evidence.filter(mark => mark.page === number - 1)} onOpen={props.onEvidence}/>}
       {props.passage?.page === number - 1 && props.passage.marks.map((rect, index) => <div key={index} className="source-mark" style={percent(rect)}/>)}
       {flash?.page === number - 1 && <div key={flash.id} className="problem-flash" style={percent(flash.rect)}/>}
       {selection?.handles && selection.page === number - 1 && !editing && <>

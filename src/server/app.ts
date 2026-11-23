@@ -22,7 +22,10 @@ import { AGENT_TURN, reviewClient, retryReviewRead, allowedReviewRoute, rewriteR
 import { fullPaperPdf, nextPaperPass, paperBuildPdf, paperPassPdf, retainedPaperBuild, retainedPaperPdf } from './pdf.ts';
 import { withNotePages } from './note-pages.ts';
 import { type ChangeAction, Changes } from './changes.ts';
-import { citations, confirmEntry, forgetFinding, library, libraryInputs, libraryReport, recordFinding, stopLibrary } from './references.ts';
+import { citationChecks, citations, confirmEntry, forgetFinding, library, libraryInputs, libraryReport, recordFinding, stopLibrary } from './references.ts';
+import { QuickCitationChecks } from './citation-check.ts';
+import { evidenceMarks } from './evidence-marks.ts';
+import type { ReviewSnapshot } from './ai-review.ts';
 import type { Library } from './library.ts';
 import { plain } from '../../engine/src/core/verify.ts';
 import { type Manuscripts, gitAbortMerge, gitCommit, gitDiff, gitDiscard, gitFinishMerge, gitIgnore, gitRemote, gitStage, gitStatus, gitSync } from './manuscript.ts';
@@ -34,7 +37,7 @@ import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import { registerSkillRoutes } from './skill-routes.ts';
 import { registerMemoryRoutes } from './memory-routes.ts';
 import { type Listener, equals, guard } from './access.ts';
-import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type Annotation, type AnnotationBatch, type AnnotationBatchResult, type NoteReturnState, type NoteSummary, type QuickNote, type SourceFile, type Task } from '../shared.ts';
+import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type Annotation, type LibraryReport, type AnnotationBatch, type AnnotationBatchResult, type NoteReturnState, type NoteSummary, type QuickNote, type SourceFile, type Task } from '../shared.ts';
 import type { SourceFileRead } from '../../engine/src/types.ts';
 import { parseGroupInstructions } from '../note-groups.ts';
 import { noteOptionContext, noteOptionsKey, replacesProposal } from './note-options.ts';
@@ -960,14 +963,67 @@ export async function buildApp(options: AppOptions) {
     papers().setUseZotero(use);
     return papers().zoteroStatus();
   });
-  app.get<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/library', project(), request =>
-    libraryReport(store.project(request.params.id).path, libraryOptions(request.query), papers()));
+  // Quick citation checks run with the quick model (Settings → General).
+  // With automatic checks on, opening the library checks what is new: a
+  // citation whose sentence or PDF changed, or a PDF just found. The same
+  // citations are not tried again by themselves after a run that could not
+  // settle them.
+  const quickChecks = new QuickCitationChecks(papers, request => workspace.quickReply(request));
+  app.addHook('onClose', async () => quickChecks.stopAll());
+  const AUTO_CHECK = 'citation-auto-check', autoTried = new Map<string, string>();
+  const autoCheck = () => store.preference<boolean>(AUTO_CHECK) === true;
+  const citationSource = (projectId: string, root: string) => ({ projectId, citations: () => citations(root, papers()), checks: () => citationChecks(root) });
+  const withQuickCheck = (projectId: string, root: string, report: LibraryReport) => {
+    if (autoCheck() && !quickChecks.state(root)?.running) {
+      const readable = new Set(report.entries.filter(entry => { const pdf = report.library.entries[entry.id]?.pdf; return pdf && pdf.text !== 'pending' && pdf.text !== 'none'; }).map(entry => entry.key));
+      const open = report.citations.flatMap(sentence => sentence.keys.filter(key => readable.has(key) && (!sentence.findings[key] || sentence.findings[key].stale)).map(key => `${sentence.id}|${key}`));
+      const signature = open.join('\n');
+      if (open.length && autoTried.get(root) !== signature) { autoTried.set(root, signature); quickChecks.start(root, citationSource(projectId, root)); }
+    }
+    return { ...report, quickCheck: quickChecks.state(root), autoCheck: autoCheck() };
+  };
+  app.get<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/library', project(), async request => {
+    const root = store.project(request.params.id).path;
+    return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
+  });
+  // The checked citations of the paper's PDF named by key, as marks beside
+  // their sentences. The PDF's text is read once per build.
+  const evidenceTexts = new Map<string, Promise<ReviewSnapshot>>();
+  app.get<{ Params: { id: string }; Querystring: { key?: string } }>('/api/projects/:id/manuscript/evidence', project(), async request => {
+    const project = store.project(request.params.id), key = String(request.query.key || ''), shelf = papers();
+    const running = Boolean(quickChecks.state(project.path)?.running);
+    const { sentences, entries } = await citations(project.path, shelf);
+    if (!key || !sentences.some(sentence => sentence.keys.some(item => sentence.findings[item] && !sentence.findings[item].stale))) return { marks: [], running };
+    const cache = `${project.id}:${key}`;
+    let text = evidenceTexts.get(cache);
+    if (!text) {
+      text = manuscripts.snapshotPdf(manuscripts.pdf(project.id, key), key);
+      evidenceTexts.set(cache, text);
+      for (const old of [...evidenceTexts.keys()].slice(0, -4)) evidenceTexts.delete(old);
+      text.catch(() => { if (evidenceTexts.get(cache) === text) evidenceTexts.delete(cache); });
+    }
+    return { marks: evidenceMarks(await text, sentences, entries, input => shelf.pdfOf(input)?.hash ?? null), running };
+  });
+  app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/citations/quick-check', project(), async request => {
+    const root = store.project(request.params.id).path, b = (request.body || {}) as { stop?: unknown };
+    if (b.stop === true) quickChecks.stop(root);
+    else quickChecks.start(root, citationSource(request.params.id, root));
+    return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
+  });
+  app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/citations/auto-check', project(), async request => {
+    const enabled = (request.body as { enabled?: unknown } | null)?.enabled;
+    if (typeof enabled !== 'boolean') throw Object.assign(new Error('Choose whether citations are checked automatically.'), { statusCode: 400 });
+    store.savePreference(AUTO_CHECK, enabled);
+    const root = store.project(request.params.id).path;
+    autoTried.delete(root);
+    return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
+  });
   app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/references/confirm', project(), async request => {
     const b = request.body as any;
     if (typeof b?.id !== 'string' || typeof b?.confirmed !== 'boolean') throw new Error('Choose an entry to confirm.');
     const root = store.project(request.params.id).path;
     await confirmEntry(root, b.id, b.confirmed);
-    return libraryReport(root, libraryOptions(request.query), papers());
+    return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
   });
   // A finding the author judges otherwise is forgotten; an agent can check again.
   app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/citations/forget', project(), async request => {
@@ -975,7 +1031,7 @@ export async function buildApp(options: AppOptions) {
     if (typeof b?.id !== 'string' || typeof b?.key !== 'string') throw new Error('Choose a citation to forget.');
     const root = store.project(request.params.id).path;
     await forgetFinding(root, b.id, b.key, papers());
-    return libraryReport(root, libraryOptions(request.query), papers());
+    return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
   });
   // A PDF the author adds, to the entry it is dropped on or to the one its
   // first pages name.
