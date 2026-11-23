@@ -1401,7 +1401,10 @@ export function ReviewApp({
   }
   async function copy(index: number) {
     if (!detail || !state) return;
-    const selected = window.getSelection()?.toString().trim() ?? "",
+    // Only text selected in this change describes it.
+    const selection = window.getSelection(),
+      change = document.querySelector(`.change[data-stop="${index}"]`),
+      selected = selection && change?.contains(selection.anchorNode) && change.contains(selection.focusNode) ? selection.toString().trim() : "",
       known = stops[index].units.map((id) => units.get(id)!).filter(Boolean);
     const reference = copyReference(
       state.title,

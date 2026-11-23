@@ -4,6 +4,14 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Fixed
+
+- **Text can be selected anywhere on a review's whole-paper PDF.** Only the changes' before and after rows could be selected, because the rest of each page was drawn as an image. The pages now carry a text layer, as the manuscript's PDF does, and a drag through the margin stops at the line's end.
+
+### Changed
+
+- **"Preparing the full PDF…" no longer floats over the review's pages.** While the complete PDF compiles and an earlier version shows, a small progress indicator beside the page count says so, with the elapsed time on hover.
+
 ## [0.14.0] - 2026-11-23
 
 Teach agents your writing preferences across tasks, switch task agents in place without losing context, curate which agents and models appear in menus, and inspect local workspace activity statistics. See the [release notes](docs/releases/0.14.0/release-notes.md) for update instructions.

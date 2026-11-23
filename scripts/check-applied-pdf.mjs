@@ -173,6 +173,40 @@ try {
   await frame.getByRole('button', { name: 'Previous change', exact: true }).click();
   await expect(frame.locator('.change.current')).toHaveAttribute('data-stop', '0');
   await healthy(reviewBar, 'Deferred task opens directly in FullPaper');
+  // Words outside the changes are selectable on the whole paper.
+  const word = frame.locator('.paper-slice .textLayer span').filter({ hasText: /\w{3,}/ }).first();
+  await word.scrollIntoViewIfNeeded();
+  await word.dblclick();
+  assert.match(await frame.locator('body').evaluate(() => getSelection()?.toString() ?? ''), /\w{3,}/, 'a word outside the changes can be selected');
+  // A drag into the margin ends at the line's end instead of taking the rest of the page.
+  const lineStart = frame.locator('.paper-slice .textLayer span').filter({ hasText: /Fixture/ }).first();
+  const start = await lineStart.boundingBox(), sliceBox = await lineStart.locator('xpath=ancestor::div[contains(@class,"paper-slice")]').boundingBox();
+  const y = Math.round(start.y + start.height / 2);
+  await page.mouse.move(Math.round(start.x + 1), y);
+  await page.mouse.down();
+  await page.mouse.move(Math.round(sliceBox.x + sliceBox.width - 2), y, { steps: 8 });
+  await page.mouse.up();
+  const dragged = await frame.locator('body').evaluate(() => getSelection()?.toString() ?? '');
+  assert.ok(dragged.includes('Fixture') && !dragged.includes('author reviews'), `a drag along the first line selects that line only: ${JSON.stringify(dragged)}`);
+  await frame.locator('body').evaluate(() => getSelection()?.removeAllRanges());
+  // While the complete PDF compiles, the toolbar says so beside the page count, not over the pages.
+  const announce = preparing => page.evaluate(preparing => {
+    const view = document.querySelector('.review-frame').contentWindow;
+    view.dispatchEvent(new CustomEvent('papilot:review:pdf-reader-state', { detail: { pages: 2, page: 1, zoom: { value: 'page-width', scale: 1 }, outline: [], section: -1, ...(preparing ? { preparing: Date.now() - 26000 } : {}) } }));
+  }, preparing);
+  await announce(true);
+  const compiling = reviewBar.getByRole('progressbar', { name: 'Preparing the full PDF…', exact: true });
+  await expect(compiling).toBeVisible();
+  await expect(compiling).toHaveAttribute('title', /Preparing the full PDF… 0:2\d/);
+  await page.screenshot({ path: 'test-results/review-pdf-preparing.png' });
+  const size = page.viewportSize();
+  await page.setViewportSize({ width: 390, height: 844 });
+  // The phone layout opens the pages again, and their reader announces the complete PDF.
+  await expect.poll(async () => { await announce(true); return compiling.isVisible(); }).toBe(true);
+  await page.screenshot({ path: 'test-results/review-pdf-preparing-390.png' });
+  await page.setViewportSize(size);
+  await announce(false);
+  await expect(compiling).toHaveCount(0);
   const chooseZoom = async label => {
     await reviewBar.getByRole('combobox', { name: 'Zoom', exact: true }).click();
     await page.getByRole('option', { name: label, exact: true }).click();

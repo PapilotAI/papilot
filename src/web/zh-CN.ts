@@ -385,7 +385,7 @@ export const zhCN: Record<string, string> = {
 
   'Delete review note {n}': '删除审阅批注 {n}',
 
-  'Full PDF': '完整 PDF', 'Open the full PDF': '打开完整 PDF', 'Generate PDF comparison': '生成 PDF 对比', 'Regenerate PDF comparison': '重新生成 PDF 对比',
+  'Full PDF': '完整 PDF', 'Preparing the full PDF…': '正在准备完整 PDF…', 'Open the full PDF': '打开完整 PDF', 'Generate PDF comparison': '生成 PDF 对比', 'Regenerate PDF comparison': '重新生成 PDF 对比',
 
   // Sidebar and header
   'Rename {name}': '重命名 {name}',

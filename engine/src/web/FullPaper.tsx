@@ -9,7 +9,8 @@ import {
   type RefObject,
 } from "react";
 import * as pdfjs from "pdfjs-dist";
-import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
+import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
+type TextContent = Awaited<ReturnType<PDFPageProxy["getTextContent"]>>;
 import worker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { ChangeBlock } from "../types.ts";
 import { t } from "./i18n.ts";
@@ -151,7 +152,8 @@ export function FullPaper({
     if (previous && previous !== shown.current) void previous.loadingTask.destroy();
   }, [loaded]);
   useEffect(() => {
-    if ((loaded && !loaded.partial) || error) return;
+    // Only the first wait shows a clock here; the toolbar times a later one.
+    if (loaded || error) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [loaded, error]);
@@ -195,14 +197,9 @@ export function FullPaper({
   return (
     <>
       {loaded?.errors?.length ? <CompilationErrors title={t("This PDF has compilation errors.")} errors={loaded.errors} /> : null}
-      {loaded?.partial && (
-        <div className="paper-updating" role="status">
-          <span className="pulse" />
-          <span>{preparing}</span>
-        </div>
-      )}
       <Pages
         paper={paper}
+        preparing={loaded?.partial ? started : undefined}
         render={render}
         scrollRoot={scrollRoot}
         place={place}
@@ -232,6 +229,7 @@ function Pages({
   onReady,
   place,
   restorePlace,
+  preparing,
 }: {
   paper: Paper;
   render: (block: ChangeBlock, index: number) => ReactNode;
@@ -239,6 +237,8 @@ function Pages({
   onReady: (restored: boolean) => void;
   place: string;
   restorePlace: boolean;
+  /** Since when the complete PDF has compiled while this earlier one shows. */
+  preparing?: number;
 }) {
   const box = useRef<HTMLDivElement>(null),
     ready = useRef(onReady);
@@ -247,10 +247,10 @@ function Pages({
   // The pages exist now: the selected change can be scrolled to, before
   // they are painted.
   useLayoutEffect(() => {
-    const reader = fullPaperReader(box.current!, scrollRoot.current!, paper.pdf, place, restorePlace);
+    const reader = fullPaperReader(box.current!, scrollRoot.current!, paper.pdf, place, restorePlace, preparing);
     ready.current(reader.restored);
     return () => reader.dispose();
-  }, [paper, place, restorePlace]);
+  }, [paper, place, restorePlace, preparing]);
   const context = (cut: Cut) => cut.context.length > 0 && (
     <div className="paper-context">
       <div
@@ -297,10 +297,44 @@ function Pages({
   );
 }
 
+// The page's words over each slice, selectable as in the manuscript's PDF:
+// the slice's own words only, placed where the page has them. pdf.js's
+// end-of-content box keeps a drag through empty space from selecting the
+// rest of the page, as its viewer does.
+async function text(content: TextContent, page: PDFPageProxy, slices: HTMLElement[], scale: number, entry: { layers: HTMLElement[] }, live: () => boolean) {
+  const viewport = page.getViewport({ scale });
+  for (const slice of slices) {
+    const left = Number(slice.dataset.left) * scale, top = Number(slice.dataset.top) * scale,
+      right = Number(slice.dataset.right) * scale, bottom = Number(slice.dataset.bottom) * scale;
+    const items = content.items.filter((item) => {
+      if (!("str" in item)) return false;
+      const [, , , , x, y] = pdfjs.Util.transform(viewport.transform, item.transform);
+      return x >= left - 1 && x < right && y > top && y <= bottom + 1;
+    });
+    slice.querySelectorAll(".textLayer").forEach((layer) => layer.remove());
+    if (!items.length) continue;
+    const layer = document.createElement("div");
+    layer.className = "textLayer";
+    layer.style.setProperty("--total-scale-factor", String(scale));
+    layer.style.left = `${-left}px`;
+    layer.style.top = `${-top}px`;
+    await new pdfjs.TextLayer({ textContentSource: { ...content, items }, container: layer, viewport }).render();
+    if (!live()) return;
+    const end = document.createElement("div");
+    end.className = "endOfContent";
+    layer.append(end);
+    layer.addEventListener("pointerdown", () => layer.classList.add("selecting"));
+    slice.append(layer);
+    entry.layers.push(layer);
+  }
+}
+
 // Paints each page into its slices while it is within about a screen and a
 // half of the viewport, and frees the canvases again further away.
 function paint(container: HTMLElement, paper: Paper, root: HTMLElement | null) {
-  const alive = new Map<number, { canvases: HTMLCanvasElement[]; task?: RenderTask }>(),
+  const alive = new Map<number, { canvases: HTMLCanvasElement[]; layers: HTMLElement[]; task?: RenderTask }>(),
+    // A page's words, read once for every repaint of this version.
+    contents = new Map<number, Promise<TextContent>>(),
     wanted = new Set<number>();
   let running = 0,
     width = container.clientWidth,
@@ -317,7 +351,9 @@ function paint(container: HTMLElement, paper: Paper, root: HTMLElement | null) {
     alive.delete(index);
     entry?.task?.cancel();
     entry?.canvases.forEach(free);
+    entry?.layers.forEach((layer) => layer.remove());
     pages()[index]?.querySelectorAll("canvas").forEach(free);
+    pages()[index]?.querySelectorAll(".textLayer").forEach((layer) => layer.remove());
   };
   const pump = () => {
     while (!stopped && running < 2) {
@@ -332,7 +368,7 @@ function paint(container: HTMLElement, paper: Paper, root: HTMLElement | null) {
   };
   const draw = async (index: number, element: HTMLElement) => {
     running++;
-    const entry: { canvases: HTMLCanvasElement[]; task?: RenderTask } = { canvases: [] };
+    const entry: { canvases: HTMLCanvasElement[]; layers: HTMLElement[]; task?: RenderTask } = { canvases: [], layers: [] };
     alive.set(index, entry);
     try {
       const page = await paper.pdf.getPage(index + 1);
@@ -363,6 +399,16 @@ function paint(container: HTMLElement, paper: Paper, root: HTMLElement | null) {
         entry.canvases.push(canvas);
       }
       source.width = source.height = 0;
+      // Painted pages stay even if their words cannot be read.
+      const live = () => !stopped && alive.get(index) === entry;
+      try {
+        if (!contents.has(index)) contents.set(index, page.getTextContent());
+        const content = await contents.get(index)!;
+        if (live()) await text(content, page, slices, cssWidth / size.width, entry, live);
+      } catch (failure) {
+        contents.delete(index);
+        if (live()) console.error(failure);
+      }
     } catch (failure) {
       if (!stopped && (failure as Error)?.name !== "RenderingCancelledException") console.error(failure);
       if (alive.get(index) === entry) alive.delete(index);
@@ -386,6 +432,8 @@ function paint(container: HTMLElement, paper: Paper, root: HTMLElement | null) {
     { root, rootMargin: "1200px 0px" },
   );
   pages().forEach((page) => observer.observe(page));
+  const selected = () => container.querySelectorAll(".textLayer.selecting").forEach((layer) => layer.classList.remove("selecting"));
+  document.addEventListener("pointerup", selected);
   // A wider column needs sharper pages.
   const resized = new ResizeObserver(() => {
     if (Math.abs(container.clientWidth - width) < 1) return;
@@ -402,6 +450,7 @@ function paint(container: HTMLElement, paper: Paper, root: HTMLElement | null) {
     stopped = true;
     observer.disconnect();
     resized.disconnect();
+    document.removeEventListener("pointerup", selected);
     // The canvases stay for the next version, or go with the page.
     for (const entry of alive.values()) entry.task?.cancel();
   };

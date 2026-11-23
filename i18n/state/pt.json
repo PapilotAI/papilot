@@ -3819,6 +3819,11 @@
     "textHash": "9e83b1e8f1b2b09a3c819d991503fd7667545de6193f3ca007ca481372100525",
     "model": "gemini-4-argon-medium"
   },
+  "Preparing the full PDF…": {
+    "revision": "519611b400818c09295ba00c710cf8586f87d435a8a0657d2590d2647f2185ef",
+    "textHash": "2d745976ce255dd06a896eb3d53988ffadc62cb083e7e172abb54ee6a1229572",
+    "model": "gemini-4-argon-medium"
+  },
   "Preparing the review PDF…": {
     "revision": "8e125b6376c05e0f71eaa77714d47b48410c8e38eb046d2b8c7a420f85e904ae",
     "textHash": "3f6d1fc6a3c2cb1bf2b4892b1043b1747704619f522dac9ee458925315394dce",

@@ -11,7 +11,7 @@
 .review-note-actions button{display:flex;flex-direction:column;align-items:center;gap:7px;min-height:68px;padding:10px 6px}
 /* Touch screens select PDF text with Papilot's highlight, handles and menu
    (touch-select.ts), so the system's selection menu never covers it. */
-@media(pointer:coarse){.pdf-strip,.pdf-strip .pdf-text,.pdf-strip .pdf-glyph{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}}
+@media(pointer:coarse){.pdf-strip,.pdf-strip .pdf-text,.pdf-strip .pdf-glyph,.paper-slice .textLayer,.paper-slice .textLayer span{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}}
 .select-handle{position:absolute;width:2px;margin-left:-1px;background:var(--primary);pointer-events:auto;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .select-handle::before{content:"";position:absolute;inset:-16px -15px}
 .select-handle::after{content:"";position:absolute;left:-5px;width:12px;height:12px;border-radius:50%;background:var(--primary)}
@@ -28,7 +28,7 @@
 .review-note-point::before{content:"";position:absolute;left:-5px;top:-5px;width:8px;height:8px;border-radius:50%;background:var(--primary)}
 .review-point-capture{position:absolute;inset:0;pointer-events:auto;cursor:crosshair}
 :root[data-review-tool=hand] #paper{cursor:grab;user-select:none;touch-action:none}
-:root[data-review-tool=hand] .pdf-text,:root[data-review-tool=point] .pdf-text{pointer-events:none}
+:root[data-review-tool=hand] .pdf-text,:root[data-review-tool=point] .pdf-text,:root[data-review-tool=hand] .paper-slice .textLayer,:root[data-review-tool=point] .paper-slice .textLayer{pointer-events:none}
 :root[data-review-tool=delete] .pdf-text ::selection{background:color-mix(in srgb,var(--red) 20%,transparent);text-decoration:line-through}
 /* A comment written beside its passage. */
 .review-select-menu.composing{-webkit-user-select:auto;user-select:auto}
