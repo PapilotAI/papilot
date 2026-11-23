@@ -1,4 +1,5 @@
 import type { ReviewSnapshot } from './ai-review.ts';
+import { backfillActivity, type ActivityEventInput, type ActivityEventKind, type ActivityEventRow } from './activity.ts';
 import { DatabaseSync } from 'node:sqlite';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
@@ -33,6 +34,9 @@ export class Store extends EventEmitter {
       CREATE TABLE IF NOT EXISTS attachments(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS anchor_sources(project_id TEXT NOT NULL, revision TEXT NOT NULL, text TEXT NOT NULL, PRIMARY KEY(project_id, revision));
       CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS activity_events(key TEXT PRIMARY KEY, at INTEGER NOT NULL, kind TEXT NOT NULL, project_id TEXT, task_id TEXT, agent TEXT, model TEXT, undone_at INTEGER, data TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS activity_events_at ON activity_events(at);
+      CREATE INDEX IF NOT EXISTS activity_events_project ON activity_events(project_id, at);
       CREATE INDEX IF NOT EXISTS task_items ON items(task_id,created);
       CREATE INDEX IF NOT EXISTS task_runs ON runs(task_id,status);
       CREATE INDEX IF NOT EXISTS task_threads ON tasks(json_extract(data,'$.threadId'));`);
@@ -45,10 +49,12 @@ export class Store extends EventEmitter {
         INSERT OR IGNORE INTO settings SELECT p.key, p.data FROM preferences p
         JOIN users u ON u.id=p.user_id WHERE json_extract(u.data, '$.role')='owner';`);
       for (const table of ['credentials', 'invites', 'sessions', 'members', 'preferences', 'users', 'migrations']) this.db.exec(`DROP TABLE IF EXISTS ${table}`);
+      backfillActivity(this);
     });
   }
   private rows<T>(table: string): T[] { return (this.db.prepare(`SELECT data FROM ${table} ORDER BY rowid`).all() as { data: string }[]).map(r => JSON.parse(r.data)); }
   projects() { return this.rows<Project>('projects'); }
+  findProject(id: string) { const row = this.db.prepare('SELECT data FROM projects WHERE id=?').get(id) as { data: string } | undefined; return row ? JSON.parse(row.data) as Project : undefined; }
   manuscriptNoteCounts(): Record<string, number> {
     const counts = this.db.prepare(`SELECT project_id, COUNT(*) AS total FROM annotations WHERE ${onManuscript} GROUP BY project_id`).all();
     return Object.fromEntries(counts.map(row => [String(row.project_id), Number(row.total)]));
@@ -201,9 +207,70 @@ export class Store extends EventEmitter {
       for (const t of this.tasks().filter(t => t.titleGeneration === 'pending')) this.updateTask(t.id, { titleGeneration: 'failed' });
       for (const t of this.tasks().filter(t => t.status === 'deleting')) this.updateTask(t.id, { error: 'The server restarted during deletion. Retry deletion to confirm cleanup.' });
       for (const t of this.tasks().filter(t => t.pendingReview)) this.updateTask(t.id, { status: 'uncertain', error: 'The server restarted before a review action was confirmed. Select Check status before continuing.' });
-      for (const r of this.runs().filter(r => r.status === 'running')) this.saveRun({ ...r, status: 'interrupted', finishedAt: Date.now() });
+      for (const r of this.runs().filter(r => r.status === 'running')) {
+        const finishedAt = Date.now();
+        this.saveRun({ ...r, status: 'interrupted', finishedAt });
+        const task = this.findTask(r.taskId);
+        this.recordActivity({ key: `turn:${r.id}`, at: r.createdAt, kind: 'agent_turn', projectId: task?.projectId, taskId: r.taskId, agent: task?.agent || 'codex', model: task?.model, data: { role: task?.mode === 'review' ? 'review' : 'edit', status: 'interrupted', finishedAt } }, true);
+      }
       for (const t of this.tasks().filter(t => ['running', 'waiting_input'].includes(t.status) || (t.mode === 'review' && t.status === 'building'))) this.updateTask(t.id, { status: 'interrupted', turnId: null, error: 'The server restarted and interrupted the previous turn. Continue in the same conversation.' });
     });
   }
+  // Durable workspace statistics stay independent of live state broadcasts and
+  // survive later task or paper cleanup.
+  recordActivity(event: ActivityEventInput, upsert = false) {
+    const sql = upsert
+      ? `INSERT INTO activity_events VALUES(?,?,?,?,?,?,?,NULL,?)
+         ON CONFLICT(key) DO UPDATE SET
+           at=CASE WHEN activity_events.undone_at IS NOT NULL OR excluded.kind='review_decision' THEN excluded.at ELSE activity_events.at END,
+           agent=COALESCE(excluded.agent, activity_events.agent),
+           model=COALESCE(excluded.model, activity_events.model),
+           undone_at=NULL,
+           data=excluded.data`
+      : 'INSERT OR IGNORE INTO activity_events VALUES(?,?,?,?,?,?,?,NULL,?)';
+    this.db.prepare(sql).run(
+      event.key,
+      Math.round(event.at),
+      event.kind,
+      event.projectId ?? null,
+      event.taskId ?? null,
+      event.agent ?? null,
+      event.model ?? null,
+      JSON.stringify(event.data),
+    );
+  }
+  undoActivity(key: string, undoneAt = Date.now()) {
+    return this.db.prepare('UPDATE activity_events SET undone_at=? WHERE key=? AND undone_at IS NULL').run(Math.round(undoneAt), key).changes > 0;
+  }
+  // Removes an event and returns it, so a reversible action can put it back.
+  clearActivity(key: string): ActivityEventRow | null {
+    const event = this.activityEvent(key);
+    this.db.prepare('DELETE FROM activity_events WHERE key=?').run(key);
+    return event;
+  }
+  activityEvent(key: string): ActivityEventRow | null {
+    const row = this.db.prepare(`${ACTIVITY_COLUMNS} WHERE key=?`).get(key) as ActivityRow | undefined;
+    return row ? activityEventRow(row) : null;
+  }
+  activityEvents(projectId?: string): ActivityEventRow[] {
+    const rows = (projectId
+      ? this.db.prepare(`${ACTIVITY_COLUMNS} WHERE project_id=? ORDER BY at ASC, rowid ASC`).all(projectId)
+      : this.db.prepare(`${ACTIVITY_COLUMNS} ORDER BY at ASC, rowid ASC`).all()) as ActivityRow[];
+    return rows.map(activityEventRow);
+  }
   close() { this.db.close(); }
 }
+
+const ACTIVITY_COLUMNS = 'SELECT key, at, kind, project_id, task_id, agent, model, undone_at, data FROM activity_events';
+type ActivityRow = { key: string; at: number; kind: ActivityEventKind; project_id: string | null; task_id: string | null; agent: string | null; model: string | null; undone_at: number | null; data: string };
+const activityEventRow = (row: ActivityRow): ActivityEventRow => ({
+  key: row.key,
+  at: Number(row.at),
+  kind: row.kind,
+  projectId: row.project_id,
+  taskId: row.task_id,
+  agent: row.agent,
+  model: row.model,
+  undoneAt: row.undone_at === null ? null : Number(row.undone_at),
+  data: JSON.parse(row.data),
+});

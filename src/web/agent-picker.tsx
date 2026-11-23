@@ -64,7 +64,7 @@ function remember(agent: AgentId, model: string) {
   browserStorage.setItem(RECENT, JSON.stringify(next));
 }
 
-export interface AgentOption { value: AgentId; label: string; runtime?: RuntimeStatus; allowUnknownDefault?: boolean; restartsTask?: boolean }
+export interface AgentOption { value: AgentId; label: string; runtime?: RuntimeStatus; allowUnknownDefault?: boolean }
 // An agent's models in runs of the same source, in list order; models without one stay ungrouped.
 function bySource(items: Choice[]) {
   const parts: { source?: string; items: Choice[] }[] = [];
@@ -176,14 +176,11 @@ export function AgentPicker({ label, agents, agent, model, effort, fast, reconne
   }
   const renderChoice = (choice: Choice) => {
     const chosen = isSelected(choice), state = agentState(choice.agent.runtime);
-    const restart = choice.agent.restartsTask ? t('Restart task') : undefined;
     return <div key={choice.key} id={`${id}-${choice.key.replace(/\W/g, '_')}`} data-key={choice.key} role="option" aria-selected={chosen} aria-label={[choice.name, choice.source, choice.agent.label].filter(Boolean).join(' · ')}
-      aria-description={restart} title={restart}
       className={'model-option' + (choice.key === active ? ' active' : '')} onPointerMove={() => setActive(choice.key)} onClick={() => choose(choice)}>
       {choice.recent && <BrandIcon name={choice.agent.value} size={15}/>}<span className="model-option-name">{choice.name}</span>
       {choice.isDefault && !choice.recent && <small className="model-option-tag">{t('Default')}</small>}
       {(choice.recent || state) && <small className={'model-option-agent' + (state ? ' warn' : '')}>{choice.recent ? [choice.agent.label, choice.source].filter(Boolean).join(' · ') : state}</small>}
-      {restart && <span className="model-option-restart" aria-hidden="true"><Icon name="refresh" size={14}/></span>}
       {chosen && <Icon name="check" size={14}/>}
     </div>;
   };

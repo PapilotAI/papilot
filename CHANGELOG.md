@@ -4,8 +4,13 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added
+
+- Add **Settings → Statistics**, which shows what Papilot has done for you across all papers or per paper. Big figures for accepted and rejected changes, agent working time, and tasks started sit above an activity calendar with active days and streaks that pages back through history. Cards follow with your acceptance rate, token usage and provider-reported or API-equivalent spend, a weekday-by-hour heatmap of active hours, and agents and models. **Share** turns the figures and recent activity into an image to save or copy. Activity records are stored locally in SQLite, backfilled from existing workspace history on upgrade, and preserved when tasks or papers are removed.
+
 ### Changed
 
+- Switch a task to another agent without leaving it. Choosing another agent's model in the menu below the chat keeps the conversation, changes, review and unsent drafts in the same task, instead of rerunning the first request in a new task. The next turn starts that agent's session with the conversation so far, so it continues from where the previous agent stopped. A turn in progress stops first, and instructions queued behind it go to the new agent. A task whose repository moved also hands its conversation to the next session.
 - Lead the homepage with the README's reasons to use Papilot, in its order, in place of the three-eras comparison. Live Overleaf sync gets a section of its own: Papilot and a coauthor's Overleaf editor side by side, with a committed change travelling through the pipe between them into Overleaf and the coauthor's sentence travelling back into the PDF. A new window shows another agent's model picked below the chat and the request rerun, with every supported agent listed beside it. Phone review and Universe templates are features of their own too: changes accepted with taps on a phone, and a conference's template found and created in the New paper dialog. Each reason links to the demo, the guide or Universe. ([#259](https://github.com/PapilotAI/papilot/issues/259))
 
 ## [0.13.0] - 2026-11-22

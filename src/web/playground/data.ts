@@ -1,5 +1,5 @@
 import { regroupAnnotation, sameAnnotationGroup } from '../../note-groups.ts';
-import type { Annotation, AnnotationGroupEdit, AnnotationBatch, AnnotationBatchResult, GitStatus, Manuscript, Snapshot, Task, TimelineItem, AgentId, Skill, NoteSummary, NoteResult, NoteOptions } from '../../shared.ts';
+import { ACTIVITY_RANGES, type ActivityDay, type ActivityRange, type ActivityReport, type Annotation, type AnnotationGroupEdit, type AnnotationBatch, type AnnotationBatchResult, type GitStatus, type Manuscript, type Snapshot, type Task, type TimelineItem, type AgentId, type Skill, type NoteSummary, type NoteResult, type NoteOptions } from '../../shared.ts';
 import type { ActionKind, Decision, PageState, RoundDetail } from '../../../engine/src/types.ts';
 import plans from '../../../examples/playground-paper/edits.json';
 import seededNotes from '../../../examples/playground-paper/preview/notes.json';
@@ -289,6 +289,79 @@ export function createPlaygroundData(storage: Store, version: string, pdfKey: st
       persist(); return task(permissionTask, plans.indexOf(permissionTask) + 1);
     }
     if (body !== undefined) throw new PlaygroundDownloadRequired();
+    if (path === '/activity') {
+      const query = new URLSearchParams(route.split('?')[1]);
+      const requestedRange = query.get('range');
+      const range: ActivityRange = requestedRange && ACTIVITY_RANGES.includes(requestedRange as ActivityRange) ? requestedRange as ActivityRange : '30d';
+      const timezone = query.get('tz') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      const todayDate = new Date(now());
+      const today = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}`;
+      const visiblePlans = [reviewPlan, ...plans.filter(plan => !plan.preset || local.openedPresets[plan.id])];
+      let accepted = Object.keys(local.copied).length, rejected = local.hiddenSuggestions.length, commented = 0;
+      for (const id of Object.keys(local.reviews)) {
+        const c = counts(id);
+        accepted += c.accepted; rejected += c.rejected; commented += c.commented;
+      }
+      const authorNotes = local.annotations.filter(note => !note.aiReview).length;
+      const aiNotes = suggestions().length;
+      const sentNotes = plans.filter(plan => !plan.preset || local.openedPresets[plan.id]).reduce((sum, plan) => sum + (plan.notes?.length || 0), 0);
+      const turns = visiblePlans.length;
+      const tokens = { input: turns * 8400, cached: turns * 26000, cacheWrite: 0, output: turns * 1850, reasoning: turns * 620, total: turns * 36250 };
+      const estimatedCostUsd = Number((turns * 0.056).toFixed(4));
+      const hours = Array<number>(24).fill(0), turnHours = Array<number>(24).fill(0), tokenHours = Array<number>(24).fill(0);
+      hours[10] = 2; hours[14] = turns + accepted + rejected + 1;
+      turnHours[10] = 1; turnHours[14] = Math.max(1, turns - 1);
+      tokenHours[10] = 36250; tokenHours[14] = Math.max(0, tokens.total - 36250);
+      const day: ActivityDay = {
+        date: today,
+        tokens,
+        costUsd: estimatedCostUsd,
+        reportedCostUsd: 0,
+        estimatedCostUsd,
+        pricedTokens: tokens.total,
+        unpricedTokens: 0,
+        tasksStarted: turns,
+        editTasksStarted: Math.max(0, turns - 1),
+        reviewTasksStarted: 1,
+        turns,
+        completedTurns: turns,
+        failedTurns: 0,
+        interruptedTurns: 0,
+        turnsByRole: { edit: Math.max(0, turns - 1), review: 1, worker: 0, helper: 0 },
+        agentMs: turns * 95_000,
+        accepted,
+        rejected,
+        commented,
+        undone: 0,
+        tasksApplied: 0,
+        tasksCommitted: 0,
+        gitCommits: 0,
+        annotationsCreated: authorNotes + aiNotes,
+        authorAnnotations: authorNotes,
+        agentAnnotations: 0,
+        aiReviewAnnotations: aiNotes,
+        annotationsSent: sentNotes,
+        hours,
+        turnHours,
+        tokenHours,
+      };
+      return {
+        timezone,
+        today,
+        range,
+        generatedAt: now(),
+        projectId: query.get('projectId') || null,
+        projects: [{ id: projectId, name: 'Meet Papilot', tasksStarted: turns, turns, tokens: tokens.total, costUsd: estimatedCostUsd, accepted, rejected, annotationsCreated: authorNotes + aiNotes }],
+        totals: { ...day, activeDays: 1 },
+        hours,
+        turnHours,
+        tokenHours,
+        days: [day],
+        calendar: [{ date: today, actions: hours.reduce((sum, count) => sum + count, 0), tokens: tokens.total, costUsd: estimatedCostUsd, reportedCostUsd: 0, estimatedCostUsd, turns, accepted, rejected, commented, annotationsCreated: day.annotationsCreated }],
+        agents: [{ agent: 'codex', tasksStarted: turns, turns, tokens, costUsd: estimatedCostUsd, reportedCostUsd: 0, estimatedCostUsd, unpricedTokens: 0 }],
+        models: [{ agent: 'codex', model: demoRuntimes.codex.models[0]?.id || 'gpt-5.4', turns, tokens, costUsd: estimatedCostUsd, costSource: 'estimated' }],
+      } satisfies ActivityReport;
+    }
     if (path === '/state') return { version, projects: [{ id: projectId, name: 'Meet Papilot', path: '/example/papilot-introduction', createdAt }], tasks: [task(reviewPlan, 0), ...plans.filter(plan => !plan.preset || local.openedPresets[plan.id]).map((plan, index) => task(plan, index + 1))], requests: [], runtime: demoRuntimes.codex, runtimes: demoRuntimes } satisfies Snapshot;
     if (path === `${base}/manuscript`) return { git, build: { status: 'ready', current: true, key: pdfKey, pages, builtAt: createdAt }, annotations: local.annotations.filter(note => !note.deletedAt) } satisfies Manuscript;
     if (path === `${base}/skills`) return { skills: [

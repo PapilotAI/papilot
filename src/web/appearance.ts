@@ -36,7 +36,7 @@ export function parseAppearance(value: string | null): Appearance {
   } catch { return DEFAULT_APPEARANCE; }
 }
 
-function mix(base: string, color: string, amount: number) {
+export function mix(base: string, color: string, amount: number) {
   const channels = [1, 3, 5].map(index => Math.round(parseInt(base.slice(index, index + 2), 16) * (1 - amount) + parseInt(color.slice(index, index + 2), 16) * amount));
   return '#' + channels.map(channel => channel.toString(16).padStart(2, '0')).join('');
 }

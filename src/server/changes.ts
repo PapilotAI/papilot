@@ -292,7 +292,15 @@ export class Changes {
 
   // Stage or unstage writes the index only; revert writes the files too, and
   // keeps what it replaced for undo.
-  async act(projectId: string, root: string, csrf: string, action: ChangeAction, number: number, ids: string[]) {
+  async act(
+    projectId: string,
+    root: string,
+    csrf: string,
+    action: ChangeAction,
+    number: number,
+    ids: string[],
+    onApplied?: (applied: { base: string; signatures: string[]; revertId?: string }) => void,
+  ) {
     const { comparison, snapshot, units } = await this.chosen(projectId, root, number, ids);
     const { Repo, splitLines, textOf, opcodes, textEdits, revertUnits } = await engine(), repo = new Repo(root);
     const files = [...new Set(units.map(unit => unit.file))];
@@ -347,6 +355,7 @@ export class Changes {
       }
     }
     if (action === 'revert') { comparison.undo = revert; revert.signatures.forEach(key => comparison.reverted.add(key)); }
+    onApplied?.({ base: snapshot.before || 'root', signatures: revert.signatures, ...(action === 'revert' ? { revertId: revert.id } : {}) });
     comparison.snapshot = undefined;
     return this.state(projectId, root, csrf, number);
   }

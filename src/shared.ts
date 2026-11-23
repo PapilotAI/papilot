@@ -23,7 +23,7 @@ export interface UpdateStatus {
 // accepted changes touched since its last commit, relative to the repository root.
 export interface ReviewJob { id?: string; phase: string; status: string; error?: string; details?: string[]; createdAt?: number; options?: { completed: number; total: number }; progress?: Partial<Record<'baseline' | 'revised', Omit<BuildProgress, 'startedAt'>>> }
 export interface ReviewSummary { ready?: number; state: string; round: number | null; counts: Record<string, number>; unsent?: number; comments?: number; files?: string[]; next?: string; job?: ReviewJob | null }
-export interface PendingBuild { requestId: string; job?: string; runs: string[]; sendBack: boolean; restarts: number }
+export interface PendingBuild { requestId: string; job?: string; runs: string[]; sendBack: boolean; restarts: number; optionAccept?: { actionId: string; count: number } }
 // previousStatus and previousError are where Check status returns the task
 // once the engine confirms the action.
 export interface PendingReview { returnNote?: Annotation; returnNotes?: Annotation[]; route: string; body: Record<string, unknown>; previousStatus: TaskStatus; previousError?: string | null }
@@ -43,8 +43,12 @@ export interface TaskReconciliation {
 export type TaskPermissions = string;
 export interface TaskPermissionOption { value: TaskPermissions; label: string; detail: string }
 export interface Task {
-  // A fresh session replaying another task's original request. Provider sessions are never reused.
+  // Papilot 0.13 and earlier switched agents by replaying a task's original
+  // request in a new task; such a task links to the one it replaced.
   restart?: { taskId: string; draftAttachments?: Attachment[] };
+  // The agent's session has not seen the task's earlier conversation, as
+  // after switching agents; its next turn is given it.
+  handoff?: boolean;
   permissions?: TaskPermissions;
   mode?: 'edit' | 'review';
   aiReview?: { key: string; notes?: number; revision?: number };
@@ -82,8 +86,10 @@ export function taskFinished(task: Task) {
   return review.state === 'done' && review.files?.length === 0 && task.delivery?.mode !== 'branch';
 }
 // reviewRound is 0 while awaiting a result, null when no changes were produced,
-// or the published round. Older runs omit it.
-export interface Run { workflowAudit?: { fingerprint: string; report: string; files: string[] }; id: string; taskId: string; requestKey: string; prompt: string; attachments?: Attachment[]; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; finishedAt: number | null; reviewRound?: number | null; noteRounds?: Record<number, number>; noteOptionsRequested?: boolean; noteOptions?: PreparedNoteOptions[] }
+// or the published round. Older runs omit it. model is the one the turn started
+// with; usage records keep it when the task's model changes during the turn.
+// startedAt: when Papilot sent the run to its agent; a run cancelled while queued has none.
+export interface Run { workflowAudit?: { fingerprint: string; report: string; files: string[] }; id: string; taskId: string; requestKey: string; prompt: string; model?: string | null; attachments?: Attachment[]; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; startedAt?: number; finishedAt: number | null; reviewRound?: number | null; noteRounds?: Record<number, number>; noteOptionsRequested?: boolean; noteOptions?: PreparedNoteOptions[] }
 /** One part of what fills the context window; ids are named in the web app. */
 export interface ContextPart { id: string; tokens: number }
 /** breakdown: the parts, when the agent can tell them apart, adding up to the window. */
@@ -356,4 +362,119 @@ export interface BibliographyReport {
   bibs: string[]; absent: string[]; entries: BibliographyEntry[];
   missing: (ReferenceCitation & { key: string })[]; duplicates: string[][]; similar: { ids: string[]; by: 'doi' | 'title' }[]; all_cited: boolean;
   checks: Record<string, ReferenceCheck>; pending: number; confirmed: Record<string, number>;
+}
+
+export type ActivityRange = '7d' | '30d' | '90d' | 'all';
+export const ACTIVITY_RANGES: ActivityRange[] = ['7d', '30d', '90d', 'all'];
+export type ActivityTurnRole = 'edit' | 'review' | 'worker' | 'helper';
+export type ActivityCostSource = 'reported' | 'estimated' | 'mixed' | 'unknown';
+
+export interface ActivityTokenTotals {
+  input: number;
+  cached: number;
+  cacheWrite: number;
+  output: number;
+  reasoning: number;
+  total: number;
+}
+
+export interface ActivityMetrics {
+  tokens: ActivityTokenTotals;
+  costUsd: number | null;
+  reportedCostUsd: number;
+  estimatedCostUsd: number;
+  pricedTokens: number;
+  unpricedTokens: number;
+  tasksStarted: number;
+  editTasksStarted: number;
+  reviewTasksStarted: number;
+  turns: number;
+  completedTurns: number;
+  failedTurns: number;
+  interruptedTurns: number;
+  turnsByRole: Record<ActivityTurnRole, number>;
+  /** Wall time of finished agent turns, from start to finish. */
+  agentMs: number;
+  accepted: number;
+  rejected: number;
+  commented: number;
+  undone: number;
+  tasksApplied: number;
+  tasksCommitted: number;
+  gitCommits: number;
+  annotationsCreated: number;
+  authorAnnotations: number;
+  agentAnnotations: number;
+  aiReviewAnnotations: number;
+  annotationsSent: number;
+}
+
+export interface ActivityTotals extends ActivityMetrics {
+  activeDays: number;
+}
+
+export interface ActivityDay extends ActivityMetrics {
+  date: string;
+  hours: number[];
+  turnHours: number[];
+  tokenHours: number[];
+}
+
+// An active day of the activity calendar, which covers every day whatever the
+// selected range. actions counts what the active hours count: agent runs,
+// review decisions, your annotations, saved tasks and commits.
+export interface ActivityCalendarDay extends Pick<ActivityMetrics, 'costUsd' | 'reportedCostUsd' | 'estimatedCostUsd' | 'turns' | 'accepted' | 'rejected' | 'commented' | 'annotationsCreated'> {
+  date: string;
+  actions: number;
+  tokens: number;
+}
+
+export interface ActivityAgentSummary {
+  agent: AgentId;
+  tasksStarted: number;
+  turns: number;
+  tokens: ActivityTokenTotals;
+  costUsd: number | null;
+  reportedCostUsd: number;
+  estimatedCostUsd: number;
+  unpricedTokens: number;
+}
+
+export interface ActivityModelSummary {
+  agent: AgentId;
+  model: string;
+  turns: number;
+  tokens: ActivityTokenTotals;
+  costUsd: number | null;
+  costSource: ActivityCostSource;
+}
+
+export interface ActivityProjectSummary {
+  id: string;
+  name: string;
+  removed?: true;
+  tasksStarted: number;
+  turns: number;
+  tokens: number;
+  costUsd: number | null;
+  accepted: number;
+  rejected: number;
+  annotationsCreated: number;
+}
+
+export interface ActivityReport {
+  timezone: string;
+  today: string;
+  range: ActivityRange;
+  generatedAt: number;
+  projectId: string | null;
+  projects: ActivityProjectSummary[];
+  totals: ActivityTotals;
+  hours: number[];
+  turnHours: number[];
+  tokenHours: number[];
+  days: ActivityDay[];
+  calendar: ActivityCalendarDay[];
+  agents: ActivityAgentSummary[];
+  models: ActivityModelSummary[];
 }

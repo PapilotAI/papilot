@@ -429,6 +429,31 @@ test('task model settings persist, validate capabilities and clear incompatible 
   } finally { f.close(); }
 });
 
+test('a turn records its usage and completion under the model it started with when the model changes mid-turn', async () => {
+  const f = fixture(async (_method, route) => route === '/api/tasks' ? { worktree: '/unused' } : summary);
+  try {
+    f.workspace.runtime.models = taskModels;
+    f.codex.ready = true;
+    f.store.updateTask(f.task.id, { model: 'deep', status: 'queued' });
+    const run: Run = { id: 'model-snapshot-run', taskId: f.task.id, requestKey: 'model-snapshot', prompt: 'Revise.', status: 'queued', createdAt: Date.now(), finishedAt: null };
+    f.store.saveRun(run);
+    (f.workspace as any).active.set(f.task.id, run);
+    await (f.workspace as any).startRun(run);
+    f.workspace.updateTaskModel(f.task.id, { model: 'small' });
+    const usage = { total: { totalTokens: 1200, inputTokens: 1000, cachedInputTokens: 400, outputTokens: 200, reasoningOutputTokens: 50 }, last: { totalTokens: 1200, inputTokens: 1000, cachedInputTokens: 400, outputTokens: 200, reasoningOutputTokens: 50 } };
+    f.codex.emit('notification', { method: 'thread/tokenUsage/updated', params: { threadId: 'thread', turnId: 'turn-new', tokenUsage: usage } });
+    f.codex.emit('notification', { method: 'turn/usage', params: { threadId: 'thread', usage: { input: 300, output: 40, total: 340 } } });
+    f.codex.emit('notification', { method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn-new', status: 'completed' } } });
+    for (let i = 0; i < 5; i++) await tick();
+    const events = f.store.activityEvents().filter(event => event.taskId === f.task.id);
+    assert.deepEqual(events.filter(event => event.kind === 'token_usage').map(event => event.model), ['deep', 'deep']);
+    const turn = events.find(event => event.kind === 'agent_turn');
+    assert.equal(turn?.data.status, 'completed');
+    assert.equal(turn?.model, 'deep');
+    assert.equal(f.store.task(f.task.id).model, 'small', 'the next turn uses the new choice');
+  } finally { f.close(); }
+});
+
 test('a task cannot reset to an unknown default and silently keep its previous model', () => {
   const f = fixture();
   try {
@@ -3713,188 +3738,241 @@ test('review instructions retain read-only manuscript boundaries despite editing
   } finally { f.close(); }
 });
 
-function restartFixture(handler?: (method: string, route: string, body?: unknown) => Promise<any>) {
-  const f = fixture(handler || (async (_method, route) => route === '/api/tasks' ? { worktree: '/replacement', deferred: true } : route.includes('/feedback') ? { cursor: 0, feedback: [] } : summary));
+function switchFixture() {
+  const claude = new FakeCodex(), f = fixture(undefined, { claude });
+  f.codex.ready = true; claude.ready = true;
+  claude.handler = async (method: string) => method === 'turn/start' ? { turn: { id: 'claude-turn' } } : { thread: { id: 'claude-thread' } };
   f.workspace.runtimes.claude = { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'opus', name: 'Opus', isDefault: true, efforts: ['high'], defaultEffort: 'high' }] };
-  const run: Run = { id: 'original-initial', taskId: f.task.id, requestKey: 'initial-' + f.task.id, prompt: 'Original request with exact skill and source excerpt.', status: 'completed', createdAt: 1, finishedAt: 2, reviewRound: 1 };
-  f.store.saveRun(run);
-  f.store.saveItem({ id: run.id, taskId: f.task.id, type: 'user', text: 'Original request.', createdAt: 1, meta: { notes: [{ id: 'old-note', where: 'main.tex:10–12, PDF page 2', quote: 'Original text', comment: 'Clarify.', anchor: { sources: [{ file: 'main.tex', lines: [10, 12] }] } }], skill: { id: 'polish', name: 'Polish' }, groupInstructions: { purple: 'Improve clarity.' } } });
-  return { ...f, run, choice: { id: 'replacement-task-id', agent: 'claude' as const, model: 'opus', effort: 'high' } };
+  f.store.updateTask(f.task.id, { worktree: '/task-worktree', model: 'codex-model', effort: 'xhigh', serviceTier: 'priority', review: { state: 'reviewing', round: 1, counts: { pending: 2 } } });
+  // A turn with a reply and an edit.
+  f.store.saveRun({ id: 'first', taskId: f.task.id, requestKey: 'initial-' + f.task.id, prompt: 'Original request with the source excerpt.', status: 'completed', createdAt: 1, finishedAt: 10, reviewRound: 1 });
+  f.store.saveItem({ id: 'first', taskId: f.task.id, type: 'user', text: 'Original request.', createdAt: 1 });
+  f.store.saveItem({ id: 'first-edit', taskId: f.task.id, type: 'files', text: 'main.tex', createdAt: 3 });
+  // The author queued a follow-up while the first turn ran; its reply came after.
+  f.store.saveRun({ id: 'second', taskId: f.task.id, requestKey: 'second', prompt: 'Follow-up queued during the first turn.', status: 'completed', createdAt: 5, finishedAt: 20 });
+  f.store.saveItem({ id: 'second', taskId: f.task.id, type: 'user', text: 'Follow-up queued during the first turn.', createdAt: 5 });
+  f.store.saveItem({ id: 'first-reply', taskId: f.task.id, type: 'assistant', text: 'Revised the introduction.', createdAt: 8 });
+  f.store.saveItem({ id: 'second-reply', taskId: f.task.id, type: 'assistant', text: 'Shortened the abstract.', createdAt: 15 });
+  // A message the author cancelled before it ran.
+  f.store.saveRun({ id: 'cancelled', taskId: f.task.id, requestKey: 'cancelled', prompt: 'Cancelled message.', status: 'interrupted', createdAt: 25, finishedAt: 26 });
+  f.store.saveItem({ id: 'cancelled', taskId: f.task.id, type: 'user', text: 'Cancelled message.', createdAt: 25 });
+  return { ...f, claude, choice: { agent: 'claude' as const, model: 'opus', effort: 'high' } };
 }
 
-test('restart preserves the original request and source context in a new session with independent attachments', async () => {
-  const f = restartFixture();
+test('switching agents keeps the task and hands its conversation to the first turn of the new agent', async () => {
+  const f = switchFixture();
   try {
-    const originalFile = await f.workspace.attachments.upload(f.task.projectId, 'reference.txt', Buffer.from('original reference'));
-    const draftFile = await f.workspace.attachments.upload(f.task.projectId, 'draft.txt', Buffer.from('unsent reference'));
-    f.workspace.attachments.claim(f.task.projectId, [originalFile.id], f.task.id);
-    const originalMessage = f.store.item(f.task.id, f.run.id)!;
-    f.store.saveItem({ ...originalMessage, meta: { ...originalMessage.meta, attachments: [originalFile] } });
-    f.store.saveRun({ ...f.run, noteOptionsRequested: true, prompt: f.run.prompt + f.workspace.attachments.prompt([originalFile]), attachments: [originalFile] });
-    f.store.updateTask(f.task.id, { permissions: 'full', model: 'codex-model', effort: 'xhigh', serviceTier: 'priority', review: { state: 'reviewing', round: 3, counts: { pending: 2 } } });
-    const originalTask = f.store.task(f.task.id), originalItems = f.store.items(f.task.id);
-    const replacement = await f.workspace.restartTask(f.task.id, { ...f.choice, draftAttachments: [draftFile.id] });
-    await f.workspace.prepareTask(replacement.id);
-    assert.equal(replacement.restart?.taskId, f.task.id);
-    assert.equal(replacement.threadId, null); assert.equal(replacement.turnId, null);
-    assert.equal(replacement.permissions, 'workspace'); assert.equal(replacement.serviceTier, undefined);
-    assert.equal(replacement.model, 'opus'); assert.equal(replacement.effort, 'high');
-    assert.deepEqual(f.store.task(f.task.id), originalTask);
-    assert.deepEqual(f.store.items(f.task.id), originalItems);
-    const request = f.store.runByKey('initial-' + replacement.id)!;
-    assert.equal(request.noteOptionsRequested, true);
-    assert.match(request.prompt, /exact skill and source excerpt/);
-    assert.ok(!request.prompt.includes(f.workspace.attachments.path(originalFile)));
-    const copied = request.attachments![0];
-    assert.notEqual(copied.id, originalFile.id);
-    assert.match(request.prompt, new RegExp(copied.id));
-    assert.deepEqual(f.store.items(replacement.id)[0].meta?.notes, originalMessage.meta?.notes);
-    assert.deepEqual(f.store.items(replacement.id)[0].meta?.skill, originalMessage.meta?.skill);
-    assert.deepEqual(f.store.items(replacement.id)[0].meta?.groupInstructions, originalMessage.meta?.groupInstructions);
-    const copiedDraft = replacement.restart!.draftAttachments![0];
-    assert.notEqual(copiedDraft.id, draftFile.id);
-    assert.ok(!request.prompt.includes(copiedDraft.id), 'An unsent attachment is not sent automatically');
-    f.workspace.attachments.removeTask(f.task.id);
-    assert.equal(fs.readFileSync(f.workspace.attachments.path(copied), 'utf8'), 'original reference');
-    assert.equal(fs.readFileSync(f.workspace.attachments.path(copiedDraft), 'utf8'), 'unsent reference');
-    assert.equal((await f.workspace.restartTask(f.task.id, { ...f.choice, draftAttachments: [draftFile.id] })).id, replacement.id);
-    assert.equal(f.store.tasks().length, 2, 'Retrying the same replacement ID never duplicates it');
+    const items = f.store.items(f.task.id);
+    const task = await f.workspace.switchTaskAgent(f.task.id, f.choice);
+    assert.equal(f.store.tasks().length, 1, 'No other task is created');
+    assert.equal(task.id, f.task.id);
+    assert.equal(task.agent, 'claude'); assert.equal(task.model, 'opus'); assert.equal(task.effort, 'high');
+    assert.equal(task.serviceTier, undefined); assert.equal(task.permissions, 'workspace');
+    assert.equal(task.worktree, '/task-worktree'); assert.deepEqual(task.review, f.store.task(f.task.id).review);
+    assert.equal(task.threadId, null); assert.equal(task.handoff, true);
+    assert.deepEqual(f.store.items(f.task.id), items);
+    await tick();
+    assert.deepEqual(f.codex.calls, [{ method: 'thread/archive', params: { threadId: 'thread' } }], 'The previous session is released');
+
+    await f.workspace.enqueue(f.task.id, 'Continue with the conclusion.', 'after-switch', false);
+    await tick(); await tick();
+    assert.deepEqual(f.claude.calls.map(call => call.method), ['thread/start', 'turn/start']);
+    const text: string = f.claude.calls[1].params.input[0].text;
+    const order = ['Papilot handoff', 'Original request with the source excerpt.', 'Revised the introduction.', 'Follow-up queued during the first turn.', 'Shortened the abstract.', 'New message from the author:\nContinue with the conclusion.'];
+    for (let i = 1; i < order.length; i++) assert.ok(text.indexOf(order[i - 1]) >= 0 && text.indexOf(order[i - 1]) < text.indexOf(order[i]), `${order[i - 1]} comes before ${order[i]}`);
+    assert.doesNotMatch(text, /Cancelled message/);
+    assert.equal(f.store.task(f.task.id).handoff, true, 'An acknowledged turn has not shown that the agent saw it');
+    assert.equal(f.store.task(f.task.id).threadId, 'claude-thread');
+
+    await (f.workspace as any).notification({ method: 'turn/completed', params: { threadId: 'claude-thread', turn: { id: 'claude-turn', status: 'completed' } } }, 'claude');
+    for (let i = 0; i < 10 && (f.workspace as any).active.has(f.task.id); i++) await tick();
+    assert.equal(f.store.task(f.task.id).handoff, undefined, 'The new session has the conversation');
+    assert.equal(f.store.task(f.task.id).threadId, 'claude-thread');
+    await f.workspace.enqueue(f.task.id, 'One more change.', 'next-turn', false);
+    for (let i = 0; i < 10 && f.claude.calls.length < 3; i++) await tick();
+    assert.equal(f.claude.calls.at(-1)!.method, 'turn/start');
+    assert.equal(f.claude.calls.at(-1)!.params.input[0].text, 'One more change.');
   } finally { f.close(); }
 });
 
-test('restart validates destination settings and preserves unavailable context rather than silently dropping it', async () => {
-  const f = restartFixture();
+test('the handoff keeps a request its agent started on without replying, but not one cancelled while queued', async () => {
+  const f = switchFixture();
   try {
-    for (const change of [{ model: 'codex-model' }, { effort: 'xhigh' }, { serviceTier: 'priority' }, { permissions: 'unsupported' }, { permissions: 123 }]) await assert.rejects(f.workspace.restartTask(f.task.id, { ...f.choice, ...change }), /available model|reasoning effort|Fast mode|permissions/);
+    f.store.saveRun({ id: 'silent', taskId: f.task.id, requestKey: 'silent', prompt: 'Keep all equations unchanged.', status: 'interrupted', createdAt: 40, startedAt: 41, finishedAt: 42 });
+    f.store.saveItem({ id: 'silent', taskId: f.task.id, type: 'user', text: 'Keep all equations unchanged.', createdAt: 40 });
+    await f.workspace.switchTaskAgent(f.task.id, f.choice);
+    await f.workspace.enqueue(f.task.id, 'Continue.', 'continue', false);
+    for (let i = 0; i < 10 && !f.claude.calls.some(call => call.method === 'turn/start'); i++) await tick();
+    const text: string = f.claude.calls.find(call => call.method === 'turn/start')!.params.input[0].text;
+    assert.match(text, /Earlier turn 3, request:\nKeep all equations unchanged\.\n\nEarlier turn 3, no reply\./);
+    assert.doesNotMatch(text, /Cancelled message/);
+    assert.equal(typeof f.store.runByKey('continue')?.startedAt, 'number', 'A run sent to its agent records when it started');
+  } finally { f.close(); }
+});
+
+test('a handoff is given again when its turn never reached the agent', async () => {
+  const f = switchFixture();
+  try {
+    await f.workspace.switchTaskAgent(f.task.id, f.choice);
+    // A turn/start the agent refuses.
+    f.claude.handler = async (method: string) => {
+      if (method === 'turn/start') throw new RpcResponseError('Rate limited.');
+      return { thread: { id: 'claude-thread' } };
+    };
+    await f.workspace.enqueue(f.task.id, 'First try.', 'first-try', false);
+    for (let i = 0; i < 10 && f.store.task(f.task.id).status !== 'failed'; i++) await tick();
+    assert.equal(f.store.task(f.task.id).status, 'failed');
+    assert.equal(f.store.task(f.task.id).handoff, true);
+    // An acknowledged turn that fails before the agent produces anything, as
+    // when an adapter's CLI cannot start: the next turn starts another session.
+    f.claude.handler = async (method: string) => method === 'turn/start' ? { turn: { id: 'claude-turn' } } : { thread: { id: 'claude-thread-2' } };
+    await f.workspace.enqueue(f.task.id, 'Second try.', 'second-try', false);
+    for (let i = 0; i < 10 && !f.store.task(f.task.id).turnId; i++) await tick();
+    await (f.workspace as any).notification({ method: 'turn/completed', params: { threadId: 'claude-thread', turn: { id: 'claude-turn', status: 'failed', error: { message: 'The CLI did not start.' } } } }, 'claude');
+    assert.equal(f.store.task(f.task.id).handoff, true);
+    assert.equal(f.store.task(f.task.id).threadId, null);
+    await f.workspace.enqueue(f.task.id, 'Third try.', 'third-try', false);
+    for (let i = 0; i < 10 && !f.store.task(f.task.id).turnId; i++) await tick();
+    assert.equal(f.claude.calls.filter(call => call.method === 'thread/start').length, 2, 'The retry after an undelivered handoff starts another session');
+    assert.equal(f.store.task(f.task.id).threadId, 'claude-thread-2');
+    const text: string = f.claude.calls.at(-1)!.params.input[0].text;
+    assert.match(text, /Revised the introduction\./);
+    assert.match(text, /New message from the author:\nThird try\.$/);
+    // A turn that fails after the agent wrote something did reach it.
+    f.store.saveItem({ id: `${f.task.id}:claude-turn:reply`, taskId: f.task.id, type: 'assistant', text: 'Reading the introduction.', createdAt: Date.now() });
+    await (f.workspace as any).notification({ method: 'turn/completed', params: { threadId: 'claude-thread-2', turn: { id: 'claude-turn', status: 'failed', error: { message: 'Overloaded.' } } } }, 'claude');
+    assert.equal(f.store.task(f.task.id).handoff, undefined);
+    assert.equal(f.store.task(f.task.id).threadId, 'claude-thread-2');
+  } finally { f.close(); }
+});
+
+test('Check status settles a handoff turn whose start was not acknowledged', async () => {
+  const f = fixture();
+  try {
+    const run = uncertainRun(f);
+    f.store.updateTask(f.task.id, { handoff: true });
+    f.codex.handler = async () => ({ thread: { status: { type: 'idle' }, turns: [identifiedTurn(run, 'completed')] } });
+    await f.workspace.reconcile(f.task.id);
+    assert.equal(f.store.task(f.task.id).handoff, undefined);
+  } finally { f.close(); }
+});
+
+test('a handoff turn cut off by a disconnect without output is given to another session', async () => {
+  const f = switchFixture();
+  try {
+    await f.workspace.switchTaskAgent(f.task.id, f.choice);
+    await f.workspace.enqueue(f.task.id, 'Continue.', 'continue', false);
+    for (let i = 0; i < 10 && !f.store.task(f.task.id).turnId; i++) await tick();
+    (f.workspace as any).disconnected('claude', new Error('Connection closed.'));
+    assert.equal(f.store.task(f.task.id).status, 'interrupted');
+    assert.equal(f.store.task(f.task.id).handoff, true);
+    assert.equal(f.store.task(f.task.id).threadId, null);
+  } finally { f.close(); }
+});
+
+test('switching agents validates the destination settings and leaves the task unchanged when they are invalid', async () => {
+  const f = switchFixture();
+  try {
+    const original = f.store.task(f.task.id);
+    for (const change of [{ model: 'codex-model' }, { effort: 'xhigh' }, { serviceTier: 'priority' }, { permissions: 'unsupported' }, { permissions: 123 }]) await assert.rejects(f.workspace.switchTaskAgent(f.task.id, { ...f.choice, ...change }), /available model|reasoning effort|Fast mode|permissions/);
     f.workspace.runtimes.claude.authenticated = false;
-    await assert.rejects(f.workspace.restartTask(f.task.id, f.choice), /Connect and sign in/);
+    await assert.rejects(f.workspace.switchTaskAgent(f.task.id, f.choice), /Connect and sign in to the destination agent/);
+    await assert.rejects(f.workspace.switchTaskAgent(f.task.id, { ...f.choice, agent: 'collaboration' }), /Enable collaboration mode/);
+    assert.deepEqual(f.store.task(f.task.id), original);
     f.workspace.runtimes.claude.authenticated = true;
-    const file = await f.workspace.attachments.upload('paper', 'missing.txt', Buffer.from('reference'));
-    f.workspace.attachments.claim('paper', [file.id], f.task.id);
-    f.store.saveItem({ ...f.store.item(f.task.id, f.run.id)!, meta: { attachments: [file] } });
-    fs.rmSync(f.workspace.attachments.path(file));
-    await assert.rejects(f.workspace.restartTask(f.task.id, f.choice), /Attachment is missing/);
-    assert.equal(f.store.tasks().length, 1);
+    for (const status of ['uncertain', 'deleting'] as const) {
+      f.store.updateTask(f.task.id, { status });
+      await assert.rejects(f.workspace.switchTaskAgent(f.task.id, f.choice), /Resolve the pending task action/);
+    }
+    f.store.updateTask(f.task.id, { status: 'reviewing' });
+    assert.equal((await f.workspace.switchTaskAgent(f.task.id, f.choice)).agent, 'claude');
+    const switched = f.store.task(f.task.id);
+    assert.deepEqual(await f.workspace.switchTaskAgent(f.task.id, f.choice), { ...switched, updatedAt: f.store.task(f.task.id).updatedAt }, 'A retried switch changes nothing');
+    // A tab that missed the switch applies its choice as a same-agent change.
+    f.workspace.runtimes.claude.models.push({ id: 'sonnet', name: 'Sonnet', isDefault: false, efforts: ['low'], defaultEffort: 'low' });
+    const changed = await f.workspace.switchTaskAgent(f.task.id, { agent: 'claude', model: 'sonnet', effort: 'low' });
+    assert.equal(changed.model, 'sonnet'); assert.equal(changed.effort, 'low'); assert.equal(changed.handoff, true, 'The new session still needs the conversation');
   } finally { f.close(); }
 });
 
-test('restart restores validated destination permissions and keeps AI reviews restricted', async () => {
-  const f = restartFixture();
+test('switching agents applies validated destination permissions and keeps AI reviews read-only', async () => {
+  const f = switchFixture();
   try {
     (f.workspace as any).agents.claude.permissionOptions = () => [{ value: 'workspace' }, { value: 'full' }];
-    const replacement = await f.workspace.restartTask(f.task.id, { ...f.choice, permissions: 'full' });
-    await f.workspace.prepareTask(replacement.id);
-    assert.equal(replacement.permissions, 'full');
-    assert.equal(replacement.effort, 'high');
-    assert.equal(f.store.task(replacement.id).permissions, 'full');
-    assert.equal((await f.workspace.restartTask(f.task.id, { ...f.choice, permissions: 'full' })).id, replacement.id);
-    f.store.updateTask(f.task.id, { mode: 'review' });
-    await assert.rejects(f.workspace.restartTask(f.task.id, { ...f.choice, id: 'review-replacement-id', permissions: 'full' }), /only available for editing tasks/);
-    assert.equal(f.store.findTask('review-replacement-id'), undefined);
+    assert.equal((await f.workspace.switchTaskAgent(f.task.id, { ...f.choice, permissions: 'full' })).permissions, 'full');
+    f.store.updateTask(f.task.id, { agent: 'codex', mode: 'review', permissions: 'workspace' });
+    await assert.rejects(f.workspace.switchTaskAgent(f.task.id, { ...f.choice, permissions: 'full' }), /only available for editing tasks/);
+    Object.defineProperty((f.workspace as any).agents.claude, 'supportsReadOnlyTasks', { value: false });
+    await assert.rejects(f.workspace.switchTaskAgent(f.task.id, f.choice), /does not support read-only AI review/);
+    assert.equal(f.store.task(f.task.id).agent, 'codex');
   } finally { f.close(); }
 });
 
-test('restart rejects a permission mode removed while the original task stops', async () => {
-  const f = restartFixture(), stopped = deferred<void>();
+function runningTurn(f: ReturnType<typeof switchFixture>) {
+  const running: Run = { id: 'running', taskId: f.task.id, requestKey: 'running', prompt: 'Long revision.', status: 'running', createdAt: 30, finishedAt: null };
+  f.store.saveRun(running);
+  f.store.saveItem({ id: running.id, taskId: f.task.id, type: 'user', text: 'Long revision.', createdAt: 30 });
+  f.store.updateTask(f.task.id, { status: 'running', turnId: 'codex-turn' });
+  (f.workspace as any).active.set(f.task.id, running);
+  const stopped = deferred<void>(), interrupts: unknown[] = [];
+  f.codex.handler = async (method: string, params: any) => { if (method === 'turn/interrupt') { interrupts.push(params); await stopped.promise; } return {}; };
+  const finish = async () => {
+    stopped.resolve();
+    await (f.workspace as any).notification({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'codex-turn', status: 'interrupted' } } }, 'codex');
+  };
+  return { interrupts, finish, release: () => stopped.resolve() };
+}
+
+test('switching agents stops a turn in progress first, keeps instructions queued behind it, and holds new ones until it has switched', async () => {
+  const f = switchFixture(), turn = runningTurn(f);
+  try {
+    // The author queued a follow-up behind the running turn.
+    await f.workspace.enqueue(f.task.id, 'Also fix the abstract.', 'queued-followup', false);
+    await assert.rejects(f.workspace.switchTaskAgent(f.task.id, f.choice), /Confirm stopping the current turn/);
+    const switching = f.workspace.switchTaskAgent(f.task.id, { ...f.choice, stop: true });
+    for (let i = 0; i < 5 && !turn.interrupts.length; i++) await tick();
+    assert.deepEqual(turn.interrupts, [{ threadId: 'thread', turnId: 'codex-turn' }]);
+    assert.equal(f.store.task(f.task.id).agent, undefined, 'The task stays on its agent while that agent can still edit');
+    await assert.rejects(f.workspace.switchTaskAgent(f.task.id, { ...f.choice, effort: '', stop: true }), /already switching agents/);
+    const same = f.workspace.switchTaskAgent(f.task.id, { ...f.choice, stop: true });
+    await assert.rejects(f.workspace.enqueue(f.task.id, 'Too early.', 'too-early', false), /Wait for this task to switch agents/);
+    await assert.rejects(f.workspace.deleteTask(f.task.id), /Wait for this task to switch agents/);
+    f.store.saveItem({ id: `${f.task.id}:codex-turn:partial`, taskId: f.task.id, type: 'assistant', text: 'Halfway through the revision.', createdAt: Date.now() });
+    await turn.finish();
+    const task = await switching;
+    assert.equal(task.agent, 'claude');
+    assert.deepEqual(await same, task); assert.equal(turn.interrupts.length, 1);
+    // The queued follow-up runs on the new agent, after the conversation.
+    for (let i = 0; i < 10 && !f.claude.calls.some(call => call.method === 'turn/start'); i++) await tick();
+    const text: string = f.claude.calls.find(call => call.method === 'turn/start')!.params.input[0].text;
+    assert.match(text, /Long revision\.[\s\S]*Halfway through the revision\.[\s\S]*New message from the author:\nAlso fix the abstract\.$/);
+  } finally { turn.release(); f.close(); }
+});
+
+test('switching agents rechecks a permission mode removed while the turn stopped', async () => {
+  const f = switchFixture(), turn = runningTurn(f);
   try {
     let options = [{ value: 'workspace' }, { value: 'full' }];
     (f.workspace as any).agents.claude.permissionOptions = () => options;
-    f.store.updateTask(f.task.id, { status: 'running', turnId: 'original-turn' });
-    (f.workspace as any).active.set(f.task.id, f.run);
-    f.workspace.interrupt = async () => { await stopped.promise; (f.workspace as any).active.delete(f.task.id); f.store.updateTask(f.task.id, { status: 'interrupted' }); };
-    const restarting = f.workspace.restartTask(f.task.id, { ...f.choice, stop: true, permissions: 'full' });
-    options = [{ value: 'workspace' }]; stopped.resolve();
-    await assert.rejects(restarting, /Invalid task permissions/);
-    assert.equal(f.store.tasks().length, 1);
-  } finally { stopped.resolve(); f.close(); }
+    const switching = f.workspace.switchTaskAgent(f.task.id, { ...f.choice, stop: true, permissions: 'full' });
+    for (let i = 0; i < 5 && !turn.interrupts.length; i++) await tick();
+    options = [{ value: 'workspace' }];
+    await turn.finish();
+    await assert.rejects(switching, /Invalid task permissions/);
+    assert.equal(f.store.task(f.task.id).agent, undefined);
+  } finally { turn.release(); f.close(); }
 });
 
-test('restart requires stop confirmation and waits for the original agent to actually stop', async () => {
-  const f = restartFixture(), stopped = deferred<void>();
+test('a task still being prepared switches without a handoff and keeps its first message for the new agent', async () => {
+  const claude = new FakeCodex(), f = fixture(undefined, { claude });
   try {
-    f.store.updateTask(f.task.id, { status: 'running', turnId: 'original-turn' });
-    (f.workspace as any).active.set(f.task.id, f.run);
-    await assert.rejects(f.workspace.restartTask(f.task.id, f.choice), /Confirm stopping/);
-    let interrupts = 0;
-    f.workspace.interrupt = async () => { interrupts++; await stopped.promise; (f.workspace as any).active.delete(f.task.id); f.store.updateTask(f.task.id, { status: 'interrupted' }); };
-    const restarting = f.workspace.restartTask(f.task.id, { ...f.choice, stop: true });
-    assert.equal(interrupts, 1);
-    assert.equal(f.store.tasks().length, 1, 'No replacement is admitted while the original can still edit');
-    await assert.rejects(f.workspace.restartTask(f.task.id, { ...f.choice, id: 'another-replacement-id', stop: true }), /already being restarted/);
-    const same = f.workspace.restartTask(f.task.id, { ...f.choice, stop: true });
-    stopped.resolve();
-    const replacement = await restarting;
-    assert.equal((await same).id, replacement.id); assert.equal(interrupts, 1);
-    await f.workspace.prepareTask(replacement.id);
-  } finally { stopped.resolve(); f.close(); }
-});
-
-test('restart of a failed preparation cancels its saved queue and safely prepares a replacement', async () => {
-  const f = restartFixture();
-  try {
+    f.workspace.runtimes.claude = { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'opus', name: 'Opus', isDefault: true, efforts: ['high'], defaultEffort: 'high' }] };
     f.store.updateTask(f.task.id, { preparation: {}, status: 'failed', worktree: '', threadId: null });
-    f.store.saveRun({ ...f.run, status: 'queued' });
-    const replacement = await f.workspace.restartTask(f.task.id, { ...f.choice, stop: true });
-    await f.workspace.prepareTask(replacement.id);
-    assert.equal(f.store.runByKey(f.run.requestKey)?.status, 'interrupted');
-    assert.equal(f.store.task(replacement.id).worktree, '/replacement');
-    assert.equal(f.store.task(f.task.id).status, 'failed');
+    f.store.saveRun({ id: 'initial', taskId: f.task.id, requestKey: 'initial-' + f.task.id, prompt: 'First request.', status: 'queued', createdAt: 1, finishedAt: null });
+    const task = await f.workspace.switchTaskAgent(f.task.id, { agent: 'claude', model: 'opus' });
+    assert.equal(task.agent, 'claude'); assert.equal(task.handoff, undefined); assert.equal(task.status, 'failed');
+    assert.equal(f.store.runByKey('initial-' + f.task.id)?.status, 'queued', 'The first message waits for the task to be prepared');
   } finally { f.close(); }
-});
-
-test('AI review cannot restart on an adapter without read-only support or stop the original task', async () => {
-  const f = restartFixture();
-  try {
-    Object.defineProperty((f.workspace as any).agents.claude, 'supportsReadOnlyTasks', { value: false });
-    f.store.updateTask(f.task.id, { mode: 'review', status: 'running', turnId: 'original-turn' });
-    const original = f.store.task(f.task.id);
-    await assert.rejects(f.workspace.restartTask(f.task.id, { ...f.choice, stop: true }), /The selected agent does not support read-only AI review\. Select another agent\./);
-    assert.deepEqual(f.store.task(f.task.id), original);
-    assert.equal(f.store.findTask(f.choice.id), undefined);
-    assert.equal(f.codex.calls.length, 0);
-    assert.equal(f.calls.length, 0);
-  } finally { f.close(); }
-});
-
-test('AI review restarts capture the new manuscript PDF and never reuse the original PDF path', async () => {
-  const copy = reviewCopy();
-  const f = restartFixture(async (_method, route) => route === '/api/tasks' ? { worktree: copy, deferred: true } : route.includes('/feedback') ? { cursor: 0, feedback: [] } : summary);
-  try {
-    f.store.updateTask(f.task.id, { mode: 'review', instructions: 'Saved original review skill and request.' });
-    f.store.saveRun({ ...f.run, prompt: 'Original request\nPDF at /old-task/review.pdf\nOld snapshot content' });
-    let captured = '';
-    f.workspace.prepareReview = async (task, worktree) => { captured = task.id + ':' + worktree; return { key: 'new-pdf', pdf: '/replacement/review.pdf', lines: [{ id: 'p1-l1', page: 0, text: 'Current manuscript', rect: [0, 0, 1, 1] }] }; };
-    const replacement = await f.workspace.restartTask(f.task.id, f.choice);
-    await f.workspace.prepareTask(replacement.id);
-    assert.equal(captured, replacement.id + ':' + copy);
-    assert.equal(f.store.task(replacement.id).aiReview?.key, 'new-pdf');
-    const prompt = f.store.runByKey('initial-' + replacement.id)!.prompt;
-    assert.match(prompt, /Saved original review skill and request/); assert.equal(savedText(copy), 'p1-l1\tCurrent manuscript\n'); assert.match(prompt, /\/replacement\/review.pdf/);
-    assert.doesNotMatch(prompt, /old-task|Old snapshot/);
-  } finally { f.close(); }
-});
-
-test('restart excludes an in-flight follow-up and rejects project removal or stale destination settings during copying', async () => {
-  const feedbackGate = deferred<void>(), copyGate = deferred<void>();
-  const f = restartFixture(async (_method, route) => {
-    if (route.includes('/feedback')) { await feedbackGate.promise; return { cursor: 0, feedback: [] }; }
-    return route === '/api/tasks' ? { worktree: '/replacement', deferred: true } : summary;
-  });
-  try {
-    const followup = f.workspace.enqueue(f.task.id, 'Do not lose me.', 'racing-followup');
-    const rejected = assert.rejects(followup, /Wait for this task to restart/);
-    const copy = f.workspace.attachments.copy.bind(f.workspace.attachments);
-    f.workspace.attachments.copy = async (...args) => { await copyGate.promise; return copy(...args); };
-    const restarting = f.workspace.restartTask(f.task.id, f.choice);
-    feedbackGate.resolve(); await rejected;
-    assert.throws(() => f.workspace.removeProject('paper'), /Pause this paper/);
-    await assert.rejects(f.workspace.deleteTask(f.task.id), /Wait for this task to restart/);
-    f.workspace.runtimes.claude.models = [];
-    copyGate.resolve();
-    await assert.rejects(restarting, /destination model settings changed/);
-    assert.equal(f.store.tasks().length, 1);
-    assert.equal(f.store.runByKey('racing-followup'), undefined);
-  } finally { feedbackGate.resolve(); copyGate.resolve(); f.close(); }
 });
 
 async function collaborationFixture() {
