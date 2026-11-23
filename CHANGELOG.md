@@ -4,6 +4,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Fixed
+
+- **Comparing PDFs with gradient fills no longer fails at random.** Comparing the drawings of a PDF with a shading, such as a TikZ or Beamer gradient, released the shading while the PDF reader still used it once memory was reclaimed, so a later comparison could fail with a memory error or stop the review engine.
+
 ## [0.14.0] - 2026-11-23
 
 Teach agents your writing preferences across tasks, switch task agents in place without losing context, curate which agents and models appear in menus, and inspect local workspace activity statistics. See the [release notes](docs/releases/0.14.0/release-notes.md) for update instructions.
