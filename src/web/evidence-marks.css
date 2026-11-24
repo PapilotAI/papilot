@@ -35,14 +35,16 @@
 .evidence-list>li+li{padding-top:12px;box-shadow:0 -1px 0 var(--line)}
 .evidence-sentence-text{margin:0;color:var(--text);font-size:12.5px}
 .evidence-cite{margin:0 1px;padding:0 4px;border-radius:4px;background:var(--bg-muted);font-size:11px;color:var(--text-2);white-space:nowrap}
-.evidence-row{display:grid;gap:5px;padding:8px 10px;border-radius:10px;background:var(--bg-subtle)}
+.evidence-row{display:grid;gap:5px}
 .evidence-row-head{display:flex;align-items:center;gap:8px;min-width:0;margin:0}
-.evidence-verdict{display:inline-flex;flex-shrink:0;align-items:center;gap:3px;padding:1px 7px 1px 5px;border-radius:999px;background:color-mix(in srgb,var(--tone) 14%,transparent);font-size:11px;font-weight:600;color:color-mix(in srgb,var(--tone) 80%,var(--text))}
+.evidence-verdict{display:inline-flex;flex-shrink:0;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--text-2);white-space:nowrap}
+.evidence-verdict>svg{display:none}
+.evidence-verdict::before{content:"";width:7px;height:7px;flex-shrink:0;border-radius:50%;background:var(--tone)}
 .evidence-work{min-width:0;overflow:hidden;font-weight:500;color:var(--text);text-overflow:ellipsis;white-space:nowrap}
 .evidence-where{margin-left:auto;font-size:11px;color:var(--text-3)}
 .evidence-note{margin:0;color:var(--text-2)}
-.evidence-quote{display:flex;align-items:flex-start;gap:8px;width:100%;padding:6px 8px;border:0;border-radius:8px;background:var(--raised);box-shadow:var(--shadow-xs);font:inherit;color:var(--text-2);text-align:left;cursor:pointer}
-.evidence-quote:hover{color:var(--text)}
+.evidence-quote{display:flex;align-items:flex-start;gap:8px;width:100%;padding:2px 0 2px 10px;border:0;background:none;box-shadow:inset 2px 0 0 var(--line-strong);font:inherit;color:var(--text-2);text-align:left;cursor:pointer}
+.evidence-quote:hover{color:var(--text);box-shadow:inset 2px 0 0 var(--accent)}
 .evidence-quote q{flex:1;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;font-style:italic}
 .evidence-quote span{flex-shrink:0;font-size:11px;color:var(--accent)}
 .evidence-actions{display:flex;flex-wrap:wrap;gap:6px}

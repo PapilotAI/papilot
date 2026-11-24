@@ -49,7 +49,7 @@ export interface LibraryAccess {
   works: (projectId: string) => Promise<LibraryWork[]>;
   add: (projectId: string, key: string, url: string) => Promise<{ pages: number | null }>;
   citations: (projectId: string) => Promise<CitingSentence[]>;
-  record: (projectId: string, record: { id: string; key: string; verdict: string; evidence: { start: string; end: string }[]; note: string }) => Promise<CitationFinding>;
+  record: (projectId: string, record: { id: string; key: string; verdict: string; evidence: { start: string; end: string }[]; note: string }, taskId?: string) => Promise<CitationFinding>;
 }
 
 type OfferedGroup = typeof NOTE_GROUPS[number];
@@ -149,7 +149,7 @@ export class PaperTools {
       const evidence = args.evidence === undefined ? [] : args.evidence;
       if (!Array.isArray(evidence) || evidence.some(item => !item || typeof item !== 'object' || typeof item.start !== 'string' || typeof item.end !== 'string')) throw agentToolError('evidence is a list of { start, end } line anchors.');
       try {
-        const finding = await this.library.record(task.projectId, { id: text(args, 'id'), key: text(args, 'key'), verdict: text(args, 'verdict'), evidence: evidence as { start: string; end: string }[], note: text(args, 'note') });
+        const finding = await this.library.record(task.projectId, { id: text(args, 'id'), key: text(args, 'key'), verdict: text(args, 'verdict'), evidence: evidence as { start: string; end: string }[], note: text(args, 'note') }, task.id);
         return { recorded: true, verdict: finding.verdict, evidence: finding.evidence.map(item => ({ page: item.page, quote: item.quote.length > 400 ? item.quote.slice(0, 400) + '…' : item.quote })) };
       } catch (failure) { throw agentToolError((failure as Error).message); }
     }

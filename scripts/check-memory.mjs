@@ -71,6 +71,7 @@ async function open(viewport, colorScheme = 'light') {
     if (url.pathname.endsWith('/skills')) return json({ skills: [] });
     if (url.pathname.endsWith('/git')) return json({ files: [], branch: 'main' });
     if (url.pathname.endsWith('/manuscript')) return json({ git: { files: [] }, annotations: [], build: { status: 'building', current: false } });
+    if (url.pathname === '/api/quick-model') return route.fulfill({ json: { choice: null } });
     throw Error(`Unexpected fixture request ${url.pathname}`);
   });
   await page.goto(`http://127.0.0.1:${server.server.address().port}/?task=${task.id}`);

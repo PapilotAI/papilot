@@ -39,7 +39,7 @@ const report = {
 };
 let zotero = { local: { chosen: null, state: 'ready', dataDir: '/Users/researcher/Zotero', items: 1204, withPdf: 873, citationKeys: 1204 }, account: null, use: true };
 const account = { username: 'researcher', libraries: [{ name: null, items: 310, withPdf: 288, citationKeys: 12 }, { name: 'Lab', items: 40, withPdf: 31, citationKeys: 0 }], syncing: false, synced: Date.UTC(2026, 10, 23, 9, 30), problem: null };
-const quick = [], searches = [], uploads = [], removals = [], forgotten = [], errors = [], keys = [], switched = [], looks = [], located = [];
+const checks = [], shows = [], searches = [], uploads = [], removals = [], forgotten = [], errors = [], keys = [], switched = [], looks = [], located = [];
 fs.mkdirSync('test-results', { recursive: true });
 try {
   const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 800 } });
@@ -69,15 +69,20 @@ try {
       searches.push(url.searchParams.get('q'));
       return route.fulfill({ json: { matches: url.searchParams.get('q') === 'total-fit' ? [{ entry: 'refs.bib#knuth', key: 'knuth', hash, page: 1, text: 'TeX breaks paragraphs into lines with a total-fit algorithm.', marks: [{ page: 1, rect: [0.1, 0.1, 0.9, 0.16] }] }] : [], nextCursor: null } });
     }
-    if (url.pathname === '/api/projects/paper/citations/quick-check' && request.method() === 'POST') {
+    if (url.pathname === '/api/quick-model') return route.fulfill({ json: { choice: { agent: 'deepseek', model: 'deepseek/deepseek-v4.1-flash-ultrafast', effort: null } } });
+    if (url.pathname === '/api/citation-checks' && request.method() === 'POST') {
       const body = request.postDataJSON();
-      quick.push(body);
-      report.quickCheck = body.stop ? { ...report.quickCheck, running: false, finishedAt: 1 } : { kind: body.kind, running: true, done: 0, total: 1, failed: 0, model: 'DeepSeek V4.1 Flash UltraFast', error: null, finishedAt: null };
-      return route.fulfill({ json: report });
+      checks.push(body);
+      const task = { id: body.id, projectId: 'paper', name: 'c-' + body.id, title: body.title, titleSource: 'prompt', instructions: '', mode: 'citations', worktree: '', threadId: null, turnId: null, model: null, status: 'idle', createdAt: 5, updatedAt: 5, feedbackCursor: 0, error: null, review: null,
+        citationCheck: { show: false, state: { running: false, stopping: false, done: 1, total: 1, failed: 0, model: 'DeepSeek V4.1 Flash UltraFast', error: null, finishedAt: 6 } } };
+      state.tasks = [task];
+      report.citations[1].findings.knuth = { verdict: 'partial', note: 'The book breaks lines optimally but says nothing of linear values.', evidence: supported.evidence, pdf: hash, checkedAt: 7, by: 'DeepSeek V4.1 Flash UltraFast', task: body.id };
+      return route.fulfill({ json: task });
     }
-    if (url.pathname === '/api/projects/paper/citations/auto-check' && request.method() === 'POST') {
-      report.autoCheck = request.postDataJSON().enabled;
-      return route.fulfill({ json: report });
+    if (/^\/api\/tasks\/[^/]+\/citations\/show$/.test(url.pathname) && request.method() === 'POST') {
+      shows.push(request.postDataJSON().show);
+      state.tasks = state.tasks.map(task => ({ ...task, citationCheck: { ...task.citationCheck, show: request.postDataJSON().show } }));
+      return route.fulfill({ json: state.tasks[0] });
     }
     if (url.pathname.startsWith('/api/projects/paper/library/pdfs/')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
     if (url.pathname === '/api/library/zotero') return route.fulfill({ json: zotero });
@@ -109,10 +114,8 @@ try {
   const page = await context.newPage();
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.server.address().port}`);
-  const openLibrary = async () => {
-    await page.getByRole('button', { name: 'Research Tools', exact: true }).click();
-    await page.getByRole('menuitem', { name: /^Library/ }).click();
-  };
+  // The Library has its own place in the sidebar, below the manuscript.
+  const openLibrary = async () => { await page.locator('.sidebar .library-link').click(); };
   await openLibrary();
   const panel = page.locator('.library-panel');
   const more = () => page.getByRole('button', { name: 'More library actions', exact: true }).click();
@@ -184,39 +187,29 @@ try {
   await page.getByRole('searchbox', { name: 'Search the library' }).fill('');
   await page.locator('.library-found').waitFor({ state: 'detached' });
 
-  // Check citations runs the quick model in place, with its progress, and
-  // the finding it records names that model; what needs a look opens first.
+  // Check starts a check task at once, with the quick model, and opens its page.
   await page.getByRole('button', { name: 'Check citations', exact: true }).click();
-  await panel.getByText('Checking with DeepSeek V4.1 Flash UltraFast: 0 of 1', { exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Stop', exact: true }).waitFor();
-  assert.deepEqual(quick, [{ kind: 'citations' }]);
-  await page.screenshot({ path: 'test-results/library-quick-checking.png', animations: 'disabled' });
-  report.citations[1].findings.knuth = { verdict: 'partial', note: 'The book breaks lines optimally but says nothing of linear values.', evidence: supported.evidence, pdf: hash, checkedAt: 2, by: 'DeepSeek V4.1 Flash UltraFast' };
-  report.quickCheck = { kind: 'citations', running: false, done: 1, total: 1, failed: 0, model: 'DeepSeek V4.1 Flash UltraFast', error: null, finishedAt: 3 };
-  await claims.nth(0).getByText('Quick check by DeepSeek V4.1 Flash UltraFast', { exact: true }).waitFor();
-  assert.deepEqual(await verdicts(), ['Partly supported', 'Supported']);
-  assert.notEqual(await claims.nth(0).locator('details').getAttribute('open'), null);
-  // The header now points at what to look at; wadler's citation, whose PDF was just added, is still to check.
-  await panel.getByRole('button', { name: '1 citation to look at', exact: true }).waitFor();
-  assert.deepEqual(await page.locator('.library-bar > span').evaluateAll(spans => spans.map(span => span.dataset.verdict)), ['partial', 'supported', 'none']);
-  // Checking new citations automatically is a choice in the menu.
-  await more();
-  const auto = page.getByRole('menuitemcheckbox', { name: 'Check new citations automatically' });
-  assert.equal(await auto.getAttribute('aria-checked'), 'false');
-  await auto.click();
-  await page.waitForFunction(() => true);
-  assert.equal(report.autoCheck, true);
-  await page.screenshot({ path: 'test-results/library-quick-checked.png', animations: 'disabled' });
+  const view = page.locator('.citation-check-view');
+  await view.getByRole('heading', { name: 'Check citations', exact: true }).waitFor();
+  assert.deepEqual([checks.at(-1).projectId, checks.at(-1).agent, checks.at(-1).model], ['paper', 'deepseek', 'deepseek/deepseek-v4.1-flash-ultrafast']);
+  await view.getByText('1 to look at', { exact: true }).waitFor();
+  await view.locator('.citation-check-group li').first().getByText('The book breaks lines optimally but says nothing of linear values.', { exact: true }).waitFor();
+  const show = view.getByRole('switch', { name: 'Show in the paper' });
+  assert.equal(await show.isChecked(), false, 'the paper shows a check only when asked');
+  await show.click();
+  await page.waitForFunction(() => document.querySelector('.citation-check-show input')?.checked === true);
+  assert.deepEqual(shows, [true]);
+  await page.screenshot({ path: 'test-results/library-check-task.png', animations: 'disabled' });
   delete report.citations[1].findings.knuth;
-  report.quickCheck = null; report.autoCheck = false;
-  await page.getByRole('button', { name: 'Check citations', exact: true }).waitFor();
-  // Finding sources for uncited sentences is in the menu, and runs only when chosen.
+  state.tasks = [];
+  await openLibrary();
+  await panel.getByRole('heading', { name: '2 cited works', exact: true }).waitFor();
+  // The Library's menu holds only what manages PDFs; checking is the one button.
   await more();
-  await page.getByRole('menuitem', { name: 'Find sources for uncited sentences', exact: true }).click();
-  await panel.getByText('Finding sources with DeepSeek V4.1 Flash UltraFast: 0 of 1', { exact: true }).waitFor();
-  assert.deepEqual(quick.at(-1), { kind: 'sources' });
-  report.quickCheck = null;
-  await page.getByRole('button', { name: 'Check citations', exact: true }).waitFor();
+  assert.deepEqual(await page.locator('.action-menu:popover-open [role^="menuitem"]').allTextContents(), ['Add PDFs…']);
+  await page.keyboard.press('Escape');
+  await page.getByRole('tab', { name: /^All/ }).click();
+  await page.getByRole('button', { name: /^Knuth & Kovács 1990/ }).click();
 
   // The author dismisses a finding they judge otherwise.
   const held = claims.filter({ hasText: 'TeX breaks paragraphs into lines optimally' });
@@ -312,17 +305,9 @@ try {
   await page.getByRole('button', { name: 'More library actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Ask an agent to find 1 PDF…', exact: true }).click();
   await page.waitForFunction(() => (localStorage.getItem('papilot:new-task') || '').includes('library_add'));
-  let draft = await page.evaluate(() => localStorage.getItem('papilot:new-task'));
+  const draft = await page.evaluate(() => localStorage.getItem('papilot:new-task'));
   assert.match(draft, /^- wadler: Linear types can change the world! \(Philip Wadler, 1990\) https:\/\/doi\.org\/10\.1000\/open$/m);
   assert.match(draft, /never shadow libraries/);
-  // So do the citations, to check against the works.
-  await page.evaluate(() => localStorage.removeItem('papilot:new-task'));
-  await openLibrary();
-  await page.getByRole('button', { name: 'More library actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Ask an agent to check citations…', exact: true }).click();
-  await page.waitForFunction(() => (localStorage.getItem('papilot:new-task') || '').includes('citation_record'));
-  draft = await page.evaluate(() => localStorage.getItem('papilot:new-task'));
-  assert.match(draft, /citations_list/);
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();

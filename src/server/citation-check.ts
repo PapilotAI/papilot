@@ -1,7 +1,7 @@
 import type { Library, LibraryInput } from './library.ts';
 import type { ReviewSnapshot } from './ai-review.ts';
 import { CitationChecks, recordCitation, VERDICTS } from './citations.ts';
-import type { CitationCheckState, CitingSentence } from '../shared.ts';
+import type { AgentId, CitationCheckState, CitingSentence } from '../shared.ts';
 import type { ProseSentence } from './references.ts';
 import { CitationSuggestions, candidateSignature, candidates, quote, sentenceIds, shelfIndex, suggestInstructions, type ShelfWork, type StoredSuggestion } from './citation-support.ts';
 
@@ -14,11 +14,13 @@ import { CitationSuggestions, candidateSignature, candidates, quote, sentenceIds
 // with the model that made them. A deeper check is still an agent's task.
 
 /** One read-only reply from the quick model, with the model's name. */
-export type QuickReply = (request: { instructions: string; prompt: string; what: string; projectId?: string; signal?: AbortSignal }) => Promise<{ reply: string; model: string | null }>;
-/** A citation as a check tries it: its sentence, the work and the work's PDF. */
-export const checkItem = (sentenceId: string, key: string, hash: string) => `${sentenceId}|${key}|${hash}`;
+export type QuickReply = (request: { instructions: string; prompt: string; what: string; projectId?: string; signal?: AbortSignal; choice?: ModelChoice; onText?: (text: string) => void }) => Promise<{ reply: string; model: string | null }>;
+/** The agent and model a check task runs with; none means the quick model. */
+export interface ModelChoice { agent?: AgentId; model?: string | null; effort?: string | null }
 export interface CitationSource {
   projectId?: string;
+  // The check task the findings belong to, its model, and where its progress goes.
+  task?: string; choice?: ModelChoice; onState?: (state: CitationCheckState) => void;
   citations(): Promise<{ sentences: CitingSentence[]; entries: LibraryInput[]; uncited?: ProseSentence[] }>;
   checks(): Promise<CitationChecks>;
   suggestions?(): Promise<CitationSuggestions>;
@@ -97,35 +99,43 @@ export class QuickCitationChecks {
   private runs = new Map<string, { state: CitationCheckState; stop: AbortController }>();
   constructor(private library: () => Library, private reply: QuickReply) {}
 
-  state(root: string): CitationCheckState | null { return this.runs.get(root)?.state ?? null; }
+  state(key: string): CitationCheckState | null { return this.runs.get(key)?.state ?? null; }
   // Stopping interrupts the batch the model is answering.
-  stop(root: string) { const run = this.runs.get(root); if (run?.state.running) { run.state.stopping = true; run.stop.abort(); } }
+  stop(key: string) { const run = this.runs.get(key); if (run?.state.running) { run.state.stopping = true; run.stop.abort(); } }
   stopAll() { for (const run of this.runs.values()) run.stop.abort(); }
 
-  /** Checks every citation that has a PDF and no current finding. A run
-   * already going for the paper is returned as it is. */
-  // citations checks what the paper cites; sources looks for works the
-  // library has for sentences that cite nothing, which only the author asks for.
-  start(root: string, source: CitationSource, kind: CitationCheckState['kind'] = 'citations', only?: (item: string) => boolean): CitationCheckState {
-    const running = this.runs.get(root);
+  /** One check task's run: every citation with a PDF against its work, then
+   * the sentences that cite nothing against the library. A run already going
+   * under the key is returned as it is. */
+  start(key: string, source: CitationSource): CitationCheckState {
+    const running = this.runs.get(key);
     if (running?.state.running) return running.state;
-    const run = { state: { kind, running: true, stopping: false, done: 0, total: 0, failed: 0, model: null, error: null, finishedAt: null } as CitationCheckState, stop: new AbortController() };
-    this.runs.set(root, run);
-    void this.check(run, source, only).catch(error => { if (!run.stop.signal.aborted) run.state.error = error instanceof Error ? error.message : String(error); })
-      .finally(() => { run.state.running = false; run.state.finishedAt = Date.now(); });
+    const run = { state: { running: true, stopping: false, done: 0, total: 0, failed: 0, model: null, error: null, finishedAt: null } as CitationCheckState, stop: new AbortController() };
+    this.runs.set(key, run);
+    // Streamed words are reported at most every 300 ms, the latest always
+    // last; any other change at once.
+    let last = 0, later: ReturnType<typeof setTimeout> | null = null;
+    const report = (soon = false) => {
+      const now = Date.now();
+      if (soon && now - last < 300) { later ??= setTimeout(() => { later = null; report(); }, 300 - (now - last)); return; }
+      if (later) { clearTimeout(later); later = null; }
+      last = now; source.onState?.({ ...run.state });
+    };
+    void this.check(run, source, report).catch(error => { if (!run.stop.signal.aborted) run.state.error = error instanceof Error ? error.message : String(error); })
+      .finally(() => { run.state.running = false; run.state.finishedAt = Date.now(); report(); });
+    report();
     return run.state;
   }
 
-  private async check(run: { state: CitationCheckState; stop: AbortController }, source: CitationSource, only?: (item: string) => boolean) {
+  private async check(run: { state: CitationCheckState; stop: AbortController }, source: CitationSource, report: (soon?: boolean) => void) {
+    const startedAt = Date.now();
     const { sentences, entries } = await source.citations(), library = this.library();
     const texts = new Map<string, Promise<ReviewSnapshot | null>>();
     const text = (hash: string) => { let found = texts.get(hash); if (!found) texts.set(hash, found = library.text(hash)); return found; };
     const items: { id: string; sentence: CitingSentence; key: string; input: LibraryInput; hash: string; block: string }[] = [];
-    for (const sentence of run.state.kind === 'citations' ? sentences : []) for (const key of sentence.keys) {
-      const finding = sentence.findings[key];
-      if (finding && !finding.stale) continue;
+    for (const sentence of sentences) for (const key of sentence.keys) {
       const input = entries.find(entry => entry.key === key), pdf = input && library.pdfOf(input);
-      if (!input || !pdf || (only && !only(checkItem(sentence.id, key, pdf.hash)))) continue;
+      if (!input || !pdf) continue;
       const snapshot = await text(pdf.hash);
       if (!snapshot?.lines.length) continue;
       const passages = passagesFor(snapshot, sentence.sentence).map(passage => passage.lines.map(line => `<${line.id}> ${line.text}`).join('\n'));
@@ -133,9 +143,8 @@ export class QuickCitationChecks {
       items.push({ id, sentence, key, input, hash: pdf.hash, block: `## Item ${id}\nSentence: ${sentence.sentence}\nCited work [${key}]: ${work}\nPassages:\n${passages.join('\n…\n')}` });
     }
     // The other way round: sentences that cite nothing, and the works of the
-    // library that may say what they claim. A sentence is asked about again
-    // only when the works it ranks change; a dismissed one never is.
-    const store = run.state.kind === 'sources' && source.suggestions ? await source.suggestions() : undefined;
+    // library that may say what they claim; a dismissed one is not asked again.
+    const store = source.suggestions ? await source.suggestions() : undefined;
     const suggest: { id: string; candidates: string; works: { work: ShelfWork; shown: Set<string> }[]; block: string }[] = [];
     const { uncited = [] } = store ? await source.citations() : {};
     if (store) {
@@ -152,7 +161,6 @@ export class QuickCitationChecks {
         if (run.stop.signal.aborted) return;
         if (stored[sentence.id]?.dismissed) continue;
         const found = candidates(index!, sentence.sentence), signature = candidateSignature(found.map(item => item.work));
-        if (stored[sentence.id]?.candidates === signature) continue;
         // A sentence no work shares enough words with needs no model to say so.
         if (!found.length) { changes[sentence.id] = { candidates: signature, suggestion: null }; continue; }
         const blocks = found.map(({ work, passages }) => `Work [${work.key}]: ${[field(work.input, 'title'), field(work.input, 'author').split(/\s+and\s+/)[0], field(work.input, 'year')].filter(Boolean).join('; ')}\n${passages.map(lines => lines.map(line => `<${work.key}:${line.id}> ${line.text}`).join('\n')).join('\n…\n')}`);
@@ -161,43 +169,51 @@ export class QuickCitationChecks {
       store.update(changes, { keep: new Set(ids.map(sentence => sentence.id)) });
     }
     run.state.total = items.length + suggest.length;
+    // The model's words, as they come and batch after batch, so the author
+    // sees it work; a model that answers at once shows each answer whole.
+    let transcript = '';
+    const watch = (text: string) => { run.state.output = (transcript + text).slice(-8000); report(true); };
+    const answered = (reply: string) => { transcript = `${transcript}${reply.trim()}\n\n`; run.state.output = transcript.slice(-8000); };
+    run.state.phase = 'citations'; report();
     const checks = await source.checks();
     for (let at = 0; at < items.length && !run.stop.signal.aborted;) {
       const batch: typeof items = [];
       for (let size = 0; at < items.length && (!batch.length || size + items[at].block.length < BATCH); at++) { batch.push(items[at]); size += items[at].block.length; }
-      const { reply, model } = await this.reply({ instructions: quickCheckInstructions, prompt: batch.map(item => item.block).join('\n\n'), what: 'check citations', projectId: source.projectId, signal: run.stop.signal });
+      const { reply, model } = await this.reply({ instructions: quickCheckInstructions, prompt: batch.map(item => item.block).join('\n\n'), what: 'check citations', projectId: source.projectId, signal: run.stop.signal, choice: source.choice, onText: watch });
       if (run.stop.signal.aborted) break;
-      run.state.model = model;
+      run.state.model = model; answered(reply); report();
       const results = new Map(parseResults(reply).map(result => [result.id, result]));
       for (const item of batch) {
         const result = results.get(item.id);
         try {
           // A reply without a usable verdict for an item leaves it unchecked.
           if (!result || !VERDICTS.includes(result.verdict as never)) { run.state.failed++; continue; }
-          // A finding recorded meanwhile, such as an agent's, is not replaced.
-          if (checks.get(item.sentence.sentence, item.key)?.pdf === item.hash) continue;
-          await recordCitation(sentences, entries, library, checks, { id: item.sentence.id, key: item.key, verdict: result.verdict, evidence: result.evidence, note: result.note || '—' }, Date.now(), model ?? undefined);
+          // A finding someone else recorded while this ran, such as an agent's, is not replaced.
+          const meanwhile = checks.get(item.sentence.sentence, item.key);
+          if (meanwhile && meanwhile.checkedAt >= startedAt && !(source.task && meanwhile.task === source.task)) continue;
+          await recordCitation(sentences, entries, library, checks, { id: item.sentence.id, key: item.key, verdict: result.verdict, evidence: result.evidence, note: result.note || '—' }, Date.now(), model ?? undefined, source.task);
         } catch { run.state.failed++; }
-        finally { run.state.done++; }
+        finally { run.state.done++; report(); }
       }
     }
+    if (suggest.length) { run.state.phase = 'sources'; report(); }
     for (let at = 0; at < suggest.length && store && !run.stop.signal.aborted;) {
       const batch: typeof suggest = [];
       for (let size = 0; at < suggest.length && (!batch.length || size + suggest[at].block.length < BATCH); at++) { batch.push(suggest[at]); size += suggest[at].block.length; }
-      const { reply, model } = await this.reply({ instructions: suggestInstructions, prompt: batch.map(item => item.block).join('\n\n'), what: 'find sources for uncited sentences', projectId: source.projectId, signal: run.stop.signal });
+      const { reply, model } = await this.reply({ instructions: suggestInstructions, prompt: batch.map(item => item.block).join('\n\n'), what: 'find sources for uncited sentences', projectId: source.projectId, signal: run.stop.signal, choice: source.choice, onText: watch });
       if (run.stop.signal.aborted) break;
-      run.state.model = model;
+      run.state.model = model; answered(reply); report();
       const results = new Map(parseResults(reply).map(result => [result.id, result])), changes: Record<string, StoredSuggestion> = {};
       for (const item of batch) {
         const result = results.get(item.id);
-        run.state.done++;
+        run.state.done++; report();
         // A sentence the model did not answer for is asked again next time.
         if (!result || !['supported', 'partial', 'none'].includes(result.verdict)) continue;
         const chosen = item.works.find(candidate => candidate.work.key === result.key);
         // Only lines of the work it names that it was shown, as the PDF prints them.
         const evidence = chosen ? result.evidence.flatMap(range => { const found = quote(chosen.work.snapshot, range.start.replace(/^[^:]*:/, ''), range.end.replace(/^[^:]*:/, ''), chosen.shown); return found ? [found] : []; }) : [];
         changes[item.id] = { candidates: item.candidates, suggestion: result.verdict !== 'none' && chosen && evidence.length
-          ? { key: chosen.work.key, verdict: result.verdict as 'supported' | 'partial', note: result.note.trim() || '—', evidence, pdf: chosen.work.hash, checkedAt: Date.now(), ...(model ? { by: model } : {}) } : null };
+          ? { key: chosen.work.key, verdict: result.verdict as 'supported' | 'partial', note: result.note.trim() || '—', evidence, pdf: chosen.work.hash, checkedAt: Date.now(), ...(model ? { by: model } : {}), ...(source.task ? { task: source.task } : {}) } : null };
       }
       store.update(changes);
     }

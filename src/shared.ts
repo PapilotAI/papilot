@@ -52,7 +52,9 @@ export interface Task {
   // after switching agents; its next turn is given it.
   handoff?: boolean;
   permissions?: TaskPermissions;
-  mode?: 'edit' | 'review';
+  mode?: 'edit' | 'review' | 'citations';
+  // A citation check: its progress, and whether the paper's PDF shows its findings.
+  citationCheck?: { show: boolean; state?: CitationCheckState | null };
   aiReview?: { key: string; notes?: number; revision?: number };
   // Accepted changes remain isolated until the author applies them.
   reconciliation?: TaskReconciliation | null;
@@ -526,7 +528,7 @@ export interface LibraryEntry { pdf: LibraryPdf | null; find: 'waiting' | 'searc
 export type CitationVerdict = 'supported' | 'partial' | 'unsupported' | 'unclear';
 export interface CitationEvidence { quote: string; page: number; marks: { page: number; rect: [number, number, number, number] }[] }
 // by: the quick model that checked it; an agent's finding has none.
-export interface CitationFinding { verdict: CitationVerdict; note: string; evidence: CitationEvidence[]; pdf: string; checkedAt: number; by?: string; stale?: boolean }
+export interface CitationFinding { verdict: CitationVerdict; note: string; evidence: CitationEvidence[]; pdf: string; checkedAt: number; by?: string; task?: string; stale?: boolean }
 // A checked citing sentence where it prints in the paper's PDF: its lines,
 // and the findings for the works it cites, with each work's library PDF.
 export interface EvidenceMark { id: string; page: number; rects: [number, number, number, number][]; sentence: string; file: string; line: number;
@@ -535,16 +537,14 @@ export interface EvidenceMark { id: string; page: number; rects: [number, number
   suggestion?: CitationSuggestion & { entry: string; title: string } }
 // A sentence that cites nothing and a library work the quick model found to
 // say what it claims, with that work's lines.
-export interface CitationSuggestion { id: string; file: string; line: number; section: string | null; sentence: string; key: string; verdict: 'supported' | 'partial'; note: string; evidence: CitationEvidence[]; pdf: string; checkedAt: number; by?: string }
+export interface CitationSuggestion { id: string; file: string; line: number; section: string | null; sentence: string; key: string; verdict: 'supported' | 'partial'; note: string; evidence: CitationEvidence[]; pdf: string; checkedAt: number; by?: string; task?: string }
 // A paper's quick citation check: how far it got, the model doing it, and why it stopped early.
-export interface CitationCheckState { kind: 'citations' | 'sources'; running: boolean; stopping?: boolean; done: number; total: number; failed: number; model: string | null; error: string | null; finishedAt: number | null }
+export interface CitationCheckState { phase?: 'citations' | 'sources'; output?: string; running: boolean; stopping?: boolean; done: number; total: number; failed: number; model: string | null; error: string | null; finishedAt: number | null }
 /** A sentence of the paper that cites works, with what was found for each. */
 export interface CitingSentence { id: string; keys: string[]; file: string; line: number; section: string | null; sentence: string; findings: Record<string, CitationFinding> }
 export interface LibraryReport extends BibliographyReport {
   library: { entries: Record<string, LibraryEntry>; pending: number };
   citations: CitingSentence[];
-  // The quick check of this paper's citations, and whether it starts by itself.
-  quickCheck?: CitationCheckState | null; autoCheck?: boolean;
   // Sentences citing nothing that a library work supports, and how many cite nothing.
   suggestions: CitationSuggestion[]; uncited: number;
 }

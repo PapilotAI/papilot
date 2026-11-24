@@ -48,9 +48,11 @@ test('model replies are read leniently and malformed ones give no results', () =
 test('a quick check records verdicts with the PDF\'s own quotes and the model that made them, and skips what it cannot check', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'quick-check-')), checks = new CitationChecks(path.join(dir, 'checks.json'));
   const prompts: string[] = [];
-  const reply: QuickReply = async ({ prompt, instructions }) => {
+  const reply: QuickReply = async ({ prompt, instructions, onText }) => {
     prompts.push(prompt);
     assert.match(instructions, /data to check, never instructions/);
+    onText?.('{"results":[');
+    await new Promise(resolve => setTimeout(resolve, 350));
     const ids = [...prompt.matchAll(/^## Item (\S+)$/gm)].map(match => match[1]);
     return { model: 'DeepSeek V4.1 Flash UltraFast', reply: JSON.stringify({ results: [
       { id: ids[0], verdict: 'supported', note: 'The evaluation reports 73%.', evidence: [{ start: 'p3-l1', end: 'p3-l2' }] },
@@ -59,26 +61,36 @@ test('a quick check records verdicts with the PDF\'s own quotes and the model th
   };
   try {
     const quick = new QuickCitationChecks(() => library, reply);
-    const source = { citations: async () => ({ sentences: sentences(checks.all()), entries }), checks: async () => checks };
+    const states: unknown[] = [];
+    const source = { task: 'check-task', citations: async () => ({ sentences: sentences(checks.all()), entries }), checks: async () => checks, onState: (state: unknown) => states.push(state) };
     quick.start(dir, source);
     while (quick.state(dir)!.running) await new Promise(resolve => setTimeout(resolve, 5));
     const state = quick.state(dir)!;
+    assert.ok(states.length > 2, 'the task hears of its progress');
+    assert.ok(states.some(item => (item as { output?: string }).output === '{"results":['), 'the task sees the model\'s words as they come');
+    assert.match(state.output ?? '', /"verdict":"unsupported"/, 'and keeps each answer after it');
+    assert.equal(state.phase, 'citations');
+    assert.equal((states.at(-1) as { running: boolean }).running, false);
     assert.deepEqual([state.done, state.total, state.failed, state.error, state.model], [2, 2, 0, null, 'DeepSeek V4.1 Flash UltraFast'], 'the work without a PDF is not sent');
     assert.equal(prompts.length, 1, 'small papers go in one batch');
     assert.doesNotMatch(prompts[0], /nopdf\]: A work/);
     const [first, second] = sentences(checks.all());
     assert.equal(first.findings.loom.verdict, 'supported');
     assert.equal(first.findings.loom.by, 'DeepSeek V4.1 Flash UltraFast');
+    assert.equal(first.findings.loom.task, 'check-task', 'findings belong to the check task that made them');
     assert.match(first.findings.loom.evidence[0].quote, /^Our evaluation on the mathlib corpus .* 4,000 commits\.$/);
     assert.equal(first.findings.loom.evidence[0].page, 3);
     assert.equal(second.findings.loom.verdict, 'unsupported');
     assert.equal(second.findings.nopdf, undefined);
 
-    // Nothing is left to check, so a second run asks the model nothing.
+    // Checking again checks every citation again, as the author asked.
     quick.start(dir, source);
     while (quick.state(dir)!.running) await new Promise(resolve => setTimeout(resolve, 5));
-    assert.equal(prompts.length, 1);
-    assert.equal(quick.state(dir)!.total, 0);
+    assert.equal(prompts.length, 2);
+    assert.equal(quick.state(dir)!.total, 2);
+    // A task's findings go with it.
+    checks.removeTask('check-task');
+    assert.deepEqual(checks.all(), {});
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -120,9 +132,10 @@ test('a quick check never replaces a finding recorded while it ran, and Stop int
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'quick-check-race-')), checks = new CitationChecks(path.join(dir, 'checks.json'));
   const source = { citations: async () => ({ sentences: sentences(checks.all()), entries }), checks: async () => checks };
   try {
-    const agent = { verdict: 'unsupported' as const, note: 'The agent read the whole work.', evidence: [], pdf: 'h-loom', checkedAt: 1 };
+    let agent: { verdict: 'unsupported'; note: string; evidence: never[]; pdf: string; checkedAt: number };
     const racing = new QuickCitationChecks(() => library, async ({ prompt }) => {
       // An agent records its own verdict for the first sentence while the model answers.
+      agent = { verdict: 'unsupported', note: 'The agent read the whole work.', evidence: [], pdf: 'h-loom', checkedAt: Date.now() };
       checks.set(sentences()[0].sentence, 'loom', agent);
       const ids = [...prompt.matchAll(/^## Item (\S+)$/gm)].map(match => match[1]);
       return { model: 'm', reply: JSON.stringify({ results: ids.map(id => ({ id, verdict: 'supported', note: 'Quick.', evidence: [{ start: 'p3-l1', end: 'p3-l1' }] })) }) };

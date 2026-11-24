@@ -21,7 +21,9 @@ await server.listen({ host: '127.0.0.1', port: 0 });
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
 const words = JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'));
 const pdf = fs.readFileSync('tests/fixtures/outline.pdf');
-const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper', createdAt: 1 }], tasks: [], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
+// A citation check of the paper, shown in it: only then does the PDF read its marks.
+const check = { id: 'check-task-000000001', projectId: 'paper', name: 'c-check', title: 'Check citations', titleSource: 'prompt', instructions: '', mode: 'citations', citationCheck: { kind: 'citations', show: true, state: null }, worktree: '', threadId: null, turnId: null, model: null, status: 'idle', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: null };
+const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper', createdAt: 1 }], tasks: [check], requests: [], runtime: { connected: true, authenticated: true, models: [] } };
 const manuscript = { annotations: [], git: { branch: 'main', files: [] }, build: { status: 'ready', key: 'pdf', current: true } };
 const line = index => { const [, x, y, height, width] = words[0].words[index]; return [x / 612, (y - height) / 792, Math.min(1, (x + width * 6) / 612), y / 792]; };
 const hash = 'a'.repeat(64);

@@ -37,6 +37,8 @@ await context.route('**/api/**', route => {
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
   if (url.pathname.endsWith('/git')) return json({ remote: false, branch: 'main', upstream: null, ahead: 0, behind: 0, head: null, files: [] });
+  if (url.pathname === '/api/quick-model') return json({ choice: null });
+  if (url.pathname.endsWith('/manuscript/evidence')) return json({ key: url.searchParams.get('key'), marks: [], running: false });
   throw new Error(`Unexpected appearance request: ${url.pathname}`);
 });
 await context.route('**/review/**', route => route.fulfill({ contentType: 'text/html', body: '<html><head></head><body><div class="bar">Review</div><main id="paper">Paper</main></body></html>' }));
@@ -68,8 +70,8 @@ try {
   await choose('Accent', 'graphite');
   await rootHas('--primary', '#55565a');
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-  await page.getByRole('button', { name: 'Research Tools', exact: true }).press('ArrowDown');
-  await expect(page.getByRole('menuitem', { name: 'Library', exact: true })).toHaveCSS('background-color', 'rgb(71, 72, 76)');
+  await page.getByRole('button', { name: 'Task list actions', exact: true }).press('ArrowDown');
+  await expect(page.getByRole('menuitem', { name: 'Archive all tasks…', exact: true })).toHaveCSS('background-color', 'rgb(71, 72, 76)');
   await page.keyboard.press('Escape');
   await open();
   const background = dialog.getByRole('textbox', { name: 'Background', exact: true });

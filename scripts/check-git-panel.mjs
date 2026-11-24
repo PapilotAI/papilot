@@ -78,6 +78,7 @@ await context.route('**/api/**', async route => {
     git = syncConflict ? { ...git, merging: { message: 'Merge origin/main', conflicts: ['main.tex'] }, files: [{ path: 'main.tex', status: 'U', staged: true, unstaged: true }] } : { ...git, ahead: 0, behind: 0, files: git.files.map(({ incoming, ...file }) => file) };
     return json({ git });
   }
+  if (url.pathname === '/api/quick-model') return route.fulfill({ json: { choice: null } });
   throw new Error('Unexpected Git panel request: ' + url.pathname);
 });
 const panel = page.getByRole('region', { name: 'Version Management', exact: true });

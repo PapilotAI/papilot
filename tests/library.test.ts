@@ -788,126 +788,100 @@ test('the library routes add, serve and take away the PDFs of the paper\'s own e
   }
 });
 
-test('quick citation checks run from the library routes, automatically once per citation, and the library search pages through PDFs', async () => {
-  const root = temporary('quick-paper'), dir = temporary('quick-routes');
+function checkHarness(name: string, main: string) {
+  const root = temporary(`${name}-paper`), dir = temporary(`${name}-routes`);
   execFileSync('git', ['init', '-q'], { cwd: root });
-  fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\\begin{document}\\section{Introduction}Linear values can be updated in place \\cite{wadler}.\\bibliography{refs}\\end{document}\n');
+  fs.writeFileSync(path.join(root, 'main.tex'), main);
   fs.writeFileSync(path.join(root, 'refs.bib'), '@article{wadler, title = {Linear types can change the world!}, doi = {10.1000/open}, year = 1990}\n');
   const store = new Store(path.join(dir, 'state.sqlite'));
   class Agent extends EventEmitter { ready = false; async request() { return {}; } start = async () => {}; respond() {} reject() {} close() {} }
   const review = { url: 'http://unused', token: '', get: async () => ({ cursor: 0, feedback: [] }) as any, post: async () => ({ worktree: root }) as any };
   const workspace = new Workspace(store, new Agent() as any, async () => review, { claude: new Agent() as any, antigravity: new Agent() as any });
   store.saveProject({ id: 'paper', path: root, name: 'Paper', createdAt: 1 });
-  const prompts: string[] = [];
-  // The quick model, faked: it supports every item with the first line it was shown.
-  workspace.quickReply = async ({ prompt }) => {
-    prompts.push(prompt);
-    const results = prompt.split('## Item ').slice(1).map(block => { const id = block.split('\n')[0], line = /<(p\d+-l\d+)>/.exec(block)![1]; return { id, verdict: 'supported', note: 'Stated.', evidence: [{ start: line, end: line }] }; });
-    return { reply: JSON.stringify({ results }), agent: 'deepseek', model: 'DeepSeek V4.1 Flash UltraFast' };
-  };
-  const library = new Library(path.join(dir, 'library'), { snapshots, findZotero: () => null });
-  const app = await buildApp({ listener: { kind: 'local', port: 7274, publicOrigin: '', owner: '' }, store, workspace, manuscripts: new Manuscripts(), csrf: 'csrf', serialGit: gitQueue(), dist: null, version: 'test', connectReview: async () => review, library });
-  const headers = { host: '127.0.0.1:7274', origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'csrf' };
-  const report = async () => (await app.inject({ method: 'GET', url: '/api/projects/paper/library?online=0', headers })).json();
-  const settled = async () => { for (let i = 0; i < 200; i++) { const value = await report(); if (!value.quickCheck?.running) return value; await new Promise(resolve => setTimeout(resolve, 10)); } throw new Error('The check did not finish.'); };
-  try {
-    await app.inject({ method: 'POST', url: '/api/projects/paper/library/pdf', headers: { ...headers, 'content-type': 'application/octet-stream' }, payload: pdf('Linear types can change the world!', 'A linear value is used exactly once, so it can be updated in place.') });
-    for (let i = 0; i < 200 && (await report()).library.entries['refs.bib#wadler'].pdf?.text !== 'ready'; i++) await new Promise(resolve => setTimeout(resolve, 10));
-    assert.equal((await report()).autoCheck, false);
-    assert.equal(prompts.length, 0, 'nothing is checked by itself until the author turns it on');
-    const on = await app.inject({ method: 'POST', url: '/api/projects/paper/citations/auto-check?online=0', headers, payload: { enabled: true } });
-    assert.equal(on.json().autoCheck, true);
-    let value = await settled();
-    assert.equal(prompts.length, 1);
-    const [sentence] = value.citations;
-    assert.deepEqual([sentence.findings.wadler.verdict, sentence.findings.wadler.by], ['supported', 'DeepSeek V4.1 Flash UltraFast']);
-    assert.deepEqual([value.quickCheck.done, value.quickCheck.total, value.quickCheck.failed], [1, 1, 0]);
-    // A finding the author dismisses is not checked again by itself.
-    await app.inject({ method: 'POST', url: '/api/projects/paper/citations/forget?online=0', headers, payload: { id: sentence.id, key: 'wadler' } });
-    value = await settled();
-    assert.equal(prompts.length, 1);
-    assert.deepEqual(value.citations[0].findings, {});
-    // Check citations asks again on request; a rewritten sentence is new and is checked by itself.
-    await app.inject({ method: 'POST', url: '/api/projects/paper/citations/quick-check?online=0', headers, payload: {} });
-    value = await settled();
-    assert.equal(prompts.length, 2);
-    fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\\begin{document}\\section{Introduction}A linear value is used exactly once \\cite{wadler}.\\bibliography{refs}\\end{document}\n');
-    await report(); value = await settled();
-    assert.equal(prompts.length, 3);
-    assert.equal(value.citations[0].findings.wadler.verdict, 'supported');
-    // The library search finds the words in the PDFs, a page at a time.
-    const found = (await app.inject({ method: 'GET', url: '/api/projects/paper/library/search?q=updated%20in%20place', headers })).json();
-    assert.deepEqual(found.matches.map((match: any) => [match.key, match.page, match.text]), [['wadler', 2, 'A linear value is used exactly once, so it can be updated in place.']]);
-    assert.equal(found.nextCursor, null);
-    assert.deepEqual((await app.inject({ method: 'GET', url: '/api/projects/paper/library/search?q=%20%20', headers })).json(), { matches: [], nextCursor: null });
-    assert.equal((await app.inject({ method: 'GET', url: '/api/projects/paper/library/search?q=linear&cursor=-1:0', headers })).statusCode, 400);
-    // The quick model choice is checked and saved on the host.
-    assert.equal((await app.inject({ method: 'POST', url: '/api/quick-model', headers, payload: { agent: 'nobody' } })).statusCode, 400);
-    assert.deepEqual((await app.inject({ method: 'POST', url: '/api/quick-model', headers, payload: { agent: 'deepseek', model: 'deepseek/deepseek-v4.1-flash-ultrafast' } })).json(), { choice: { agent: 'deepseek', model: 'deepseek/deepseek-v4.1-flash-ultrafast', effort: null } });
-    assert.deepEqual((await app.inject({ method: 'POST', url: '/api/quick-model', headers, payload: { agent: null } })).json(), { choice: null });
-  } finally {
-    await app.close(); workspace.close(); store.close(); library.stop();
-    fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-  }
-});
-
-test('Find sources suggests a library work for a sentence that cites nothing, only when asked, once per set of ranked works, and a dismissed one stays gone', async () => {
-  const root = temporary('suggest-paper'), dir = temporary('suggest-routes');
-  execFileSync('git', ['init', '-q'], { cwd: root });
-  fs.writeFileSync(path.join(root, 'main.tex'), [
-    '\\documentclass{article}\\begin{document}\\section{Introduction}',
-    'Linear values can be updated in place \\cite{wadler}.',
-    'A linear value is used exactly once, which is why it can be updated destructively.',
-    'Our dataset was collected from three hospitals in the spring.',
-    '\\bibliography{refs}\\end{document}', ''].join('\n'));
-  fs.writeFileSync(path.join(root, 'refs.bib'), '@article{wadler, title = {Linear types can change the world!}, doi = {10.1000/open}, year = 1990}\n');
-  const store = new Store(path.join(dir, 'state.sqlite'));
-  class Agent extends EventEmitter { ready = false; async request() { return {}; } start = async () => {}; respond() {} reject() {} close() {} }
-  const review = { url: 'http://unused', token: '', get: async () => ({ cursor: 0, feedback: [] }) as any, post: async () => ({ worktree: root }) as any };
-  const workspace = new Workspace(store, new Agent() as any, async () => review, { claude: new Agent() as any, antigravity: new Agent() as any });
-  store.saveProject({ id: 'paper', path: root, name: 'Paper', createdAt: 1 });
-  const asked: string[] = [];
-  workspace.quickReply = async ({ prompt, what }) => {
-    asked.push(what);
+  const asked: { what: string; choice?: unknown }[] = [];
+  // The model, faked: it supports every item with the first line it was shown;
+  // suggestion passages name their work in each anchor, and it answers with the line alone.
+  workspace.quickReply = async ({ prompt, what, choice }) => {
+    asked.push({ what, choice });
     const results = prompt.split('## Item ').slice(1).map(block => {
-      // Suggestion passages name their work in each anchor; the model answers with the line alone.
       const id = block.split('\n')[0], line = /<(?:[^:>]+:)?(p\d+-l\d+)>/.exec(block)![1];
       return /^Work \[/m.test(block) ? { id, key: 'wadler', verdict: 'supported', note: 'Stated.', evidence: [{ start: line, end: line }] } : { id, verdict: 'supported', note: 'Stated.', evidence: [{ start: line, end: line }] };
     });
     return { reply: JSON.stringify({ results }), agent: 'deepseek', model: 'DeepSeek V4.1 Flash UltraFast' };
   };
   const library = new Library(path.join(dir, 'library'), { snapshots, findZotero: () => null });
-  const app = await buildApp({ listener: { kind: 'local', port: 7274, publicOrigin: '', owner: '' }, store, workspace, manuscripts: new Manuscripts(), csrf: 'csrf', serialGit: gitQueue(), dist: null, version: 'test', connectReview: async () => review, library });
   const headers = { host: '127.0.0.1:7274', origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'csrf' };
-  const report = async () => (await app.inject({ method: 'GET', url: '/api/projects/paper/library?online=0', headers })).json();
-  const settled = async () => { for (let i = 0; i < 200; i++) { const value = await report(); if (!value.quickCheck?.running) return value; await new Promise(resolve => setTimeout(resolve, 10)); } throw new Error('The check did not finish.'); };
-  try {
+  return { root, dir, store, workspace, library, asked, headers, async app() {
+    const app = await buildApp({ listener: { kind: 'local', port: 7274, publicOrigin: '', owner: '' }, store, workspace, manuscripts: new Manuscripts(), csrf: 'csrf', serialGit: gitQueue(), dist: null, version: 'test', connectReview: async () => review, library });
+    const report = async () => (await app.inject({ method: 'GET', url: '/api/projects/paper/library?online=0', headers })).json();
     await app.inject({ method: 'POST', url: '/api/projects/paper/library/pdf', headers: { ...headers, 'content-type': 'application/octet-stream' }, payload: pdf('Linear types can change the world!', 'A linear value is used exactly once, so it can be updated in place.') });
     for (let i = 0; i < 200 && (await report()).library.entries['refs.bib#wadler'].pdf?.text !== 'ready'; i++) await new Promise(resolve => setTimeout(resolve, 10));
-    // Checking citations, also automatically, never looks for sources: only Find sources does.
-    await app.inject({ method: 'POST', url: '/api/projects/paper/citations/auto-check?online=0', headers, payload: { enabled: true } });
-    await settled();
-    assert.deepEqual(asked, ['check citations']);
-    assert.equal((await report()).uncited, 2);
-    assert.equal((await app.inject({ method: 'POST', url: '/api/projects/paper/citations/quick-check?online=0', headers, payload: { kind: 'everything' } })).statusCode, 400);
-    await app.inject({ method: 'POST', url: '/api/projects/paper/citations/quick-check?online=0', headers, payload: { kind: 'sources' } });
-    let value = await settled();
-    assert.equal(value.quickCheck.kind, 'sources');
-    assert.deepEqual(asked, ['check citations', 'find sources for uncited sentences'], 'the hospital sentence shares too few words with any work to ask about');
-    assert.equal(value.suggestions.length, 1);
-    const [suggestion] = value.suggestions;
-    assert.deepEqual([suggestion.key, suggestion.verdict, suggestion.by, suggestion.line], ['wadler', 'supported', 'DeepSeek V4.1 Flash UltraFast', 3]);
-    assert.match(suggestion.sentence, /^A linear value is used exactly once/);
-    assert.match(suggestion.evidence[0].quote, /used exactly once/);
-    // The works it ranks did not change: the sentence is not asked about again.
-    await app.inject({ method: 'POST', url: '/api/projects/paper/citations/quick-check?online=0', headers, payload: { kind: 'sources' } });
-    await settled();
-    assert.equal(asked.length, 2);
-    const dismissed = await app.inject({ method: 'POST', url: '/api/projects/paper/citations/suggestions/dismiss?online=0', headers, payload: { id: suggestion.id } });
-    assert.deepEqual(dismissed.json().suggestions, []);
-    assert.deepEqual((await report()).suggestions, []);
-  } finally {
+    const done = async (id: string) => { for (let i = 0; i < 300; i++) { const task = store.task(id); if (task.status !== 'running') return task; await new Promise(resolve => setTimeout(resolve, 10)); } throw new Error('The check did not finish.'); };
+    return { app, report, done };
+  }, async close(app: { close(): Promise<unknown> }) {
     await app.close(); workspace.close(); store.close(); library.stop();
     fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-  }
+  } };
+}
+
+test('a citation check is a task of its own: it runs only when started, with the chosen model, keeps its findings, shows them in the paper only when asked, and takes them when deleted', async () => {
+  const h = checkHarness('check-task', '\\documentclass{article}\\begin{document}\\section{Introduction}Linear values can be updated in place \\cite{wadler}.\\bibliography{refs}\\end{document}\n');
+  const { app, report, done } = await h.app();
+  try {
+    assert.deepEqual(h.asked, [], 'opening the library checks nothing');
+    assert.equal((await app.inject({ method: 'POST', url: '/api/citation-checks', headers: h.headers, payload: { id: 'check-0000000000000001', projectId: 'paper', agent: 'nobody' } })).statusCode, 400);
+    const created = (await app.inject({ method: 'POST', url: '/api/citation-checks', headers: h.headers, payload: { id: 'check-0000000000000001', projectId: 'paper', agent: 'deepseek', model: 'deepseek/deepseek-v4.1-flash-ultrafast', title: '核查引文' } })).json();
+    assert.deepEqual([created.mode, created.title, created.worktree, created.citationCheck.show], ['citations', '核查引文', '', false]);
+    let task = await done(created.id);
+    assert.equal(task.status, 'idle');
+    assert.deepEqual([task.citationCheck!.state!.done, task.citationCheck!.state!.total, task.citationCheck!.state!.failed], [1, 1, 0]);
+    assert.deepEqual(h.asked, [{ what: 'check citations', choice: { agent: 'deepseek', model: 'deepseek/deepseek-v4.1-flash-ultrafast', effort: undefined } }]);
+    const finding = (await report()).citations[0].findings.wadler;
+    assert.deepEqual([finding.verdict, finding.by, finding.task], ['supported', 'DeepSeek V4.1 Flash UltraFast', created.id]);
+    // The paper's PDF shows a check only when the author turns that on.
+    assert.equal((await app.inject({ method: 'POST', url: `/api/tasks/${created.id}/citations/show`, headers: h.headers, payload: { show: 'yes' } })).statusCode, 400);
+    assert.equal((await app.inject({ method: 'POST', url: `/api/tasks/${created.id}/citations/show`, headers: h.headers, payload: { show: true } })).json().citationCheck.show, true);
+    // Check again runs it once more, here with another model.
+    task = (await app.inject({ method: 'POST', url: `/api/tasks/${created.id}/citations/rerun`, headers: h.headers, payload: { agent: 'claude', model: 'haiku' } })).json();
+    assert.deepEqual([task.agent, task.model], ['claude', 'haiku']);
+    await done(created.id);
+    assert.deepEqual(h.asked.at(-1), { what: 'check citations', choice: { agent: 'claude', model: 'haiku', effort: null } });
+    // Deleting the task takes its findings with it.
+    assert.deepEqual((await app.inject({ method: 'POST', url: `/api/tasks/${created.id}/delete`, headers: h.headers, payload: { confirm: true } })).json(), { ok: true });
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.deepEqual((await report()).citations[0].findings, {});
+    // The library search finds the words in the PDFs, a page at a time.
+    const found = (await app.inject({ method: 'GET', url: '/api/projects/paper/library/search?q=updated%20in%20place', headers: h.headers })).json();
+    assert.deepEqual(found.matches.map((match: any) => [match.key, match.page, match.text]), [['wadler', 2, 'A linear value is used exactly once, so it can be updated in place.']]);
+    assert.deepEqual((await app.inject({ method: 'GET', url: '/api/projects/paper/library/search?q=%20%20', headers: h.headers })).json(), { matches: [], nextCursor: null });
+    assert.equal((await app.inject({ method: 'GET', url: '/api/projects/paper/library/search?q=linear&cursor=-1:0', headers: h.headers })).statusCode, 400);
+    // The quick model choice is checked and saved on the host.
+    assert.equal((await app.inject({ method: 'POST', url: '/api/quick-model', headers: h.headers, payload: { agent: 'nobody' } })).statusCode, 400);
+    assert.deepEqual((await app.inject({ method: 'POST', url: '/api/quick-model', headers: h.headers, payload: { agent: null } })).json(), { choice: null });
+  } finally { await h.close(app); }
+});
+
+test('a check also suggests a library work for a sentence that cites nothing, and a dismissed suggestion stays gone', async () => {
+  const h = checkHarness('sources-task', [
+    '\\documentclass{article}\\begin{document}\\section{Introduction}',
+    'Linear values can be updated in place \\cite{wadler}.',
+    'A linear value is used exactly once, which is why it can be updated destructively.',
+    'Our dataset was collected from three hospitals in the spring.',
+    '\\bibliography{refs}\\end{document}', ''].join('\n'));
+  const { app, report, done } = await h.app();
+  try {
+    assert.equal((await report()).uncited, 2);
+    const created = (await app.inject({ method: 'POST', url: '/api/citation-checks', headers: h.headers, payload: { id: 'check-0000000000000002', projectId: 'paper' } })).json();
+    await done(created.id);
+    assert.deepEqual(h.asked.map(item => item.what), ['check citations', 'find sources for uncited sentences'], 'the hospital sentence shares too few words with any work to ask about');
+    const [suggestion] = (await report()).suggestions;
+    assert.deepEqual([suggestion.key, suggestion.verdict, suggestion.task, suggestion.line], ['wadler', 'supported', created.id, 3]);
+    assert.match(suggestion.evidence[0].quote, /used exactly once/);
+    const dismissed = await app.inject({ method: 'POST', url: '/api/projects/paper/citations/suggestions/dismiss?online=0', headers: h.headers, payload: { id: suggestion.id } });
+    assert.deepEqual(dismissed.json().suggestions, []);
+    await app.inject({ method: 'POST', url: `/api/tasks/${created.id}/citations/rerun`, headers: h.headers, payload: {} });
+    await done(created.id);
+    assert.deepEqual(h.asked.slice(2).map(item => item.what), ['check citations'], 'a dismissed sentence is not asked about again');
+    assert.equal((await app.inject({ method: 'POST', url: '/api/projects/paper/citations/suggestions/dismiss?online=0', headers: h.headers, payload: {} })).statusCode, 400);
+  } finally { await h.close(app); }
 });

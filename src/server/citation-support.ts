@@ -115,6 +115,12 @@ export class CitationSuggestions {
     fs.writeFileSync(temporary, JSON.stringify({ version: 2, sentences }));
     fs.renameSync(temporary, this.file);
   }
+  /** Forgets what one task suggested, when the task goes. */
+  removeTask(task: string) {
+    const changes: Record<string, StoredSuggestion> = {};
+    for (const [id, value] of Object.entries(this.all())) if (value.suggestion?.task === task) changes[id] = { ...value, candidates: '', suggestion: null };
+    if (Object.keys(changes).length) this.update(changes);
+  }
   dismiss(id: string) {
     const current = this.all()[id];
     if (!current) return false;

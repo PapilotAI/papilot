@@ -289,11 +289,6 @@
     "textHash": "16173e9772064f2cb79098185557c83aee48bc13df1e7dce0d4bacd8acab50fd",
     "model": "gemini-4-argon-medium"
   },
-  "Choose what to check.": {
-    "revision": "801c86c173a773a93ac216391926008efcc636f734d3b99a7357b2a47bdd631a",
-    "textHash": "dd7db73ae347522ee95e9df969fc8cfdc0d89f6c5d784df9f6cd4845bd37f8e2",
-    "model": "gemini-4-argon-medium"
-  },
   "Choose where to keep this preference.": {
     "revision": "f9d0750f283b77cf76b319b4cff809c28b50139ae3c87ddb265e9f11862f1841",
     "textHash": "24fe34cb94982a2945a41467f70f3ecc5eb55eb4126e47911d1e3b55139c2da1",
@@ -304,9 +299,9 @@
     "textHash": "ff9b56d8a01b293952095f0ed2db52e87284151a784f69168e635ea7bc394830",
     "model": "gemini-4-argon-medium"
   },
-  "Choose whether citations are checked automatically.": {
-    "revision": "c05a973838ca48efee00fd32015bd571a2f7bdc4bb32d1dbfebfeff958e19861",
-    "textHash": "5cd77d2f0f22cdd8040fc6d54c776642402b20260000ccd83cee4a8bdbfa1c32",
+  "Choose whether the paper shows this check.": {
+    "revision": "0833b10faa8456d82be773e492ab385557435818648aa63bfaa210ee2a40e607",
+    "textHash": "692db2346144a35e9b702877e41941bbe53eeec2e18be0fac951c45255985c0f",
     "model": "gemini-4-argon-medium"
   },
   "Choose whether to archive or restore the task.": {
@@ -1229,6 +1224,11 @@
     "textHash": "eff08869143cc986916a4ff7131268477dbc917a7638c4bf2056279b965dc551",
     "model": "gemini-4-argon-medium"
   },
+  "Stop the check before deleting it.": {
+    "revision": "a6859efde2c154fb2338587f5a4b960c5c7a17d6b1b36f6daeff1b0797a077a1",
+    "textHash": "7da0f31d153e961a66c70fc63a10088b22457fa24bb2fd59d416c0115312387e",
+    "model": "gemini-4-argon-medium"
+  },
   "Task not found.": {
     "revision": "d92983b8dd972a6b9a188b04724935332251ed7bcb03280222ec2646147f7b7d",
     "textHash": "ab2e23441b9e70f24a8c3205bb2bd08ea30d8c4796b5cbcf184aad25fd289bc6",
@@ -1907,6 +1907,11 @@
   "This task already has queued instructions. Wait or pause it first.": {
     "revision": "760862f6f8b2a8638fae072afe64477102223d6e2f6768c079c1c45294d1829e",
     "textHash": "11e5ee0b44c4ae7f57a19edd2038e899beb150a3f4494b4af29dc68b0d612de1",
+    "model": "gemini-4-argon-medium"
+  },
+  "This task does not check citations.": {
+    "revision": "d9a2982ce0945b92f926fc9b0708dceb45674b69a40f8e21937ee32c840b440b",
+    "textHash": "7d502abe01fae084dca3f06b2bee561995a2822ca8e0e4b531f903eed1dc7479",
     "model": "gemini-4-argon-medium"
   },
   "This task has no accepted changes left to commit.": {

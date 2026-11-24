@@ -39,6 +39,8 @@ export class CitationChecks {
   set(sentence: string, key: string, finding: Stored) { this.write({ ...this.read(), [findingKey(sentence, key)]: finding }); }
   /** The finding for a work a sentence cites, if any. */
   get(sentence: string, key: string): Stored | undefined { return this.read()[findingKey(sentence, key)]; }
+  /** Forgets what one task found, when the task goes. */
+  removeTask(task: string) { const findings = this.read(); for (const [key, finding] of Object.entries(findings)) if (finding.task === task) delete findings[key]; this.write(findings); }
   remove(sentence: string, key: string) {
     const findings = this.read();
     delete findings[findingKey(sentence, key)];
@@ -67,8 +69,8 @@ const refuse = (message: string) => Object.assign(new Error(message), { statusCo
 
 /** Record what an agent found for one work a sentence cites: the evidence
  * is the PDF's lines from each start anchor to its end anchor. */
-/** by names the quick model that made a quick check; an agent's finding has none. */
-export async function recordCitation(sentences: CitingSentence[], inputs: LibraryInput[], library: Library, checks: CitationChecks, record: CitationRecord, now = Date.now(), by?: string) {
+/** by names the model of a quick check, an agent's finding has none; task names the task that recorded it. */
+export async function recordCitation(sentences: CitingSentence[], inputs: LibraryInput[], library: Library, checks: CitationChecks, record: CitationRecord, now = Date.now(), by?: string, task?: string) {
   const sentence = sentences.find(item => item.id === record.id);
   if (!sentence) throw refuse(`No citing sentence has the ID ${record.id}; the paper may have changed. Use citations_list.`);
   if (!sentence.keys.includes(record.key)) throw refuse(`This sentence cites ${sentence.keys.join(', ')}, not ${record.key}.`);
@@ -86,7 +88,7 @@ export async function recordCitation(sentences: CitingSentence[], inputs: Librar
     const lines = snapshot.lines.slice(Math.min(from, to), Math.max(from, to) + 1);
     return { quote: lines.map(line => line.text).join(' ').replace(/\s+/g, ' ').trim(), page: lines[0].page + 1, marks: lines.map(line => ({ page: line.page + 1, rect: line.rect })) };
   });
-  const finding = { verdict, note: record.note.trim(), evidence, pdf: found.hash, checkedAt: now, ...(by ? { by } : {}) };
+  const finding = { verdict, note: record.note.trim(), evidence, pdf: found.hash, checkedAt: now, ...(by ? { by } : {}), ...(task ? { task } : {}) };
   checks.set(sentence.sentence, record.key, finding);
   return finding;
 }

@@ -160,9 +160,9 @@ export async function forgetFinding(root: string, id: string, key: string, store
   return pdf ?? null;
 }
 /** Record what an agent found for a work one of the paper's sentences cites. */
-export async function recordFinding(root: string, record: CitationRecord, store = library()) {
+export async function recordFinding(root: string, record: CitationRecord, store = library(), task?: string) {
   const { sentences, entries } = await citations(root, store);
-  return recordCitation(sentences, entries, store, await citationChecks(root), record);
+  return recordCitation(sentences, entries, store, await citationChecks(root), record, Date.now(), undefined, task);
 }
 
 /** The bibliography with every entry's PDF, starting the work that finds

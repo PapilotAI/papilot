@@ -23,7 +23,7 @@ import { fullPaperPdf, nextPaperPass, paperBuildPdf, paperPassPdf, retainedPaper
 import { withNotePages } from './note-pages.ts';
 import { type ChangeAction, Changes } from './changes.ts';
 import { citationChecks, citationSuggestions, citations, currentSuggestions, confirmEntry, forgetFinding, library, libraryInputs, libraryReport, recordFinding, stopLibrary } from './references.ts';
-import { QuickCitationChecks, checkItem } from './citation-check.ts';
+import { QuickCitationChecks } from './citation-check.ts';
 import { evidenceMarks, pdfText, suggestionMarks } from './evidence-marks.ts';
 import type { ReviewSnapshot } from './ai-review.ts';
 import type { Library } from './library.ts';
@@ -214,7 +214,7 @@ export async function buildApp(options: AppOptions) {
       return { pages };
     },
     citations: async projectId => (await citations(store.project(projectId).path, papers())).sentences,
-    record: (projectId, record) => recordFinding(store.project(projectId).path, record, papers()),
+    record: (projectId, record, taskId) => recordFinding(store.project(projectId).path, record, papers(), taskId),
   }, { memory: () => workspace.memory, changed: projectId => refreshManuscript(projectId) });
   workspace.paperTools = async (...args) => {
     const result = await paperTools.call(...args);
@@ -963,33 +963,50 @@ export async function buildApp(options: AppOptions) {
     papers().setUseZotero(use);
     return papers().zoteroStatus();
   });
-  // Quick citation checks run with the quick model (Settings → General).
-  // With automatic checks on for a paper, opening its library checks what is
-  // new: a citation whose sentence or PDF changed, or a PDF just found. Each
-  // citation is tried by itself once, so one a run could not settle, or a
-  // finding the author dismissed, is not sent again until it changes.
-  // Finding sources for uncited sentences reads every sentence and asks the
-  // model far more, so it runs only when the author asks.
+  // Citation checks are tasks of their own (Workspace.createCitationCheck):
+  // each runs the model the author chose over the paper's citations, or its
+  // uncited sentences, records what it finds as its own, and shows it in the
+  // paper's PDF only when the author turns that on.
   const quickChecks = new QuickCitationChecks(papers, request => workspace.quickReply(request));
   app.addHook('onClose', async () => quickChecks.stopAll());
-  const autoKey = (projectId: string) => `citation-auto-check:${projectId}`, tried = new Map<string, Set<string>>();
-  const autoCheck = (projectId: string) => store.preference<boolean>(autoKey(projectId)) === true;
-  const triedFor = (root: string) => { let items = tried.get(root); if (!items) tried.set(root, items = new Set()); return items; };
-  const citationSource = (projectId: string, root: string) => ({ projectId, citations: () => citations(root, papers()), checks: () => citationChecks(root), suggestions: () => citationSuggestions(root) });
-  const withQuickCheck = async (projectId: string, root: string, report: LibraryReport) => {
-    if (autoCheck(projectId) && !quickChecks.state(root)?.running) {
-      const readable = new Map(report.entries.flatMap(entry => { const pdf = report.library.entries[entry.id]?.pdf; return pdf && pdf.text !== 'pending' && pdf.text !== 'none' ? [[entry.key, pdf.hash] as const] : []; }));
-      const done = triedFor(root), fresh = new Set(report.citations.flatMap(sentence => sentence.keys.flatMap(key => {
-        const hash = readable.get(key), item = hash && checkItem(sentence.id, key, hash);
-        return item && (!sentence.findings[key] || sentence.findings[key].stale) && !done.has(item) ? [item] : [];
-      })));
-      if (fresh.size) { for (const item of fresh) done.add(item); quickChecks.start(root, citationSource(projectId, root), 'citations', item => fresh.has(item)); }
-    }
-    return { ...report, quickCheck: quickChecks.state(root), autoCheck: autoCheck(projectId) };
+  workspace.runCitationCheck = task => {
+    const root = store.project(task.projectId).path;
+    quickChecks.start(task.id, {
+      projectId: task.projectId, task: task.id, choice: task.agent ? { agent: task.agent, model: task.model, effort: task.effort } : undefined,
+      citations: () => citations(root, papers()), checks: () => citationChecks(root), suggestions: () => citationSuggestions(root),
+      onState: state => {
+        const current = store.findTask(task.id);
+        if (!current || current.mode !== 'citations') return;
+        store.updateTask(task.id, { citationCheck: { ...current.citationCheck!, state }, status: state.running ? 'running' : state.error ? 'failed' : 'idle', error: state.running ? null : state.error });
+      },
+    });
   };
+  workspace.forgetCitationCheck = task => {
+    const root = store.project(task.projectId).path;
+    void citationChecks(root).then(checks => checks.removeTask(task.id));
+    void citationSuggestions(root).then(suggestions => suggestions.removeTask(task.id));
+  };
+  app.post('/api/citation-checks', request => {
+    const b = (request.body || {}) as Record<string, unknown>;
+    if (b.agent !== undefined && !isAgentId(b.agent)) throw Object.assign(new Error('Unknown agent.'), { statusCode: 400 });
+    const task = workspace.createCitationCheck({ id: string(b.id, 'Task ID', 64), projectId: string(b.projectId, 'Paper ID', 64), agent: b.agent as AgentId | undefined, model: typeof b.model === 'string' ? b.model : null, effort: typeof b.effort === 'string' ? b.effort : null });
+    if (typeof b.title === 'string' && b.title.trim() && task.titleSource === 'prompt') return store.updateTask(task.id, { title: b.title.trim().slice(0, 120) });
+    return task;
+  });
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/citations/stop', task, request => { quickChecks.stop(request.params.id); return store.task(request.params.id); });
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/citations/rerun', task, request => {
+    const b = (request.body || {}) as Record<string, unknown>;
+    if (b.agent !== undefined && !isAgentId(b.agent)) throw Object.assign(new Error('Unknown agent.'), { statusCode: 400 });
+    return workspace.rerunCitationCheck(request.params.id, b.agent ? { agent: b.agent as AgentId, model: typeof b.model === 'string' ? b.model : null, effort: typeof b.effort === 'string' ? b.effort : null } : undefined);
+  });
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/citations/show', task, request => {
+    const show = (request.body as { show?: unknown } | null)?.show, current = store.task(request.params.id);
+    if (typeof show !== 'boolean' || current.mode !== 'citations') throw Object.assign(new Error('Choose whether the paper shows this check.'), { statusCode: 400 });
+    return store.updateTask(current.id, { citationCheck: { ...current.citationCheck!, show } });
+  });
   app.get<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/library', project(), async request => {
     const root = store.project(request.params.id).path;
-    return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
+    return libraryReport(root, libraryOptions(request.query), papers());
   });
   // The checked citations of the paper's PDF named by key, as marks beside
   // their sentences. The PDF's lines are read once per build and kept; the
@@ -997,10 +1014,13 @@ export async function buildApp(options: AppOptions) {
   const evidence = new Map<string, { text: Promise<{ snapshot: ReviewSnapshot; text: ReturnType<typeof pdfText> }>; findings?: string; marks?: EvidenceMark[] }>();
   app.get<{ Params: { id: string }; Querystring: { key?: string } }>('/api/projects/:id/manuscript/evidence', project(), async request => {
     const project = store.project(request.params.id), key = String(request.query.key || ''), shelf = papers();
-    const running = Boolean(quickChecks.state(project.path)?.running);
-    const { sentences, entries, uncited } = await citations(project.path, shelf);
+    // Only the checks the author chose to show in the paper.
+    const checks = store.tasks().filter(item => item.projectId === project.id && item.mode === 'citations'), shown = new Set(checks.filter(item => item.citationCheck?.show).map(item => item.id));
+    const running = checks.some(item => shown.has(item.id) && item.status === 'running');
+    const all = await citations(project.path, shelf), entries = all.entries;
+    const sentences = all.sentences.map(sentence => ({ ...sentence, findings: Object.fromEntries(Object.entries(sentence.findings).filter(([, finding]) => finding.task && shown.has(finding.task))) }));
     const checked = sentences.filter(sentence => sentence.keys.some(item => sentence.findings[item] && !sentence.findings[item].stale));
-    const suggestions = await currentSuggestions(project.path, uncited, key => { const input = entries.find(entry => entry.key === key); return (input && shelf.pdfOf(input)?.hash) ?? null; });
+    const suggestions = (await currentSuggestions(project.path, all.uncited, key => { const input = entries.find(entry => entry.key === key); return (input && shelf.pdfOf(input)?.hash) ?? null; })).filter(item => item.task && shown.has(item.task));
     if (!key || (!checked.length && !suggestions.length)) return { key, marks: [], running };
     const id = `${project.id}:${key}`;
     let cached = evidence.get(id);
@@ -1017,43 +1037,28 @@ export async function buildApp(options: AppOptions) {
     }
     return { key, marks: cached.marks!, running };
   });
-  app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/citations/quick-check', project(), async request => {
-    const root = store.project(request.params.id).path, b = (request.body || {}) as { stop?: unknown; kind?: unknown };
-    if (b.kind !== undefined && b.kind !== 'citations' && b.kind !== 'sources') throw Object.assign(new Error('Choose what to check.'), { statusCode: 400 });
-    if (b.stop === true) quickChecks.stop(root);
-    else quickChecks.start(root, citationSource(request.params.id, root), b.kind ?? 'citations');
-    return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
-  });
   // A suggestion the author does not want is not shown or made again for that sentence.
   app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/citations/suggestions/dismiss', project(), async request => {
     const id = (request.body as { id?: unknown } | null)?.id;
     if (typeof id !== 'string' || !id) throw Object.assign(new Error('Choose a suggestion to dismiss.'), { statusCode: 400 });
     const root = store.project(request.params.id).path;
     (await citationSuggestions(root)).dismiss(id);
-    return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
-  });
-  app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/citations/auto-check', project(), async request => {
-    const enabled = (request.body as { enabled?: unknown } | null)?.enabled;
-    if (typeof enabled !== 'boolean') throw Object.assign(new Error('Choose whether citations are checked automatically.'), { statusCode: 400 });
-    store.savePreference(autoKey(request.params.id), enabled);
-    const root = store.project(request.params.id).path;
-    return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
+    return libraryReport(root, libraryOptions(request.query), papers());
   });
   app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/references/confirm', project(), async request => {
     const b = request.body as any;
     if (typeof b?.id !== 'string' || typeof b?.confirmed !== 'boolean') throw new Error('Choose an entry to confirm.');
     const root = store.project(request.params.id).path;
     await confirmEntry(root, b.id, b.confirmed);
-    return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
+    return libraryReport(root, libraryOptions(request.query), papers());
   });
   // A finding the author judges otherwise is forgotten; an agent can check again.
   app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/citations/forget', project(), async request => {
     const b = request.body as any;
     if (typeof b?.id !== 'string' || typeof b?.key !== 'string') throw new Error('Choose a citation to forget.');
     const root = store.project(request.params.id).path;
-    const forgotten = await forgetFinding(root, b.id, b.key, papers());
-    if (forgotten) triedFor(root).add(checkItem(b.id, b.key, forgotten));
-    return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
+    await forgetFinding(root, b.id, b.key, papers());
+    return libraryReport(root, libraryOptions(request.query), papers());
   });
   // A PDF the author adds, to the entry it is dropped on or to the one its
   // first pages name.
