@@ -100,7 +100,7 @@ export class PaperTools {
         return { added, memory: await listed() };
       }
       if (tool === 'memory_update') await memory.update(args.scope, text(args, 'previous'), text(args, 'text'), text(args, 'revision'), paper);
-      if (tool === 'memory_remove' && !await memory.remove(args.scope, text(args, 'text'), text(args, 'revision'), paper)) throw new Error('No saved preference has this text. Use memory_list.');
+      if (tool === 'memory_remove' && !await memory.remove(args.scope, text(args, 'text'), text(args, 'revision'), paper)) throw agentToolError('No saved preference has this text. Use memory_list.');
       if (tool !== 'memory_list') this.memory.changed(task.projectId);
       return { memory: await listed() };
     } catch (failure) { throw agentToolError((failure as Error).message); }

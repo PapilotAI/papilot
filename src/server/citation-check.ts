@@ -130,10 +130,11 @@ export class QuickCitationChecks {
       for (const item of batch) {
         const result = results.get(item.id);
         try {
-          if (!result || !VERDICTS.includes(result.verdict as never)) throw new Error('No verdict.');
+          // A reply without a usable verdict for an item leaves it unchecked.
+          if (!result || !VERDICTS.includes(result.verdict as never)) { run.state.failed++; continue; }
           await recordCitation(sentences, entries, library, checks, { id: item.sentence.id, key: item.key, verdict: result.verdict, evidence: result.evidence, note: result.note || '—' }, Date.now(), model ?? undefined);
         } catch { run.state.failed++; }
-        run.state.done++;
+        finally { run.state.done++; }
       }
     }
   }
