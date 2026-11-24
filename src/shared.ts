@@ -545,8 +545,8 @@ export interface LibraryReport extends BibliographyReport {
   citations: CitingSentence[];
   // The quick check of this paper's citations, and whether it starts by itself.
   quickCheck?: CitationCheckState | null; autoCheck?: boolean;
-  // Sentences citing nothing that a library work supports.
-  suggestions: CitationSuggestion[];
+  // Sentences citing nothing that a library work supports, and how many cite nothing.
+  suggestions: CitationSuggestion[]; uncited: number;
 }
 // The Zotero libraries the Library takes PDFs from. On this host: none, one
 // whose database cannot be read, or one with its counts. The account: its

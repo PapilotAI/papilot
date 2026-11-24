@@ -646,21 +646,32 @@ export function uncitedSentences(doc: Document): ProseSentence[] {
       commands = citeCommands(source),
       map = layout(text, source),
       body = file === doc.main ? Math.max(0, source.search(/\\begin\s*\{document\}/)) : 0,
-      cuts = [...new Set([body, ...map.bounds.flatMap(([at, after]) => [at, after]), ...map.ends, ...map.notes.flatMap(([open, close]) => [source.lastIndexOf("\\footnote", open), open, close]), source.length])]
+      // Tables, displayed mathematics and drawings are not sentences of prose.
+      skipped = [...source.matchAll(NOT_PROSE)].map((m): [number, number] => {
+        const close = new RegExp(String.raw`\\end\s*\{${m[1].replace("*", "\\*")}\}`, "g");
+        close.lastIndex = m.index + m[0].length;
+        return [m.index, close.exec(source) ? close.lastIndex : source.length];
+      }),
+      // A footnote is a sentence or more of its own; one that cites makes the claim it hangs on cited too.
+      notes = map.notes.map(([open, close]) => ({ start: source.lastIndexOf("\\footnote", open), open, close, cites: commands.some((c) => c.start >= open && c.start < close) })),
+      cuts = [...new Set([body, ...map.bounds.flatMap(([at, after]) => [at, after]), ...map.ends, ...notes.flatMap((n) => [n.start, n.open, n.close, ...map.endsIn(n.open, n.close)]), source.length])]
         .filter((at) => at >= body)
         .sort((a, b) => a - b);
     for (let index = 0; index + 1 < cuts.length; index++) {
       const from = cuts[index], to = cuts[index + 1];
       // Headings, environment edges and a footnote's own command are not prose.
-      if (map.bounds.some(([at, after]) => at === from && after === to) || map.notes.some(([open]) => to === open) || commands.some((c) => c.start < to && c.end > from)) continue;
-      const sentence = prose(source, from, to, [], map);
-      if (sentence.split(/\s+/).filter((word) => /\p{L}{2,}/u.test(word)).length < 6) continue;
+      if (map.bounds.some(([at, after]) => at === from && after === to) || notes.some((n) => to === n.open) || commands.some((c) => c.start < to && c.end > from)) continue;
+      if (skipped.some(([start, stop]) => from >= start && to <= stop) || notes.some((n) => n.cites && to === n.start)) continue;
+      const sentence = prose(source, from, to, [], map), words = sentence.split(/\s+/).filter((word) => /\p{L}{2,}/u.test(word)).length;
+      // Settings and macros, written as commands, are not a claim either.
+      if (words < 6 || (source.slice(from, to).match(/\\[A-Za-z@]+/g)?.length ?? 0) * 2 > words) continue;
       const line = lineAt(from + (source.slice(from, to).length - source.slice(from, to).trimStart().length));
       found.push({ file, line, section: sectionOf(doc, file, line), sentence });
     }
   }
   return found;
 }
+const NOT_PROSE = /\\begin\s*\{((?:tabular|tabularx|tabulary|longtable|array|mathpar|align|alignat|gather|multline|flalign|eqnarray|equation|displaymath|math|tikzpicture|verbatim|lstlisting|minted)\*?)\}/g;
 
 // The document's files in reading order, from the main file through
 // \input, \include, \subfile and \import, and the .bib files it names.

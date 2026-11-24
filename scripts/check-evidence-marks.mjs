@@ -44,7 +44,7 @@ const report = () => ({
   citations: marks.filter(mark => !mark.suggestion).map(mark => ({ id: mark.id, keys: mark.findings.map(item => item.key), file: mark.file, line: mark.line, section: null, sentence: mark.sentence, findings: Object.fromEntries(mark.findings.map(item => [item.key, item])) })),
   suggestions: marks.some(mark => mark.suggestion) ? [suggestion] : [],
 });
-const errors = [], dismissed = [];
+const errors = [], dismissed = [], evidenceKeys = [];
 async function run(viewport, name) {
   reset();
   const phone = viewport.width < 600, page = await browser.newPage({ locale: 'en-US', viewport, hasTouch: phone, isMobile: phone });
@@ -63,7 +63,7 @@ async function run(viewport, name) {
     if (url.pathname.endsWith('/skills')) return json({ skills: [] });
     if (url.pathname.endsWith('/git')) return json(manuscript.git);
     if (url.pathname.endsWith('/manuscript')) return json(manuscript);
-    if (url.pathname.endsWith('/manuscript/evidence')) return json({ key: url.searchParams.get('key'), marks, running: false });
+    if (url.pathname.endsWith('/manuscript/evidence')) { evidenceKeys.push(url.searchParams.get('key')); return json({ key: url.searchParams.get('key'), marks, running: false }); }
     if (url.pathname.endsWith('/manuscript/words')) return json(words[Number(url.searchParams.get('page'))]);
     if (url.pathname.endsWith('/citations/suggestions/dismiss')) { dismissed.push(route.request().postDataJSON().id); marks = marks.filter(mark => !mark.suggestion); return json(report()); }
     if (url.pathname.endsWith('/library')) return json(report());
@@ -74,6 +74,7 @@ async function run(viewport, name) {
   await page.goto(`http://127.0.0.1:${server.server.address().port}`);
   const tags = page.locator('.manuscript .evidence-tag');
   await expect(tags).toHaveCount(2);
+  assert.equal(evidenceKeys.at(-1), 'pdf', 'marks belong to the build on screen');
   const paragraph = tags.nth(1), suggested = tags.nth(0);
   // The paragraph's bar: a segment per citation, in reading order.
   assert.deepEqual(await paragraph.locator('span').evaluateAll(spans => spans.map(span => span.dataset.verdict)), ['supported', 'unsupported', 'supported']);
@@ -95,6 +96,11 @@ async function run(viewport, name) {
   await page.keyboard.press('Escape');
   await expect(card).toHaveCount(0);
   assert.ok(await paragraph.evaluate(element => element === document.activeElement), 'focus returns to the bar');
+  // A click or tap outside closes it too.
+  await press(paragraph);
+  await expect(card).toBeVisible();
+  if (phone) await page.touchscreen.tap(pageBox.x + pageBox.width / 2, pageBox.y + pageBox.height - 20); else await page.mouse.click(pageBox.x + pageBox.width / 2, pageBox.y + pageBox.height - 20);
+  await expect(card).toHaveCount(0);
   // A suggestion: its card offers a task draft, and Dismiss removes it.
   await press(suggested);
   await expect(card.locator('.evidence-verdict')).toHaveText('Could cite', { useInnerText: true });
@@ -125,6 +131,14 @@ async function run(viewport, name) {
   await press(sourceCard.getByRole('button', { name: 'Show in paper' }).nth(1));
   await expect(page.locator('.manuscript .evidence-card li[data-focused]')).toHaveCount(1);
   await expect(page.locator('.manuscript .evidence-card li[data-focused] .evidence-sentence-text')).toContainText('Linear values can be updated in place');
+  // Shown once: closed, it stays closed when the marks are read again.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.manuscript .evidence-card')).toHaveCount(0);
+  const reads = evidenceKeys.length;
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect.poll(() => evidenceKeys.length).toBeGreaterThan(reads);
+  await page.waitForTimeout(300);
+  await expect(page.locator('.manuscript .evidence-card')).toHaveCount(0);
   await page.close();
 }
 try {

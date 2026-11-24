@@ -3,7 +3,7 @@ import type { ReviewSnapshot } from './ai-review.ts';
 import { CitationChecks, recordCitation, VERDICTS } from './citations.ts';
 import type { CitationCheckState, CitingSentence } from '../shared.ts';
 import type { ProseSentence } from './references.ts';
-import { CitationSuggestions, candidates, librarySignature, quote, sentenceId, shelfIndex, suggestInstructions, type ShelfWork } from './citation-support.ts';
+import { CitationSuggestions, candidateSignature, candidates, librarySignature, quote, sentenceIds, shelfIndex, suggestInstructions, type ShelfWork, type StoredSuggestion } from './citation-support.ts';
 
 // Quick citation checks, in the manner of an evidence card: for each sentence
 // that cites a work with a PDF, find the work's passages that share the
@@ -23,8 +23,10 @@ export interface CitationSource {
   checks(): Promise<CitationChecks>;
   suggestions?(): Promise<CitationSuggestions>;
 }
-/** An uncited sentence as a check tries it: once per state of the library. */
-export const suggestItem = (id: string, library: string) => `suggest|${id}|${library}`;
+/** An uncited sentence as an automatic check tries it, and a look at every
+ * uncited sentence because the library changed. */
+export const suggestItem = (id: string) => `suggest|${id}`;
+export const SWEEP = 'suggest|*';
 
 const STOP = new Set(('the of and a an in on for to with by from as at is are was were be been being that this these those which who whom whose its their our we they it '
   + 'than then also such can may might could would should not no but or nor so if into over under between among within without about after before during more most less '
@@ -133,25 +135,32 @@ export class QuickCitationChecks {
       items.push({ id, sentence, key, input, hash: pdf.hash, block: `## Item ${id}\nSentence: ${sentence.sentence}\nCited work [${key}]: ${work}\nPassages:\n${passages.join('\n…\n')}` });
     }
     // The other way round: sentences that cite nothing, and the works of the
-    // library that may say what they claim.
-    const store = source.suggestions && await source.suggestions(), suggest: { id: string; sentence: ProseSentence; library: string; works: ShelfWork[]; block: string }[] = [];
+    // library that may say what they claim. A sentence is asked about again
+    // only when the works it ranks change; a dismissed one never is.
+    const store = source.suggestions && await source.suggestions();
+    const suggest: { id: string; candidates: string; works: { work: ShelfWork; shown: Set<string> }[]; block: string }[] = [];
     const { uncited = [] } = store ? await source.citations() : {};
-    if (store && uncited.length) {
+    if (store) {
       const shelf: ShelfWork[] = [];
       for (const input of entries) {
         const pdf = library.pdfOf(input), snapshot = pdf && await text(pdf.hash);
         if (pdf && snapshot?.lines.length) shelf.push({ key: input.key, input, hash: pdf.hash, snapshot });
       }
-      const signature = librarySignature(shelf), stored = store.all(), index = shelf.length ? shelfIndex(shelf) : null;
-      for (const sentence of uncited) {
-        const id = sentenceId(sentence.file, sentence.sentence);
-        if (!index || stored[id]?.library === signature || (only && !only(suggestItem(id, signature)))) continue;
-        const found = candidates(index, sentence.sentence);
+      const stored = store.all(), index = shelf.length ? shelfIndex(shelf) : null, changes: Record<string, StoredSuggestion> = {}, ids = sentenceIds(uncited);
+      let scanned = 0;
+      for (const sentence of index ? ids : []) {
+        // Ranking a long paper's sentences takes seconds; requests are served in between.
+        if (++scanned % 40 === 0) await new Promise(resolve => setImmediate(resolve));
+        if (run.stop.signal.aborted) return;
+        if (stored[sentence.id]?.dismissed || (only && !only(suggestItem(sentence.id)) && !only(SWEEP))) continue;
+        const found = candidates(index!, sentence.sentence), signature = candidateSignature(found.map(item => item.work));
+        if (stored[sentence.id]?.candidates === signature) continue;
         // A sentence no work shares enough words with needs no model to say so.
-        if (!found.length) { store.set(id, { library: signature, suggestion: null }); continue; }
-        const passages = found.map(({ work, passages }) => `Work [${work.key}]: ${[field(work.input, 'title'), field(work.input, 'author').split(/\s+and\s+/)[0], field(work.input, 'year')].filter(Boolean).join('; ')}\n${passages.map(lines => lines.map(line => `<${line.id}> ${line.text}`).join('\n')).join('\n…\n')}`);
-        suggest.push({ id, sentence, library: signature, works: found.map(item => item.work), block: `## Item ${id}\nSentence: ${sentence.sentence}\n${passages.join('\n\n')}` });
+        if (!found.length) { changes[sentence.id] = { candidates: signature, suggestion: null }; continue; }
+        const blocks = found.map(({ work, passages }) => `Work [${work.key}]: ${[field(work.input, 'title'), field(work.input, 'author').split(/\s+and\s+/)[0], field(work.input, 'year')].filter(Boolean).join('; ')}\n${passages.map(lines => lines.map(line => `<${work.key}:${line.id}> ${line.text}`).join('\n')).join('\n…\n')}`);
+        suggest.push({ id: sentence.id, candidates: signature, works: found.map(({ work, passages }) => ({ work, shown: new Set(passages.flat().map(line => line.id)) })), block: `## Item ${sentence.id}\nSentence: ${sentence.sentence}\n${blocks.join('\n\n')}` });
       }
+      store.update(changes, { keep: new Set(ids.map(sentence => sentence.id)), library: librarySignature(shelf.map(work => work.hash)) });
     }
     run.state.total = items.length + suggest.length;
     const checks = await source.checks();
@@ -180,17 +189,19 @@ export class QuickCitationChecks {
       const { reply, model } = await this.reply({ instructions: suggestInstructions, prompt: batch.map(item => item.block).join('\n\n'), what: 'find sources for uncited sentences', projectId: source.projectId, signal: run.stop.signal });
       if (run.stop.signal.aborted) break;
       run.state.model = model;
-      const results = new Map(parseResults(reply).map(result => [result.id, result]));
+      const results = new Map(parseResults(reply).map(result => [result.id, result])), changes: Record<string, StoredSuggestion> = {};
       for (const item of batch) {
         const result = results.get(item.id);
         run.state.done++;
-        if (!result || !['supported', 'partial', 'none'].includes(result.verdict)) { run.state.failed++; continue; }
-        const work = item.works.find(candidate => candidate.key === result.key);
-        // Only the lines of the work it names, as the PDF prints them.
-        const evidence = work ? result.evidence.flatMap(range => { const found = quote(work.snapshot, range.start, range.end); return found ? [found] : []; }) : [];
-        store!.set(item.id, { library: item.library, suggestion: result.verdict !== 'none' && work && evidence.length
-          ? { key: work.key, verdict: result.verdict as 'supported' | 'partial', note: result.note.trim() || '—', evidence, pdf: work.hash, checkedAt: Date.now(), ...(model ? { by: model } : {}) } : null });
+        // A sentence the model did not answer for is asked again next time.
+        if (!result || !['supported', 'partial', 'none'].includes(result.verdict)) continue;
+        const chosen = item.works.find(candidate => candidate.work.key === result.key);
+        // Only lines of the work it names that it was shown, as the PDF prints them.
+        const evidence = chosen ? result.evidence.flatMap(range => { const found = quote(chosen.work.snapshot, range.start.replace(/^[^:]*:/, ''), range.end.replace(/^[^:]*:/, ''), chosen.shown); return found ? [found] : []; }) : [];
+        changes[item.id] = { candidates: item.candidates, suggestion: result.verdict !== 'none' && chosen && evidence.length
+          ? { key: chosen.work.key, verdict: result.verdict as 'supported' | 'partial', note: result.note.trim() || '—', evidence, pdf: chosen.work.hash, checkedAt: Date.now(), ...(model ? { by: model } : {}) } : null };
       }
+      store.update(changes);
     }
   }
 }

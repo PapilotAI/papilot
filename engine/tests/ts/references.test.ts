@@ -99,6 +99,22 @@ describe("BibTeX entries", () => {
     // Reformatting an entry changes none of its values.
     expect(entryChanges(BIB, BIB.replace("year    = 1981,", "year = 1981,"))).toEqual([]);
   });
+
+  it("leaves out tables, displayed mathematics, settings and claims whose footnote cites, and splits long footnotes", () => {
+    const main = String.raw`\documentclass{article}
+\begin{document}
+\hypersetup{pageanchor=false}\ifdefined\foo\input{frontmatter/abstract}\cleardoublepage\fi\relax\par
+\begin{tabular}{ll} Alpha beta gamma delta epsilon zeta & eta theta iota kappa lambda mu \end{tabular}
+\begin{mathpar} \inferrule{premise one two three four five}{conclusion six seven eight nine ten} \end{mathpar}
+Linear values can be updated destructively in many compilers\footnote{See \cite{wadler1990}.}.
+Effects are tracked in the types of many modern research languages\footnote{Koka is one such language among others. Eff is another one that tracks them.}.
+\end{document}`;
+    expect(uncitedSentences(doc({ "paper/main.tex": main, "paper/refs.bib": BIB })).map(({ sentence }) => sentence)).toEqual([
+      "Effects are tracked in the types of many modern research languages",
+      "Koka is one such language among others.",
+      "Eff is another one that tracks them.",
+    ]);
+  });
 });
 
 describe("Citations", () => {
@@ -206,6 +222,22 @@ SuperF & Subtyping constraints \cite{parreaux2024}
       bibs: ["paper/refs.bib", "paper/more.bib", "paper/extra.bib"],
     });
   });
+
+  it("leaves out tables, displayed mathematics, settings and claims whose footnote cites, and splits long footnotes", () => {
+    const main = String.raw`\documentclass{article}
+\begin{document}
+\hypersetup{pageanchor=false}\ifdefined\foo\input{frontmatter/abstract}\cleardoublepage\fi\relax\par
+\begin{tabular}{ll} Alpha beta gamma delta epsilon zeta & eta theta iota kappa lambda mu \end{tabular}
+\begin{mathpar} \inferrule{premise one two three four five}{conclusion six seven eight nine ten} \end{mathpar}
+Linear values can be updated destructively in many compilers\footnote{See \cite{wadler1990}.}.
+Effects are tracked in the types of many modern research languages\footnote{Koka is one such language among others. Eff is another one that tracks them.}.
+\end{document}`;
+    expect(uncitedSentences(doc({ "paper/main.tex": main, "paper/refs.bib": BIB })).map(({ sentence }) => sentence)).toEqual([
+      "Effects are tracked in the types of many modern research languages",
+      "Koka is one such language among others.",
+      "Eff is another one that tracks them.",
+    ]);
+  });
 });
 
 const MAIN = String.raw`\documentclass{article}
@@ -286,6 +318,22 @@ describe("Bibliography changes of a round", () => {
     )!;
     expect(result.entries.map((e) => [e.key, e.status, e.problems])).toEqual([["x", "added", ["not-in-bibliography"]]]);
     expect(referenceChanges([], doc({ "paper/main.tex": MAIN }), doc({ "paper/main.tex": MAIN }))).toBeUndefined();
+  });
+
+  it("leaves out tables, displayed mathematics, settings and claims whose footnote cites, and splits long footnotes", () => {
+    const main = String.raw`\documentclass{article}
+\begin{document}
+\hypersetup{pageanchor=false}\ifdefined\foo\input{frontmatter/abstract}\cleardoublepage\fi\relax\par
+\begin{tabular}{ll} Alpha beta gamma delta epsilon zeta & eta theta iota kappa lambda mu \end{tabular}
+\begin{mathpar} \inferrule{premise one two three four five}{conclusion six seven eight nine ten} \end{mathpar}
+Linear values can be updated destructively in many compilers\footnote{See \cite{wadler1990}.}.
+Effects are tracked in the types of many modern research languages\footnote{Koka is one such language among others. Eff is another one that tracks them.}.
+\end{document}`;
+    expect(uncitedSentences(doc({ "paper/main.tex": main, "paper/refs.bib": BIB })).map(({ sentence }) => sentence)).toEqual([
+      "Effects are tracked in the types of many modern research languages",
+      "Koka is one such language among others.",
+      "Eff is another one that tracks them.",
+    ]);
   });
 });
 
@@ -442,6 +490,22 @@ ${"\n".repeat(8)}
     f.write("paper/refs.bib", apart);
     expect(diffUnits(f.repo, head, f.repo.snapshot(["paper"]))).toHaveLength(2);
   });
+
+  it("leaves out tables, displayed mathematics, settings and claims whose footnote cites, and splits long footnotes", () => {
+    const main = String.raw`\documentclass{article}
+\begin{document}
+\hypersetup{pageanchor=false}\ifdefined\foo\input{frontmatter/abstract}\cleardoublepage\fi\relax\par
+\begin{tabular}{ll} Alpha beta gamma delta epsilon zeta & eta theta iota kappa lambda mu \end{tabular}
+\begin{mathpar} \inferrule{premise one two three four five}{conclusion six seven eight nine ten} \end{mathpar}
+Linear values can be updated destructively in many compilers\footnote{See \cite{wadler1990}.}.
+Effects are tracked in the types of many modern research languages\footnote{Koka is one such language among others. Eff is another one that tracks them.}.
+\end{document}`;
+    expect(uncitedSentences(doc({ "paper/main.tex": main, "paper/refs.bib": BIB })).map(({ sentence }) => sentence)).toEqual([
+      "Effects are tracked in the types of many modern research languages",
+      "Koka is one such language among others.",
+      "Eff is another one that tracks them.",
+    ]);
+  });
 });
 
 describe("The whole bibliography", () => {
@@ -491,6 +555,22 @@ describe("The whole bibliography", () => {
     const report = bibliographyReport(doc({ "paper/main.tex": MAIN }));
     expect(report).toMatchObject({ bibs: ["paper/refs.bib"], absent: ["paper/refs.bib"], entries: [] });
   });
+
+  it("leaves out tables, displayed mathematics, settings and claims whose footnote cites, and splits long footnotes", () => {
+    const main = String.raw`\documentclass{article}
+\begin{document}
+\hypersetup{pageanchor=false}\ifdefined\foo\input{frontmatter/abstract}\cleardoublepage\fi\relax\par
+\begin{tabular}{ll} Alpha beta gamma delta epsilon zeta & eta theta iota kappa lambda mu \end{tabular}
+\begin{mathpar} \inferrule{premise one two three four five}{conclusion six seven eight nine ten} \end{mathpar}
+Linear values can be updated destructively in many compilers\footnote{See \cite{wadler1990}.}.
+Effects are tracked in the types of many modern research languages\footnote{Koka is one such language among others. Eff is another one that tracks them.}.
+\end{document}`;
+    expect(uncitedSentences(doc({ "paper/main.tex": main, "paper/refs.bib": BIB })).map(({ sentence }) => sentence)).toEqual([
+      "Effects are tracked in the types of many modern research languages",
+      "Koka is one such language among others.",
+      "Eff is another one that tracks them.",
+    ]);
+  });
 });
 
 describe("uncited sentences", () => {
@@ -509,6 +589,22 @@ Attention alone suffices for translation, as the Transformer showed\footnote{The
       { line: 5, section: "1 Introduction", sentence: "Residual networks with a depth of up to 152 layers won the ILSVRC 2015 classification task." },
       { line: 7, section: "1 Introduction", sentence: "Attention alone suffices for translation, as the Transformer showed" },
       { line: 7, section: "1 Introduction", sentence: "The Transformer has no recurrent layers at all." },
+    ]);
+  });
+
+  it("leaves out tables, displayed mathematics, settings and claims whose footnote cites, and splits long footnotes", () => {
+    const main = String.raw`\documentclass{article}
+\begin{document}
+\hypersetup{pageanchor=false}\ifdefined\foo\input{frontmatter/abstract}\cleardoublepage\fi\relax\par
+\begin{tabular}{ll} Alpha beta gamma delta epsilon zeta & eta theta iota kappa lambda mu \end{tabular}
+\begin{mathpar} \inferrule{premise one two three four five}{conclusion six seven eight nine ten} \end{mathpar}
+Linear values can be updated destructively in many compilers\footnote{See \cite{wadler1990}.}.
+Effects are tracked in the types of many modern research languages\footnote{Koka is one such language among others. Eff is another one that tracks them.}.
+\end{document}`;
+    expect(uncitedSentences(doc({ "paper/main.tex": main, "paper/refs.bib": BIB })).map(({ sentence }) => sentence)).toEqual([
+      "Effects are tracked in the types of many modern research languages",
+      "Koka is one such language among others.",
+      "Eff is another one that tracks them.",
     ]);
   });
 });

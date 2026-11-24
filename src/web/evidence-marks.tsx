@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type { CitationEvidence, CitationSuggestion, CitationVerdict, EvidenceMark } from '../shared.ts';
 import { Icon } from './icons.tsx';
-import { t } from './i18n.ts';
+import { t, tn } from './i18n.ts';
 import './evidence-marks.css';
 
 // Citations checked against their works, shown in the margin of a PDF as an
@@ -78,11 +78,17 @@ export function groupMarks<T extends Placed>(marks: T[]): Group<T>[] {
  * of the PDF view. focus opens the group holding that mark. */
 export function MarginMarks<T extends Placed>({ marks, segments, card, focus, label }: {
   marks: T[]; segments: (mark: T) => Segment[]; label: (group: Group<T>) => string;
-  card: (group: Group<T>, close: () => void, hover: (id: string | null) => void) => ReactNode; focus?: string;
+  card: (group: Group<T>, close: () => void, hover: (id: string | null) => void) => ReactNode; focus?: { id: string; at: number };
 }) {
-  const groups = groupMarks(marks), [open, setOpen] = useState<string | null>(null);
-  useEffect(() => { if (focus) { const group = groups.find(item => item.marks.some(mark => mark.id === focus)); if (group) setOpen(group.id); } }, [focus, marks]);
-  return <>{groups.map(group => <MarginGroup key={group.id} group={group} open={open === group.id} focus={focus} onToggle={on => setOpen(on ? group.id : null)} segments={group.marks.flatMap(segments)} label={label(group)} card={card}/>)}</>;
+  // The open card is remembered by a mark, so it stays open while checks add
+  // marks to its paragraph; a request to show a mark opens it once.
+  const groups = groupMarks(marks), [open, setOpen] = useState<string | null>(null), handled = useRef(0);
+  const focusHere = focus && focus.at !== handled.current && marks.some(mark => mark.id === focus.id);
+  useEffect(() => { if (focus && focusHere) { handled.current = focus.at; setOpen(focus.id); } }, [focus?.at, focusHere]);
+  return <>{groups.map(group => {
+    const isOpen = Boolean(open && group.marks.some(mark => mark.id === open));
+    return <MarginGroup key={`${Math.round(group.top * 1000)}:${group.left.toFixed(2)}`} group={group} open={isOpen} focus={isOpen && focus?.id === open ? open : undefined} onToggle={on => setOpen(on ? group.marks[0].id : null)} segments={group.marks.flatMap(segments)} label={label(group)} card={card}/>;
+  })}</>;
 }
 
 function MarginGroup<T extends Placed>({ group, open, focus, onToggle, segments, label, card }: {
@@ -127,7 +133,7 @@ function MarginGroup<T extends Placed>({ group, open, focus, onToggle, segments,
 /** How many of each verdict, worst first, as small coloured counts. */
 function Tally({ segments }: { segments: Segment[] }) {
   const counts = ORDER.map(verdict => [verdict, segments.filter(segment => segment === verdict).length] as const).filter(([, n]) => n);
-  return <p className="evidence-tally">{counts.map(([verdict, n]) => <span key={verdict} data-verdict={verdict}><i aria-hidden="true"/>{n} {verdictName(verdict)}</span>)}</p>;
+  return <p className="evidence-tally">{counts.map(([verdict, n]) => <span key={verdict} data-verdict={verdict}><i aria-hidden="true"/>{t('{n} {verdict}', { n, verdict: verdictName(verdict) })}</span>)}</p>;
 }
 
 /** A sentence as it reads, its citations set apart. */
@@ -150,11 +156,11 @@ const checkedBy = (by?: string) => <p className="evidence-by">{by ? t('Quick che
 
 /** The paper's PDF: each sentence of the paragraph with its verdicts, and a
  * sentence citing nothing with the work it could cite. */
-export function PaperEvidence({ marks, actions, focus }: { marks: EvidenceMark[]; actions: EvidenceActions; focus?: string }) {
+export function PaperEvidence({ marks, actions, focus }: { marks: EvidenceMark[]; actions: EvidenceActions; focus?: { id: string; at: number } }) {
   const segments = (mark: EvidenceMark): Segment[] => mark.suggestion ? ['suggested'] : mark.findings.map(finding => finding.verdict);
   return <MarginMarks marks={marks} segments={segments} focus={focus}
     label={group => t('Citation check: {verdicts}', { verdicts: group.marks.flatMap(mark => mark.suggestion ? [`${mark.suggestion.key} ${verdictName('suggested')}`] : mark.findings.map(finding => `${finding.key} ${verdictName(finding.verdict)}`)).join(', ') })}
-    card={(group, close, hover) => <ol className="evidence-list">{group.marks.map(mark => <li key={mark.id} data-mark={mark.id} data-focused={focus === mark.id || undefined} onPointerEnter={() => hover(mark.id)} onPointerLeave={() => hover(null)} onFocus={() => hover(mark.id)}>
+    card={(group, close, hover) => <ol className="evidence-list">{group.marks.map(mark => <li key={mark.id} data-mark={mark.id} data-focused={focus?.id === mark.id || undefined} onPointerEnter={() => hover(mark.id)} onPointerLeave={() => hover(null)} onFocus={() => hover(mark.id)}>
       <p className="evidence-sentence-text"><CitedSentence text={mark.sentence}/></p>
       {mark.suggestion ? <SuggestionRow suggestion={mark.suggestion} actions={actions} close={close}/>
         : [...mark.findings].sort((a, b) => ORDER.indexOf(a.verdict) - ORDER.indexOf(b.verdict)).map(finding => <div key={finding.key} className="evidence-row" data-verdict={finding.verdict}>
@@ -185,7 +191,7 @@ export interface SourceUse { id: string; sentenceId: string; page: number; rects
  * sentences, and the way back to each in the paper's PDF. */
 export function SourceEvidence({ uses, onShow }: { uses: SourceUse[]; onShow?: (use: SourceUse) => void }) {
   return <MarginMarks marks={uses} segments={use => [use.verdict]}
-    label={group => t('Cited in your paper: {n}', { n: group.marks.length })}
+    label={group => tn(group.marks.length, 'Relied on by {n} sentence of your paper', 'Relied on by {n} sentences of your paper')}
     card={(group, close, hover) => <ol className="evidence-list">{group.marks.map(use => <li key={use.id} onPointerEnter={() => hover(use.id)} onPointerLeave={() => hover(null)} onFocus={() => hover(use.id)}>
       <div className="evidence-row" data-verdict={use.verdict}>
         <p className="evidence-row-head"><VerdictLabel verdict={use.verdict}/><code className="evidence-where">{use.file}:{use.line}</code></p>

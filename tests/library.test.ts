@@ -870,7 +870,8 @@ test('a quick check suggests a library work for a sentence that cites nothing, o
   workspace.quickReply = async ({ prompt, what }) => {
     asked.push(what);
     const results = prompt.split('## Item ').slice(1).map(block => {
-      const id = block.split('\n')[0], line = /<(p\d+-l\d+)>/.exec(block)![1];
+      // Suggestion passages name their work in each anchor; the model answers with the line alone.
+      const id = block.split('\n')[0], line = /<(?:[^:>]+:)?(p\d+-l\d+)>/.exec(block)![1];
       return /^Work \[/m.test(block) ? { id, key: 'wadler', verdict: 'supported', note: 'Stated.', evidence: [{ start: line, end: line }] } : { id, verdict: 'supported', note: 'Stated.', evidence: [{ start: line, end: line }] };
     });
     return { reply: JSON.stringify({ results }), agent: 'deepseek', model: 'DeepSeek V4.1 Flash UltraFast' };

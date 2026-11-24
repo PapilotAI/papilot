@@ -407,7 +407,8 @@ export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onF
         {!busy && lookAgain && online() && <button type="button" className="button ghost compact" onClick={data.lookAgain}><Icon name="refresh" size={14}/>{t('Look again')}</button>}
         {(busy && !checking) || adding ? <span className="library-progress-text" role="status"><span className="spinner"/>{adding ? tn(adding, 'Adding {n} PDF…', 'Adding {n} PDFs…') : t('Finding PDFs…')}</span> : null}
       </div>
-      {(report.citations.length > 0 || suggestions.length > 0) && <section className="library-checks" aria-labelledby={`${progressId}-checks`}>
+      {/* Also for a draft that cites nothing yet: its sentences may find sources in the library. */}
+      {(report.citations.length > 0 || suggestions.length > 0 || ((report.uncited ?? 0) > 0 && withPdf > 0)) && <section className="library-checks" aria-labelledby={`${progressId}-checks`}>
         <div className="library-checks-summary">
           <h3 id={`${progressId}-checks`}>{t('Citations')}</h3>
           <dl className="library-tally">

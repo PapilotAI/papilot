@@ -6,6 +6,7 @@ import path from 'node:path';
 import { QuickCitationChecks, parseResults, passagesFor, terms, type QuickReply } from '../src/server/citation-check.ts';
 import { CitationChecks, citingReport } from '../src/server/citations.ts';
 import { evidenceMarks, locateSentence } from '../src/server/evidence-marks.ts';
+import { quote } from '../src/server/citation-support.ts';
 import type { Library, LibraryInput } from '../src/server/library.ts';
 import type { ReviewSnapshot } from '../src/server/ai-review.ts';
 
@@ -147,4 +148,9 @@ test('passages reach every page, also when pages are shorter than a passage', ()
   const short: ReviewSnapshot = { key: 'short', lines: [line(0, 1, 'Linear types can change the world!'), line(1, 1, 'A linear value is used exactly once.'), line(2, 1, 'Unrelated closing remarks.')] };
   const ids = passagesFor(short, 'A linear value is used exactly once [k].').flatMap(passage => passage.lines.map(item => item.id));
   assert.ok(ids.includes('p2-l1'), 'the second page\'s only line is a passage');
+});
+
+test('a suggestion quotes only the lines its work was shown, never another work\'s line with the same anchor', () => {
+  assert.equal(quote(paper, 'p3-l2', 'p3-l2', new Set(['p1-l1', 'p1-l2'])), null, 'p3-l2 exists in the work but was not among its passages');
+  assert.match(quote(paper, 'p1-l2', 'p1-l2', new Set(['p1-l1', 'p1-l2']))!.quote, /^We present Loom/);
 });

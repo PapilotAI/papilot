@@ -5,9 +5,9 @@ import { DATA, ENGINE } from './paths.ts';
 import { stateDir } from './state.ts';
 import { Library, type LibraryInput } from './library.ts';
 import { ReviewSnapshots } from './review-snapshot.ts';
-import { CitationSuggestions, sentenceId } from './citation-support.ts';
+import { CitationSuggestions, sentenceIds } from './citation-support.ts';
 import { CitationChecks, citingReport, recordCitation, type CitationRecord } from './citations.ts';
-import type { BibliographyReport, CitingSentence, LibraryReport, ReferenceCheck } from '../shared.ts';
+import type { BibliographyReport, CitationSuggestion, CitingSentence, LibraryReport, ReferenceCheck } from '../shared.ts';
 
 // The paper's bibliography as it is on disk: every entry, where it is cited,
 // what is wrong with it without looking anything up, and, when asked, what
@@ -66,23 +66,48 @@ export async function confirmations(root: string) {
 export async function citationSuggestions(root: string) {
   return new CitationSuggestions(path.join(await stateDir(await gitDir(root)), 'citation-suggestions.json'));
 }
+/** The suggestions that stand: their sentence is in the paper and still
+ * cites nothing, they were not dismissed, and their work keeps the same PDF. */
+export async function currentSuggestions(root: string, uncited: ProseSentence[], pdfOf: (key: string) => string | null): Promise<CitationSuggestion[]> {
+  const stored = (await citationSuggestions(root)).all();
+  return sentenceIds(uncited).flatMap(({ id, ...sentence }) => {
+    const record = stored[id];
+    return record?.suggestion && !record.dismissed && pdfOf(record.suggestion.key) === record.suggestion.pdf ? [{ id, ...sentence, ...record.suggestion }] : [];
+  });
+}
 /** What agents found of the paper's citations, beside its confirmations. */
 export async function citationChecks(root: string) {
   return new CitationChecks(path.join(await stateDir(await gitDir(root)), 'citation-checks.json'));
 }
 
-// A file of the paper, read only from inside its folder.
-function reader(root: string) {
+// A file of the paper, read only from inside its folder. Each file read is
+// noted with its size and time, so a later report can tell nothing changed.
+function reader(root: string, seen: Map<string, string>) {
   const base = fs.realpathSync(root);
   return (file: string) => {
     const target = path.resolve(base, file);
     if (target !== base && !target.startsWith(base + path.sep)) return null;
-    try { return fs.statSync(target).isFile() ? fs.readFileSync(target, 'utf8') : null; } catch { return null; }
+    try {
+      const stat = fs.statSync(target);
+      seen.set(target, stat.isFile() ? `${stat.size}:${stat.mtimeMs}` : '');
+      return stat.isFile() ? fs.readFileSync(target, 'utf8') : null;
+    } catch { seen.set(target, ''); return null; }
   };
 }
+const stamp = (target: string) => { try { const stat = fs.statSync(target); return stat.isFile() ? `${stat.size}:${stat.mtimeMs}` : ''; } catch { return ''; } };
+// Parsing a long paper takes a few hundred milliseconds and the library polls
+// while it works, so a paper is parsed again only when a file it read changed.
+const reports = new Map<string, { main: string; seen: Map<string, string>; value: Promise<Awaited<ReturnType<typeof parse>>> }>();
 async function report(root: string) {
-  const mods = await engine(), read = reader(root), { main } = mods.loadProject(root);
-  const doc = { read, main, outline: mods.buildOutline(read, main).nodes };
+  const mods = await engine(), { main } = mods.loadProject(root), kept = reports.get(root);
+  if (kept && kept.main === main && [...kept.seen].every(([target, value]) => stamp(target) === value)) return kept.value;
+  const seen = new Map<string, string>(), value = parse(mods, root, main, seen);
+  reports.set(root, { main, seen, value });
+  value.catch(() => { if (reports.get(root)?.value === value) reports.delete(root); });
+  return value;
+}
+async function parse(mods: Engine, root: string, main: string, seen: Map<string, string>) {
+  const read = reader(root, seen), doc = { read, main, outline: mods.buildOutline(read, main).nodes };
   const result = mods.bibliographyReport(doc);
   return { result, inputs: mods.entryInputs(result.entries), sentences: mods.citingSentences(doc), uncited: mods.uncitedSentences(doc) };
 }
@@ -146,11 +171,6 @@ export async function libraryReport(root: string, options: LibraryOptions, store
   const { result, inputs, looked, entries, sentences, uncited } = await libraryInputs(root, options.online, options.retry);
   const found = store.status(entries, options);
   const pdfOf = (key: string) => { const entry = result.entries.find(item => item.key === key); return (entry && found.entries[entry.id]?.pdf?.hash) ?? null; };
-  // A suggestion stands while its sentence is in the paper, uncited, and its work keeps the same PDF.
-  const stored = (await citationSuggestions(root)).all();
-  const suggestions = uncited.flatMap(sentence => {
-    const id = sentenceId(sentence.file, sentence.sentence), record = stored[id];
-    return record?.suggestion && !record.dismissed && pdfOf(record.suggestion.key) === record.suggestion.pdf ? [{ id, ...sentence, ...record.suggestion }] : [];
-  });
-  return { ...result, ...looked, confirmed: (await confirmations(root)).of(inputs), library: found, citations: citingReport(sentences, (await citationChecks(root)).all(), pdfOf), suggestions };
+  return { ...result, ...looked, confirmed: (await confirmations(root)).of(inputs), library: found, citations: citingReport(sentences, (await citationChecks(root)).all(), pdfOf),
+    suggestions: await currentSuggestions(root, uncited, pdfOf), uncited: uncited.length };
 }

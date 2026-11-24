@@ -22,9 +22,9 @@ import { AGENT_TURN, reviewClient, retryReviewRead, allowedReviewRoute, rewriteR
 import { fullPaperPdf, nextPaperPass, paperBuildPdf, paperPassPdf, retainedPaperBuild, retainedPaperPdf } from './pdf.ts';
 import { withNotePages } from './note-pages.ts';
 import { type ChangeAction, Changes } from './changes.ts';
-import { citationChecks, citationSuggestions, citations, confirmEntry, forgetFinding, library, libraryInputs, libraryReport, recordFinding, stopLibrary } from './references.ts';
-import { QuickCitationChecks, checkItem, suggestItem } from './citation-check.ts';
-import { librarySignature, sentenceId } from './citation-support.ts';
+import { citationChecks, citationSuggestions, citations, currentSuggestions, confirmEntry, forgetFinding, library, libraryInputs, libraryReport, recordFinding, stopLibrary } from './references.ts';
+import { QuickCitationChecks, SWEEP, checkItem, suggestItem } from './citation-check.ts';
+import { librarySignature, sentenceIds } from './citation-support.ts';
 import { evidenceMarks, pdfText, suggestionMarks } from './evidence-marks.ts';
 import type { ReviewSnapshot } from './ai-review.ts';
 import type { Library } from './library.ts';
@@ -982,13 +982,14 @@ export async function buildApp(options: AppOptions) {
         const hash = readable.get(key), item = hash && checkItem(sentence.id, key, hash);
         return item && (!sentence.findings[key] || sentence.findings[key].stale) && !done.has(item) ? [item] : [];
       })));
-      // Uncited sentences not yet asked about with the library as it is.
+      // Uncited sentences never asked about, and all of them once the library's PDFs changed.
       if (readable.size) {
-        const signature = librarySignature([...readable.values()].map(hash => ({ hash }))), stored = (await citationSuggestions(root)).all();
-        for (const sentence of (await libraryInputs(root, false)).uncited) {
-          const id = sentenceId(sentence.file, sentence.sentence), item = suggestItem(id, signature);
-          if (stored[id]?.library !== signature && !done.has(item)) fresh.add(item);
+        const store = (await citationSuggestions(root)).read(), library = librarySignature([...readable.values()]);
+        for (const sentence of sentenceIds((await libraryInputs(root, false)).uncited)) {
+          const item = suggestItem(sentence.id);
+          if (!store.sentences[sentence.id] && !done.has(item)) fresh.add(item);
         }
+        if (store.library !== library && !done.has(`${SWEEP}|${library}`)) { done.add(`${SWEEP}|${library}`); fresh.add(SWEEP); }
       }
       if (fresh.size) { for (const item of fresh) done.add(item); quickChecks.start(root, citationSource(projectId, root), item => fresh.has(item)); }
     }
@@ -1005,9 +1006,9 @@ export async function buildApp(options: AppOptions) {
   app.get<{ Params: { id: string }; Querystring: { key?: string } }>('/api/projects/:id/manuscript/evidence', project(), async request => {
     const project = store.project(request.params.id), key = String(request.query.key || ''), shelf = papers();
     const running = Boolean(quickChecks.state(project.path)?.running);
-    const { sentences, entries } = await citations(project.path, shelf);
+    const { sentences, entries, uncited } = await citations(project.path, shelf);
     const checked = sentences.filter(sentence => sentence.keys.some(item => sentence.findings[item] && !sentence.findings[item].stale));
-    const { suggestions } = await libraryReport(project.path, { online: false, zotero: shelf.useZotero() }, shelf);
+    const suggestions = await currentSuggestions(project.path, uncited, key => { const input = entries.find(entry => entry.key === key); return (input && shelf.pdfOf(input)?.hash) ?? null; });
     if (!key || (!checked.length && !suggestions.length)) return { key, marks: [], running };
     const id = `${project.id}:${key}`;
     let cached = evidence.get(id);
@@ -1033,7 +1034,7 @@ export async function buildApp(options: AppOptions) {
   // A suggestion the author does not want is not shown or made again for that sentence.
   app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/citations/suggestions/dismiss', project(), async request => {
     const id = (request.body as { id?: unknown } | null)?.id;
-    if (typeof id !== 'string' || !id) throw new Error('Choose a suggestion to dismiss.');
+    if (typeof id !== 'string' || !id) throw Object.assign(new Error('Choose a suggestion to dismiss.'), { statusCode: 400 });
     const root = store.project(request.params.id).path;
     (await citationSuggestions(root)).dismiss(id);
     return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
