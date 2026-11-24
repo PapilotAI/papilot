@@ -16,7 +16,8 @@ export type OpenEvidence = (finding: EvidenceFinding, evidence?: CitationEvidenc
 /** The marks of the PDF build on screen, read again while a quick check runs
  * and when the window comes back into focus. */
 export function useEvidenceMarks(projectId: string, buildKey: string | undefined, load: Load, enabled = true) {
-  const [marks, setMarks] = useState<EvidenceMark[]>([]), [round, setRound] = useState(0);
+  // Marks belong to one build: a reflowed PDF never shows another build's.
+  const [shown, setShown] = useState<{ key: string; marks: EvidenceMark[] }>({ key: '', marks: [] }), [round, setRound] = useState(0);
   useEffect(() => {
     if (!enabled) return;
     const again = () => setRound(n => n + 1);
@@ -24,20 +25,20 @@ export function useEvidenceMarks(projectId: string, buildKey: string | undefined
     return () => window.removeEventListener('focus', again);
   }, [enabled]);
   useEffect(() => {
-    if (!enabled || !buildKey) { setMarks([]); return; }
+    if (!enabled || !buildKey) return;
     let live = true, timer: ReturnType<typeof setTimeout> | undefined;
     const read = async () => {
       try {
-        const result = await load<{ marks: EvidenceMark[]; running: boolean }>(`/projects/${projectId}/manuscript/evidence?key=${encodeURIComponent(buildKey)}`);
+        const result = await load<{ key: string; marks: EvidenceMark[]; running: boolean }>(`/projects/${projectId}/manuscript/evidence?key=${encodeURIComponent(buildKey)}`);
         if (!live) return;
-        setMarks(result.marks);
+        setShown({ key: result.key, marks: result.marks });
         if (result.running) timer = setTimeout(() => void read(), 2000);
       } catch { /* Marks are an aid; the Library still lists every finding. */ }
     };
     void read();
     return () => { live = false; clearTimeout(timer); };
   }, [projectId, buildKey, load, enabled, round]);
-  return marks;
+  return enabled && shown.key === buildKey ? shown.marks : [];
 }
 
 const ORDER: CitationVerdict[] = ['unsupported', 'partial', 'unclear', 'supported'];

@@ -1329,6 +1329,7 @@
   "Stop syncing…": "同期を停止…",
   "Stop worker": "ワーカーを停止",
   "Stopped": "停止",
+  "Stopping…": "停止中…",
   "Strike out text to ask for it to be removed. Open the mark to give a replacement.": "テキストに取り消し線を引いて削除を指示します。マークを開くと置換テキストを指定できます。",
   "Submit a repair task to approve changes to project files.": "修正タスクを送信して、プロジェクトファイルの変更を承認します。",
   "Submitting…": "送信中…",

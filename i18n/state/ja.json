@@ -5569,6 +5569,11 @@
     "textHash": "ca4d973c0b006b758c0766235c74abca876c5c7842200234aebb2af0fa69a7c4",
     "model": "gemini-4-argon-medium"
   },
+  "Stopping…": {
+    "revision": "781b831196efe59c9fdab612ddd043f19ab2ce5ae6118feb0d3c5f571c22f6bf",
+    "textHash": "02099d7931da52b4de2effd435fc273b2691b6a83086116d3527030d2e7f6551",
+    "model": "gemini-4-argon-medium"
+  },
   "Strike out text to ask for it to be removed. Open the mark to give a replacement.": {
     "revision": "855c426e3b8dd73074c51714f959f9ab3cd60e03c727f569c9ba7605e934d8cb",
     "textHash": "de54fc2f61c654cfebbb50559d0289541803bf93234c1867e1af72307229204f",

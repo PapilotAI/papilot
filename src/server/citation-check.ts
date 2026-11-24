@@ -12,7 +12,9 @@ import type { CitationCheckState, CitingSentence } from '../shared.ts';
 // with the model that made them. A deeper check is still an agent's task.
 
 /** One read-only reply from the quick model, with the model's name. */
-export type QuickReply = (request: { instructions: string; prompt: string; what: string; projectId?: string }) => Promise<{ reply: string; model: string | null }>;
+export type QuickReply = (request: { instructions: string; prompt: string; what: string; projectId?: string; signal?: AbortSignal }) => Promise<{ reply: string; model: string | null }>;
+/** A citation as a check tries it: its sentence, the work and the work's PDF. */
+export const checkItem = (sentenceId: string, key: string, hash: string) => `${sentenceId}|${key}|${hash}`;
 export interface CitationSource { projectId?: string; citations(): Promise<{ sentences: CitingSentence[]; entries: LibraryInput[] }>; checks(): Promise<CitationChecks> }
 
 const STOP = new Set(('the of and a an in on for to with by from as at is are was were be been being that this these those which who whom whose its their our we they it '
@@ -87,43 +89,44 @@ export class QuickCitationChecks {
   constructor(private library: () => Library, private reply: QuickReply) {}
 
   state(root: string): CitationCheckState | null { return this.runs.get(root)?.state ?? null; }
-  stop(root: string) { this.runs.get(root)?.stop.abort(); }
+  // Stopping interrupts the batch the model is answering.
+  stop(root: string) { const run = this.runs.get(root); if (run?.state.running) { run.state.stopping = true; run.stop.abort(); } }
   stopAll() { for (const run of this.runs.values()) run.stop.abort(); }
 
   /** Checks every citation that has a PDF and no current finding. A run
    * already going for the paper is returned as it is. */
-  start(root: string, source: CitationSource): CitationCheckState {
+  start(root: string, source: CitationSource, only?: (item: string) => boolean): CitationCheckState {
     const running = this.runs.get(root);
     if (running?.state.running) return running.state;
-    const run = { state: { running: true, done: 0, total: 0, failed: 0, model: null, error: null, finishedAt: null } as CitationCheckState, stop: new AbortController() };
+    const run = { state: { running: true, stopping: false, done: 0, total: 0, failed: 0, model: null, error: null, finishedAt: null } as CitationCheckState, stop: new AbortController() };
     this.runs.set(root, run);
-    void this.check(run, source).catch(error => { run.state.error = error instanceof Error ? error.message : String(error); })
+    void this.check(run, source, only).catch(error => { if (!run.stop.signal.aborted) run.state.error = error instanceof Error ? error.message : String(error); })
       .finally(() => { run.state.running = false; run.state.finishedAt = Date.now(); });
     return run.state;
   }
 
-  private async check(run: { state: CitationCheckState; stop: AbortController }, source: CitationSource) {
+  private async check(run: { state: CitationCheckState; stop: AbortController }, source: CitationSource, only?: (item: string) => boolean) {
     const { sentences, entries } = await source.citations(), library = this.library();
     const texts = new Map<string, Promise<ReviewSnapshot | null>>();
     const text = (hash: string) => { let found = texts.get(hash); if (!found) texts.set(hash, found = library.text(hash)); return found; };
-    const items: { id: string; sentence: CitingSentence; key: string; input: LibraryInput; block: string }[] = [];
+    const items: { id: string; sentence: CitingSentence; key: string; input: LibraryInput; hash: string; block: string }[] = [];
     for (const sentence of sentences) for (const key of sentence.keys) {
       const finding = sentence.findings[key];
       if (finding && !finding.stale) continue;
       const input = entries.find(entry => entry.key === key), pdf = input && library.pdfOf(input);
-      if (!input || !pdf) continue;
+      if (!input || !pdf || (only && !only(checkItem(sentence.id, key, pdf.hash)))) continue;
       const snapshot = await text(pdf.hash);
       if (!snapshot?.lines.length) continue;
       const passages = passagesFor(snapshot, sentence.sentence).map(passage => passage.lines.map(line => `<${line.id}> ${line.text}`).join('\n'));
       const id = `${sentence.id}|${key}`, work = [field(input, 'title'), field(input, 'author').split(/\s+and\s+/)[0], field(input, 'year')].filter(Boolean).join('; ');
-      items.push({ id, sentence, key, input, block: `## Item ${id}\nSentence: ${sentence.sentence}\nCited work [${key}]: ${work}\nPassages:\n${passages.join('\n…\n')}` });
+      items.push({ id, sentence, key, input, hash: pdf.hash, block: `## Item ${id}\nSentence: ${sentence.sentence}\nCited work [${key}]: ${work}\nPassages:\n${passages.join('\n…\n')}` });
     }
     run.state.total = items.length;
     const checks = await source.checks();
     for (let at = 0; at < items.length && !run.stop.signal.aborted;) {
       const batch: typeof items = [];
       for (let size = 0; at < items.length && (!batch.length || size + items[at].block.length < BATCH); at++) { batch.push(items[at]); size += items[at].block.length; }
-      const { reply, model } = await this.reply({ instructions: quickCheckInstructions, prompt: batch.map(item => item.block).join('\n\n'), what: 'check citations', projectId: source.projectId });
+      const { reply, model } = await this.reply({ instructions: quickCheckInstructions, prompt: batch.map(item => item.block).join('\n\n'), what: 'check citations', projectId: source.projectId, signal: run.stop.signal });
       if (run.stop.signal.aborted) break;
       run.state.model = model;
       const results = new Map(parseResults(reply).map(result => [result.id, result]));
@@ -132,6 +135,8 @@ export class QuickCitationChecks {
         try {
           // A reply without a usable verdict for an item leaves it unchecked.
           if (!result || !VERDICTS.includes(result.verdict as never)) { run.state.failed++; continue; }
+          // A finding recorded meanwhile, such as an agent's, is not replaced.
+          if (checks.get(item.sentence.sentence, item.key)?.pdf === item.hash) continue;
           await recordCitation(sentences, entries, library, checks, { id: item.sentence.id, key: item.key, verdict: result.verdict, evidence: result.evidence, note: result.note || '—' }, Date.now(), model ?? undefined);
         } catch { run.state.failed++; }
         finally { run.state.done++; }

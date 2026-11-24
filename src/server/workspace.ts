@@ -2189,9 +2189,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   }
   /** One quick job's reply, from a read-only turn that has everything it
    * needs in its prompt, and the agent and model that wrote it. */
-  async quickReply(options: { instructions: string; prompt: string; what: string; projectId?: string; timeout?: number }) {
+  async quickReply(options: { instructions: string; prompt: string; what: string; projectId?: string; signal?: AbortSignal }) {
     const { id, model, effort } = this.quick({}, options.what);
-    const reply = await this.oneOff(id, { cwd: os.tmpdir(), sandbox: 'read-only', instructions: options.instructions, prompt: options.prompt, model, effort, timeout: options.timeout ?? 180000, what: options.what, projectId: options.projectId });
+    const reply = await this.oneOff(id, { cwd: os.tmpdir(), sandbox: 'read-only', instructions: options.instructions, prompt: options.prompt, model, effort, what: options.what, projectId: options.projectId, signal: options.signal });
     return { reply, agent: id, model: model?.name || model?.id || null };
   }
   // The agent that writes a commit message or resolves a merge: the one the
@@ -2230,7 +2230,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   }
   // One turn on a thread the agent does not keep, outside any task: its
   // reply is returned and no chat shows it.
-  private async oneOff(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout: number; what: string; projectId?: string; taskId?: string }) {
+  private async oneOff(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout?: number; signal?: AbortSignal; what: string; projectId?: string; taskId?: string }) {
     if (this.closing) throw new Error('The server is shutting down.');
     // A read-only helper (a title, a commit message) has everything in its
     // prompt. It runs in an empty folder, so an agent that does not enforce a
@@ -2240,7 +2240,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     // An empty folder left behind must not discard the reply.
     finally { if (scratch) await fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 5 }).catch(() => {}); }
   }
-  private async helperTurn(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout: number; what: string; projectId?: string; taskId?: string }) {
+  private async helperTurn(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout?: number; signal?: AbortSignal; what: string; projectId?: string; taskId?: string }) {
     const agent = this.agents[id], name = AGENT_NAMES[id], codex = usesCodex(id);
     // Codex unloads the thread as soon as it is released, not a minute later.
     const thread = await agent.request('thread/start', { cwd: options.cwd, approvalPolicy: 'never', sandbox: options.sandbox, ephemeral: true, config: { thread_unload_delay_secs: 0 }, developerInstructions: options.instructions, ...(options.model ? { model: options.model.id } : {}) }, options.timeout);
@@ -2255,7 +2255,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       await releaseThread(agent, threadId);
     }
   }
-  private helperReply(id: AgentId, agent: AgentRuntime, name: string, threadId: string, resolvedModel: string | null, options: { cwd: string; prompt: string; effort?: string | null; serviceTier?: string; timeout: number; what: string; projectId?: string; taskId?: string }) {
+  private helperReply(id: AgentId, agent: AgentRuntime, name: string, threadId: string, resolvedModel: string | null, options: { cwd: string; prompt: string; effort?: string | null; serviceTier?: string; timeout?: number; signal?: AbortSignal; what: string; projectId?: string; taskId?: string }) {
     const helperId = randomUUID(), startedAt = Date.now(), codex = usesCodex(id);
     const projectName = this.projectName(options.projectId);
     this.store.recordActivity({
@@ -2305,13 +2305,19 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         } else if (message.method === 'item/completed' && p.item?.type === 'agentMessage') text = p.item.text || text;
         else if (message.method === 'turn/completed') finish(p.turn?.status === 'completed' ? null : new Error(p.turn?.error?.message || `${name} stopped before it could ${options.what}.`));
       };
-      const timer = setTimeout(() => {
+      // A helper without a timeout runs until it answers or is stopped.
+      const timer = options.timeout === undefined ? undefined : setTimeout(() => {
         if (turnId) agent.request('turn/interrupt', { threadId, turnId }).catch(() => undefined);
         finish(new Error(`${name} did not ${options.what} in time. Try again.`));
       }, options.timeout);
+      const aborted = () => {
+        if (turnId) agent.request('turn/interrupt', { threadId, turnId }).catch(() => undefined);
+        finish(new Error(`Stopped before ${name} could ${options.what}.`));
+      };
+      options.signal?.addEventListener('abort', aborted, { once: true });
       const finish = (error: Error | null) => {
         if (settled) return; settled = true;
-        clearTimeout(timer); agent.off('notification', listen); agent.off('disconnected', disconnected); this.helperStops.delete(stop);
+        clearTimeout(timer); options.signal?.removeEventListener('abort', aborted); agent.off('notification', listen); agent.off('disconnected', disconnected); this.helperStops.delete(stop);
         const finishedAt = Date.now();
         this.store.recordActivity({
           key: `turn:helper:${helperId}`,

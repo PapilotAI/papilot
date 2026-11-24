@@ -532,7 +532,7 @@ export interface CitationFinding { verdict: CitationVerdict; note: string; evide
 export interface EvidenceMark { id: string; page: number; rects: [number, number, number, number][]; sentence: string; file: string; line: number;
   findings: (CitationFinding & { key: string; entry: string; title: string; hash: string })[] }
 // A paper's quick citation check: how far it got, the model doing it, and why it stopped early.
-export interface CitationCheckState { running: boolean; done: number; total: number; failed: number; model: string | null; error: string | null; finishedAt: number | null }
+export interface CitationCheckState { running: boolean; stopping?: boolean; done: number; total: number; failed: number; model: string | null; error: string | null; finishedAt: number | null }
 /** A sentence of the paper that cites works, with what was found for each. */
 export interface CitingSentence { id: string; keys: string[]; file: string; line: number; section: string | null; sentence: string; findings: Record<string, CitationFinding> }
 export interface LibraryReport extends BibliographyReport {

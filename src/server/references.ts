@@ -118,11 +118,14 @@ export async function citations(root: string, store = library()) {
   return { sentences: citingReport(sentences, (await citationChecks(root)).all(), pdfOf), entries };
 }
 /** Forget what was found for a work a sentence cites, for the author who
- * judges it otherwise. */
+ * judges it otherwise; returns the PDF it was found on. */
 export async function forgetFinding(root: string, id: string, key: string, store = library()) {
   const sentence = (await citations(root, store)).sentences.find(item => item.id === id);
   if (!sentence) throw Object.assign(new Error('This sentence is no longer in the paper. Refresh the library.'), { statusCode: 404 });
-  (await citationChecks(root)).remove(sentence.sentence, key);
+  const checks = await citationChecks(root), pdf = checks.get(sentence.sentence, key)?.pdf;
+  checks.remove(sentence.sentence, key);
+  // The PDF it was found on, so automatic checks leave the citation alone.
+  return pdf ?? null;
 }
 /** Record what an agent found for a work one of the paper's sentences cites. */
 export async function recordFinding(root: string, record: CitationRecord, store = library()) {

@@ -114,3 +114,31 @@ test('a checked sentence is found in the paper\'s PDF by a run of its words, des
   const marks = evidenceMarks(pdf, sentences({ [`${'x'}`]: 1 }), entries, entry => entry.key === 'loom' ? 'h-loom' : null);
   assert.deepEqual(marks, [], 'sentences without a current finding have no mark');
 });
+
+test('a quick check never replaces a finding recorded while it ran, and Stop interrupts the batch the model is answering', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'quick-check-race-')), checks = new CitationChecks(path.join(dir, 'checks.json'));
+  const source = { citations: async () => ({ sentences: sentences(checks.all()), entries }), checks: async () => checks };
+  try {
+    const agent = { verdict: 'unsupported' as const, note: 'The agent read the whole work.', evidence: [], pdf: 'h-loom', checkedAt: 1 };
+    const racing = new QuickCitationChecks(() => library, async ({ prompt }) => {
+      // An agent records its own verdict for the first sentence while the model answers.
+      checks.set(sentences()[0].sentence, 'loom', agent);
+      const ids = [...prompt.matchAll(/^## Item (\S+)$/gm)].map(match => match[1]);
+      return { model: 'm', reply: JSON.stringify({ results: ids.map(id => ({ id, verdict: 'supported', note: 'Quick.', evidence: [{ start: 'p3-l1', end: 'p3-l1' }] })) }) };
+    });
+    racing.start(dir, source);
+    while (racing.state(dir)!.running) await new Promise(resolve => setTimeout(resolve, 5));
+    const [first, second] = sentences(checks.all());
+    assert.equal(first.findings.loom.note, 'The agent read the whole work.');
+    assert.equal(second.findings.loom.verdict, 'supported');
+
+    const stopping = new QuickCitationChecks(() => library, ({ signal }) => new Promise((_, reject) => signal!.addEventListener('abort', () => reject(new Error('Stopped.')))));
+    fs.rmSync(path.join(dir, 'checks.json'));
+    stopping.start(dir, source);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    stopping.stop(dir);
+    assert.equal(stopping.state(dir)!.stopping, true);
+    while (stopping.state(dir)!.running) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(stopping.state(dir)!.error, null, 'stopping is not an error');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

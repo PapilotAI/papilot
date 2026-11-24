@@ -51,7 +51,7 @@ async function run(viewport, name) {
     if (url.pathname.endsWith('/skills')) return json({ skills: [] });
     if (url.pathname.endsWith('/git')) return json(manuscript.git);
     if (url.pathname.endsWith('/manuscript')) return json(manuscript);
-    if (url.pathname.endsWith('/manuscript/evidence')) { evidenceRequests.push(url.searchParams.get('key')); return json({ marks, running: false }); }
+    if (url.pathname.endsWith('/manuscript/evidence')) { evidenceRequests.push(url.searchParams.get('key')); return json({ key: url.searchParams.get('key'), marks, running: false }); }
     if (url.pathname.endsWith('/manuscript/words')) return json(words[Number(url.searchParams.get('page'))]);
     if (url.pathname.endsWith('/library')) return json(report);
     if (url.pathname.endsWith('/manuscript.pdf') || url.pathname.includes('/library/pdfs/')) return route.fulfill({ contentType: 'application/pdf', body: pdf });

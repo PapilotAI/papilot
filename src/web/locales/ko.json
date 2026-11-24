@@ -1329,6 +1329,7 @@
   "Stop syncing…": "동기화 중지…",
   "Stop worker": "워커 중지",
   "Stopped": "중지됨",
+  "Stopping…": "중지하는 중…",
   "Strike out text to ask for it to be removed. Open the mark to give a replacement.": "텍스트에 취소선을 그어 삭제를 요청하세요. 표시를 열면 대체 텍스트를 입력할 수 있습니다.",
   "Submit a repair task to approve changes to project files.": "프로젝트 파일 변경을 승인하려면 수정 작업을 제출하세요.",
   "Submitting…": "제출 중…",

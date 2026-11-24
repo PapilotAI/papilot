@@ -968,6 +968,13 @@ export class Manuscripts extends EventEmitter {
     return { ...note, ...match, key, source };
   }
 
+  /** The lines of the manuscript PDF named key, read once per build and kept
+   * beside the review PDFs, so a restart does not read them again. */
+  async pdfLines(projectId: string, root: string, key: string) {
+    const pdf = this.pdf(projectId, key), { config } = await engine();
+    return this.reviewSnapshot(config.projectFor(root, this.documentOf(projectId, key) || undefined).state, { key, pdf });
+  }
+
   snapshotPdf(pdf: string, key?: string): Promise<ReviewSnapshot> {
     return this.reviewSnapshots.run(pdf, key);
   }

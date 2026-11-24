@@ -1029,6 +1029,11 @@
     "textHash": "0769e04585fa1055536d30683d22cbd7a1774b1641c8fde8b71da04a7aa36f93",
     "model": "gemini-4-argon-medium"
   },
+  "Stopping…": {
+    "revision": "ac7e92338214af65af80abaea4a4459c1e31508e70c23463cd5013aa1a38cb44",
+    "textHash": "8a99be840844819af0e66cf28239e2d092299ed2fe1ffdf763f06874cfd4575d",
+    "model": "gemini-4-argon-medium"
+  },
   "Supported": {
     "revision": "ef593a91b5db6cb3cb9ca30e71cce7cf8c8f2f6c19b724a270365396fd5521f6",
     "textHash": "3089bdcdb4a64b575643e95289eac34af89e3e26cd1945b629922820744fcc95",

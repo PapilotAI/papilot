@@ -23,8 +23,8 @@ import { fullPaperPdf, nextPaperPass, paperBuildPdf, paperPassPdf, retainedPaper
 import { withNotePages } from './note-pages.ts';
 import { type ChangeAction, Changes } from './changes.ts';
 import { citationChecks, citations, confirmEntry, forgetFinding, library, libraryInputs, libraryReport, recordFinding, stopLibrary } from './references.ts';
-import { QuickCitationChecks } from './citation-check.ts';
-import { evidenceMarks } from './evidence-marks.ts';
+import { QuickCitationChecks, checkItem } from './citation-check.ts';
+import { evidenceMarks, pdfText } from './evidence-marks.ts';
 import type { ReviewSnapshot } from './ai-review.ts';
 import type { Library } from './library.ts';
 import { plain } from '../../engine/src/core/verify.ts';
@@ -37,7 +37,7 @@ import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import { registerSkillRoutes } from './skill-routes.ts';
 import { registerMemoryRoutes } from './memory-routes.ts';
 import { type Listener, equals, guard } from './access.ts';
-import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type Annotation, type LibraryReport, type AnnotationBatch, type AnnotationBatchResult, type NoteReturnState, type NoteSummary, type QuickNote, type SourceFile, type Task } from '../shared.ts';
+import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type Annotation, type EvidenceMark, type LibraryReport, type AnnotationBatch, type AnnotationBatchResult, type NoteReturnState, type NoteSummary, type QuickNote, type SourceFile, type Task } from '../shared.ts';
 import type { SourceFileRead } from '../../engine/src/types.ts';
 import { parseGroupInstructions } from '../note-groups.ts';
 import { noteOptionContext, noteOptionsKey, replacesProposal } from './note-options.ts';
@@ -964,45 +964,52 @@ export async function buildApp(options: AppOptions) {
     return papers().zoteroStatus();
   });
   // Quick citation checks run with the quick model (Settings → General).
-  // With automatic checks on, opening the library checks what is new: a
-  // citation whose sentence or PDF changed, or a PDF just found. The same
-  // citations are not tried again by themselves after a run that could not
-  // settle them.
+  // With automatic checks on for a paper, opening its library checks what is
+  // new: a citation whose sentence or PDF changed, or a PDF just found. Each
+  // citation is tried by itself once, so one a run could not settle, or a
+  // finding the author dismissed, is not sent again until it changes.
   const quickChecks = new QuickCitationChecks(papers, request => workspace.quickReply(request));
   app.addHook('onClose', async () => quickChecks.stopAll());
-  const AUTO_CHECK = 'citation-auto-check', autoTried = new Map<string, string>();
-  const autoCheck = () => store.preference<boolean>(AUTO_CHECK) === true;
+  const autoKey = (projectId: string) => `citation-auto-check:${projectId}`, tried = new Map<string, Set<string>>();
+  const autoCheck = (projectId: string) => store.preference<boolean>(autoKey(projectId)) === true;
+  const triedFor = (root: string) => { let items = tried.get(root); if (!items) tried.set(root, items = new Set()); return items; };
   const citationSource = (projectId: string, root: string) => ({ projectId, citations: () => citations(root, papers()), checks: () => citationChecks(root) });
   const withQuickCheck = (projectId: string, root: string, report: LibraryReport) => {
-    if (autoCheck() && !quickChecks.state(root)?.running) {
-      const readable = new Set(report.entries.filter(entry => { const pdf = report.library.entries[entry.id]?.pdf; return pdf && pdf.text !== 'pending' && pdf.text !== 'none'; }).map(entry => entry.key));
-      const open = report.citations.flatMap(sentence => sentence.keys.filter(key => readable.has(key) && (!sentence.findings[key] || sentence.findings[key].stale)).map(key => `${sentence.id}|${key}`));
-      const signature = open.join('\n');
-      if (open.length && autoTried.get(root) !== signature) { autoTried.set(root, signature); quickChecks.start(root, citationSource(projectId, root)); }
+    if (autoCheck(projectId) && !quickChecks.state(root)?.running) {
+      const readable = new Map(report.entries.flatMap(entry => { const pdf = report.library.entries[entry.id]?.pdf; return pdf && pdf.text !== 'pending' && pdf.text !== 'none' ? [[entry.key, pdf.hash] as const] : []; }));
+      const done = triedFor(root), fresh = new Set(report.citations.flatMap(sentence => sentence.keys.flatMap(key => {
+        const hash = readable.get(key), item = hash && checkItem(sentence.id, key, hash);
+        return item && (!sentence.findings[key] || sentence.findings[key].stale) && !done.has(item) ? [item] : [];
+      })));
+      if (fresh.size) { for (const item of fresh) done.add(item); quickChecks.start(root, citationSource(projectId, root), item => fresh.has(item)); }
     }
-    return { ...report, quickCheck: quickChecks.state(root), autoCheck: autoCheck() };
+    return { ...report, quickCheck: quickChecks.state(root), autoCheck: autoCheck(projectId) };
   };
   app.get<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/library', project(), async request => {
     const root = store.project(request.params.id).path;
     return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
   });
   // The checked citations of the paper's PDF named by key, as marks beside
-  // their sentences. The PDF's text is read once per build.
-  const evidenceTexts = new Map<string, Promise<ReviewSnapshot>>();
+  // their sentences. The PDF's lines are read once per build and kept; the
+  // marks are worked out again only when the findings change.
+  const evidence = new Map<string, { text: Promise<{ snapshot: ReviewSnapshot; text: ReturnType<typeof pdfText> }>; findings?: string; marks?: EvidenceMark[] }>();
   app.get<{ Params: { id: string }; Querystring: { key?: string } }>('/api/projects/:id/manuscript/evidence', project(), async request => {
     const project = store.project(request.params.id), key = String(request.query.key || ''), shelf = papers();
     const running = Boolean(quickChecks.state(project.path)?.running);
     const { sentences, entries } = await citations(project.path, shelf);
-    if (!key || !sentences.some(sentence => sentence.keys.some(item => sentence.findings[item] && !sentence.findings[item].stale))) return { marks: [], running };
-    const cache = `${project.id}:${key}`;
-    let text = evidenceTexts.get(cache);
-    if (!text) {
-      text = manuscripts.snapshotPdf(manuscripts.pdf(project.id, key), key);
-      evidenceTexts.set(cache, text);
-      for (const old of [...evidenceTexts.keys()].slice(0, -4)) evidenceTexts.delete(old);
-      text.catch(() => { if (evidenceTexts.get(cache) === text) evidenceTexts.delete(cache); });
+    const checked = sentences.filter(sentence => sentence.keys.some(item => sentence.findings[item] && !sentence.findings[item].stale));
+    if (!key || !checked.length) return { key, marks: [], running };
+    const id = `${project.id}:${key}`;
+    let cached = evidence.get(id);
+    if (!cached) {
+      const text = manuscripts.pdfLines(project.id, project.path, key).then(snapshot => ({ snapshot, text: pdfText(snapshot) }));
+      evidence.set(id, cached = { text });
+      for (const old of [...evidence.keys()].slice(0, -4)) evidence.delete(old);
+      text.catch(() => { if (evidence.get(id)?.text === text) evidence.delete(id); });
     }
-    return { marks: evidenceMarks(await text, sentences, entries, input => shelf.pdfOf(input)?.hash ?? null), running };
+    const { snapshot, text } = await cached.text, findings = JSON.stringify(checked.map(sentence => [sentence.id, sentence.findings]));
+    if (cached.findings !== findings) { cached.marks = evidenceMarks(snapshot, sentences, entries, input => shelf.pdfOf(input)?.hash ?? null, text); cached.findings = findings; }
+    return { key, marks: cached.marks!, running };
   });
   app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/citations/quick-check', project(), async request => {
     const root = store.project(request.params.id).path, b = (request.body || {}) as { stop?: unknown };
@@ -1013,9 +1020,8 @@ export async function buildApp(options: AppOptions) {
   app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/citations/auto-check', project(), async request => {
     const enabled = (request.body as { enabled?: unknown } | null)?.enabled;
     if (typeof enabled !== 'boolean') throw Object.assign(new Error('Choose whether citations are checked automatically.'), { statusCode: 400 });
-    store.savePreference(AUTO_CHECK, enabled);
+    store.savePreference(autoKey(request.params.id), enabled);
     const root = store.project(request.params.id).path;
-    autoTried.delete(root);
     return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
   });
   app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/references/confirm', project(), async request => {
@@ -1030,7 +1036,8 @@ export async function buildApp(options: AppOptions) {
     const b = request.body as any;
     if (typeof b?.id !== 'string' || typeof b?.key !== 'string') throw new Error('Choose a citation to forget.');
     const root = store.project(request.params.id).path;
-    await forgetFinding(root, b.id, b.key, papers());
+    const forgotten = await forgetFinding(root, b.id, b.key, papers());
+    if (forgotten) triedFor(root).add(checkItem(b.id, b.key, forgotten));
     return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
   });
   // A PDF the author adds, to the entry it is dropped on or to the one its
@@ -1052,11 +1059,11 @@ export async function buildApp(options: AppOptions) {
   // with their lines, a page of results at a time. No model is involved.
   app.get<{ Params: { id: string }; Querystring: { q?: string; cursor?: string } }>('/api/projects/:id/library/search', project(), async request => {
     const query = String(request.query.q || '').trim(), shelf = papers();
-    if (!query) return { matches: [], nextCursor: null };
+    if (!query.normalize('NFKC').replace(/\s+/g, '')) return { matches: [], nextCursor: null };
     const { entries } = await libraryInputs(store.project(request.params.id).path, false);
     const works = entries.flatMap(input => { const found = shelf.pdfOf(input); return found ? [{ input, hash: found.hash }] : []; });
     let [work, line] = request.query.cursor ? String(request.query.cursor).split(':').map(Number) : [0, 0];
-    if (!Number.isSafeInteger(work) || !Number.isSafeInteger(line)) throw Object.assign(new Error('Search again.'), { statusCode: 400 });
+    if (!Number.isSafeInteger(work) || !Number.isSafeInteger(line) || work < 0 || line < 0) throw Object.assign(new Error('Search again.'), { statusCode: 400 });
     const matches: unknown[] = []; let size = 0;
     for (; work < works.length; work++, line = 0) {
       const snapshot = await shelf.text(works[work].hash);

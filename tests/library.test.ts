@@ -787,3 +787,66 @@ test('the library routes add, serve and take away the PDFs of the paper\'s own e
     fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
+
+test('quick citation checks run from the library routes, automatically once per citation, and the library search pages through PDFs', async () => {
+  const root = temporary('quick-paper'), dir = temporary('quick-routes');
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\\begin{document}\\section{Introduction}Linear values can be updated in place \\cite{wadler}.\\bibliography{refs}\\end{document}\n');
+  fs.writeFileSync(path.join(root, 'refs.bib'), '@article{wadler, title = {Linear types can change the world!}, doi = {10.1000/open}, year = 1990}\n');
+  const store = new Store(path.join(dir, 'state.sqlite'));
+  class Agent extends EventEmitter { ready = false; async request() { return {}; } start = async () => {}; respond() {} reject() {} close() {} }
+  const review = { url: 'http://unused', token: '', get: async () => ({ cursor: 0, feedback: [] }) as any, post: async () => ({ worktree: root }) as any };
+  const workspace = new Workspace(store, new Agent() as any, async () => review, { claude: new Agent() as any, antigravity: new Agent() as any });
+  store.saveProject({ id: 'paper', path: root, name: 'Paper', createdAt: 1 });
+  const prompts: string[] = [];
+  // The quick model, faked: it supports every item with the first line it was shown.
+  workspace.quickReply = async ({ prompt }) => {
+    prompts.push(prompt);
+    const results = prompt.split('## Item ').slice(1).map(block => { const id = block.split('\n')[0], line = /<(p\d+-l\d+)>/.exec(block)![1]; return { id, verdict: 'supported', note: 'Stated.', evidence: [{ start: line, end: line }] }; });
+    return { reply: JSON.stringify({ results }), agent: 'deepseek', model: 'DeepSeek V4.1 Flash UltraFast' };
+  };
+  const library = new Library(path.join(dir, 'library'), { snapshots, findZotero: () => null });
+  const app = await buildApp({ listener: { kind: 'local', port: 7274, publicOrigin: '', owner: '' }, store, workspace, manuscripts: new Manuscripts(), csrf: 'csrf', serialGit: gitQueue(), dist: null, version: 'test', connectReview: async () => review, library });
+  const headers = { host: '127.0.0.1:7274', origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'csrf' };
+  const report = async () => (await app.inject({ method: 'GET', url: '/api/projects/paper/library?online=0', headers })).json();
+  const settled = async () => { for (let i = 0; i < 200; i++) { const value = await report(); if (!value.quickCheck?.running) return value; await new Promise(resolve => setTimeout(resolve, 10)); } throw new Error('The check did not finish.'); };
+  try {
+    await app.inject({ method: 'POST', url: '/api/projects/paper/library/pdf', headers: { ...headers, 'content-type': 'application/octet-stream' }, payload: pdf('Linear types can change the world!', 'A linear value is used exactly once, so it can be updated in place.') });
+    for (let i = 0; i < 200 && (await report()).library.entries['refs.bib#wadler'].pdf?.text !== 'ready'; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal((await report()).autoCheck, false);
+    assert.equal(prompts.length, 0, 'nothing is checked by itself until the author turns it on');
+    const on = await app.inject({ method: 'POST', url: '/api/projects/paper/citations/auto-check?online=0', headers, payload: { enabled: true } });
+    assert.equal(on.json().autoCheck, true);
+    let value = await settled();
+    assert.equal(prompts.length, 1);
+    const [sentence] = value.citations;
+    assert.deepEqual([sentence.findings.wadler.verdict, sentence.findings.wadler.by], ['supported', 'DeepSeek V4.1 Flash UltraFast']);
+    assert.deepEqual([value.quickCheck.done, value.quickCheck.total, value.quickCheck.failed], [1, 1, 0]);
+    // A finding the author dismisses is not checked again by itself.
+    await app.inject({ method: 'POST', url: '/api/projects/paper/citations/forget?online=0', headers, payload: { id: sentence.id, key: 'wadler' } });
+    value = await settled();
+    assert.equal(prompts.length, 1);
+    assert.deepEqual(value.citations[0].findings, {});
+    // Check citations asks again on request; a rewritten sentence is new and is checked by itself.
+    await app.inject({ method: 'POST', url: '/api/projects/paper/citations/quick-check?online=0', headers, payload: {} });
+    value = await settled();
+    assert.equal(prompts.length, 2);
+    fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\\begin{document}\\section{Introduction}A linear value is used exactly once \\cite{wadler}.\\bibliography{refs}\\end{document}\n');
+    await report(); value = await settled();
+    assert.equal(prompts.length, 3);
+    assert.equal(value.citations[0].findings.wadler.verdict, 'supported');
+    // The library search finds the words in the PDFs, a page at a time.
+    const found = (await app.inject({ method: 'GET', url: '/api/projects/paper/library/search?q=updated%20in%20place', headers })).json();
+    assert.deepEqual(found.matches.map((match: any) => [match.key, match.page, match.text]), [['wadler', 2, 'A linear value is used exactly once, so it can be updated in place.']]);
+    assert.equal(found.nextCursor, null);
+    assert.deepEqual((await app.inject({ method: 'GET', url: '/api/projects/paper/library/search?q=%20%20', headers })).json(), { matches: [], nextCursor: null });
+    assert.equal((await app.inject({ method: 'GET', url: '/api/projects/paper/library/search?q=linear&cursor=-1:0', headers })).statusCode, 400);
+    // The quick model choice is checked and saved on the host.
+    assert.equal((await app.inject({ method: 'POST', url: '/api/quick-model', headers, payload: { agent: 'nobody' } })).statusCode, 400);
+    assert.deepEqual((await app.inject({ method: 'POST', url: '/api/quick-model', headers, payload: { agent: 'deepseek', model: 'deepseek/deepseek-v4.1-flash-ultrafast' } })).json(), { choice: { agent: 'deepseek', model: 'deepseek/deepseek-v4.1-flash-ultrafast', effort: null } });
+    assert.deepEqual((await app.inject({ method: 'POST', url: '/api/quick-model', headers, payload: { agent: null } })).json(), { choice: null });
+  } finally {
+    await app.close(); workspace.close(); store.close(); library.stop();
+    fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});

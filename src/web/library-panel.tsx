@@ -394,7 +394,7 @@ export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onF
       </dl>
       <div className="library-actions">
         {report.citations.length > 0 && (checking
-          ? <button type="button" className="button secondary compact" onClick={() => void data.quickCheck(true)}><Icon name="stop" size={14}/>{t('Stop checking')}</button>
+          ? <button type="button" className="button secondary compact" disabled={quick!.stopping} onClick={() => void data.quickCheck(true)}><Icon name="stop" size={14}/>{quick!.stopping ? t('Stopping…') : t('Stop checking')}</button>
           : <button type="button" className="button primary compact" disabled={!totals.unchecked} onClick={() => void data.quickCheck()}><Icon name="checklist" size={14}/>{t('Check citations')}</button>)}
         {report.citations.length > 0 && <button type="button" className="button ghost compact" onClick={() => checkCitations()}>{t('Ask an agent…')}</button>}
         <button type="button" className="button secondary compact" onClick={() => pick()}><Icon name="plus" size={14}/>{t('Add PDFs…')}</button>

@@ -37,6 +37,8 @@ export class CitationChecks {
   }
   all() { return this.read(); }
   set(sentence: string, key: string, finding: Stored) { this.write({ ...this.read(), [findingKey(sentence, key)]: finding }); }
+  /** The finding for a work a sentence cites, if any. */
+  get(sentence: string, key: string): Stored | undefined { return this.read()[findingKey(sentence, key)]; }
   remove(sentence: string, key: string) {
     const findings = this.read();
     delete findings[findingKey(sentence, key)];
