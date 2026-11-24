@@ -644,8 +644,6 @@ export const zhCN: Record<string, string> = {
   'possibly the same work as {keys} (same title).': '可能和 {keys} 是同一篇文献（标题相同）。',
   'Problems': '问题',
   'Chosen by you': '你选择的',
-  'Cited in your paper': '论文中的引用',
-  'Flagged': '存疑',
   'Reading the bibliography…': '正在读取参考文献…',
   'Record': '记录',
   'Same DOI as {keys}.': '和 {keys} 的 DOI 相同。',

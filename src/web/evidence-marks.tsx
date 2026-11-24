@@ -53,8 +53,8 @@ export const EVIDENCE_CHANGED = 'papilot:evidence';
 const ORDER: Segment[] = ['unsupported', 'partial', 'unclear', 'suggested', 'supported'];
 const ICON: Record<Segment, string> = { supported: 'check', partial: 'minus', unsupported: 'close', unclear: 'question', suggested: 'plus' };
 export const verdictName = (verdict: Segment) => ({ supported: t('Supported'), partial: t('Partly supported'), unsupported: t('Not supported'), unclear: t('Cannot tell'), suggested: t('Could cite') })[verdict];
-export function VerdictLabel({ verdict }: { verdict: Segment }) {
-  return <span className="evidence-verdict" data-verdict={verdict}><Icon name={ICON[verdict]} size={11}/>{verdictName(verdict)}</span>;
+export function VerdictLabel({ verdict, title }: { verdict: Segment; title?: string }) {
+  return <span className="evidence-verdict" data-verdict={verdict} title={title}><Icon name={ICON[verdict]} size={11}/>{verdictName(verdict)}</span>;
 }
 
 interface Placed { id: string; rects: Rect[] }
@@ -152,7 +152,7 @@ export function CitedSentence({ text }: { text: string }) {
 const quoteButton = (evidence: CitationEvidence, index: number, onClick: () => void) => <button key={index} type="button" className="evidence-quote" onClick={onClick}>
   <q>{evidence.quote}</q><span>{t('p. {page}', { page: evidence.page })}</span>
 </button>;
-const checkedBy = (by?: string) => <p className="evidence-by">{by ? t('Quick check by {model}', { model: by }) : t('Checked by an agent')}</p>;
+const checkedBy = (by?: string) => by ? t('Quick check by {model}', { model: by }) : t('Checked by an agent');
 
 /** The paper's PDF: each sentence of the paragraph with its verdicts, and a
  * sentence citing nothing with the work it could cite. */
@@ -164,24 +164,22 @@ export function PaperEvidence({ marks, actions, focus }: { marks: EvidenceMark[]
       <p className="evidence-sentence-text"><CitedSentence text={mark.sentence}/></p>
       {mark.suggestion ? <SuggestionRow suggestion={mark.suggestion} actions={actions} close={close}/>
         : [...mark.findings].sort((a, b) => ORDER.indexOf(a.verdict) - ORDER.indexOf(b.verdict)).map(finding => <div key={finding.key} className="evidence-row" data-verdict={finding.verdict}>
-          <p className="evidence-row-head"><VerdictLabel verdict={finding.verdict}/><span className="evidence-work">{finding.title || finding.key}</span></p>
+          <p className="evidence-row-head"><VerdictLabel verdict={finding.verdict} title={checkedBy(finding.by)}/><span className="evidence-work">{finding.title || finding.key}</span></p>
           {finding.note && <p className="evidence-note">{finding.note}</p>}
           {finding.evidence.map((evidence, index) => quoteButton(evidence, index, () => { close(); actions.open?.(finding, evidence); }))}
-          {checkedBy(finding.by)}
         </div>)}
     </li>)}</ol>}/>;
 }
 
 function SuggestionRow({ suggestion, actions, close }: { suggestion: EvidenceSuggestion; actions: EvidenceActions; close: () => void }) {
   return <div className="evidence-row" data-verdict="suggested">
-    <p className="evidence-row-head"><VerdictLabel verdict="suggested"/><span className="evidence-work">{suggestion.title || suggestion.key}</span></p>
+    <p className="evidence-row-head"><VerdictLabel verdict="suggested" title={checkedBy(suggestion.by)}/><span className="evidence-work">{suggestion.title || suggestion.key}</span></p>
     {suggestion.note && <p className="evidence-note">{suggestion.note}</p>}
     {suggestion.evidence.map((evidence, index) => quoteButton(evidence, index, () => { close(); actions.open?.({ entry: suggestion.entry, hash: suggestion.pdf, key: suggestion.key }, evidence); }))}
     <div className="evidence-actions">
       {actions.cite && <button type="button" className="button secondary compact" onClick={() => { close(); actions.cite!(suggestion); }}>{t('Ask an agent to cite it')}</button>}
       {actions.dismiss && <button type="button" className="button ghost compact" onClick={() => { close(); actions.dismiss!(suggestion); }}>{t('Dismiss')}</button>}
     </div>
-    {checkedBy(suggestion.by)}
   </div>;
 }
 

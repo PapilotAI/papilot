@@ -7,25 +7,8 @@
 .library-panel>.library-empty,.library-panel>.inline-error{margin:auto}
 
 /* Header */
-.library-header{flex-shrink:0;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"coverage actions" "checks checks";gap:12px 20px;padding:14px 16px;border-radius:12px;background:var(--raised);box-shadow:var(--shadow-xs)}
+.library-header{flex-shrink:0;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"summary actions" "results results";gap:10px 16px;padding:12px 16px;align-items:center;border-radius:12px;background:var(--raised);box-shadow:var(--shadow-xs)}
 .library-panel[data-drop=true]>.library-header{outline:2px dashed var(--accent);outline-offset:-2px;background:var(--accent-soft)}
-.library-coverage{grid-area:coverage;display:flex;align-items:center;gap:14px;min-width:0}
-.library-coverage-text{display:grid;gap:4px;min-width:0}
-.library-coverage-text>label{font-size:14px;font-weight:600;color:var(--text)}
-.library-sources{display:flex;flex-wrap:wrap;gap:4px 6px;margin:0}
-.library-stat{height:20px;padding:0 8px;border-radius:10px;background:var(--bg-muted);font-size:11px;line-height:20px;color:var(--text-2);white-space:nowrap}
-.library-stat.s-mismatch{background:var(--red-soft);color:var(--red)}
-/* A native <progress> drawn as a ring; its count sits in the middle. */
-@property --value{syntax:'<number>';inherits:true;initial-value:0}
-.library-ring{--size:52px;--thickness:6px;position:relative;display:grid;place-items:center;flex-shrink:0;width:var(--size);height:var(--size)}
-.library-ring>progress{appearance:none;width:100%;height:100%;border:0;border-radius:50%;background:conic-gradient(var(--accent) calc(var(--value) * 1%),var(--bg-active) 0);
-  mask-image:radial-gradient(farthest-side,transparent calc(100% - var(--thickness)),#000 calc(100% - var(--thickness) + .5px));transition:--value 0s}
-.library-ring>progress::-webkit-progress-bar,.library-ring>progress::-webkit-progress-value{background:none}
-.library-ring>progress::-moz-progress-bar{background:none}
-.library-ring>span{position:absolute;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--text)}
-@media(prefers-reduced-motion:no-preference){.library-ring>progress{transition-duration:.4s}}
-@media(forced-colors:active){.library-ring>progress{forced-color-adjust:none;background:conic-gradient(CanvasText calc(var(--value) * 1%),Canvas 0)}}
-.library-actions{grid-area:actions;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px}
 .library-progress-text{display:inline-flex;align-items:center;gap:8px;color:var(--text-2)}
 .library-progress-text:empty{display:none}
 .library-header>.library-note,.library-header>.inline-error{grid-column:1/-1;margin:0}
@@ -37,9 +20,6 @@
 .library-bar>[data-verdict=unsupported]{background:var(--red)}
 .library-bar>[data-verdict=unclear]{background:var(--text-3)}
 @media(forced-colors:active){.library-bar{display:none}}
-/* Automatic checks: a switch with the quick model that does them. */
-.library-auto{display:inline-flex;align-items:center;gap:6px;min-width:0;margin-left:4px;color:var(--text-2);white-space:nowrap;cursor:pointer}
-.library-auto-model{height:20px;padding:0 8px;border-radius:10px;background:var(--bg-muted);font-size:11px;line-height:20px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .library-claim-by{margin:2px 0 0;font-size:11px;color:var(--text-3)}
 .library-note{margin:6px 0 0;font-size:11px;color:var(--text-3)}
 
@@ -128,12 +108,12 @@
 .library-cite{color:var(--text-3)}
 .library-cite mark{padding:0 2px;border-radius:3px;background:var(--accent-soft);color:var(--accent)}
 .library-claim-note{margin:0;font-size:12px;color:var(--text-2)}
-.library-evidence{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:start;gap:8px;width:100%;padding:8px 10px;border-radius:8px;background:var(--raised);box-shadow:var(--shadow-xs);text-align:left;color:var(--text-2)}
+.library-evidence{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px;width:100%;padding:8px 10px;border-radius:8px;background:var(--raised);box-shadow:var(--shadow-xs);text-align:left;color:var(--text-2)}
 .library-evidence:hover:not(:disabled){box-shadow:var(--shadow-sm)}
 .library-evidence:disabled{opacity:.6;cursor:default}
 .library-evidence>svg{margin-top:2px;color:var(--text-3)}
 /* A long passage shows its start; the PDF opens on all of it. */
-.library-evidence>q{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;overflow:hidden;font-size:12px;line-height:1.5;font-style:italic;overflow-wrap:anywhere}
+.library-evidence>q{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;font-size:12px;line-height:1.5;font-style:italic;overflow-wrap:anywhere}
 .library-evidence-page{font-size:11px;color:var(--accent);white-space:nowrap}
 .library-claim-actions{display:flex;justify-content:flex-end}
 .library-entry>summary{display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;font-weight:600;color:var(--text-2);cursor:pointer;list-style:none}
@@ -171,8 +151,6 @@
 .library-page-head span{font-size:12px;color:var(--text-3)}
 
 @media(max-width:1100px){
-  .library-header{grid-template-columns:1fr;grid-template-areas:"coverage" "actions" "checks"}
-  .library-actions{justify-content:flex-start}
 }
 /* A phone: the list, then a work with a way back; the work has the whole height. */
 @media(max-width:760px){
@@ -195,7 +173,6 @@
 /* Very narrow: the tally keeps its icons and numbers; its names stay for screen readers. */
 @media(max-width:480px){
   .library-differences>div{grid-template-columns:1fr}
-  .library-tally{gap:4px 12px}
 }
 
 /* Passages of the cited works' PDFs that the search found, each with its page. */
@@ -212,25 +189,6 @@
 .pdf-thumbnail-marked{position:relative;display:block}
 .pdf-thumbnail-mark{position:absolute;border-radius:1px;background:color-mix(in srgb,var(--accent) 35%,transparent)}
 
-/* The paper's citations as checked: counts as small coloured chips over one
-   bar, and the actions that check them, on a soft inset panel. */
-.library-checks{grid-area:checks;display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 20px;padding:10px 12px;border-radius:10px;background:var(--bg-subtle)}
-.library-checks-summary{display:grid;gap:8px;flex:1 1 360px;min-width:0}
-.library-checks-summary>h3{margin:0;font-size:11px;font-weight:600;color:var(--text-3);text-transform:none}
-.library-tally{display:flex;flex-wrap:wrap;gap:4px 16px;margin:0}
-.library-tally>div{display:inline-flex;align-items:baseline;gap:6px}
-.library-tally>div{align-items:center}
-.library-tally dt{display:contents;font-size:12px;color:var(--text-2);white-space:nowrap}
-.library-tally dt>span{order:2;font-size:12px;color:var(--text-2);white-space:nowrap}
-.library-tally dt>i{order:0;width:8px;height:8px;border-radius:50%;background:var(--bg-active)}
-.library-tally>[data-verdict=supported] i{background:var(--green)}
-.library-tally>[data-verdict=partial] i{background:var(--amber)}
-.library-tally>[data-verdict=unsupported] i{background:var(--red)}
-.library-tally>[data-verdict=unclear] i{background:var(--text-3)}
-.library-tally>[data-verdict=suggested] i{background:var(--accent)}
-.library-tally dd{order:1;margin:0;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--text)}
-.library-checks-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
-.library-checking{display:inline-flex;align-items:center;gap:8px;margin:0;font-size:12px;color:var(--text-2)}
 .library-claim[data-verdict=suggested]{box-shadow:inset 3px 0 0 var(--accent)}
 .library-claim .evidence-verdict{margin-left:auto}
 .library-snippet-work{display:grid;gap:2px}
@@ -242,3 +200,36 @@
 .pdf-thumbnail-mark{background:color-mix(in srgb,var(--accent) 55%,transparent)}
 .library-dots>[data-verdict=suggested]{color:var(--accent)}
 .evidence-list>li[data-focused]{border-radius:6px;outline:2px solid color-mix(in srgb,var(--accent) 40%,transparent);outline-offset:4px}
+
+/* The header: how many works, what is missing, one action and a menu; then
+   what needs the author as chips that narrow the list, over one bar. */
+.library-summary{grid-area:summary;display:grid;gap:2px;min-width:0}
+.library-summary>h2{margin:0;font-size:15px;font-weight:600;color:var(--text)}
+.library-summary-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0;font-size:12px;color:var(--text-2)}
+.library-summary-ok,.library-results-ok{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text-3)}
+.library-summary-ok svg,.library-results-ok svg{color:var(--green)}
+.library-actions{grid-area:actions;display:flex;align-items:center;justify-content:flex-end;gap:6px}
+.library-chip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border:0;border-radius:13px;background:var(--bg-subtle);font:inherit;font-size:12px;font-weight:500;color:var(--text);cursor:pointer}
+.library-chip:hover{background:var(--bg-muted)}
+.library-chip[aria-pressed=true]{background:var(--accent-soft)}
+.library-chip>i{width:7px;height:7px;border-radius:50%;background:var(--text-3)}
+.library-chip[data-kind=missing]>i{background:var(--amber)}
+.library-chip[data-kind=flagged]>i{background:var(--red)}
+.library-chip[data-kind=suggested]>i{background:var(--accent)}
+.library-results{grid-area:results;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.library-results>.library-bar{flex-basis:100%}
+.library-checking{grid-area:results;display:inline-flex;align-items:center;gap:8px;margin:0;font-size:12px;color:var(--text-2)}
+
+/* A sentence of the paper as one row: its verdict and words; opened, why, the
+   work's own lines and what to do. What needs the author comes first. */
+.library-claim{padding:0}
+.library-claim>details>summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:baseline;gap:10px;padding:8px 10px;list-style:none;cursor:pointer;border-radius:8px}
+.library-claim>details>summary::-webkit-details-marker{display:none}
+.library-claim>details>summary:hover{background:var(--bg-muted)}
+.library-claim>details>summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.library-claim>details>summary>.library-claim-text{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:0}
+.library-claim>details[open]>summary>.library-claim-text{display:block}
+.library-claim>details>summary>.library-claim-where{font-size:11px;color:var(--text-3)}
+.library-claim-body{display:grid;gap:6px;padding:0 10px 10px}
+.library-claim-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px}
+.library-claim-actions>.library-claim-by{margin-right:auto}

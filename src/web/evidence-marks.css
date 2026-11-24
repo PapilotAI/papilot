@@ -43,7 +43,7 @@
 .evidence-note{margin:0;color:var(--text-2)}
 .evidence-quote{display:flex;align-items:flex-start;gap:8px;width:100%;padding:6px 8px;border:0;border-radius:8px;background:var(--raised);box-shadow:var(--shadow-xs);font:inherit;color:var(--text-2);text-align:left;cursor:pointer}
 .evidence-quote:hover{color:var(--text)}
-.evidence-quote q{flex:1;font-style:italic}
+.evidence-quote q{flex:1;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;font-style:italic}
 .evidence-quote span{flex-shrink:0;font-size:11px;color:var(--accent)}
 .evidence-actions{display:flex;flex-wrap:wrap;gap:6px}
 .evidence-by{margin:0;font-size:11px;color:var(--text-3)}

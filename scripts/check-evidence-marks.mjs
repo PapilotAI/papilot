@@ -88,7 +88,7 @@ async function run(viewport, name) {
   await expect(card.locator('.evidence-tally')).toHaveText(/1 Not supported\s*2 Supported/);
   await expect(card.locator('.evidence-list > li')).toHaveCount(2);
   await expect(card.locator('li').nth(1).locator('.evidence-verdict')).toHaveText(['Not supported', 'Supported'], { useInnerText: true });
-  await expect(card.getByText('Checked by an agent')).toBeVisible();
+  await expect(card.locator('li').nth(1).locator('.evidence-verdict').nth(1)).toHaveAttribute('title', 'Checked by an agent');
   await expect(page.locator('.evidence-sentence')).toHaveCount(2);
   const inside = await card.boundingBox(), pageBox = await page.locator('.manuscript .page').first().boundingBox();
   assert.ok(inside.x >= pageBox.x - 1 && inside.x + inside.width <= pageBox.x + pageBox.width + 1, 'the card stays on the page');
