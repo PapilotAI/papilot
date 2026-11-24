@@ -105,9 +105,9 @@ export function useLibrary(projectId: string, version: string, load: Load, enabl
       try { setReport(await load<LibraryReport>(`/projects/${projectId}/citations/forget?${options()}`, { id, key })); }
       catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     },
-    /** Checks the citations with the quick model, in place; stop ends the run after its current batch. */
-    async quickCheck(stop = false) {
-      try { setReport(await load<LibraryReport>(`/projects/${projectId}/citations/quick-check?${options()}`, stop ? { stop: true } : {})); refresh(); }
+    /** Checks the citations, or finds sources for uncited sentences, with the quick model, in place; stop interrupts the batch it is answering. */
+    async quickCheck(stop = false, kind: 'citations' | 'sources' = 'citations') {
+      try { setReport(await load<LibraryReport>(`/projects/${projectId}/citations/quick-check?${options()}`, stop ? { stop: true } : { kind })); refresh(); }
       catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     },
     async dismissSuggestion(id: string) {
@@ -417,12 +417,17 @@ export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onF
             <div data-verdict="none"><dt><i aria-hidden="true"/><span>{t('To check')}</span></dt><dd>{totals.unchecked}</dd></div>
           </dl>
           <EvidenceBar tally={totals}/>
-          {checking && <p className="library-checking" role="status"><span className="spinner"/>{quick!.model ? t('Checking with {model}: {done} of {total}', { model: quick!.model, done: quick!.done, total: quick!.total }) : t('Checking citations: {done} of {total}', { done: quick!.done, total: quick!.total })}</p>}
+          {checking && <p className="library-checking" role="status"><span className="spinner"/>{quick!.kind === 'sources'
+            ? quick!.model ? t('Finding sources with {model}: {done} of {total}', { model: quick!.model, done: quick!.done, total: quick!.total }) : t('Finding sources: {done} of {total}', { done: quick!.done, total: quick!.total })
+            : quick!.model ? t('Checking with {model}: {done} of {total}', { model: quick!.model, done: quick!.done, total: quick!.total }) : t('Checking citations: {done} of {total}', { done: quick!.done, total: quick!.total })}</p>}
         </div>
         <div className="library-checks-actions">
           {checking
             ? <button type="button" className="button secondary compact" disabled={quick!.stopping} onClick={() => void data.quickCheck(true)}><Icon name="stop" size={14}/>{quick!.stopping ? t('Stopping…') : t('Stop checking')}</button>
-            : <button type="button" className="button primary compact" onClick={() => void data.quickCheck()}><Icon name="checklist" size={14}/>{t('Check citations')}</button>}
+            : <>
+              {report.citations.length > 0 && <button type="button" className="button primary compact" onClick={() => void data.quickCheck()}><Icon name="checklist" size={14}/>{t('Check citations')}</button>}
+              {(report.uncited ?? 0) > 0 && withPdf > 0 && <button type="button" className="button secondary compact" onClick={() => void data.quickCheck(false, 'sources')}><Icon name="search" size={14}/>{t('Find sources')}</button>}
+            </>}
           {report.citations.length > 0 && <button type="button" className="button ghost compact" onClick={() => checkCitations()}>{t('Ask an agent…')}</button>}
           <label className="library-auto">
             <input type="checkbox" role="switch" className="switch" checked={Boolean(report.autoCheck)} onChange={event => void data.autoCheck(event.target.checked)}/>

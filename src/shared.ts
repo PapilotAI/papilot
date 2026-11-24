@@ -537,7 +537,7 @@ export interface EvidenceMark { id: string; page: number; rects: [number, number
 // say what it claims, with that work's lines.
 export interface CitationSuggestion { id: string; file: string; line: number; section: string | null; sentence: string; key: string; verdict: 'supported' | 'partial'; note: string; evidence: CitationEvidence[]; pdf: string; checkedAt: number; by?: string }
 // A paper's quick citation check: how far it got, the model doing it, and why it stopped early.
-export interface CitationCheckState { running: boolean; stopping?: boolean; done: number; total: number; failed: number; model: string | null; error: string | null; finishedAt: number | null }
+export interface CitationCheckState { kind: 'citations' | 'sources'; running: boolean; stopping?: boolean; done: number; total: number; failed: number; model: string | null; error: string | null; finishedAt: number | null }
 /** A sentence of the paper that cites works, with what was found for each. */
 export interface CitingSentence { id: string; keys: string[]; file: string; line: number; section: string | null; sentence: string; findings: Record<string, CitationFinding> }
 export interface LibraryReport extends BibliographyReport {

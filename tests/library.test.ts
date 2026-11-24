@@ -851,7 +851,7 @@ test('quick citation checks run from the library routes, automatically once per 
   }
 });
 
-test('a quick check suggests a library work for a sentence that cites nothing, once per state of the library, and a dismissed one stays gone', async () => {
+test('Find sources suggests a library work for a sentence that cites nothing, only when asked, once per set of ranked works, and a dismissed one stays gone', async () => {
   const root = temporary('suggest-paper'), dir = temporary('suggest-routes');
   execFileSync('git', ['init', '-q'], { cwd: root });
   fs.writeFileSync(path.join(root, 'main.tex'), [
@@ -884,16 +884,23 @@ test('a quick check suggests a library work for a sentence that cites nothing, o
   try {
     await app.inject({ method: 'POST', url: '/api/projects/paper/library/pdf', headers: { ...headers, 'content-type': 'application/octet-stream' }, payload: pdf('Linear types can change the world!', 'A linear value is used exactly once, so it can be updated in place.') });
     for (let i = 0; i < 200 && (await report()).library.entries['refs.bib#wadler'].pdf?.text !== 'ready'; i++) await new Promise(resolve => setTimeout(resolve, 10));
-    await app.inject({ method: 'POST', url: '/api/projects/paper/citations/quick-check?online=0', headers, payload: {} });
+    // Checking citations, also automatically, never looks for sources: only Find sources does.
+    await app.inject({ method: 'POST', url: '/api/projects/paper/citations/auto-check?online=0', headers, payload: { enabled: true } });
+    await settled();
+    assert.deepEqual(asked, ['check citations']);
+    assert.equal((await report()).uncited, 2);
+    assert.equal((await app.inject({ method: 'POST', url: '/api/projects/paper/citations/quick-check?online=0', headers, payload: { kind: 'everything' } })).statusCode, 400);
+    await app.inject({ method: 'POST', url: '/api/projects/paper/citations/quick-check?online=0', headers, payload: { kind: 'sources' } });
     let value = await settled();
+    assert.equal(value.quickCheck.kind, 'sources');
     assert.deepEqual(asked, ['check citations', 'find sources for uncited sentences'], 'the hospital sentence shares too few words with any work to ask about');
     assert.equal(value.suggestions.length, 1);
     const [suggestion] = value.suggestions;
     assert.deepEqual([suggestion.key, suggestion.verdict, suggestion.by, suggestion.line], ['wadler', 'supported', 'DeepSeek V4.1 Flash UltraFast', 3]);
     assert.match(suggestion.sentence, /^A linear value is used exactly once/);
     assert.match(suggestion.evidence[0].quote, /used exactly once/);
-    // Nothing changed in the library: the sentence is not asked about again.
-    await app.inject({ method: 'POST', url: '/api/projects/paper/citations/quick-check?online=0', headers, payload: {} });
+    // The works it ranks did not change: the sentence is not asked about again.
+    await app.inject({ method: 'POST', url: '/api/projects/paper/citations/quick-check?online=0', headers, payload: { kind: 'sources' } });
     await settled();
     assert.equal(asked.length, 2);
     const dismissed = await app.inject({ method: 'POST', url: '/api/projects/paper/citations/suggestions/dismiss?online=0', headers, payload: { id: suggestion.id } });

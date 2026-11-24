@@ -3,7 +3,7 @@ import type { ReviewSnapshot } from './ai-review.ts';
 import { CitationChecks, recordCitation, VERDICTS } from './citations.ts';
 import type { CitationCheckState, CitingSentence } from '../shared.ts';
 import type { ProseSentence } from './references.ts';
-import { CitationSuggestions, candidateSignature, candidates, librarySignature, quote, sentenceIds, shelfIndex, suggestInstructions, type ShelfWork, type StoredSuggestion } from './citation-support.ts';
+import { CitationSuggestions, candidateSignature, candidates, quote, sentenceIds, shelfIndex, suggestInstructions, type ShelfWork, type StoredSuggestion } from './citation-support.ts';
 
 // Quick citation checks, in the manner of an evidence card: for each sentence
 // that cites a work with a PDF, find the work's passages that share the
@@ -23,10 +23,6 @@ export interface CitationSource {
   checks(): Promise<CitationChecks>;
   suggestions?(): Promise<CitationSuggestions>;
 }
-/** An uncited sentence as an automatic check tries it, and a look at every
- * uncited sentence because the library changed. */
-export const suggestItem = (id: string) => `suggest|${id}`;
-export const SWEEP = 'suggest|*';
 
 const STOP = new Set(('the of and a an in on for to with by from as at is are was were be been being that this these those which who whom whose its their our we they it '
   + 'than then also such can may might could would should not no but or nor so if into over under between among within without about after before during more most less '
@@ -108,10 +104,12 @@ export class QuickCitationChecks {
 
   /** Checks every citation that has a PDF and no current finding. A run
    * already going for the paper is returned as it is. */
-  start(root: string, source: CitationSource, only?: (item: string) => boolean): CitationCheckState {
+  // citations checks what the paper cites; sources looks for works the
+  // library has for sentences that cite nothing, which only the author asks for.
+  start(root: string, source: CitationSource, kind: CitationCheckState['kind'] = 'citations', only?: (item: string) => boolean): CitationCheckState {
     const running = this.runs.get(root);
     if (running?.state.running) return running.state;
-    const run = { state: { running: true, stopping: false, done: 0, total: 0, failed: 0, model: null, error: null, finishedAt: null } as CitationCheckState, stop: new AbortController() };
+    const run = { state: { kind, running: true, stopping: false, done: 0, total: 0, failed: 0, model: null, error: null, finishedAt: null } as CitationCheckState, stop: new AbortController() };
     this.runs.set(root, run);
     void this.check(run, source, only).catch(error => { if (!run.stop.signal.aborted) run.state.error = error instanceof Error ? error.message : String(error); })
       .finally(() => { run.state.running = false; run.state.finishedAt = Date.now(); });
@@ -123,7 +121,7 @@ export class QuickCitationChecks {
     const texts = new Map<string, Promise<ReviewSnapshot | null>>();
     const text = (hash: string) => { let found = texts.get(hash); if (!found) texts.set(hash, found = library.text(hash)); return found; };
     const items: { id: string; sentence: CitingSentence; key: string; input: LibraryInput; hash: string; block: string }[] = [];
-    for (const sentence of sentences) for (const key of sentence.keys) {
+    for (const sentence of run.state.kind === 'citations' ? sentences : []) for (const key of sentence.keys) {
       const finding = sentence.findings[key];
       if (finding && !finding.stale) continue;
       const input = entries.find(entry => entry.key === key), pdf = input && library.pdfOf(input);
@@ -137,7 +135,7 @@ export class QuickCitationChecks {
     // The other way round: sentences that cite nothing, and the works of the
     // library that may say what they claim. A sentence is asked about again
     // only when the works it ranks change; a dismissed one never is.
-    const store = source.suggestions && await source.suggestions();
+    const store = run.state.kind === 'sources' && source.suggestions ? await source.suggestions() : undefined;
     const suggest: { id: string; candidates: string; works: { work: ShelfWork; shown: Set<string> }[]; block: string }[] = [];
     const { uncited = [] } = store ? await source.citations() : {};
     if (store) {
@@ -152,7 +150,7 @@ export class QuickCitationChecks {
         // Ranking a long paper's sentences takes seconds; requests are served in between.
         if (++scanned % 40 === 0) await new Promise(resolve => setImmediate(resolve));
         if (run.stop.signal.aborted) return;
-        if (stored[sentence.id]?.dismissed || (only && !only(suggestItem(sentence.id)) && !only(SWEEP))) continue;
+        if (stored[sentence.id]?.dismissed) continue;
         const found = candidates(index!, sentence.sentence), signature = candidateSignature(found.map(item => item.work));
         if (stored[sentence.id]?.candidates === signature) continue;
         // A sentence no work shares enough words with needs no model to say so.
@@ -160,7 +158,7 @@ export class QuickCitationChecks {
         const blocks = found.map(({ work, passages }) => `Work [${work.key}]: ${[field(work.input, 'title'), field(work.input, 'author').split(/\s+and\s+/)[0], field(work.input, 'year')].filter(Boolean).join('; ')}\n${passages.map(lines => lines.map(line => `<${work.key}:${line.id}> ${line.text}`).join('\n')).join('\n…\n')}`);
         suggest.push({ id: sentence.id, candidates: signature, works: found.map(({ work, passages }) => ({ work, shown: new Set(passages.flat().map(line => line.id)) })), block: `## Item ${sentence.id}\nSentence: ${sentence.sentence}\n${blocks.join('\n\n')}` });
       }
-      store.update(changes, { keep: new Set(ids.map(sentence => sentence.id)), library: librarySignature(shelf.map(work => work.hash)) });
+      store.update(changes, { keep: new Set(ids.map(sentence => sentence.id)) });
     }
     run.state.total = items.length + suggest.length;
     const checks = await source.checks();

@@ -289,6 +289,11 @@
     "textHash": "89fd063638ae609254b0602abe73a1c24dc9554fe70d0f15287f7b8d04b24239",
     "model": "gemini-4-argon-medium"
   },
+  "Choose what to check.": {
+    "revision": "50302ee170c1ca232cd82d8faca75375c909363a7f831b8e86d4851694f25854",
+    "textHash": "30c05b64baa71bcd5de692033f05f48d7ed41441a6835315a48345ff8fedea45",
+    "model": "gemini-4-argon-medium"
+  },
   "Choose where to keep this preference.": {
     "revision": "964c062ba6676f002d6f15659593f8f7d039791e3095674c1823d8afd2a422b1",
     "textHash": "fe50730d5888505e814e33fb342ecf112e5ec9cdb634ec512f3bd58df516fcfd",

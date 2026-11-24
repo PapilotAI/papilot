@@ -93,35 +93,30 @@ export function quote(snapshot: ReviewSnapshot, start: string, end: string, show
 /** The works a sentence was asked about, as one value: it is asked again
  * only when a PDF enters or leaves that set, not for any library change. */
 export const candidateSignature = (works: { hash: string }[]) => works.map(work => work.hash).sort().join(',');
-/** The library's readable PDFs as one value, for knowing when to look again. */
-export const librarySignature = (hashes: string[]) => createHash('sha256').update([...hashes].sort().join('\n')).digest('hex').slice(0, 16);
 
 export type StoredSuggestion = { candidates: string; suggestion: Omit<CitationSuggestion, 'id' | 'file' | 'line' | 'section' | 'sentence'> | null; dismissed?: boolean };
 /** What the quick model suggested for each uncited sentence of a paper,
- * beside its other review state, and the library it last looked with. None
- * is remembered too, so a sentence is not asked again for nothing. */
+ * beside its other review state. None is remembered too, so a sentence is
+ * not asked again for nothing. */
 export class CitationSuggestions {
   constructor(private file: string) {}
-  read(): { sentences: Record<string, StoredSuggestion>; library: string | null } {
-    try {
-      const data = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-      return data?.version === 2 && data.sentences ? { sentences: data.sentences, library: data.library ?? null } : { sentences: {}, library: null };
-    } catch { return { sentences: {}, library: null }; }
+  all(): Record<string, StoredSuggestion> {
+    try { const data = JSON.parse(fs.readFileSync(this.file, 'utf8')); return data?.version === 2 && data.sentences ? data.sentences : {}; }
+    catch { return {}; }
   }
-  all() { return this.read().sentences; }
   /** Writes what changed at once; with keep, only those sentences stay, so
    * edited sentences leave nothing behind. A dismissal outlives a new suggestion. */
-  update(changes: Record<string, StoredSuggestion>, options: { keep?: Set<string>; library?: string } = {}) {
-    const current = this.read(), sentences: Record<string, StoredSuggestion> = {};
-    for (const [id, value] of Object.entries(current.sentences)) if (!options.keep || options.keep.has(id)) sentences[id] = value;
-    for (const [id, value] of Object.entries(changes)) sentences[id] = { ...value, ...(current.sentences[id]?.dismissed ? { dismissed: true } : {}) };
+  update(changes: Record<string, StoredSuggestion>, options: { keep?: Set<string> } = {}) {
+    const current = this.all(), sentences: Record<string, StoredSuggestion> = {};
+    for (const [id, value] of Object.entries(current)) if (!options.keep || options.keep.has(id)) sentences[id] = value;
+    for (const [id, value] of Object.entries(changes)) sentences[id] = { ...value, ...(current[id]?.dismissed ? { dismissed: true } : {}) };
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const temporary = `${this.file}.${randomUUID().slice(0, 8)}.tmp`;
-    fs.writeFileSync(temporary, JSON.stringify({ version: 2, library: options.library ?? current.library, sentences }));
+    fs.writeFileSync(temporary, JSON.stringify({ version: 2, sentences }));
     fs.renameSync(temporary, this.file);
   }
   dismiss(id: string) {
-    const current = this.read().sentences[id];
+    const current = this.all()[id];
     if (!current) return false;
     this.update({ [id]: { ...current, dismissed: true } });
     return true;

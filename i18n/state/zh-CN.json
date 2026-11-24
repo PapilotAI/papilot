@@ -444,9 +444,24 @@
     "textHash": "cb15ed7854ca21b637db7fac02fe06a7ac08b1cbf946b6d5bf8eaa062a7ec602",
     "model": "gemini-4-argon-medium"
   },
+  "Find sources": {
+    "revision": "b538fee7acad9abe03065f108b4ee6d1665c27b0308904b5850c1fbc2ef64f4f",
+    "textHash": "55549400608ea01d9101a981984d8acef81ba9df57de1f6e40b4132ab834bac0",
+    "model": "gemini-4-argon-medium"
+  },
   "Finding PDFs…": {
     "revision": "73c4aa8cae5c4ea582291d37fc6e045fff9af2074ac8f7de90965860326e1252",
     "textHash": "06d610061ddca52f43c5e48134364e8937b0f25b76428118e6ad0aba9a255648",
+    "model": "gemini-4-argon-medium"
+  },
+  "Finding sources with {model}: {done} of {total}": {
+    "revision": "db6dcc352c2690a6c4989021291fc05298eb6160f6ddaf772dc123980bac539d",
+    "textHash": "c654006c43426dd5d7bfdbfa3c9dcfbfcde6e519d23b625c76dd8b2b8ad72a31",
+    "model": "gemini-4-argon-medium"
+  },
+  "Finding sources: {done} of {total}": {
+    "revision": "e8f06bc52844673f15689f3ebf3b3eb94afdb4d1c4e6c767874d57d7c5ee3507",
+    "textHash": "c58cb7bbcd7211b04afe7bd0038c8a2c66dada12eae155ae1d65e5b8d8a08ff6",
     "model": "gemini-4-argon-medium"
   },
   "Finding…": {

@@ -23,8 +23,7 @@ import { fullPaperPdf, nextPaperPass, paperBuildPdf, paperPassPdf, retainedPaper
 import { withNotePages } from './note-pages.ts';
 import { type ChangeAction, Changes } from './changes.ts';
 import { citationChecks, citationSuggestions, citations, currentSuggestions, confirmEntry, forgetFinding, library, libraryInputs, libraryReport, recordFinding, stopLibrary } from './references.ts';
-import { QuickCitationChecks, SWEEP, checkItem, suggestItem } from './citation-check.ts';
-import { librarySignature, sentenceIds } from './citation-support.ts';
+import { QuickCitationChecks, checkItem } from './citation-check.ts';
 import { evidenceMarks, pdfText, suggestionMarks } from './evidence-marks.ts';
 import type { ReviewSnapshot } from './ai-review.ts';
 import type { Library } from './library.ts';
@@ -969,6 +968,8 @@ export async function buildApp(options: AppOptions) {
   // new: a citation whose sentence or PDF changed, or a PDF just found. Each
   // citation is tried by itself once, so one a run could not settle, or a
   // finding the author dismissed, is not sent again until it changes.
+  // Finding sources for uncited sentences reads every sentence and asks the
+  // model far more, so it runs only when the author asks.
   const quickChecks = new QuickCitationChecks(papers, request => workspace.quickReply(request));
   app.addHook('onClose', async () => quickChecks.stopAll());
   const autoKey = (projectId: string) => `citation-auto-check:${projectId}`, tried = new Map<string, Set<string>>();
@@ -982,16 +983,7 @@ export async function buildApp(options: AppOptions) {
         const hash = readable.get(key), item = hash && checkItem(sentence.id, key, hash);
         return item && (!sentence.findings[key] || sentence.findings[key].stale) && !done.has(item) ? [item] : [];
       })));
-      // Uncited sentences never asked about, and all of them once the library's PDFs changed.
-      if (readable.size) {
-        const store = (await citationSuggestions(root)).read(), library = librarySignature([...readable.values()]);
-        for (const sentence of sentenceIds((await libraryInputs(root, false)).uncited)) {
-          const item = suggestItem(sentence.id);
-          if (!store.sentences[sentence.id] && !done.has(item)) fresh.add(item);
-        }
-        if (store.library !== library && !done.has(`${SWEEP}|${library}`)) { done.add(`${SWEEP}|${library}`); fresh.add(SWEEP); }
-      }
-      if (fresh.size) { for (const item of fresh) done.add(item); quickChecks.start(root, citationSource(projectId, root), item => fresh.has(item)); }
+      if (fresh.size) { for (const item of fresh) done.add(item); quickChecks.start(root, citationSource(projectId, root), 'citations', item => fresh.has(item)); }
     }
     return { ...report, quickCheck: quickChecks.state(root), autoCheck: autoCheck(projectId) };
   };
@@ -1026,9 +1018,10 @@ export async function buildApp(options: AppOptions) {
     return { key, marks: cached.marks!, running };
   });
   app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/citations/quick-check', project(), async request => {
-    const root = store.project(request.params.id).path, b = (request.body || {}) as { stop?: unknown };
+    const root = store.project(request.params.id).path, b = (request.body || {}) as { stop?: unknown; kind?: unknown };
+    if (b.kind !== undefined && b.kind !== 'citations' && b.kind !== 'sources') throw Object.assign(new Error('Choose what to check.'), { statusCode: 400 });
     if (b.stop === true) quickChecks.stop(root);
-    else quickChecks.start(root, citationSource(request.params.id, root));
+    else quickChecks.start(root, citationSource(request.params.id, root), b.kind ?? 'citations');
     return withQuickCheck(request.params.id, root, await libraryReport(root, libraryOptions(request.query), papers()));
   });
   // A suggestion the author does not want is not shown or made again for that sentence.

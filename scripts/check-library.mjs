@@ -26,7 +26,7 @@ const hash = 'a'.repeat(64), added = 'b'.repeat(64);
 const entry = (key, title, author, extra = []) => ({ id: `refs.bib#${key}`, file: 'refs.bib', key, type: 'article', fields: [{ name: 'title', value: title }, { name: 'author', value: author }, { name: 'year', value: '1990' }, ...extra], lines: [1, 5], cited: [{ file: 'main.tex', line: 3, section: '1 Introduction' }] });
 const supported = { verdict: 'supported', note: 'The book gives the line-breaking algorithm.', evidence: [{ quote: 'TeX breaks paragraphs into lines with a total-fit algorithm.', page: 1, marks: [{ page: 1, rect: [0.1, 0.1, 0.9, 0.16] }] }], pdf: hash, checkedAt: 1 };
 const report = {
-  bibs: ['refs.bib'], absent: [], missing: [], duplicates: [], similar: [], all_cited: false, checks: {}, pending: 0, confirmed: {},
+  bibs: ['refs.bib'], absent: [], missing: [], duplicates: [], similar: [], all_cited: false, checks: {}, pending: 0, confirmed: {}, uncited: 1, suggestions: [],
   entries: [entry('knuth', 'The TeXbook', "Donald E. Knuth and Andr{\\'a}s Kov{\\'a}cs"), entry('wadler', 'Linear types can change the world!', 'Philip Wadler', [{ name: 'doi', value: '10.1000/open' }])],
   library: { pending: 0, entries: {
     'refs.bib#knuth': { pdf: { hash, source: 'author', pages: 1, text: 'ready' }, find: null, landing: null },
@@ -72,7 +72,7 @@ try {
     if (url.pathname === '/api/projects/paper/citations/quick-check' && request.method() === 'POST') {
       const body = request.postDataJSON();
       quick.push(body);
-      report.quickCheck = body.stop ? { ...report.quickCheck, running: false, finishedAt: 1 } : { running: true, done: 0, total: 1, failed: 0, model: 'DeepSeek V4.1 Flash UltraFast', error: null, finishedAt: null };
+      report.quickCheck = body.stop ? { ...report.quickCheck, running: false, finishedAt: 1 } : { kind: body.kind, running: true, done: 0, total: 1, failed: 0, model: 'DeepSeek V4.1 Flash UltraFast', error: null, finishedAt: null };
       return route.fulfill({ json: report });
     }
     if (url.pathname === '/api/projects/paper/citations/auto-check' && request.method() === 'POST') {
@@ -187,7 +187,7 @@ try {
   await page.getByRole('button', { name: 'Check citations', exact: true }).click();
   await panel.getByText('Checking with DeepSeek V4.1 Flash UltraFast: 0 of 1', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Stop checking', exact: true }).waitFor();
-  assert.deepEqual(quick, [{}]);
+  assert.deepEqual(quick, [{ kind: 'citations' }]);
   await page.screenshot({ path: 'test-results/library-quick-checking.png', animations: 'disabled' });
   report.citations[1].findings.knuth = { verdict: 'partial', note: 'The book breaks lines optimally but says nothing of linear values.', evidence: supported.evidence, pdf: hash, checkedAt: 2, by: 'DeepSeek V4.1 Flash UltraFast' };
   report.quickCheck = { running: false, done: 1, total: 1, failed: 0, model: 'DeepSeek V4.1 Flash UltraFast', error: null, finishedAt: 3 };
@@ -205,6 +205,12 @@ try {
   delete report.citations[1].findings.knuth;
   report.quickCheck = null; report.autoCheck = false;
   await page.getByRole('button', { name: 'Check citations', exact: true }).waitFor();
+  // Finding sources for uncited sentences is its own button, run only when asked.
+  await page.getByRole('button', { name: 'Find sources', exact: true }).click();
+  await panel.getByText('Finding sources with DeepSeek V4.1 Flash UltraFast: 0 of 1', { exact: true }).waitFor();
+  assert.deepEqual(quick.at(-1), { kind: 'sources' });
+  report.quickCheck = null;
+  await page.getByRole('button', { name: 'Find sources', exact: true }).waitFor();
 
   // The author dismisses a finding they judge otherwise.
   await claims.nth(0).getByRole('button', { name: 'Dismiss', exact: true }).click();

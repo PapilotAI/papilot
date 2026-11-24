@@ -68,6 +68,7 @@
   "Choose stage, unstage or revert.": "ステージ、アンステージ、または元に戻す（revert）を選択してください。",
   "Choose the quick, polish or rigorous role.": "quick、polish、または rigorous のいずれかのロールを選択してください。",
   "Choose valid destination model settings.": "切り替え先のモデルの設定を正しく選んでください。",
+  "Choose what to check.": "確認する項目を選択してください。",
   "Choose where to keep this preference.": "この設定の保存先を選択してください。",
   "Choose whether Papilot learns from reviews.": "Papilotがレビューから学習するかどうかを選択してください。",
   "Choose whether citations are checked automatically.": "引用を自動的にチェックするかどうかを選択してください。",
