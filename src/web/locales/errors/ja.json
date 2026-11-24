@@ -45,6 +45,7 @@
   "Choose a model and reasoning effort.": "モデルと推論強度を選択してください。",
   "Choose a paper name that is a valid folder name.": "フォルダー名として使用できる論文名を選んでください。",
   "Choose a source file.": "ソースファイルを選択してください。",
+  "Choose a suggestion to dismiss.": "却下する提案を選択してください。",
   "Choose a supported LaTeX engine.": "サポートされている LaTeX エンジンを選択してください。",
   "Choose a supported agent.": "対応しているエージェントを選んでください。",
   "Choose a supported commit message language.": "対応しているコミットメッセージの言語を選んでください。",

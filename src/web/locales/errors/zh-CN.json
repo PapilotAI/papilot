@@ -45,6 +45,7 @@
   "Choose a model and reasoning effort.": "请选择模型和推理强度。",
   "Choose a paper name that is a valid folder name.": "请选择可用作文件夹名称的论文名称。",
   "Choose a source file.": "请选择源文件。",
+  "Choose a suggestion to dismiss.": "请选择要忽略的建议。",
   "Choose a supported LaTeX engine.": "请选择受支持的 LaTeX 引擎。",
   "Choose a supported agent.": "请选择受支持的代理。",
   "Choose a supported commit message language.": "请选择支持的提交信息语言。",

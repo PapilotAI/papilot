@@ -94,6 +94,11 @@
     "textHash": "8ccb60e4e93ec51c474b3ee9351ca2ca3afcfecd9cf010dd453dbc2d53029776",
     "model": "codex"
   },
+  "Ask an agent to cite it": {
+    "revision": "88f8338f922964e4b9404f3c453962d91861821a5ea293152a0fa5de511ae50b",
+    "textHash": "9654716ff63fc308513dc435f51c0b0eeb51492a0c92ab91183c12fea0347321",
+    "model": "gemini-4-argon-medium"
+  },
   "Ask an agent to find it…": {
     "revision": "84bc16f6b068233977af11ec81e39398aaea1a572f4f9b05bea8653695b83033",
     "textHash": "b837acd9db5011130d0a13a85273fb82388a2c342d4014a94f43c5490758119b",
@@ -169,6 +174,11 @@
     "textHash": "b9ff74e3c537340655cf5fe881386f0dc8b17e84409e82ef4b85e2df1ebdcc0e",
     "model": "gemini-4-argon-medium"
   },
+  "Check automatically": {
+    "revision": "94ab20b2591fc7dcf9699d9ac31b9c19dcd8c29cb1c7994c2487ba65d14ef996",
+    "textHash": "56f44825ea4c1c9ac23473247766bdf155b231364b6725cabc87c730e5db6f57",
+    "model": "gemini-4-argon-medium"
+  },
   "Check bibliography entries in Crossref, DBLP and arXiv, and download open-access PDFs from arXiv and OpenAlex. Only titles, authors, years and identifiers are sent.": {
     "revision": "edac1e09de941d1f09aa23e7e013c7c3bd5f2c87c373f02f91c940058311fd37",
     "textHash": "61b73a688ff65a4a35a9b8eea89bebd9f169f539fb77fd317e74539267833bef",
@@ -184,11 +194,6 @@
     "textHash": "253d4f57b52d06eaa3ec688a7fc4bef572667ade1afd8be9d5909a4b17fbe2d6",
     "model": "gemini-4-argon-medium"
   },
-  "Check new citations automatically": {
-    "revision": "262f2fb6448a6ccf9773063a66a154a79cccea86dcafab473041a88f5d26aeb7",
-    "textHash": "db707bd90c252f3b7a3fd23870ebe1a9853e8b1aac1acb8c78f1a5e7ea41800b",
-    "model": "gemini-4-argon-medium"
-  },
   "Check only the sentences that cite {key}: pass key: {key} to citations_list.": {
     "revision": "27272a59b93f452b48a6fab5652007ea697580663330f5770dc4a31fec6cf587",
     "textHash": "60fff215d452108d132c52adb3c82332b30f1d36d606ad1baf56ddd2cec36b82",
@@ -197,6 +202,11 @@
   "Check that the works this paper cites support what it says about them. Go through the citing sentences with citations_list; unchecked: true lists those still to check. For each sentence and each work it cites that has a PDF, find what the work says with library_search and library_read, then record a verdict with citation_record, giving the lines that show it as evidence: supported, partial (it supports part of the claim, or a weaker or narrower one), unsupported (it does not say this, or says otherwise), or unclear (its text does not settle it). Do not edit any file. End with the unsupported and partial citations, and the works without a PDF that could not be checked.": {
     "revision": "a470ea4c670f32509ed1142b6d87cd7ac88ff0b3bff8cc104c89ea029af656f7",
     "textHash": "c3893fb51fdb64238e64f0197aa299af826cddead536a65396f0cf62a19e47cf",
+    "model": "gemini-4-argon-medium"
+  },
+  "Check the work with library_read first. Add the citation where the claim ends, with the citation command the paper already uses, and change nothing else.": {
+    "revision": "a77b02faa4e644708ccb60bfb801a65f72ec460e8c3d3aa89099056fdd722fca",
+    "textHash": "a17c897303b83fb3ebfbcf6851b16f79a9548d6bcaadf46960e039a30328f687",
     "model": "gemini-4-argon-medium"
   },
   "Check your Typeless shortcut.": {
@@ -217,6 +227,11 @@
   "Checking citations: {done} of {total}": {
     "revision": "c40b3536fbde91f9caf6255772ac4a77e9fb8db769bef50c2191de0d5972d32c",
     "textHash": "f76e144934398a3941905ab164ce8b4e5ea0b44185a5a0ef86a2c74cff8d6038",
+    "model": "gemini-4-argon-medium"
+  },
+  "Checking with {model}: {done} of {total}": {
+    "revision": "fe8debf503a4fd7fc5a52d393339939ea2e7e7eae37c308a6dc17ee957a46a52",
+    "textHash": "3d0779f6e9fffa231d3b6c42f3daa089ee0cb873b9d1c5587aa2e9d01dd8a03e",
     "model": "gemini-4-argon-medium"
   },
   "Checks citations and names tasks. Automatic uses each agent’s small model.": {
@@ -249,24 +264,29 @@
     "textHash": "7e6e367cc60e7808d65a154e8ebc6ab0172c9d62f8c670c6d574f75f52164bf0",
     "model": "gemini-4-argon-medium"
   },
-  "Citation check": {
-    "revision": "6fc96204f8c182f328fece3809ac71ecc422993e8a2f96d3e6650f049660debc",
-    "textHash": "9051681fe2b3bc01a5d733aa8bb8628ea4c6da76821415c4f5ddc0d1df3b1a30",
-    "model": "gemini-4-argon-medium"
-  },
   "Citation check: {verdicts}": {
     "revision": "8413617e631cd6c6dcede3e830a300098d3cf61afe6a1f10cf689594dd2b1af4",
     "textHash": "cb0f8e86590b75e21f7d5917fa1c23efc099bc4344ac85eaa13aac19dfb80c3b",
     "model": "gemini-4-argon-medium"
   },
-  "Citations checked against their works": {
-    "revision": "0d37ee21411315b0151ebe0ac49390850798a57af91267ffb60d309714a1eda6",
-    "textHash": "bfced90a357a9c8ef9f912a073cd332905d5aca83e0dce40bb15633839afa881",
+  "Citations": {
+    "revision": "9800f8601b11bf7b21f39689c0112119db41b745ae80f309e88b7cec3afd2d0e",
+    "textHash": "e0ec651f0dae7cf3bdab45774422aa806f2d5ac54462e6f4e44c9899cf878436",
+    "model": "gemini-4-argon-medium"
+  },
+  "Cite {key} for this sentence of the paper, at {place}:": {
+    "revision": "f2404d348afb9ea6baf2ec5de91a57b263760b4b1108351ce299d5d69dbd29b8",
+    "textHash": "2615a39ff5b4cf035c03d7567755f4ccff991b88c51b44dd26567c1e0fc3d020",
     "model": "gemini-4-argon-medium"
   },
   "Cited in your paper": {
     "revision": "4a765f06fe54ca8dec4b508bab3ef409a91bec5191d44be903f39e9c99b33e3f",
     "textHash": "ac61519e9a3715334a02101256c389979ffd34f1ae147817c6928ee2b45bf643",
+    "model": "gemini-4-argon-medium"
+  },
+  "Cited in your paper: {n}": {
+    "revision": "b8ab0da9882386ad5bf51442d5a6183b2afe79e13ac9e18900f99b174f1aa5eb",
+    "textHash": "d96346f9fcb4ee0d3dbadf0b4b835b33b094daeae050091a0491384e26fe6a0c",
     "model": "gemini-4-argon-medium"
   },
   "Collaboration mode": {
@@ -297,6 +317,16 @@
   "Copy the value of {cookie} and paste it here.": {
     "revision": "3a208dfa748687ae3bbbf18504ab3105e04bcaaeae770cf6b6c1c97623748f64",
     "textHash": "200029b60a5ebe5de15d32998cdb36d0ddf7abe3de1547f36be5443827b8af0c",
+    "model": "gemini-4-argon-medium"
+  },
+  "Could be cited for": {
+    "revision": "342a61dda803034169a432404ec25cf3b5e06ae4cdb50425373e736b46d382b7",
+    "textHash": "3990d4c874eb43d52f301d0aae3118ac3a4a79b084392b7670be27eda845ab40",
+    "model": "gemini-4-argon-medium"
+  },
+  "Could cite": {
+    "revision": "8c340247cdd6953fb9a7c3c86b9c88e00d164e1c008a3a80849018b7052c3f52",
+    "textHash": "d5d773253358df5804d09a3b8ade66ca9bf1eec9c9a08e1111593f85bc4a4468",
     "model": "gemini-4-argon-medium"
   },
   "Could not look for Zotero. Try again.": {
@@ -654,6 +684,11 @@
     "textHash": "46ba3eccafa79552498c7d4c46a6c1837ed67a4a79effe0f00b9acb729ce69ef",
     "model": "gemini-4-argon-medium"
   },
+  "No uncited sentence matches a work in the library.": {
+    "revision": "36115ac27f6490f0dd367f25e4a674beff2f2df998d29bed03c6184ed79be27b",
+    "textHash": "a3a3a4997dfbf3b8b9f2bb37216e1100529ce11875ae60ed11647b6ffd1a39ad",
+    "model": "gemini-4-argon-medium"
+  },
   "No work matches.": {
     "revision": "26fa885265617212245ceff146decabc6f705bdc82ef9debb95b40b01e25cf39",
     "textHash": "fe1685adbf8376beb0038bf57656a597a0420021943be2cffd63dca0b6bdd391",
@@ -733,11 +768,6 @@
     "revision": "3f10be315520353d8817d003904d27806b52843614d17107e11d6e9286ed11bb",
     "textHash": "11b1d69bfc7a449ebb241c874a00857b160e64e84fc52ff141fe4f54979edba1",
     "model": "manual"
-  },
-  "Open in Library": {
-    "revision": "f649e8b4554ac49851a870a3a08fe240cf86934c1d1af4655efea325d97c00b3",
-    "textHash": "5750050c41e604382c8eac66541a0bf71e0ec617010002c1df6d20daf477d839",
-    "model": "gemini-4-argon-medium"
   },
   "Open in Overleaf": {
     "revision": "c7f859a144045546a69f22713d3d4fd778799f218f129dcc20616484510f99c0",
@@ -984,6 +1014,11 @@
     "textHash": "fdd244d8f878ef40211f7d2ebb0ecfe0acfc27a7798ac2f37034469972924b91",
     "model": "codex"
   },
+  "Show in paper": {
+    "revision": "65958842224c4347157c742b407ec0eee4550cfa26790539866eb14997420be8",
+    "textHash": "1535628fb46460d9add827d5ae60545b51bad268df1bc393748433a587f1f489",
+    "model": "gemini-4-argon-medium"
+  },
   "Show more": {
     "revision": "c08cf00e85b99b606850a9176caf9e4748248fb0419b72d056fe22649f20fb81",
     "textHash": "331af79f34e7a551441d0aa5c2a4eebaccea5f2a3db89f87bad09d66080fc384",
@@ -1077,6 +1112,11 @@
   "The folder with zotero.sqlite and storage. Zotero shows it in Settings, under Advanced, Files and Folders.": {
     "revision": "4ac3b4c65fbe49fc1efc0187c44ba17d492ad9f5464545b8135bb3294b7880d5",
     "textHash": "379831ff5d140e2cc6092288da855121ab0ed37749432fbd8392262eabf9f603",
+    "model": "gemini-4-argon-medium"
+  },
+  "The library's PDF of {key} says on page {page}: “{quote}”": {
+    "revision": "1fb23de1d1e19478e6dfcbb960a6e1c698ad8e2db57a5c98e791b8c11a0ba264",
+    "textHash": "8b56f8cc73a3fedab89db4537739272e0da04e92286d4b65ea118b5e4d461e6f",
     "model": "gemini-4-argon-medium"
   },
   "The page preview could not be loaded.": {

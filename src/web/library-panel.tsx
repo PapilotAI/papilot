@@ -1,10 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
 import type { OutlineItem, PdfHandle, PdfPassage } from './pdf-view.tsx';
-import type { BibliographyEntry, CitationEvidence, CitationFinding, CitationVerdict, CitingSentence, LibraryEntry, LibraryReport, ReferenceCheck } from '../shared.ts';
+import type { BibliographyEntry, CitationEvidence, CitationFinding, CitationSuggestion, CitationVerdict, CitingSentence, LibraryEntry, LibraryReport, ReferenceCheck } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { language, t, tn } from './i18n.ts';
 import { browserStorage } from './storage.ts';
 import { readPlace, savePlace, useScrollPlace } from './places.ts';
+import { SourceEvidence, sourceUses, VerdictLabel, CitedSentence, type SourceUse } from './evidence-marks.tsx';
 import './library-panel.css';
 
 const PdfView = lazy(() => import('./pdf-view.tsx').then(module => ({ default: module.PdfView })));
@@ -109,6 +110,10 @@ export function useLibrary(projectId: string, version: string, load: Load, enabl
       try { setReport(await load<LibraryReport>(`/projects/${projectId}/citations/quick-check?${options()}`, stop ? { stop: true } : {})); refresh(); }
       catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     },
+    async dismissSuggestion(id: string) {
+      try { setReport(await load<LibraryReport>(`/projects/${projectId}/citations/suggestions/dismiss?${options()}`, { id })); }
+      catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    },
     async autoCheck(enabled: boolean) {
       try { setReport(await load<LibraryReport>(`/projects/${projectId}/citations/auto-check?${options()}`, { enabled })); refresh(); }
       catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -116,6 +121,13 @@ export function useLibrary(projectId: string, version: string, load: Load, enabl
   };
 }
 export type LibraryData = ReturnType<typeof useLibrary>;
+/** A task draft asking an agent to cite a library work for a sentence, with
+ * the work's own words as the reason. */
+export function citeRequest(suggestion: { key: string; file: string; line: number; sentence: string; evidence: CitationEvidence[] }) {
+  return [t('Cite {key} for this sentence of the paper, at {place}:', { key: suggestion.key, place: `${suggestion.file}:${suggestion.line}` }), `> ${suggestion.sentence}`,
+    ...suggestion.evidence.map(item => t('The library\'s PDF of {key} says on page {page}: “{quote}”', { key: suggestion.key, page: item.page, quote: item.quote })),
+    t('Check the work with library_read first. Add the citation where the claim ends, with the citation command the paper already uses, and change nothing else.')].join('\n');
+}
 
 interface Item { id: string; key: string; label: string; entry?: BibliographyEntry; problems: string[]; soft: boolean; fix: string }
 // Every problem of the bibliography, entry by entry, most pressing first.
@@ -166,7 +178,7 @@ function pdfState(state: LibraryEntry | undefined) {
   } as Record<string, { key: string; label: string }>)[state?.find ?? ''] ?? { key: 'none', label: t('No PDF') };
 }
 
-type Filter = 'all' | 'missing' | 'flagged' | 'problems';
+type Filter = 'all' | 'missing' | 'flagged' | 'uncited' | 'problems';
 type Tally = Record<CitationVerdict | 'unchecked', number>;
 const VERDICTS: CitationVerdict[] = ['supported', 'partial', 'unsupported', 'unclear'];
 const verdictIcon: Record<CitationVerdict, string> = { supported: 'check', partial: 'minus', unsupported: 'close', unclear: 'question' };
@@ -198,11 +210,12 @@ function Verdict({ verdict, stale }: { verdict: CitationVerdict | null; stale?: 
   return <span className="library-verdict" data-verdict={verdict} data-stale={stale || undefined}><Icon name={verdictIcon[verdict]} size={12}/>{verdictName(verdict)}</span>;
 }
 /** Small counts of a work's verdicts, for its row in the list. */
-function TallyDots({ tally }: { tally: Tally }) {
+function TallyDots({ tally, suggested = 0 }: { tally: Tally; suggested?: number }) {
   const shown = VERDICTS.filter(verdict => tally[verdict]);
-  if (!shown.length) return null;
-  return <span className="library-dots" aria-label={shown.map(verdict => `${verdictName(verdict)} ${tally[verdict]}`).join(', ')}>
+  if (!shown.length && !suggested) return null;
+  return <span className="library-dots" aria-label={[...shown.map(verdict => `${verdictName(verdict)} ${tally[verdict]}`), ...(suggested ? [`${t('Could cite')} ${suggested}`] : [])].join(', ')}>
     {shown.map(verdict => <span key={verdict} data-verdict={verdict} aria-hidden="true"><Icon name={verdictIcon[verdict]} size={10}/>{tally[verdict]}</span>)}
+    {suggested > 0 && <span data-verdict="suggested" aria-hidden="true"><Icon name="plus" size={10}/>{suggested}</span>}
   </span>;
 }
 /** A passage with the searched words marked, as a search shows it. */
@@ -236,7 +249,7 @@ function Sentence({ text, cited }: { text: string; cited: string }) {
 
 /** A cited work to show, from a citation check in the paper's PDF: at the quoted lines when one is given. */
 export interface LibraryFocus { entry: string; hash: string; evidence?: CitationEvidence; at: number }
-export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onFocused }: { projectId: string; data: LibraryData; onInvestigate: (text: string) => void; place?: string; focus?: LibraryFocus | null; onFocused?: () => void }) {
+export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onFocused, onShowInPaper }: { projectId: string; data: LibraryData; onInvestigate: (text: string) => void; place?: string; focus?: LibraryFocus | null; onFocused?: () => void; onShowInPaper?: (use: SourceUse) => void }) {
   const { report, error, unmatched, adding } = data;
   const [view, setView] = useState<{ filter: Filter | null; open: string }>(() => (place && readPlace<{ filter: Filter | null; open: string }>(place + ':view')) || { filter: null, open: '' });
   const show = (next: Partial<typeof view>) => setView(present => { const value = { ...present, ...next }; if (place) savePlace(place + ':view', value); return value; });
@@ -288,7 +301,8 @@ export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onF
     if (focus.evidence) setReading({ entry, hash: focus.hash, passage: first ? { page: first.page - 1, marks: focus.evidence.marks.filter(mark => mark.page === first.page).map(mark => mark.rect) } : undefined });
     onFocused?.();
   }, [focus, report]);
-  if (reading) return <LibraryReader projectId={projectId} entry={reading.entry} hash={reading.hash} passage={reading.passage} onClose={() => setReading(null)}/>;
+  if (reading) return <LibraryReader projectId={projectId} entry={reading.entry} hash={reading.hash} passage={reading.passage} onClose={() => setReading(null)}
+    uses={report ? sourceUses(reading.entry.key, report.citations, report.suggestions ?? []) : []} onShow={onShowInPaper}/>;
   if (error && !report) return <section className="library-panel"><p className="inline-error" role="alert">{error}</p></section>;
   if (!report) return <section className="library-panel"><p className="library-empty">{t('Reading the bibliography…')}</p></section>;
   if (!report.bibs.length) return <section className="library-panel"><p className="library-empty">{t('This paper names no .bib file with {bibliography} or {addbibresource}.', { bibliography: '\\bibliography', addbibresource: '\\addbibresource' })}</p></section>;
@@ -297,7 +311,7 @@ export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onF
   // An entry BibTeX cannot read has no PDF to find; Problems lists it.
   const missing = report.entries.filter(entry => !entry.error && !entries[entry.id]?.pdf);
   const withPdf = report.entries.filter(entry => entries[entry.id]?.pdf).length, busy = pending(report);
-  const quick = report.quickCheck, checking = Boolean(quick?.running);
+  const quick = report.quickCheck, checking = Boolean(quick?.running), suggestions = report.suggestions ?? [];
   const tallyOf = (key: string) => {
     const tally = empty(), pdf = hasPdfOf(key);
     for (const sentence of citing.get(key) ?? []) {
@@ -348,7 +362,7 @@ export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onF
   const matches = (entry: BibliographyEntry) => !search || fold(`${entry.key} ${readable(value(entry, 'title'))} ${authorsOf(entry).join(' ')} ${value(entry, 'year')}`).includes(search);
   const shown: { id: string; entry?: BibliographyEntry; item?: Item }[] = filter === 'problems'
     ? all.filter(item => !item.entry || matches(item.entry)).map(item => ({ id: item.id, entry: item.entry, item }))
-    : (filter === 'missing' ? missing : filter === 'flagged' ? flagged : report.entries).filter(matches).map(entry => ({ id: entry.id, entry }));
+    : (filter === 'missing' ? missing : filter === 'flagged' ? flagged : filter === 'uncited' ? report.entries.filter(entry => suggestions.some(item => item.key === entry.key)) : report.entries).filter(matches).map(entry => ({ id: entry.id, entry }));
   const selected = shown.find(row => row.id === view.open) ?? (narrow ? undefined : shown[0]);
   const open = (id: string) => { show({ open: id }); if (narrow) setDetail(true); };
   const read = (entry: BibliographyEntry, hash: string, passage?: PdfPassage, from?: string) => { opener.current = from ?? null; setReading({ entry, hash, passage }); };
@@ -360,7 +374,7 @@ export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onF
       <button type="button" className="library-row" aria-current={selected?.id === id ? 'true' : undefined} data-opener={'row:' + id} onClick={() => open(id)}>
         <span className="library-row-status" data-state={entry ? status.key : 'problem'} aria-hidden="true"><Icon name={entry ? (state?.pdf ? 'pdf' : 'paper') : 'alert'} size={16}/></span>
         <span className="library-row-text">
-          <span className="library-row-top"><span className="library-byline">{entry ? byline(entry) || entry.key : item!.label}</span><TallyDots tally={tally}/></span>
+          <span className="library-row-top"><span className="library-byline">{entry ? byline(entry) || entry.key : item!.label}</span><TallyDots tally={tally} suggested={entry ? suggestions.filter(suggestion => suggestion.key === entry.key).length : 0}/></span>
           <span className="library-row-title">{entry ? readable(value(entry, 'title')) || entry.type : item!.problems.join(gap())}</span>
           <span className="library-row-meta"><code>{entry?.key ?? item!.key}</code><span className={'library-state s-' + status.key}>{entry ? status.label : t('Problem')}</span></span>
           {item && entry && <span className="library-problems">{item.problems.join(gap())}</span>}
@@ -369,7 +383,8 @@ export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onF
       {entry && !state?.pdf && !entry.error && <button type="button" className="icon-button library-row-add" aria-label={t('Add a PDF for {key}', { key: entry.key })} title={t('Add PDF')} onClick={() => pick(entry.id)}><Icon name="plus" size={15}/></button>}
     </li>;
   };
-  const tabs: [Filter, string, number][] = [['all', t('All'), report.entries.length], ['missing', t('Without PDF'), missing.length], ['flagged', t('Flagged'), flagged.length], ['problems', t('Problems'), all.filter(item => !item.soft).length]];
+  const tabs: [Filter, string, number][] = [['all', t('All'), report.entries.length], ['missing', t('Without PDF'), missing.length], ['flagged', t('Flagged'), flagged.length],
+    ...(suggestions.length || filter === 'uncited' ? [['uncited', t('Could cite'), suggestions.length] as [Filter, string, number]] : []), ['problems', t('Problems'), all.filter(item => !item.soft).length]];
 
   return <div className="library-panel" data-drop={dropping === ''} data-detail={narrow && detail && selected ? 'true' : undefined} {...drop()}>
     <input ref={picker} type="file" accept="application/pdf,.pdf" multiple hidden onChange={event => { const picked = [...event.target.files ?? []]; event.target.value = ''; if (picked.length) void data.add(picked, target.current); }}/>
@@ -387,25 +402,33 @@ export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onF
           </p>}
         </div>
       </div>
-      <EvidenceBar tally={totals}/>
-      <dl className="library-tally" aria-label={t('Citations checked against their works')}>
-        {VERDICTS.map(verdict => <div key={verdict} data-verdict={verdict}><dt><Icon name={verdictIcon[verdict]} size={12}/><span>{verdictName(verdict)}</span></dt><dd>{totals[verdict]}</dd></div>)}
-        <div data-verdict="none"><dt><Icon name="checklist" size={12}/><span>{t('To check')}</span></dt><dd>{totals.unchecked}</dd></div>
-      </dl>
       <div className="library-actions">
-        {report.citations.length > 0 && (checking
-          ? <button type="button" className="button secondary compact" disabled={quick!.stopping} onClick={() => void data.quickCheck(true)}><Icon name="stop" size={14}/>{quick!.stopping ? t('Stopping…') : t('Stop checking')}</button>
-          : <button type="button" className="button primary compact" disabled={!totals.unchecked} onClick={() => void data.quickCheck()}><Icon name="checklist" size={14}/>{t('Check citations')}</button>)}
-        {report.citations.length > 0 && <button type="button" className="button ghost compact" onClick={() => checkCitations()}>{t('Ask an agent…')}</button>}
         <button type="button" className="button secondary compact" onClick={() => pick()}><Icon name="plus" size={14}/>{t('Add PDFs…')}</button>
         {!busy && lookAgain && online() && <button type="button" className="button ghost compact" onClick={data.lookAgain}><Icon name="refresh" size={14}/>{t('Look again')}</button>}
-        <span className="library-progress-text" role="status">{busy || adding ? <><span className="spinner"/>{adding ? tn(adding, 'Adding {n} PDF…', 'Adding {n} PDFs…') : checking ? t('Checking citations: {done} of {total}', { done: quick!.done, total: quick!.total }) : t('Finding PDFs…')}</> : null}</span>
+        {(busy && !checking) || adding ? <span className="library-progress-text" role="status"><span className="spinner"/>{adding ? tn(adding, 'Adding {n} PDF…', 'Adding {n} PDFs…') : t('Finding PDFs…')}</span> : null}
       </div>
-      {report.citations.length > 0 && <label className="library-auto">
-        <input type="checkbox" role="switch" className="switch" checked={Boolean(report.autoCheck)} onChange={event => void data.autoCheck(event.target.checked)}/>
-        <span>{t('Check new citations automatically')}</span>
-        {quick?.model && <span className="library-auto-model">{quick.model}</span>}
-      </label>}
+      {(report.citations.length > 0 || suggestions.length > 0) && <section className="library-checks" aria-labelledby={`${progressId}-checks`}>
+        <div className="library-checks-summary">
+          <h3 id={`${progressId}-checks`}>{t('Citations')}</h3>
+          <dl className="library-tally">
+            {VERDICTS.map(verdict => <div key={verdict} data-verdict={verdict}><dt><i aria-hidden="true"/><span>{verdictName(verdict)}</span></dt><dd>{totals[verdict]}</dd></div>)}
+            <div data-verdict="suggested"><dt><i aria-hidden="true"/><span>{t('Could cite')}</span></dt><dd>{suggestions.length}</dd></div>
+            <div data-verdict="none"><dt><i aria-hidden="true"/><span>{t('To check')}</span></dt><dd>{totals.unchecked}</dd></div>
+          </dl>
+          <EvidenceBar tally={totals}/>
+          {checking && <p className="library-checking" role="status"><span className="spinner"/>{quick!.model ? t('Checking with {model}: {done} of {total}', { model: quick!.model, done: quick!.done, total: quick!.total }) : t('Checking citations: {done} of {total}', { done: quick!.done, total: quick!.total })}</p>}
+        </div>
+        <div className="library-checks-actions">
+          {checking
+            ? <button type="button" className="button secondary compact" disabled={quick!.stopping} onClick={() => void data.quickCheck(true)}><Icon name="stop" size={14}/>{quick!.stopping ? t('Stopping…') : t('Stop checking')}</button>
+            : <button type="button" className="button primary compact" onClick={() => void data.quickCheck()}><Icon name="checklist" size={14}/>{t('Check citations')}</button>}
+          {report.citations.length > 0 && <button type="button" className="button ghost compact" onClick={() => checkCitations()}>{t('Ask an agent…')}</button>}
+          <label className="library-auto">
+            <input type="checkbox" role="switch" className="switch" checked={Boolean(report.autoCheck)} onChange={event => void data.autoCheck(event.target.checked)}/>
+            <span>{t('Check automatically')}</span>
+          </label>
+        </div>
+      </section>}
       {quick && !quick.running && quick.error && <p className="inline-error" role="alert">{quick.error}</p>}
       {quick && !quick.running && !quick.error && quick.failed > 0 && <p className="library-note" role="status">{tn(quick.failed, '{n} citation could not be checked quickly. Ask an agent to check it.', '{n} citations could not be checked quickly. Ask an agent to check them.')}</p>}
       {!online() && <p className="library-note">{t('Online lookups are off in Settings: only PDFs from Zotero and the ones you add are used.')}</p>}
@@ -420,20 +443,22 @@ export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onF
         </div>
         {found.query && (found.matches.length > 0 || found.loading) && <section className="library-found" aria-label={t('In the PDFs')}>
           <h3>{t('In the PDFs')}<span className="count">{found.matches.length}{found.next ? '+' : ''}</span>{found.loading && <span className="spinner"/>}</h3>
-          <ul className="library-snippets">{found.matches.map((match, index) => {
-            const entry = report.entries.find(item => item.id === match.entry), first = match.marks[0];
+          <div className="library-snippets">{[...new Set(found.matches.map(match => match.entry))].map(id => {
+            const entry = report.entries.find(item => item.id === id);
             if (!entry) return null;
-            const passage = { page: first.page - 1, marks: match.marks.filter(mark => mark.page === first.page).map(mark => mark.rect) };
-            return <li key={`${match.hash}:${index}`}>
-              <button type="button" className="library-snippet" data-opener={`snippet:${index}`} onClick={() => read(entry, match.hash, passage, `snippet:${index}`)}>
-                <Suspense fallback={null}><PdfThumbnail url={`/api/projects/${projectId}/library/pdfs/${match.hash}`} width={56} page={first.page} marks={passage.marks} lazy/></Suspense>
-                <span className="library-snippet-text">
-                  <span className="library-snippet-head"><span>{byline(entry) || entry.key}</span><span>{t('p. {page}', { page: match.page })}</span></span>
+            const passages = found.matches.map((match, index) => ({ match, index })).filter(({ match }) => match.entry === id);
+            return <section key={id} className="library-snippet-work" aria-label={byline(entry) || entry.key}>
+              <h4><span>{byline(entry) || entry.key}</span><span className="library-snippet-title">{readable(value(entry, 'title'))}</span><span className="count">{passages.length}</span></h4>
+              <ul>{passages.map(({ match, index }) => {
+                const first = match.marks[0], passage = { page: first.page - 1, marks: match.marks.filter(mark => mark.page === first.page).map(mark => mark.rect) };
+                return <li key={index}><button type="button" className="library-snippet" data-opener={`snippet:${index}`} onClick={() => read(entry, match.hash, passage, `snippet:${index}`)}>
+                  <Suspense fallback={null}><PdfThumbnail url={`/api/projects/${projectId}/library/pdfs/${match.hash}`} width={52} page={first.page} marks={passage.marks} lazy/></Suspense>
                   <span className="library-snippet-quote"><Highlighted text={match.text} query={found.query}/></span>
-                </span>
-              </button>
-            </li>;
-          })}</ul>
+                  <span className="library-snippet-page">{t('p. {page}', { page: match.page })}</span>
+                </button></li>;
+              })}</ul>
+            </section>;
+          })}</div>
           {found.next && !found.loading && <button type="button" className="button ghost compact" onClick={() => void findText(found.query, found.next!)}>{t('Show more')}</button>}
         </section>}
         <div className="library-filter" role="tablist" aria-label={t('Show')}>
@@ -441,7 +466,7 @@ export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onF
         </div>
         <div role="tabpanel" aria-labelledby={`${progressId}-${filter}`} className="library-list-scroll">
           {shown.length ? <ul ref={list} className="library-list" role="list">{shown.map(row)}</ul>
-            : <p className="library-empty"><Icon name="check" size={15}/>{search ? t('No work matches.') : filter === 'missing' ? t('Every cited work has a PDF.') : filter === 'flagged' ? t('No citation is flagged.') : filter === 'problems' ? t('No problems found.') : t('No works yet.')}</p>}
+            : <p className="library-empty"><Icon name="check" size={15}/>{search ? t('No work matches.') : filter === 'missing' ? t('Every cited work has a PDF.') : filter === 'flagged' ? t('No citation is flagged.') : filter === 'uncited' ? t('No uncited sentence matches a work in the library.') : filter === 'problems' ? t('No problems found.') : t('No works yet.')}</p>}
         </div>
         {filter === 'missing' && unfound.length > 0 && <div className="library-fix">
           <button type="button" className="button primary compact" onClick={() => findPdfs()}><Icon name="search" size={14}/>{tn(unfound.length, 'Ask an agent to find {n} PDF', 'Ask an agent to find {n} PDFs', { n: unfound.length })}</button>
@@ -456,6 +481,7 @@ export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onF
         {narrow && <button type="button" className="button ghost compact library-back" onClick={() => { opener.current = selected ? 'row:' + selected.id : null; setDetail(false); }}><Icon name="chevronLeft" size={14}/>{t('All works')}</button>}
         {!selected ? <p className="library-empty">{t('Choose a work to see its PDF and the sentences that cite it.')}</p>
           : selected.entry ? <WorkDetail key={selected.entry.id} projectId={projectId} entry={selected.entry} state={entries[selected.entry.id]} report={report} sentences={citing.get(selected.entry.key) ?? []} item={all.find(item => item.entry?.id === selected.entry!.id)}
+            suggested={suggestions.filter(item => item.key === selected.entry!.key)} onCite={suggestion => onInvestigate(citeRequest(suggestion))} onDismissSuggestion={id => void data.dismissSuggestion(id)}
             onRead={read} onAdd={() => pick(selected.entry!.id)} onRemove={() => void data.remove(selected.entry!.id)} onConfirm={on => void data.confirm(selected.entry!.id, on)}
             onForget={(id, key) => void data.forget(id, key)} onCheck={() => checkCitations(selected.entry!.key)} onFind={() => findPdfs(selected.entry!)}/>
           : <div className="library-work"><h2 className="library-work-title">{selected.item!.label}</h2>{selected.item!.problems.map((problem, i) => <p key={i} className="library-problem">{problem}</p>)}</div>}
@@ -466,8 +492,9 @@ export function LibraryPanel({ projectId, data, onInvestigate, place, focus, onF
 
 // The selected work: its first page, what it is, where its PDF came from,
 // and each sentence of the paper citing it with what the work says.
-function WorkDetail({ projectId, entry, state, report, sentences, item, onRead, onAdd, onRemove, onConfirm, onForget, onCheck, onFind }: {
+function WorkDetail({ projectId, entry, state, report, sentences, item, suggested, onCite, onDismissSuggestion, onRead, onAdd, onRemove, onConfirm, onForget, onCheck, onFind }: {
   projectId: string; entry: BibliographyEntry; state?: LibraryEntry; report: LibraryReport; sentences: CitingSentence[]; item?: Item;
+  suggested: CitationSuggestion[]; onCite: (suggestion: CitationSuggestion) => void; onDismissSuggestion: (id: string) => void;
   onRead: (entry: BibliographyEntry, hash: string, passage?: PdfPassage, from?: string) => void; onAdd: () => void; onRemove: () => void; onConfirm: (on: boolean) => void;
   onForget: (id: string, key: string) => void; onCheck: () => void; onFind: () => void;
 }) {
@@ -502,6 +529,29 @@ function WorkDetail({ projectId, entry, state, report, sentences, item, onRead, 
         </div>
       </div>
     </div>
+    {suggested.length > 0 && <section className="library-claims" aria-labelledby={`suggested-${entry.id}`}>
+      <h3 id={`suggested-${entry.id}`}>{t('Could be cited for')}<span className="count">{suggested.length}</span></h3>
+      <ol className="library-claim-list">{suggested.map(suggestion => <li key={suggestion.id} className="library-claim" data-verdict="suggested">
+        <div className="library-claim-head">
+          <span className="library-claim-where">{suggestion.section && <span>{suggestion.section}</span>}<code>{suggestion.file}:{suggestion.line}</code></span>
+          <VerdictLabel verdict="suggested"/>
+        </div>
+        <p className="library-claim-text">{suggestion.sentence}</p>
+        {suggestion.note && <p className="library-claim-note">{suggestion.note}</p>}
+        {suggestion.evidence.map((evidence, i) => {
+          const first = evidence.marks[0], from = `suggestion:${suggestion.id}:${i}`;
+          return <button key={i} type="button" className="library-evidence" data-opener={from} disabled={!state?.pdf}
+            onClick={() => state?.pdf && onRead(entry, state.pdf.hash, first ? { page: first.page - 1, marks: evidence.marks.filter(mark => mark.page === first.page).map(mark => mark.rect) } : undefined, from)}>
+            <Icon name="quote" size={13}/><q>{evidence.quote}</q><span className="library-evidence-page">{t('p. {page}', { page: evidence.page })}</span>
+          </button>;
+        })}
+        <p className="library-claim-by">{suggestion.by ? t('Quick check by {model}', { model: suggestion.by }) : t('Checked by an agent')}</p>
+        <div className="library-claim-actions">
+          <button type="button" className="button secondary compact" onClick={() => onCite(suggestion)}>{t('Ask an agent to cite it')}</button>
+          <button type="button" className="button ghost compact" onClick={() => onDismissSuggestion(suggestion.id)}>{t('Dismiss')}</button>
+        </div>
+      </li>)}</ol>
+    </section>}
     <section className="library-claims" aria-labelledby={`claims-${entry.id}`}>
       <h3 id={`claims-${entry.id}`}>{t('Cited in your paper')}<span className="count">{sentences.length}</span></h3>
       {!sentences.length ? <p className="library-empty">{report.all_cited ? t('Listed with \\nocite{*}; no sentence cites it.') : t('Not cited in the paper.')}</p>
@@ -546,7 +596,7 @@ function WorkDetail({ projectId, entry, state, report, sentences, item, onRead, 
 }
 
 // A cited work's PDF, read in place of the library, at a passage when one is given.
-function LibraryReader({ projectId, entry, hash, passage, onClose }: { projectId: string; entry: BibliographyEntry; hash: string; passage?: PdfPassage; onClose: () => void }) {
+function LibraryReader({ projectId, entry, hash, passage, uses, onShow, onClose }: { projectId: string; entry: BibliographyEntry; hash: string; passage?: PdfPassage; uses: SourceUse[]; onShow?: (use: SourceUse) => void; onClose: () => void }) {
   const [outline, setOutline] = useState<OutlineItem[]>([]), [section, setSection] = useState(-1);
   const nothing = () => {};
   // The back button appears with the lazily loaded reader; it takes focus then.
@@ -563,6 +613,7 @@ function LibraryReader({ projectId, entry, hash, passage, onClose }: { projectId
     <Suspense fallback={<p className="library-empty" role="status">{t('Opening the PDF…')}</p>}>
       <PdfView ref={reader} readOnly place={'pdf:library:' + hash} url={`/api/projects/${projectId}/library/pdfs/${hash}`} notes={[]} active="" region={false} setRegion={nothing} onCreate={async () => {}} onSelect={nothing}
         outline={outline} section={section} onOutline={setOutline} onSection={setSection} passage={passage}
+        margin={uses.length ? page => <SourceEvidence uses={uses.filter(use => use.page === page)} onShow={onShow}/> : undefined}
         lead={<div className="library-reader-lead"><button ref={back} type="button" className="icon-button" aria-label={t('Back to the library')} title={t('Back to the library')} onClick={onClose}><Icon name="arrowLeft" size={16}/></button><code>{entry.key}</code><span>{readable(value(entry, 'title'))}</span></div>}/>
     </Suspense>
   </section>;

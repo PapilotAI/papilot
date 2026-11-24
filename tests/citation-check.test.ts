@@ -39,7 +39,7 @@ test('passages for a sentence are the windows sharing its rarer terms, with the 
 
 test('model replies are read leniently and malformed ones give no results', () => {
   assert.deepEqual(parseResults('Sure:\n{"results":[{"id":"a|k","verdict":"supported","note":"Yes.","evidence":[{"start":"p1-l1","end":"p1-l2"},{"start":3}]}]}'),
-    [{ id: 'a|k', verdict: 'supported', note: 'Yes.', evidence: [{ start: 'p1-l1', end: 'p1-l2' }] }]);
+    [{ id: 'a|k', key: null, verdict: 'supported', note: 'Yes.', evidence: [{ start: 'p1-l1', end: 'p1-l2' }] }]);
   assert.deepEqual(parseResults('no json here'), []);
   assert.deepEqual(parseResults('{"results": "nope"}'), []);
 });
@@ -141,4 +141,10 @@ test('a quick check never replaces a finding recorded while it ran, and Stop int
     while (stopping.state(dir)!.running) await new Promise(resolve => setTimeout(resolve, 5));
     assert.equal(stopping.state(dir)!.error, null, 'stopping is not an error');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('passages reach every page, also when pages are shorter than a passage', () => {
+  const short: ReviewSnapshot = { key: 'short', lines: [line(0, 1, 'Linear types can change the world!'), line(1, 1, 'A linear value is used exactly once.'), line(2, 1, 'Unrelated closing remarks.')] };
+  const ids = passagesFor(short, 'A linear value is used exactly once [k].').flatMap(passage => passage.lines.map(item => item.id));
+  assert.ok(ids.includes('p2-l1'), 'the second page\'s only line is a passage');
 });

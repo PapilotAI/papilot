@@ -5,6 +5,7 @@ import { DATA, ENGINE } from './paths.ts';
 import { stateDir } from './state.ts';
 import { Library, type LibraryInput } from './library.ts';
 import { ReviewSnapshots } from './review-snapshot.ts';
+import { CitationSuggestions, sentenceId } from './citation-support.ts';
 import { CitationChecks, citingReport, recordCitation, type CitationRecord } from './citations.ts';
 import type { BibliographyReport, CitingSentence, LibraryReport, ReferenceCheck } from '../shared.ts';
 
@@ -14,11 +15,13 @@ import type { BibliographyReport, CitingSentence, LibraryReport, ReferenceCheck 
 // and the checking; this is where Papilot asks it for a whole paper.
 
 type Input = { id: string; type: string; fields: Record<string, string> };
+export interface ProseSentence { file: string; line: number; section: string | null; sentence: string }
 interface Checker { lookup(inputs: Input[], start?: boolean, retry?: boolean): { checks: Record<string, ReferenceCheck>; pending: number } }
 interface Confirmations { of(inputs: Input[]): Record<string, number>; set(input: Input, on: boolean): void }
 interface Engine {
   bibliographyReport(doc: { read(file: string): string | null; main: string; outline: unknown[] }): Omit<BibliographyReport, 'checks' | 'pending' | 'confirmed'>;
   citingSentences(doc: { read(file: string): string | null; main: string; outline: unknown[] }): Omit<CitingSentence, 'id' | 'findings'>[];
+  uncitedSentences(doc: { read(file: string): string | null; main: string; outline: unknown[] }): ProseSentence[];
   buildOutline(read: (file: string) => string | null, main: string): { nodes: unknown[] };
   loadProject(root: string): { main: string };
   checkInputs(references: unknown): Input[];
@@ -59,6 +62,10 @@ export async function confirmations(root: string) {
   const { Confirmations } = await engine();
   return new Confirmations(path.join(await stateDir(await gitDir(root)), 'references-confirmed.json'));
 }
+/** What the quick model suggested citing for sentences that cite nothing. */
+export async function citationSuggestions(root: string) {
+  return new CitationSuggestions(path.join(await stateDir(await gitDir(root)), 'citation-suggestions.json'));
+}
 /** What agents found of the paper's citations, beside its confirmations. */
 export async function citationChecks(root: string) {
   return new CitationChecks(path.join(await stateDir(await gitDir(root)), 'citation-checks.json'));
@@ -77,7 +84,7 @@ async function report(root: string) {
   const mods = await engine(), read = reader(root), { main } = mods.loadProject(root);
   const doc = { read, main, outline: mods.buildOutline(read, main).nodes };
   const result = mods.bibliographyReport(doc);
-  return { result, inputs: mods.entryInputs(result.entries), sentences: mods.citingSentences(doc) };
+  return { result, inputs: mods.entryInputs(result.entries), sentences: mods.citingSentences(doc), uncited: mods.uncitedSentences(doc) };
 }
 
 export async function confirmEntry(root: string, id: string, on: boolean) {
@@ -104,18 +111,18 @@ export interface LibraryOptions { online: boolean; zotero: boolean; retry?: bool
 /** The paper's entries with the online checks already made, which say
  * which work an entry without an identifier is. */
 export async function libraryInputs(root: string, online: boolean, retry = false) {
-  const { result, inputs, sentences } = await report(root);
+  const { result, inputs, sentences, uncited } = await report(root);
   const looked = (await checker()).lookup(inputs, online, retry);
   const keys = new Map(result.entries.map(entry => [entry.id, entry.key]));
-  return { result, inputs, looked, sentences, entries: inputs.map(input => ({ ...input, key: keys.get(input.id) ?? '', check: looked.checks[input.id] })) as LibraryInput[] };
+  return { result, inputs, looked, sentences, uncited, entries: inputs.map(input => ({ ...input, key: keys.get(input.id) ?? '', check: looked.checks[input.id] })) as LibraryInput[] };
 }
 
 /** The paper's citing sentences with what agents found of each work they
  * cite, judged against the PDF the library has of it now. */
 export async function citations(root: string, store = library()) {
-  const { sentences, entries } = await libraryInputs(root, false);
+  const { sentences, entries, uncited } = await libraryInputs(root, false);
   const pdfOf = (key: string) => { const input = entries.find(entry => entry.key === key); return (input && store.pdfOf(input)?.hash) ?? null; };
-  return { sentences: citingReport(sentences, (await citationChecks(root)).all(), pdfOf), entries };
+  return { sentences: citingReport(sentences, (await citationChecks(root)).all(), pdfOf), entries, uncited };
 }
 /** Forget what was found for a work a sentence cites, for the author who
  * judges it otherwise; returns the PDF it was found on. */
@@ -136,8 +143,14 @@ export async function recordFinding(root: string, record: CitationRecord, store 
 /** The bibliography with every entry's PDF, starting the work that finds
  * missing PDFs. Online, entries are also checked against their records. */
 export async function libraryReport(root: string, options: LibraryOptions, store = library()): Promise<LibraryReport> {
-  const { result, inputs, looked, entries, sentences } = await libraryInputs(root, options.online, options.retry);
+  const { result, inputs, looked, entries, sentences, uncited } = await libraryInputs(root, options.online, options.retry);
   const found = store.status(entries, options);
   const pdfOf = (key: string) => { const entry = result.entries.find(item => item.key === key); return (entry && found.entries[entry.id]?.pdf?.hash) ?? null; };
-  return { ...result, ...looked, confirmed: (await confirmations(root)).of(inputs), library: found, citations: citingReport(sentences, (await citationChecks(root)).all(), pdfOf) };
+  // A suggestion stands while its sentence is in the paper, uncited, and its work keeps the same PDF.
+  const stored = (await citationSuggestions(root)).all();
+  const suggestions = uncited.flatMap(sentence => {
+    const id = sentenceId(sentence.file, sentence.sentence), record = stored[id];
+    return record?.suggestion && !record.dismissed && pdfOf(record.suggestion.key) === record.suggestion.pdf ? [{ id, ...sentence, ...record.suggestion }] : [];
+  });
+  return { ...result, ...looked, confirmed: (await confirmations(root)).of(inputs), library: found, citations: citingReport(sentences, (await citationChecks(root)).all(), pdfOf), suggestions };
 }

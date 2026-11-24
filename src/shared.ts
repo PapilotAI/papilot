@@ -530,7 +530,12 @@ export interface CitationFinding { verdict: CitationVerdict; note: string; evide
 // A checked citing sentence where it prints in the paper's PDF: its lines,
 // and the findings for the works it cites, with each work's library PDF.
 export interface EvidenceMark { id: string; page: number; rects: [number, number, number, number][]; sentence: string; file: string; line: number;
-  findings: (CitationFinding & { key: string; entry: string; title: string; hash: string })[] }
+  findings: (CitationFinding & { key: string; entry: string; title: string; hash: string })[];
+  // A sentence citing nothing: the library work it could cite.
+  suggestion?: CitationSuggestion & { entry: string; title: string } }
+// A sentence that cites nothing and a library work the quick model found to
+// say what it claims, with that work's lines.
+export interface CitationSuggestion { id: string; file: string; line: number; section: string | null; sentence: string; key: string; verdict: 'supported' | 'partial'; note: string; evidence: CitationEvidence[]; pdf: string; checkedAt: number; by?: string }
 // A paper's quick citation check: how far it got, the model doing it, and why it stopped early.
 export interface CitationCheckState { running: boolean; stopping?: boolean; done: number; total: number; failed: number; model: string | null; error: string | null; finishedAt: number | null }
 /** A sentence of the paper that cites works, with what was found for each. */
@@ -540,6 +545,8 @@ export interface LibraryReport extends BibliographyReport {
   citations: CitingSentence[];
   // The quick check of this paper's citations, and whether it starts by itself.
   quickCheck?: CitationCheckState | null; autoCheck?: boolean;
+  // Sentences citing nothing that a library work supports.
+  suggestions: CitationSuggestion[];
 }
 // The Zotero libraries the Library takes PDFs from. On this host: none, one
 // whose database cannot be read, or one with its counts. The account: its

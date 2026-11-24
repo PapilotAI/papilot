@@ -1,40 +1,49 @@
-/* Checked citations in the paper's PDF: a thin bar in the margin beside the
-   sentence, one segment per cited work, worst first, and a card beside it. */
-.evidence-tag{position:absolute;z-index:3;display:flex;flex-direction:column;gap:2px;width:14px;min-height:6px;padding:0 5px;border:0;background:none;cursor:pointer;pointer-events:auto}
-.evidence-tag>span{flex:1;min-height:4px;border-radius:2px;background:var(--text-3)}
-.evidence-tag>[data-verdict=supported]{background:var(--green)}
-.evidence-tag>[data-verdict=partial]{background:var(--amber)}
-.evidence-tag>[data-verdict=unsupported]{background:var(--red)}
-.evidence-tag:hover>span,.evidence-tag[aria-expanded=true]>span{box-shadow:0 0 0 1px var(--raised),0 0 0 2px currentColor}
+/* Checked citations in a PDF's margin: a thin bar beside each paragraph,
+   one segment per citation, worst first, and a raised card beside it. */
+.evidence-tag{position:absolute;z-index:3;display:flex;flex-direction:column;gap:2px;width:13px;min-height:8px;padding:0 5px;border:0;background:none;cursor:pointer;pointer-events:auto}
+.evidence-tag>span{flex:1;min-height:3px;border-radius:2px;background:var(--text-3);transition:transform .12s var(--ease)}
+.evidence-tag>[data-verdict=supported],.evidence-verdict[data-verdict=supported]{--tone:var(--green)}
+.evidence-tag>[data-verdict=partial],.evidence-verdict[data-verdict=partial]{--tone:var(--amber)}
+.evidence-tag>[data-verdict=unsupported],.evidence-verdict[data-verdict=unsupported]{--tone:var(--red)}
+.evidence-tag>[data-verdict=unclear],.evidence-verdict[data-verdict=unclear]{--tone:var(--text-3)}
+.evidence-tag>[data-verdict=suggested],.evidence-verdict[data-verdict=suggested]{--tone:var(--accent)}
+.evidence-tag>span{background:var(--tone)}
+/* A sentence that could cite a work is a suggestion, not a verdict: dashed. */
+.evidence-tag>[data-verdict=suggested]{background:repeating-linear-gradient(to bottom,var(--tone) 0 3px,transparent 3px 5px)}
+.evidence-tag:hover>span,.evidence-tag[aria-expanded=true]>span{transform:scaleX(1.6)}
 .evidence-tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:3px}
-@media(pointer:coarse){.evidence-tag{width:24px;padding:0 9px;margin-left:-5px}}
+@media(pointer:coarse){.evidence-tag{width:24px;padding:0 10px;margin-left:-6px}}
+@media(prefers-reduced-motion:reduce){.evidence-tag>span{transition:none}}
 @media(forced-colors:active){.evidence-tag>span{forced-color-adjust:none;background:CanvasText}}
 
-.evidence-card{position:absolute;z-index:6;display:grid;gap:8px;width:min(340px,92%);max-height:55%;padding:10px 12px 12px;overflow:auto;border-radius:12px;background:var(--raised);box-shadow:var(--float);pointer-events:auto;font:12px/1.45 var(--sans);color:var(--text);text-align:left;cursor:auto;user-select:text}
+/* The sentences a card is about, softly lit. */
+.evidence-sentence{position:absolute;z-index:2;border-radius:2px;background:color-mix(in srgb,var(--accent) 14%,transparent);pointer-events:none}
+
+.evidence-card{position:absolute;z-index:6;display:grid;gap:10px;width:min(360px,94%);max-height:min(60%,520px);padding:10px 12px 12px;overflow:auto;border-radius:14px;background:var(--raised);box-shadow:var(--float);pointer-events:auto;font:12px/1.5 var(--sans);color:var(--text);text-align:left;cursor:auto;user-select:text;overscroll-behavior:contain}
 .evidence-card:focus{outline:none}
 .evidence-card:focus-visible{outline:2px solid var(--accent)}
-.evidence-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;font-weight:600;color:var(--text-2)}
-.evidence-card-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
-.evidence-card-list>li{display:grid;gap:4px;padding-left:10px;box-shadow:inset 3px 0 0 var(--text-3)}
-.evidence-card-list>li[data-verdict=supported]{box-shadow:inset 3px 0 0 var(--green)}
-.evidence-card-list>li[data-verdict=partial]{box-shadow:inset 3px 0 0 var(--amber)}
-.evidence-card-list>li[data-verdict=unsupported]{box-shadow:inset 3px 0 0 var(--red)}
-.evidence-card-verdict{display:flex;align-items:center;gap:5px;margin:0}
-.evidence-card-verdict code{margin-left:auto;font-size:11px;color:var(--text-3)}
-li[data-verdict=supported] .evidence-card-verdict{color:var(--green)}
-li[data-verdict=partial] .evidence-card-verdict{color:var(--amber-text)}
-li[data-verdict=unsupported] .evidence-card-verdict{color:var(--red)}
-li[data-verdict=unclear] .evidence-card-verdict{color:var(--text-2)}
-.evidence-card-title{margin:0;font-weight:500;color:var(--text)}
-.evidence-card-note,.evidence-card-by{margin:0;color:var(--text-2)}
-.evidence-card-by{font-size:11px;color:var(--text-3)}
-.evidence-card-quote{display:flex;align-items:flex-start;gap:6px;width:100%;padding:6px 8px;border:0;border-radius:8px;background:var(--bg-subtle);font:inherit;color:var(--text-2);text-align:left;cursor:pointer}
-.evidence-card-quote:hover{background:var(--bg-muted)}
-.evidence-card-quote q{flex:1;font-style:italic}
-.evidence-card-quote span{flex-shrink:0;font-size:11px;color:var(--accent)}
-.evidence-card footer{display:flex;justify-content:flex-end}
-/* The sentence a card is about, tinted with its worst verdict. */
-.evidence-sentence{position:absolute;z-index:2;border-radius:2px;background:color-mix(in srgb,var(--text-3) 16%,transparent);pointer-events:none}
-.evidence-sentence[data-verdict=supported]{background:color-mix(in srgb,var(--green) 16%,transparent)}
-.evidence-sentence[data-verdict=partial]{background:color-mix(in srgb,var(--amber) 20%,transparent)}
-.evidence-sentence[data-verdict=unsupported]{background:color-mix(in srgb,var(--red) 16%,transparent)}
+.evidence-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.evidence-tally{display:flex;flex-wrap:wrap;gap:4px 10px;margin:0;font-size:11px;font-weight:600;color:var(--text-2)}
+.evidence-tally>span{display:inline-flex;align-items:center;gap:5px}
+.evidence-tally i{width:7px;height:7px;border-radius:50%;background:var(--text-3)}
+.evidence-tally>[data-verdict=supported] i{background:var(--green)}
+.evidence-tally>[data-verdict=partial] i{background:var(--amber)}
+.evidence-tally>[data-verdict=unsupported] i{background:var(--red)}
+.evidence-tally>[data-verdict=suggested] i{background:var(--accent)}
+.evidence-list{display:grid;gap:12px;margin:0;padding:0;list-style:none}
+.evidence-list>li{display:grid;gap:8px}
+.evidence-list>li+li{padding-top:12px;box-shadow:0 -1px 0 var(--line)}
+.evidence-sentence-text{margin:0;color:var(--text);font-size:12.5px}
+.evidence-cite{margin:0 1px;padding:0 4px;border-radius:4px;background:var(--bg-muted);font-size:11px;color:var(--text-2);white-space:nowrap}
+.evidence-row{display:grid;gap:5px;padding:8px 10px;border-radius:10px;background:var(--bg-subtle)}
+.evidence-row-head{display:flex;align-items:center;gap:8px;min-width:0;margin:0}
+.evidence-verdict{display:inline-flex;flex-shrink:0;align-items:center;gap:3px;padding:1px 7px 1px 5px;border-radius:999px;background:color-mix(in srgb,var(--tone) 14%,transparent);font-size:11px;font-weight:600;color:color-mix(in srgb,var(--tone) 80%,var(--text))}
+.evidence-work{min-width:0;overflow:hidden;font-weight:500;color:var(--text);text-overflow:ellipsis;white-space:nowrap}
+.evidence-where{margin-left:auto;font-size:11px;color:var(--text-3)}
+.evidence-note{margin:0;color:var(--text-2)}
+.evidence-quote{display:flex;align-items:flex-start;gap:8px;width:100%;padding:6px 8px;border:0;border-radius:8px;background:var(--raised);box-shadow:var(--shadow-xs);font:inherit;color:var(--text-2);text-align:left;cursor:pointer}
+.evidence-quote:hover{color:var(--text)}
+.evidence-quote q{flex:1;font-style:italic}
+.evidence-quote span{flex-shrink:0;font-size:11px;color:var(--accent)}
+.evidence-actions{display:flex;flex-wrap:wrap;gap:6px}
+.evidence-by{margin:0;font-size:11px;color:var(--text-3)}

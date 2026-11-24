@@ -204,6 +204,11 @@
     "textHash": "cb91e6f57d2c23f7dc22bcb0e84c1afc5192a6353a48d91a465d8a0f1e2e1054",
     "model": "gemini-4-argon-medium"
   },
+  "Choose a suggestion to dismiss.": {
+    "revision": "7c6a06385c54789f7237a03ad5ea502b9e349c2204fc3ab5cd43fc52a34796d5",
+    "textHash": "c3dfc628262e61d37e89db9149bf03160c553e95e3fa22ef6704eae7f72127a2",
+    "model": "gemini-4-argon-medium"
+  },
   "Choose a supported LaTeX engine.": {
     "revision": "86a0fe684f4cab28155905a73b64d702aece65f4516b26c7da7ea47103daea1a",
     "textHash": "96984afe35f79aae0d8b813a835505e9c29f9530ae24deb59383558e1e98fa87",

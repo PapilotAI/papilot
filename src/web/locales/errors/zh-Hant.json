@@ -45,6 +45,7 @@
   "Choose a model and reasoning effort.": "請選擇模型與推理強度。",
   "Choose a paper name that is a valid folder name.": "請選擇可用作資料夾名稱的論文名稱。",
   "Choose a source file.": "請選擇原始碼檔案。",
+  "Choose a suggestion to dismiss.": "請選擇要忽略的建議。",
   "Choose a supported LaTeX engine.": "請選擇支援的 LaTeX 引擎。",
   "Choose a supported agent.": "請選擇受支援的代理。",
   "Choose a supported commit message language.": "請選擇支援的提交訊息語言。",

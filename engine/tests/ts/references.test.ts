@@ -5,6 +5,7 @@ import {
   bibliographyReport,
   citations,
   citingSentences,
+  uncitedSentences,
   documentFiles,
   entryChanges,
   parseBib,
@@ -489,5 +490,25 @@ describe("The whole bibliography", () => {
   it("names .bib files that do not exist", () => {
     const report = bibliographyReport(doc({ "paper/main.tex": MAIN }));
     expect(report).toMatchObject({ bibs: ["paper/refs.bib"], absent: ["paper/refs.bib"], entries: [] });
+  });
+});
+
+describe("uncited sentences", () => {
+  it("lists the body's sentences that cite nothing, without headings, the preamble or short fragments", () => {
+    const main = String.raw`\documentclass{article}
+\title{A preamble sentence that is not part of the body at all.}
+\begin{document}
+\section{Introduction}
+Residual networks with a depth of up to 152 layers won the ILSVRC 2015 classification task.
+Deep networks are hard to train \cite{he2016}. Short one.
+Attention alone suffices for translation, as the Transformer showed\footnote{The Transformer has no recurrent layers at all.}.
+
+\bibliography{refs}
+\end{document}`;
+    expect(uncitedSentences(doc({ "paper/main.tex": main, "paper/refs.bib": BIB })).map(({ line, section, sentence }) => ({ line, section, sentence }))).toEqual([
+      { line: 5, section: "1 Introduction", sentence: "Residual networks with a depth of up to 152 layers won the ILSVRC 2015 classification task." },
+      { line: 7, section: "1 Introduction", sentence: "Attention alone suffices for translation, as the Transformer showed" },
+      { line: 7, section: "1 Introduction", sentence: "The Transformer has no recurrent layers at all." },
+    ]);
   });
 });

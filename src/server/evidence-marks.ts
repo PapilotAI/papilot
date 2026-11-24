@@ -1,6 +1,6 @@
 import type { ReviewSnapshot } from './ai-review.ts';
 import type { LibraryInput } from './library.ts';
-import type { CitingSentence, EvidenceMark } from '../shared.ts';
+import type { CitationSuggestion, CitingSentence, EvidenceMark } from '../shared.ts';
 
 // Where the checked citations print in the paper's PDF, so the reader shows
 // their verdicts beside the sentences. A sentence is found by a run of its
@@ -64,6 +64,15 @@ export function locateSentence(snapshot: ReviewSnapshot, sentence: string, text 
 }
 
 /** The marks of every sentence with a current finding that the PDF shows. */
+const titleOf = (input: LibraryInput) => (input.fields.title ?? '').replace(/[{}\\]/g, '').replace(/\s+/g, ' ').trim();
+/** The marks of sentences citing nothing that a library work could support. */
+export function suggestionMarks(snapshot: ReviewSnapshot, suggestions: CitationSuggestion[], entries: LibraryInput[], text = pdfText(snapshot)): EvidenceMark[] {
+  return suggestions.flatMap(suggestion => {
+    const input = entries.find(entry => entry.key === suggestion.key), place = input && locateSentence(snapshot, suggestion.sentence, text);
+    return input && place ? [{ id: `suggest:${suggestion.id}`, page: place.page, rects: place.rects, sentence: suggestion.sentence, file: suggestion.file, line: suggestion.line, findings: [], suggestion: { ...suggestion, entry: input.id, title: titleOf(input) } }] : [];
+  });
+}
+
 export function evidenceMarks(snapshot: ReviewSnapshot, sentences: CitingSentence[], entries: LibraryInput[], pdfOf: (input: LibraryInput) => string | null, text = pdfText(snapshot)): EvidenceMark[] {
   return sentences.flatMap(sentence => {
     const findings = sentence.keys.flatMap(key => {

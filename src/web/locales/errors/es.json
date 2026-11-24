@@ -45,6 +45,7 @@
   "Choose a model and reasoning effort.": "Elige un modelo y el esfuerzo de razonamiento.",
   "Choose a paper name that is a valid folder name.": "Elige un nombre de artículo que sea válido como nombre de carpeta.",
   "Choose a source file.": "Elige un archivo fuente.",
+  "Choose a suggestion to dismiss.": "Elige una sugerencia para descartar.",
   "Choose a supported LaTeX engine.": "Elige un motor de LaTeX compatible.",
   "Choose a supported agent.": "Elige un agente compatible.",
   "Choose a supported commit message language.": "Elige un idioma compatible para los mensajes de commit.",

@@ -850,3 +850,56 @@ test('quick citation checks run from the library routes, automatically once per 
     fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
+
+test('a quick check suggests a library work for a sentence that cites nothing, once per state of the library, and a dismissed one stays gone', async () => {
+  const root = temporary('suggest-paper'), dir = temporary('suggest-routes');
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  fs.writeFileSync(path.join(root, 'main.tex'), [
+    '\\documentclass{article}\\begin{document}\\section{Introduction}',
+    'Linear values can be updated in place \\cite{wadler}.',
+    'A linear value is used exactly once, which is why it can be updated destructively.',
+    'Our dataset was collected from three hospitals in the spring.',
+    '\\bibliography{refs}\\end{document}', ''].join('\n'));
+  fs.writeFileSync(path.join(root, 'refs.bib'), '@article{wadler, title = {Linear types can change the world!}, doi = {10.1000/open}, year = 1990}\n');
+  const store = new Store(path.join(dir, 'state.sqlite'));
+  class Agent extends EventEmitter { ready = false; async request() { return {}; } start = async () => {}; respond() {} reject() {} close() {} }
+  const review = { url: 'http://unused', token: '', get: async () => ({ cursor: 0, feedback: [] }) as any, post: async () => ({ worktree: root }) as any };
+  const workspace = new Workspace(store, new Agent() as any, async () => review, { claude: new Agent() as any, antigravity: new Agent() as any });
+  store.saveProject({ id: 'paper', path: root, name: 'Paper', createdAt: 1 });
+  const asked: string[] = [];
+  workspace.quickReply = async ({ prompt, what }) => {
+    asked.push(what);
+    const results = prompt.split('## Item ').slice(1).map(block => {
+      const id = block.split('\n')[0], line = /<(p\d+-l\d+)>/.exec(block)![1];
+      return /^Work \[/m.test(block) ? { id, key: 'wadler', verdict: 'supported', note: 'Stated.', evidence: [{ start: line, end: line }] } : { id, verdict: 'supported', note: 'Stated.', evidence: [{ start: line, end: line }] };
+    });
+    return { reply: JSON.stringify({ results }), agent: 'deepseek', model: 'DeepSeek V4.1 Flash UltraFast' };
+  };
+  const library = new Library(path.join(dir, 'library'), { snapshots, findZotero: () => null });
+  const app = await buildApp({ listener: { kind: 'local', port: 7274, publicOrigin: '', owner: '' }, store, workspace, manuscripts: new Manuscripts(), csrf: 'csrf', serialGit: gitQueue(), dist: null, version: 'test', connectReview: async () => review, library });
+  const headers = { host: '127.0.0.1:7274', origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'csrf' };
+  const report = async () => (await app.inject({ method: 'GET', url: '/api/projects/paper/library?online=0', headers })).json();
+  const settled = async () => { for (let i = 0; i < 200; i++) { const value = await report(); if (!value.quickCheck?.running) return value; await new Promise(resolve => setTimeout(resolve, 10)); } throw new Error('The check did not finish.'); };
+  try {
+    await app.inject({ method: 'POST', url: '/api/projects/paper/library/pdf', headers: { ...headers, 'content-type': 'application/octet-stream' }, payload: pdf('Linear types can change the world!', 'A linear value is used exactly once, so it can be updated in place.') });
+    for (let i = 0; i < 200 && (await report()).library.entries['refs.bib#wadler'].pdf?.text !== 'ready'; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    await app.inject({ method: 'POST', url: '/api/projects/paper/citations/quick-check?online=0', headers, payload: {} });
+    let value = await settled();
+    assert.deepEqual(asked, ['check citations', 'find sources for uncited sentences'], 'the hospital sentence shares too few words with any work to ask about');
+    assert.equal(value.suggestions.length, 1);
+    const [suggestion] = value.suggestions;
+    assert.deepEqual([suggestion.key, suggestion.verdict, suggestion.by, suggestion.line], ['wadler', 'supported', 'DeepSeek V4.1 Flash UltraFast', 3]);
+    assert.match(suggestion.sentence, /^A linear value is used exactly once/);
+    assert.match(suggestion.evidence[0].quote, /used exactly once/);
+    // Nothing changed in the library: the sentence is not asked about again.
+    await app.inject({ method: 'POST', url: '/api/projects/paper/citations/quick-check?online=0', headers, payload: {} });
+    await settled();
+    assert.equal(asked.length, 2);
+    const dismissed = await app.inject({ method: 'POST', url: '/api/projects/paper/citations/suggestions/dismiss?online=0', headers, payload: { id: suggestion.id } });
+    assert.deepEqual(dismissed.json().suggestions, []);
+    assert.deepEqual((await report()).suggestions, []);
+  } finally {
+    await app.close(); workspace.close(); store.close(); library.stop();
+    fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});

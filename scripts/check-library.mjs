@@ -120,7 +120,8 @@ try {
   assert.equal(await ring.getAttribute('value'), '1');
   assert.equal(await ring.getAttribute('aria-valuetext'), '1 of 2 works have a PDF');
   // The citations checked so far: one supported, and knuth's second citation to check.
-  assert.deepEqual(await page.locator('.library-tally dd').allTextContents(), ['1', '0', '0', '0', '1']);
+  // Supported, partly, not supported, cannot tell, could cite, to check.
+  assert.deepEqual(await page.locator('.library-tally dd').allTextContents(), ['1', '0', '0', '0', '0', '1']);
   // The works without a PDF come first, with why each has none.
   assert.equal(await page.getByRole('tab', { selected: true }).textContent(), 'Without PDF1');
   await panel.getByText('Not open access', { exact: true }).first().waitFor();
@@ -184,7 +185,7 @@ try {
   // Check citations runs the quick model in place, with its progress, and
   // the finding it records names that model.
   await page.getByRole('button', { name: 'Check citations', exact: true }).click();
-  await panel.getByText('Checking citations: 0 of 1', { exact: true }).waitFor();
+  await panel.getByText('Checking with DeepSeek V4.1 Flash UltraFast: 0 of 1', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Stop checking', exact: true }).waitFor();
   assert.deepEqual(quick, [{}]);
   await page.screenshot({ path: 'test-results/library-quick-checking.png', animations: 'disabled' });
@@ -195,7 +196,7 @@ try {
   assert.equal(await claims.nth(0).locator('.library-claim-by').textContent(), 'Checked by an agent');
   // Red to green, then wadler's citation, whose PDF was just added, still to check.
   assert.deepEqual(await page.locator('.library-bar > span').evaluateAll(spans => spans.map(span => span.dataset.verdict)), ['partial', 'supported', 'none']);
-  const auto = page.getByRole('switch', { name: 'Check new citations automatically' });
+  const auto = page.getByRole('switch', { name: 'Check automatically' });
   assert.equal(await auto.isChecked(), false);
   await auto.click();
   await page.waitForFunction(() => document.querySelector('.library-auto input')?.checked === true);

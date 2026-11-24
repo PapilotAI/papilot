@@ -629,6 +629,39 @@ export function citingSentences(doc: Document): CitingSentence[] {
   return found;
 }
 
+/** A sentence of the document's prose that cites nothing. */
+export interface ProseSentence { file: string; line: number; section: string | null; sentence: string }
+/** Every sentence of the document's body that cites no work, in reading
+ * order, for finding the claims a cited or library work could support.
+ * Footnotes are sentences of their own; the preamble and sentences of only a
+ * few words are left out. */
+export function uncitedSentences(doc: Document): ProseSentence[] {
+  const { files } = documentFiles((f) => doc.read(f), doc.main),
+    found: ProseSentence[] = [];
+  for (const file of files) {
+    const text = doc.read(file);
+    if (text == null) continue;
+    const source = texSource(text),
+      lineAt = lines(source),
+      commands = citeCommands(source),
+      map = layout(text, source),
+      body = file === doc.main ? Math.max(0, source.search(/\\begin\s*\{document\}/)) : 0,
+      cuts = [...new Set([body, ...map.bounds.flatMap(([at, after]) => [at, after]), ...map.ends, ...map.notes.flatMap(([open, close]) => [source.lastIndexOf("\\footnote", open), open, close]), source.length])]
+        .filter((at) => at >= body)
+        .sort((a, b) => a - b);
+    for (let index = 0; index + 1 < cuts.length; index++) {
+      const from = cuts[index], to = cuts[index + 1];
+      // Headings, environment edges and a footnote's own command are not prose.
+      if (map.bounds.some(([at, after]) => at === from && after === to) || map.notes.some(([open]) => to === open) || commands.some((c) => c.start < to && c.end > from)) continue;
+      const sentence = prose(source, from, to, [], map);
+      if (sentence.split(/\s+/).filter((word) => /\p{L}{2,}/u.test(word)).length < 6) continue;
+      const line = lineAt(from + (source.slice(from, to).length - source.slice(from, to).trimStart().length));
+      found.push({ file, line, section: sectionOf(doc, file, line), sentence });
+    }
+  }
+  return found;
+}
+
 // The document's files in reading order, from the main file through
 // \input, \include, \subfile and \import, and the .bib files it names.
 export function documentFiles(read: (file: string) => string | null, main: string) {
