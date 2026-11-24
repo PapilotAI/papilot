@@ -85,7 +85,7 @@ test('Zotero items are read with their keys, identifiers and existing PDFs, neve
     assert.deepEqual(location, { dataDir: data, base });
     const before = fs.readFileSync(path.join(data, 'zotero.sqlite'));
     const items = readZotero(location!);
-    assert.deepEqual(items.map(item => [item.key, item.citationKeys, item.doi, item.arxiv, item.title, item.year, item.pdfs.map(file => path.relative(home, file))]), [
+    assert.deepEqual(items.map(item => [item.key, item.citationKeys, item.doi, item.arxiv, item.title, item.year, item.pdfs.map(file => path.relative(home, file).split(path.sep).join('/'))]), [
       ['AAAA1111', ['zhaoMechanical2019'], '10.1145/3341716', null, 'A Mechanical Formalization of Higher-Ranked Polymorphic Type Inference', 2019, ['ZoteroData/storage/ATT00001/Zhao 2019.pdf']],
       ['BBBB2222', ['roe1973'], null, null, 'Roe v. Wade', null, []],
       ['CCCC3333', ['gradual2022'], null, '2203.01835', 'Gradual Typing for All, Again', null, ['Papers/gradual.pdf']],
