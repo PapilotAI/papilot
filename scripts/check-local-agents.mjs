@@ -95,13 +95,25 @@ try {
     await expect(page.locator('.runtime-agent-detail')).toContainText('Research model');
     const zcode = page.locator('[data-agent="zcode"]');
     await expect(zcode).toHaveAttribute('data-availability', 'unchecked');
-    await expect(zcode.locator('.diagnostic-availability')).toHaveText(language === 'en' ? 'Sign-in not checked' : '尚未检查登录状态');
+    const unchecked = language === 'en' ? 'Sign-in not checked' : '尚未检查登录状态';
+    await expect(zcode.locator('.diagnostic-availability')).toHaveText(unchecked);
+    await expect(zcode.getByRole('button')).toHaveAccessibleDescription(unchecked);
     for (const id of ['qoder', 'workbuddy']) await expect(page.locator(`[data-agent="${id}"]`)).toHaveAttribute('data-availability', 'unavailable');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
     await page.locator('.settings-content').evaluate(element => { element.scrollTop = 0; });
     await page.screenshot({ path: `test-results/local-agents-ready-${width}-${language}.png`, animations: 'disabled' });
     await zcode.locator('button').click();
     await expect(page.locator('.runtime-agent-detail .runtime-agent-account')).toHaveCount(0);
+    const contrast = await zcode.locator('.diagnostic-availability').evaluate(element => {
+      const luminance = color => color.match(/\d+/g).slice(0, 3).map(Number).reduce((sum, value, index) => {
+        const channel = value / 255;
+        return sum + [0.2126, 0.7152, 0.0722][index] * (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+      }, 0);
+      const text = luminance(getComputedStyle(element).color);
+      const surface = luminance(getComputedStyle(element.closest('button')).backgroundColor);
+      return (Math.max(text, surface) + 0.05) / (Math.min(text, surface) + 0.05);
+    });
+    assert.ok(contrast >= 4.5, `The sign-in status needs 4.5:1 contrast (${contrast.toFixed(2)}:1).`);
     await zcode.screenshot({ path: `test-results/zcode-setup-unchecked-${width}-${language}.png`, animations: 'disabled' });
     await context.close();
   }
