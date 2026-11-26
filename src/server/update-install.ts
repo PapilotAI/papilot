@@ -103,43 +103,50 @@ const INSTALL_FAILED = 'The new version could not be installed. Check the connec
 // Release assets redirect from github.com to GitHub's download hosts. Each hop
 // stays on HTTPS and on those hosts (or on the smoke test's local source).
 // With missing, a file that does not exist resolves to null.
-export async function download(url: string, fetcher: typeof fetch, limit: number, missing: true): Promise<Buffer | null>;
-export async function download(url: string, fetcher: typeof fetch, limit: number): Promise<Buffer>;
-export async function download(url: string, fetcher: typeof fetch, limit: number, missing = false): Promise<Buffer | null> {
-  const source = process.env.PAPILOT_DESKTOP_UPDATE_SOURCE ? new URL(process.env.PAPILOT_DESKTOP_UPDATE_SOURCE).origin : null;
+export async function releaseAsset(url: string, fetcher: typeof fetch, limit: number, missing = false, allowTestSource = true) {
+  const source = allowTestSource && process.env.PAPILOT_DESKTOP_UPDATE_SOURCE ? new URL(process.env.PAPILOT_DESKTOP_UPDATE_SOURCE).origin : null;
   const trusted = (address: URL) => address.origin === source
     || address.protocol === 'https:' && (address.hostname === 'github.com' || address.hostname.endsWith('.githubusercontent.com'));
   let address = new URL(url);
   for (let hop = 0; hop < 5; hop++) {
     if (!trusted(address)) throw new Error(INSTALL_FAILED);
     const response = await fetcher(address.href, { signal: AbortSignal.timeout(300000), redirect: 'manual', headers: { Accept: 'application/octet-stream', 'User-Agent': 'Papilot' } });
+    let accepted = false;
     try {
       const location = response.headers.get('location');
       if (response.status >= 300 && response.status < 400 && location) { address = new URL(location, address); continue; }
       if (missing && response.status === 404) return null;
       if (!response.ok || Number(response.headers.get('content-length') || 0) > limit) throw new Error(INSTALL_FAILED);
-      if (!response.body) return Buffer.alloc(0);
-      const reader = response.body.getReader(), chunks: Uint8Array[] = [];
-      let size = 0;
-      try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          // Count decoded bytes before retaining them: Content-Length can be
-          // missing or describe compressed data rather than the fetched body.
-          size += value.byteLength;
-          if (size > limit) throw new Error(INSTALL_FAILED);
-          chunks.push(value);
-        }
-        return Buffer.concat(chunks, size);
-      } finally { reader.releaseLock(); }
+      accepted = true;
+      return response;
     } finally {
-      // Stop oversized downloads and discard unused redirect/error bodies.
-      // A cancellation failure must not replace the original download error.
-      await response.body?.cancel().catch(() => {});
+      if (!accepted) await response.body?.cancel().catch(() => {});
     }
   }
   throw new Error(INSTALL_FAILED);
+}
+export async function download(url: string, fetcher: typeof fetch, limit: number, missing: true): Promise<Buffer | null>;
+export async function download(url: string, fetcher: typeof fetch, limit: number): Promise<Buffer>;
+export async function download(url: string, fetcher: typeof fetch, limit: number, missing = false): Promise<Buffer | null> {
+  const response = await releaseAsset(url, fetcher, limit, missing);
+  if (!response) return null;
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader(), chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // Content-Length can be missing or describe compressed bytes.
+      size += value.byteLength;
+      if (size > limit) throw new Error(INSTALL_FAILED);
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks, size);
+  } finally {
+    reader.releaseLock();
+    await response.body.cancel().catch(() => {});
+  }
 }
 export interface DesktopLayer { url: string; size: number; sha256: string }
 // As in desktop/runtime.ts: a layer runs on the installer's dependencies.

@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { devRevision, managedInstall, newerVersion, readJson, stableVersion, writeJson } from '../../bin/installation.mjs';
 import { importLoader } from '../../bin/agent-paths.mjs';
 import { download, installLayer, installRelease, loaderFor, npmCli, type DesktopLayer } from './update-install.ts';
+import { findWindowsInstaller, stageWindowsInstaller, type WindowsInstaller } from './windows-installer.ts';
 import type { UpdateChannel, UpdateStatus } from '../shared.ts';
 
 const activePhases = new Set(['installing', 'waiting', 'restarting']);
@@ -38,7 +39,7 @@ export const DESKTOP_DEV_TAG = 'desktop-dev';
 // Release downloads, not the rate-limited REST API. The smoke test serves
 // them locally.
 const desktopDownloads = () => (process.env.PAPILOT_DESKTOP_UPDATE_SOURCE ? process.env.PAPILOT_DESKTOP_UPDATE_SOURCE.replace(/\/+$/, '') + '/PapilotAI/papilot/releases' : DESKTOP_RELEASES);
-export interface DesktopRelease { version: string; downloadUrl: string; layer?: DesktopLayer }
+export interface DesktopRelease { version: string; downloadUrl: string; layer?: DesktopLayer; installer?: WindowsInstaller }
 // desktop.json (written by scripts/desktop-layer.mjs, uploaded after every
 // other asset of its release) names the version, its update layer and the
 // installer shell that layer runs on. Stable: the latest release. Dev: the
@@ -68,6 +69,7 @@ interface Options {
   bundle?: { root: string; version: string; fingerprint: string };
   latestDesktop?: (channel: UpdateChannel) => Promise<DesktopRelease | null>;
   installLayer?: (data: string, version: string, layer: DesktopLayer, bundle: { root: string; fingerprint: string }) => Promise<string>;
+  windowsInstaller?: { install?: typeof stageWindowsInstaller; restart: (installer: WindowsInstaller) => Promise<void> };
   root: string; data: string; version: string; port: number;
   busy: () => boolean; shutdown: () => void;
   latest?: (channel: UpdateChannel) => Promise<string | Record<string, any>>; install?: (data: string, version: string) => Promise<string>;
@@ -78,7 +80,7 @@ interface Options {
 export class Updates {
   private state: UpdateStatus;
   private checking: Promise<UpdateStatus> | null = null;
-  private prepared = '';
+  private prepared: { root: string } | { installer: WindowsInstaller } | null = null;
   private inFlight = 0;
   private timer?: NodeJS.Timeout;
   private closed = false;
@@ -108,14 +110,16 @@ export class Updates {
     if (saved && ['failed', 'updated', 'installing', 'waiting', 'restarting'].includes(saved.phase)) this.state = { ...this.state, ...saved, currentVersion: options.version, canUpdate: supported };
     if (saved && activePhases.has(saved.phase) && !alive(saved.pid)) this.change({ phase: 'failed', checkedAt: Date.now(), error: 'The update was interrupted. Your current installation is still available; retry the update.' });
   }
-  snapshot(): UpdateStatus {
+  snapshot(allowWindowsInstaller = true): UpdateStatus {
     const method = this.packageManager();
     if (method) return { currentVersion: this.options.version, latestVersion: null, phase: 'idle', checkedAt: null, error: null, canUpdate: false, packageManager: method };
     const saved = readJson(this.file);
     if (saved && activePhases.has(this.state.phase) && ['updated', 'failed'].includes(saved.phase)) this.state = { ...this.state, ...saved, currentVersion: this.options.version };
     const { currentVersion, latestVersion, phase, checkedAt, error, canUpdate } = this.state, desktop = this.options.desktop;
     if (desktop && !this.layers) return { currentVersion, latestVersion, phase, checkedAt, error, canUpdate: false, downloadUrl: this.downloadUrl };
-    return { currentVersion, latestVersion, phase, checkedAt, error, canUpdate, channel: this.channel, ...(this.downloadUrl ? { downloadUrl: this.downloadUrl } : {}) };
+    const downloadUrl = this.downloadUrl || (!allowWindowsInstaller && latestVersion && this.needsWindowsInstaller(latestVersion)
+      ? `${DESKTOP_RELEASES}/tag/v${latestVersion}` : undefined);
+    return { currentVersion, latestVersion, phase, checkedAt, error, canUpdate, channel: this.channel, ...(downloadUrl ? { downloadUrl } : {}) };
   }
   get restarting() { return this.snapshot().phase === 'restarting'; }
   enter() {
@@ -177,8 +181,8 @@ export class Updates {
         const newer = available(version, this.options.version, channel);
         if (this.options.desktop) {
           const release = manifest as DesktopRelease, bundled = version === this.options.bundle?.version;
-          // A layer for this shell, or the installer's own server, installs in place.
-          this.target = this.layers && newer && (release.layer || bundled) ? release : null;
+          // Keep app-only updates ahead of the full Windows installer.
+          this.target = this.layers && newer && (release.layer || bundled || this.windowsTarget(release)) ? release : null;
           this.downloadUrl = this.layers ? newer && !this.target ? release.downloadUrl : undefined : release.downloadUrl;
         }
         this.change({ latestVersion: version, checkedAt: Date.now(), error: null, phase: newer ? 'available' : 'idle' });
@@ -191,27 +195,51 @@ export class Updates {
     this.checking = checking;
     return this.checking;
   }
-  private desktopRelease(channel: UpdateChannel) {
-    return (this.options.latestDesktop || (channel => latestDesktopRelease(fetch, channel, this.options.bundle?.fingerprint)))(channel);
+  private canInstallWindows(version: string, channel = this.channel) {
+    const bundled = this.options.bundle?.version.split('-dev.')[0];
+    return Boolean(this.layers && this.options.windowsInstaller && channel === 'stable' && bundled && newerVersion(version, bundled));
+  }
+  private windowsTarget(release: DesktopRelease) {
+    return release.installer?.version === release.version && this.canInstallWindows(release.version) ? release.installer : undefined;
+  }
+  private needsWindowsInstaller(version: string) {
+    return this.target?.version === version && !this.target.layer && Boolean(this.windowsTarget(this.target));
+  }
+  private async desktopRelease(channel: UpdateChannel) {
+    if (this.options.latestDesktop) return this.options.latestDesktop(channel);
+    const release = await latestDesktopRelease(fetch, channel, this.options.bundle?.fingerprint);
+    if (release && !release.layer && this.canInstallWindows(release.version, channel)) {
+      const installer = await findWindowsInstaller(release.version);
+      if (installer) return { ...release, installer };
+    }
+    return release;
   }
   // A retry after a restart finds the release again; the check that offered it
   // happened in the previous process.
-  private async desktopLayer(version: string) {
+  private async prepareDesktop(version: string, allowWindowsInstaller: boolean) {
     const bundle = this.options.bundle!;
-    if (version === bundle.version) return bundle.root;
+    if (version === bundle.version) return { root: bundle.root };
     let release = this.target;
     if (release?.version !== version) release = await this.desktopRelease(this.channel);
-    if (release?.version !== version || !release.layer) throw new Error('Check for a newer release before updating.');
-    return (this.options.installLayer || installLayer)(this.options.data, version, release.layer, bundle);
+    if (release?.version === version) {
+      if (release.layer) return { root: await (this.options.installLayer || installLayer)(this.options.data, version, release.layer, bundle) };
+      const installer = this.windowsTarget(release);
+      if (installer && allowWindowsInstaller) {
+        await (this.options.windowsInstaller!.install || stageWindowsInstaller)(this.options.data, installer);
+        return { installer };
+      }
+    }
+    throw new Error('Check for a newer release before updating.');
   }
-  install(version: unknown) {
+  install(version: unknown, allowWindowsInstaller = true) {
     const method = this.packageManager();
     if (method) throw managedError(method);
     if (this.options.desktop && !this.layers) throw new Error('Download desktop updates from GitHub Releases.');
-    if (activePhases.has(this.state.phase)) return this.snapshot();
+    if (activePhases.has(this.state.phase)) return this.snapshot(allowWindowsInstaller);
     if (this.options.desktop && this.downloadUrl) throw new Error('Download desktop updates from GitHub Releases.');
     if (!this.state.canUpdate) throw new Error('npm is unavailable to Papilot.');
     if (!validTarget(version, this.channel) || version !== this.state.latestVersion || !available(version, this.options.version, this.channel)) throw new Error('Check for a newer release before updating.');
+    if (!allowWindowsInstaller && this.needsWindowsInstaller(version)) throw new Error('Download desktop updates from GitHub Releases.');
     fs.mkdirSync(path.dirname(this.lock), { recursive: true, mode: 0o700 });
     const previous = readJson(this.lock);
     if (previous && alive(previous.pid)) throw new Error('Another Papilot instance is already updating.');
@@ -219,19 +247,23 @@ export class Updates {
     const fd = fs.openSync(this.lock, 'wx', 0o600); fs.writeFileSync(fd, JSON.stringify({ pid: process.pid })); fs.closeSync(fd);
     this.change({ phase: 'installing', error: null });
     // Returning to the installer's own version needs no download.
-    const installing = this.options.desktop ? this.desktopLayer(version) : (this.options.install || installRelease)(this.options.data, version);
-    void installing.then(root => {
+    const installing = this.options.desktop ? this.prepareDesktop(version, allowWindowsInstaller)
+      : (this.options.install || installRelease)(this.options.data, version).then(root => ({ root }));
+    void installing.then(prepared => {
       if (this.closed) return;
-      this.prepared = root; this.change({ phase: 'waiting' });
+      this.prepared = prepared; this.change({ phase: 'waiting' });
       return this.activate();
     }).catch(error => { this.change({ phase: 'failed', error: error instanceof Error ? error.message : 'The update failed.' }); this.release(); });
-    return this.snapshot();
+    return this.snapshot(allowWindowsInstaller);
   }
   // Public for deterministic tests; the periodic tick calls this in production.
   async activate() {
     if (this.closed || this.state.phase !== 'waiting' || !this.prepared || this.inFlight || this.options.busy()) return;
     this.change({ phase: 'restarting' });
-    try { await (this.options.restart || this.restart.bind(this))(this.prepared, this.state.latestVersion!); }
+    try {
+      if ('installer' in this.prepared) await this.options.windowsInstaller!.restart(this.prepared.installer);
+      else await (this.options.restart || this.restart.bind(this))(this.prepared.root, this.state.latestVersion!);
+    }
     catch (error) { this.change({ phase: 'failed', error: error instanceof Error ? error.message : 'Could not restart Papilot.' }); this.release(); }
   }
   private release() { const lock = readJson(this.lock); if (lock?.pid === process.pid) fs.rmSync(this.lock, { force: true }); }

@@ -2,7 +2,8 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, session, shell
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { backendEnvironment, refreshWindowsPath, startBackend, startServer, switchServer, type Bundle } from './runtime.js';
+import { backendEnvironment, layerFiles, refreshWindowsPath, startBackend, startServer, switchServer, writeJson, type Bundle } from './runtime.js';
+import { prepareWindowsInstaller, registeredWindowsInstall } from './windows-update.js';
 import { desktopNotifications } from './notifications.js';
 import { chooseEnvironment } from './environment-window.js';
 import { readEnvironment, saveEnvironment, startWsl, linuxPath, type Environment } from './wsl.js';
@@ -185,6 +186,19 @@ else {
     // Only packaged apps know their shell and install update layers.
     const bundle: Bundle = { root, version: read(path.join(root, 'package.json'))?.version || '',
       fingerprint: !nix && !packageUpdates && app.isPackaged ? String(read(path.join(app.getAppPath(), 'package.json'))?.desktopFingerprint || '') : '' };
+    const updatePaths = layerFiles(data);
+    const pending = read(updatePaths.status);
+    if (process.platform === 'win32' && app.isPackaged && pending?.phase === 'restarting' &&
+        pending.windowsInstaller === true && Number.isInteger(pending.pid) && pending.pid > 0) {
+      // Prevent a manual reopen from racing NSIS while it replaces this app.
+      try {
+        process.kill(pending.pid, 0);
+        app.quit();
+        return;
+      } catch { /* The normal interrupted update handling will show the failure. */ }
+    }
+    const windowsInstaller = environment.kind === 'native' && Boolean(bundle.fingerprint)
+      && process.env.PAPILOT_INSTALL_METHOD !== 'managed' && await registeredWindowsInstall(process.execPath, data);
     // A stable localhost origin preserves renderer drafts and preferences.
     const portFile = path.join(data, environment.kind === 'wsl' ? `desktop-port-wsl-${Buffer.from(environment.distribution).toString('hex')}.json` : 'desktop-port.json');
     let port = 0;
@@ -209,6 +223,8 @@ else {
       // Node's fetch and SDK HTTP clients can use the system proxy as well.
       env.NODE_USE_ENV_PROXY = '1';
       if (bundle.fingerprint) { env.PAPILOT_DESKTOP_BUNDLE = root; env.PAPILOT_DESKTOP_FINGERPRINT = bundle.fingerprint; }
+      if (windowsInstaller) env.PAPILOT_DESKTOP_WINDOWS_INSTALLER = '1';
+      else delete env.PAPILOT_DESKTOP_WINDOWS_INSTALLER;
       return env;
     };
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
@@ -240,6 +256,27 @@ else {
     ]));
     let server = root;
     const fatal = (message: string) => { dialog.showErrorBox('Papilot stopped', `${message}\n\nLog: ${log}`); app.quit(); };
+    const activateWindowsInstaller = async (request: Record<string, unknown>, stop: () => Promise<void>) => {
+      let backendStopped = false;
+      try {
+        const status = read(updatePaths.status);
+        if (status?.phase !== 'restarting' || status.latestVersion !== request.version) throw new Error('Invalid Windows installer activation.');
+        const install = await prepareWindowsInstaller(data, request, bundle.version);
+        if (quitting) return;
+        await stop();
+        backendStopped = true;
+        if (quitting) return;
+        const pid = await install();
+        writeJson(updatePaths.status, { ...status, windowsInstaller: true, pid });
+        stopped = true;
+        app.quit();
+      } catch (error) {
+        writeJson(updatePaths.status, { ...read(updatePaths.status), phase: 'failed', checkedAt: Date.now(),
+          error: error instanceof Error ? error.message : 'Could not start the Windows installer.', pid: process.pid });
+        fs.rmSync(updatePaths.lock, { force: true });
+        if (backendStopped && !quitting) await launch(server);
+      }
+    };
     // Starts a backend and resolves once it serves requests. The window follows
     // it if an occupied port moved it to a new origin.
     const launch = async (folder: string) => {
@@ -258,9 +295,13 @@ else {
           port = Number(url.port); fs.writeFileSync(portFile, JSON.stringify(port));
           if (origin && url.origin !== origin) { origin = url.origin; void window?.loadURL(origin); }
         }
-        if (environment.kind === 'wsl' || nix || packageUpdates || backend !== next || switching || quitting || (message as { type?: unknown } | null)?.type !== 'papilot:activate') return;
+        if (environment.kind === 'wsl' || nix || packageUpdates || backend !== next || switching || quitting) return;
+        const request = message as Record<string, unknown> | null;
+        if (request?.type !== 'papilot:activate' && !(windowsInstaller && request?.type === 'papilot:windows-install')) return;
         switching = true;
-        void switchServer(data, bundle, message, server, () => next.stop(), launch).then(running => { server = running; })
+        const activating = request.type === 'papilot:windows-install' ? activateWindowsInstaller(request, () => next.stop())
+          : switchServer(data, bundle, request, server, () => next.stop(), launch).then(running => { server = running; });
+        void activating
           .catch(error => fatal(`Papilot could not restart after the update: ${error instanceof Error ? error.message : error}`))
           .finally(() => { switching = false; });
       });

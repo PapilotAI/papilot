@@ -377,10 +377,11 @@ export async function buildApp(options: AppOptions) {
     return buildActivityReport(store, { tz, projectId, range });
   });
   if (options.updates) {
-    app.get('/api/updates', () => options.updates!.snapshot());
-    app.post('/api/updates/check', () => options.updates!.check());
-    app.post('/api/updates/channel', request => options.updates!.setChannel((request.body as any)?.channel));
-    app.post('/api/updates/install', request => options.updates!.install((request.body as any)?.version));
+    const updates = options.updates, local = listener.kind === 'local';
+    app.get('/api/updates', () => updates.snapshot(local));
+    app.post('/api/updates/check', async () => { await updates.check(); return updates.snapshot(local); });
+    app.post('/api/updates/channel', async request => { await updates.setChannel((request.body as any)?.channel); return updates.snapshot(local); });
+    app.post('/api/updates/install', request => updates.install((request.body as any)?.version, local));
   }
   app.get('/api/state', async (request, reply) => {
     await options.prepareDemo?.();

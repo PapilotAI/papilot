@@ -148,7 +148,7 @@ export function idleCheck(child: ChildProcess, send: (message: { type: string; i
 export interface Bundle { root: string; version: string; fingerprint: string }
 type Json = Record<string, any> | null;
 const readJson = (file: string): Json => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
-function writeJson(file: string, value: unknown) {
+export function writeJson(file: string, value: unknown) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temporary = file + '.' + process.pid + '.tmp';
   fs.writeFileSync(temporary, JSON.stringify(value), { mode: 0o600 });

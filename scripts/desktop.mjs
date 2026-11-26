@@ -43,6 +43,7 @@ if (process.argv[2] === 'layer') {
   if (!['darwin', 'linux', 'win32'].includes(process.platform)) throw new Error('Desktop packaging currently supports macOS, Linux and Windows. Build on the target OS and CPU architecture.');
   if (process.platform === 'win32') buildWindowsIcon();
   writeApp(shellFingerprint(root));
+  if (process.platform === 'win32') fs.copyFileSync('desktop/windows-update.ps1', '.desktop/app/windows-update.ps1');
   // Absent Actions secrets arrive as empty strings. electron-builder treats an
   // empty CSC_LINK as a certificate path, so omit unset signing credentials.
   for (const key of ['CSC_LINK', 'CSC_KEY_PASSWORD', 'CSC_NAME', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID']) {
