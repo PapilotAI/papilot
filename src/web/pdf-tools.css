@@ -5,12 +5,12 @@
 
 .pdf-body{position:relative;flex:1;min-height:0;display:flex}
 .pdf-body>.pdf-scroll-host{flex:1;min-width:0}
-.pdf-rail{position:relative;z-index:20;display:flex;flex:none}
+.pdf-rail{--rail-tool-size:32px;position:relative;z-index:20;display:flex;flex:none}
 .rail-items{display:flex;min-height:0;flex-direction:column;align-items:center;gap:2px}
 .rail-tools{display:flex;min-height:0;flex-direction:column;align-items:center;gap:2px;overflow:auto;overscroll-behavior:contain;scrollbar-width:none}
 .rail-history{display:flex;flex:none;flex-direction:column;align-items:center;gap:2px}
 .rail-items[hidden]{display:none}
-.rail-tool{position:relative;display:flex;align-items:center;justify-content:center;width:32px;height:32px;flex:none;border-radius:8px;color:var(--text);transition:background .12s,color .12s}
+.rail-tool{position:relative;display:flex;align-items:center;justify-content:center;width:var(--rail-tool-size);height:var(--rail-tool-size);flex:none;border-radius:8px;color:var(--text);transition:background .12s,color .12s}
 .rail-tool>svg{width:18px;height:18px}
 .rail-tool:hover:not(:disabled){background:var(--bg-muted);color:var(--text)}
 .rail-tool[aria-pressed=true],.rail-tool.pdf-crop-toggle.active{background:var(--primary);color:#fff}
@@ -23,10 +23,10 @@
    fold away, leaving a floating expand button at the same location. */
 @media (min-width:681px){
   .pdf-rail{flex-direction:column;align-items:center;align-self:flex-start;gap:2px;width:46px;max-height:calc(100% - 16px);margin:8px 5px;padding:6px 0;border-radius:12px;background:var(--raised);box-shadow:var(--shadow-sm)}
-  .rail-items{flex:0 1 auto;width:100%}
-  /* In a short window the scrolling tool list gives up its height first, so
-     history and the anchors' buttons stay inside the bar. */
-  .rail-tools{flex:0 100 auto;width:100%}
+  .rail-items{flex:0 1 auto;width:100%;overflow:auto;overscroll-behavior:contain;scrollbar-width:none}
+  /* Keep at least one tool reachable. If history and anchors need the rest of
+     the available height, the outer list can scroll as well. */
+  .rail-tools{flex:0 100 auto;width:100%;min-height:var(--rail-tool-size);overscroll-behavior:auto}
   .rail-toggle{width:32px;height:28px;margin-bottom:9px;gap:2px;color:var(--text-2)}
   .rail-toggle::before{content:"";position:absolute;left:6px;right:6px;bottom:-5px;height:1px;background:var(--line)}
   .rail-toggle>svg{width:14px;height:14px}
