@@ -122,6 +122,11 @@ try {
   await page.screenshot({ path: `test-results/desktop-demo-${packaged ? 'packaged' : 'dev'}.png` });
   const zoomMenu = id => application.evaluate(({ Menu }, id) => Menu.getApplicationMenu().getMenuItemById(id).click(), id);
   const zoomFactor = () => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getZoomFactor());
+  const captureZoom = async name => {
+    // Capture the native content area so page zoom does not crop the screenshot.
+    const png = await application.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].capturePage()).toPNG().toString('base64'));
+    fs.writeFileSync(`test-results/desktop-${name}-${packaged ? 'packaged' : 'dev'}.png`, Buffer.from(png, 'base64'));
+  };
   const originalSize = await application.evaluate(({ BrowserWindow }) => {
     const window = BrowserWindow.getAllWindows()[0], size = window.getSize();
     window.setSize(900, 620);
@@ -131,13 +136,13 @@ try {
   await expect.poll(zoomFactor).toBeCloseTo(2);
   await expect.poll(() => page.locator('.main').evaluate(main => Math.round(main.getBoundingClientRect().width) === innerWidth)).toBe(true);
   const narrowSidebar = page.locator('.main .sidebar-toggle');
-  await expect(narrowSidebar).toBeInViewport();
+  await expect(narrowSidebar).toBeInViewport({ ratio: 1 });
   if (process.platform !== 'win32') {
     const dragRegion = page.locator('.desktop-window-drag');
     await expect.poll(async () => (await narrowSidebar.boundingBox()).x >= (await dragRegion.boundingBox()).width).toBe(true);
   }
   await page.locator('.workspace-navigation .manuscript-view-selector').getByRole('button', { name: 'PDF', exact: true }).click();
-  await expect(page.locator('.pdf-toolbar .zoom-chip')).toBeInViewport();
+  await expect(page.locator('.pdf-toolbar .zoom-chip')).toBeInViewport({ ratio: 1 });
   if (process.platform === 'win32') {
     const actions = page.locator('.workspace-nav-end');
     const windowButtons = page.locator('.desktop-window-buttons');
@@ -146,7 +151,7 @@ try {
       return x + width <= (await windowButtons.boundingBox()).x;
     }).toBe(true);
   }
-  await page.screenshot({ path: `test-results/desktop-zoom-200-${packaged ? 'packaged' : 'dev'}.png` });
+  await captureZoom('zoom-200');
   await zoomMenu('zoom-reset');
   await expect.poll(zoomFactor).toBeCloseTo(1);
   await application.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setSize(...size), originalSize);
@@ -313,7 +318,7 @@ try {
   await zoomMenu('zoom-in'); await zoomMenu('zoom-in');
   await expect.poll(zoomFactor).toBeCloseTo(1.25);
   assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('papilot:appearance'))).size, 1.25);
-  await page.screenshot({ path: `test-results/desktop-zoom-${packaged ? 'packaged' : 'dev'}.png` });
+  await captureZoom('zoom');
   await page.evaluate(() => localStorage.setItem('papilot:desktop-smoke', 'keep draft'));
   await application.close(); application = null;
   await assert.rejects(fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(5000) }), 'Quitting Electron stops its backend');
