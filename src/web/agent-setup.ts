@@ -5,7 +5,6 @@ import { t } from './i18n.ts';
 export function agentSetup(id: AgentId) {
   const cli = {
     pi: ['pi', 'PAPILOT_PI_BIN'],
-    collaboration: ['codex', 'PAPILOT_CODEX_BIN'],
     codex: ['codex', 'PAPILOT_CODEX_BIN'], claude: ['claude', 'PAPILOT_CLAUDE_BIN'],
     copilot: ['copilot', 'PAPILOT_COPILOT_BIN'], grok: ['grok', 'PAPILOT_GROK_BIN'],
     antigravity: ['agy', 'PAPILOT_AGY_BIN'], kimi: ['kimi', 'PAPILOT_KIMI_BIN'],
@@ -35,6 +34,12 @@ export function agentSetup(id: AgentId) {
     reason: t('The last connection attempt found neither ZHIPU_API_KEY nor ZAI_API_KEY in the Papilot server environment. A Claude login or a GLM website login does not supply these keys.'),
     steps: [t('Create a GLM Coding Plan or API key with Zhipu or Z.ai.'), t('Set ZHIPU_API_KEY for open.bigmodel.cn, or ZAI_API_KEY for api.z.ai, in the environment that starts Papilot. Then restart Papilot.')],
     existing: t('An environment variable set in a new terminal does not reach an already running server. Restart Papilot with the credentials; Reconnect alone cannot change its environment.'),
+  };
+  if (id === 'collaboration') return {
+    summary: t('Collaboration mode needs at least one connected agent.'),
+    reason: t('Collaboration mode routes and races annotations across the agents connected in Settings → Agents.'),
+    steps: [t('Connect and sign in to at least one agent in Settings → Agents, then enable Collaboration mode in Settings → Experiments.')],
+    existing: t('Connect two or more models to race subjective or technical annotations in parallel.'),
   };
   const [command, variable] = cli[id];
   return {

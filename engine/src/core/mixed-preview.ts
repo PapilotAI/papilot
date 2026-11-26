@@ -64,8 +64,8 @@ export async function previewMixedBlock(
   if (round.summary.sourceOnly) return { files: "", strips: [], unavailable: true };
   const unitSet = new Set(input.units),
     acceptedSet = new Set(input.accepted),
-    variants = app.review.variants(name, round.number),
-    edits = [...acceptedSet].sort().filter((id) => Object.hasOwn(variants, id)).map((id) => ({ unit: id, text: variants[id] }));
+    variantEdits = app.review.variantEdits(name, round.number),
+    edits = [...acceptedSet].sort().filter((id) => Object.hasOwn(variantEdits, id)).map((id) => variantEdits[id]);
   if (!acceptedSet.size || acceptedSet.size >= unitSet.size) {
     throw new Error("Invalid mixed preview request.");
   }

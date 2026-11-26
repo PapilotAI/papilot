@@ -334,11 +334,11 @@ function toolLabel(item: TimelineItem, root: string) {
 // One worker in Collaboration mode can be stopped; the coordinator does its work instead.
 function StopWorker({ item }: { item: TimelineItem }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
-  async function stop() { setBusy(true); setError(''); try { await api(`/tasks/${encodeURIComponent(item.taskId)}/workers/stop`, { item: item.id }); } catch (e) { setError((e as Error).message); setBusy(false); } }
-  return <div className="worker-stop"><button type="button" className="button secondary compact" disabled={busy} onClick={() => void stop()}>{t('Stop worker')}</button>{error && <p className="inline-error" role="alert">{error}</p>}</div>;
+  async function stop() { setBusy(true); setError(''); try { await api(`/tasks/${encodeURIComponent(item.taskId)}/workers/stop`, { item: item.id }); } catch (e) { setError(errorText(e instanceof Error ? e.message : String(e))); setBusy(false); } }
+  return <div className="worker-stop"><button type="button" className="button secondary compact" aria-description={item.text} disabled={busy} onClick={() => void stop()}>{t('Stop worker')}</button>{error && <p className="inline-error" role="alert">{error}</p>}</div>;
 }
 
-const TimelineEntry = memo(function TimelineEntry({ item, agent, root, pages = true, steps }: { item: TimelineItem; agent: string; root: string; pages?: boolean; steps?: TimelineItem[] }) {
+const TimelineEntry = memo(function TimelineEntry({ item, agent, root, pages = true, steps, allSteps, depth = 0 }: { item: TimelineItem; agent: string; root: string; pages?: boolean; steps?: TimelineItem[]; allSteps?: Map<string, TimelineItem[]>; depth?: number }) {
   // Memoized, so it follows a language change itself rather than through App.
   useLanguage();
   if (PlaygroundProgress && item.type === 'demo-progress') return <Suspense fallback={null}><PlaygroundProgress item={item}/></Suspense>;
@@ -348,17 +348,20 @@ const TimelineEntry = memo(function TimelineEntry({ item, agent, root, pages = t
   const label = toolLabel(item, root);
   const detail = item.type === 'files' ? null : item.detail;
   const state = toolState(item);
-  // A running worker's latest step shows on its delegation line, as with a subagent.
-  const latest = state === 'running' ? steps?.findLast(step => step.type !== 'assistant') : undefined;
+  // A running worker's latest active step shows on its delegation line, as with a subagent.
+  const latest = state === 'running'
+    ? (steps?.findLast(step => step.type !== 'assistant' && toolState(step) === 'running') ?? steps?.findLast(step => step.type !== 'assistant'))
+    : undefined;
   const note = latest ? toolLabel(latest, root) : toolNote(item);
-  const delegation = item.type === 'tool' && item.text.startsWith('workflow_delegate');
+  const isWorkflowRow = item.type === 'tool' && (item.text.startsWith('workflow_delegate') || item.text.startsWith('workflow_race') || item.text.startsWith('workflow_racer'));
+  const stoppable = item.type === 'tool' && (item.text.startsWith('workflow_delegate') || item.text.startsWith('workflow_racer'));
   const row = <details className={'tool-item ' + state} data-kind={item.type === 'tool' ? item.tool?.kind || 'tool' : item.type}><summary><Icon name={toolIcon(item)} size={14}/><span className="tool-label">{label}{note && <span className="tool-note">{note}</span>}</span>{state === 'running' ? <span className="spinner" aria-label={t('Running')}/> : state && <span className="tool-status">{item.status === 'declined' ? t('Declined') : state === 'stopped' ? t('Stopped') : t('Failed')}</span>}</summary>
     {item.type === 'files' ? <FileDiffs changes={item.changes} files={files}/> : detail && <pre>{detail}</pre>}
-    {steps?.length ? <div className="tool-group-items worker-steps">{steps.map(step => step.type === 'assistant'
+    {steps?.length && depth < 3 ? <div className="tool-group-items worker-steps">{steps.map(step => step.type === 'assistant'
       ? <div key={step.id} className="worker-message markdown"><Markdown text={step.text}/></div>
-      : <TimelineEntry key={step.id} item={step} agent={agent} root={root} pages={false}/>)}</div> : null}
-    {delegation && item.changes?.length ? <FileDiffs changes={item.changes} files={item.changes.map(change => change.path)}/> : null}
-    {delegation && state === 'running' && <StopWorker item={item}/>}
+      : <TimelineEntry key={step.id} item={step} agent={agent} root={root} pages={false} steps={allSteps?.get(step.id)} allSteps={allSteps?.get(step.id)?.some(child => allSteps.has(child.id)) ? allSteps : undefined} depth={depth + 1}/>)}</div> : null}
+    {isWorkflowRow && item.changes?.length ? <FileDiffs changes={item.changes} files={item.changes.map(change => change.path)}/> : null}
+    {stoppable && state === 'running' && <StopWorker item={item}/>}
   </details>;
   return pages && item.pages?.length ? <>{row}<PageStrip items={[item]}/></> : row;
 });
@@ -370,7 +373,11 @@ function ToolGroup({ items, agent, root, steps }: { items: TimelineItem[]; agent
   const summary = toolSummary(items, item => editedFiles(item, root));
   const running = items.some(item => toolState(item) === 'running'), failed = items.filter(item => toolState(item) === 'failed').length;
   return <><details className="tool-group"><summary><Icon name={summary.icon} size={14}/><span className="tool-group-label">{summary.text}</span>{running ? <span className="spinner" aria-label={t('Running')}/> : failed ? <span className="tool-status">{t('{n} failed', { n: failed })}</span> : null}<Icon name="chevronDown" size={13}/></summary>
-    <div className="tool-group-items">{items.map(item => <TimelineEntry key={item.id} item={item} agent={agent} root={root} pages={false} steps={steps.get(item.id)}/>)}</div>
+    <div className="tool-group-items">{items.map(item => {
+      const childSteps = steps.get(item.id);
+      const hasNested = Boolean(childSteps?.some(child => steps.has(child.id)));
+      return <TimelineEntry key={item.id} item={item} agent={agent} root={root} pages={false} steps={childSteps} allSteps={hasNested ? steps : undefined}/>;
+    })}</div>
   </details><PageStrip items={items}/></>;
 }
 
@@ -453,11 +460,13 @@ function Activity({ runtimes, relatedTasks, onOpenTask, source, onRevealQuote, t
     for (const item of items) if (nested(item)) { const list = steps.get(item.parent!); if (list) list.push(item); else steps.set(item.parent!, [item]); }
     return timelineEntries(visibleTimeline(items).filter(item => item.type !== 'reviewOutput' && !nested(item)).map(item => review && item.type === 'assistant' ? { ...item, text: aiReviewSummary(item.text) } : item))
     .flatMap((entry, index, all) => {
-      const shown = entry.length > 1 ? <ToolGroup key={entry[0].id} items={entry} agent={agent} root={root} steps={steps}/> : <TimelineEntry key={entry[0].id} item={entry[0]} agent={agent} root={root} steps={steps.get(entry[0].id)}/>;
+      const childSteps = steps.get(entry[0].id);
+      const hasNested = Boolean(childSteps?.some(child => steps.has(child.id)));
+      const shown = entry.length > 1 ? <ToolGroup key={entry[0].id} items={entry} agent={agent} root={root} steps={steps}/> : <TimelineEntry key={entry[0].id} item={entry[0]} agent={agent} root={root} steps={childSteps} allSteps={hasNested ? steps : undefined}/>;
       // A finished turn that changed files ends with where it changed the paper.
       const turn = turnOf(entry[0]), next = all[index + 1];
       if (!turn || (next && (next[0].type !== 'user' && turnOf(next[0]) === turn)) || (!next && active)) return [shown];
-      const edits = all.filter(other => turnOf(other[0]) === turn).flat().filter(item => item.type === 'files' && item.changes?.length);
+      const edits = all.filter(other => turnOf(other[0]) === turn).flat().filter(item => (item.type === 'files' || (item.type === 'tool' && (item.text.startsWith('workflow_delegate') || item.text.startsWith('workflow_race')))) && item.changes?.length);
       return edits.length ? [shown, <ChangeSummary key={turn + ':changes'} items={edits}/>] : [shown];
     });
   }, [items, review, agent, root, active]);
@@ -1758,10 +1767,17 @@ function App() {
   const modelInfo = models.find(m => m.id === chosenModel) || defaultOfferedModel(runtimes[agentChoice]);
   const pref = readModelPreferences(agentChoice, chosenModel, modelInfo) || { effort: isPlayground && agentChoice === 'codex' ? 'xhigh' : null, fast: false };
   const agent = { agent: agentChoice, model: modelInfo?.id || chosenModel, effort: taskEffort(pref.effort, modelInfo), serviceTier: agentChoice === 'codex' ? (pref.fast && modelInfo?.fastMode ? modelInfo.fastMode.serviceTier : 'default') : undefined };
-  const conversationHelper: CommitMessageChoice = commitContext ? {
-    agent: commitContext.agent || 'codex', model: commitContext.model || '', effort: commitContext.effort || '',
-    ...(commitContext.serviceTier ? { serviceTier: commitContext.serviceTier } : {}),
-  } : agent;
+  const fallbackGitAgent = offered.find(id => id !== 'collaboration') || 'codex';
+  const conversationHelper: CommitMessageChoice = commitContext
+    ? commitContext.agent === 'collaboration'
+      ? { agent: fallbackGitAgent, model: '', effort: '' }
+      : {
+          agent: commitContext.agent || fallbackGitAgent, model: commitContext.model || '', effort: commitContext.effort || '',
+          ...(commitContext.serviceTier ? { serviceTier: commitContext.serviceTier } : {}),
+        }
+    : agent.agent === 'collaboration'
+      ? { agent: fallbackGitAgent, model: '', effort: '' }
+      : agent;
   const commitWriter = commitPreference === 'conversation' ? conversationHelper : commitPreference;
   const conflictWriter = conflictPreference === 'conversation' ? conversationHelper : conflictPreference;
   const remember = (change: Partial<{ effort: string; fast: boolean }>) => {

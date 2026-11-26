@@ -110,6 +110,10 @@ export abstract class Adapter extends EventEmitter implements AgentRuntime {
   }
   respond(_id: string | number, _result: unknown) {}
   reject(_id: string | number, _message: string) {}
+  async closeThread(threadId: string) {
+    this.threads.delete(threadId);
+    for (const [id, turn] of this.turns) if (turn.threadId === threadId) this.turns.delete(id);
+  }
   close() { for (const turn of this.turns.values()) if (turn.status === 'inProgress') turn.stop(); }
   protected notify(method: string, params: Record<string, unknown>) { this.emit('notification', { method, params }); }
   protected item(turn: Turn, item: Item, done = true) { this.notify(done ? 'item/completed' : 'item/started', { threadId: turn.threadId, turnId: turn.id, item }); }
@@ -385,6 +389,7 @@ export class ClaudeAgent extends Adapter {
         // A question cannot be answered in -p; Claude asks in its reply instead.
         '--disallowedTools', 'AskUserQuestion', ...(promptFile ? ['--append-system-prompt-file', promptFile] : []),
         ...(thread.model ? ['--model', thread.model] : []), ...(effort ? ['--effort', effort] : []),
+        ...(thread.ephemeral && !thread.started ? ['--no-session-persistence'] : []),
         ...(thread.started ? ['--resume', turn.threadId] : ['--session-id', turn.threadId])];
       const env = this.environment() || process.env;
       const child = this.launch(this.cli!, args, { cwd: thread.cwd, env });
@@ -423,6 +428,7 @@ export class ClaudeAgent extends Adapter {
         ...(thread.model ? { model: thread.model } : {}), ...(effort ? { effort: effort as Options['effort'] } : {}),
         // The thread ID is the Claude session ID, so a later turn resumes it.
         ...(thread.started ? { resume: turn.threadId } : { sessionId: turn.threadId }),
+        ...(thread.ephemeral ? { persistSession: false } : {}),
         systemPrompt: { type: 'preset', preset: 'claude_code', append: thread.instructions },
         settingSources: thread.readOnly ? [] : ['project'], ...this.nativePermissions(thread), ...(thread.readOnly ? { tools: [] } : {}),
         ...(allowed(thread).length ? { allowedTools: allowed(thread) } : {}),
@@ -438,7 +444,7 @@ export class ClaudeAgent extends Adapter {
           const shown = toolItem(id, name, input);
           this.emit('request', question
             ? { id, method: 'item/tool/requestUserInput', params: { threadId: turn.threadId, turnId: turn.id, questions: questions.map((q, index) => ({ id: String(index), header: q.header, question: q.question, options: q.options })) } }
-            : { id, method: shown.type === 'fileChange' ? 'item/fileChange/requestApproval' : 'item/commandExecution/requestApproval', params: { threadId: turn.threadId, turnId: turn.id, reason: title || decisionReason || `${this.name} wants to use ${name}.`, command: shown.type === 'commandExecution' ? shown.command : shown.type === 'fileChange' ? `Edit ${(shown.changes as { path: string }[])[0].path}` : shown.text } });
+            : { id, method: shown.type === 'fileChange' ? 'item/fileChange/requestApproval' : 'item/commandExecution/requestApproval', params: { threadId: turn.threadId, turnId: turn.id, reason: title || decisionReason || `${this.name} wants to use ${name}.`, command: shown.type === 'commandExecution' ? shown.command : shown.type === 'fileChange' ? `Edit ${(shown.changes as { path: string }[])[0].path}` : shown.text, ...(shown.type === 'fileChange' ? { paths: (shown.changes as { path: string }[]).map(c => c.path) } : {}) } });
         }),
       };
       const prompt = images.length ? (async function* (): AsyncGenerator<SDKUserMessage> {
@@ -709,7 +715,11 @@ export class AntigravityAgent extends Adapter {
         settings.permissions = { allow: files.map(file => `read_file(${file})`) };
       }
     } catch (error) { this.finish(turn, 'failed', error instanceof Error ? error.message : String(error)); return; }
-    if (this.isolation) settings.permissions = { allow: typeof this.isolation === 'object' ? this.isolation.files.map(file => `write_file(${file})`) : [], ask: [], deny: [...(this.isolation === 'read-only' ? ['read_file(*)', 'write_file(*)'] : []), 'command(*)', 'read_url(*)', 'execute_url(*)', 'mcp(*)'] };
+    if (this.isolation) {
+      const prevAllow = ((settings.permissions as { allow?: string[] } | undefined)?.allow) || [];
+      const isoAllow = typeof this.isolation === 'object' ? this.isolation.files.map(file => `write_file(${file})`) : [];
+      settings.permissions = { allow: [...prevAllow, ...isoAllow], ask: [], deny: [...(this.isolation === 'read-only' ? ['read_file(*)', 'write_file(*)'] : []), 'command(*)', 'read_url(*)', 'execute_url(*)', 'mcp(*)'] };
+    }
     const conversation = this.conversations[turn.threadId], entry = this.catalog.find(model => model.model === thread.model);
     const model = entry ? entry.ids[effort || entry.defaultEffort || ''] || Object.values(entry.ids)[0] : thread.model;
     // agy has no separate system prompt: the first turn carries Papilot's instructions.
@@ -724,7 +734,7 @@ export class AntigravityAgent extends Adapter {
     createInterface({ input: child.stdout! }).on('line', line => {
       let event: any;
       try { event = JSON.parse(line); } catch { if (line.trim()) stderr = (stderr + '\n' + line).slice(-4000); return; }
-      if (event.event === 'init' && event.conversation_id && !conversation) { this.conversations[turn.threadId] = event.conversation_id; this.save(); }
+      if (event.event === 'init' && event.conversation_id && !conversation && !thread.ephemeral) { this.conversations[turn.threadId] = event.conversation_id; this.save(); }
       const step = event.step_update;
       if (Number.isInteger(step?.step_index)) {
         lastStep = Math.max(lastStep, step.step_index);

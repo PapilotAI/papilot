@@ -149,11 +149,6 @@
     "textHash": "f6e42f05f702c25c46831722164cab3f1a32c785f0890088610cdcca3518ce80",
     "model": "gemini-4-argon-medium"
   },
-  "Choose Codex for an AI review. Collaboration mode edits annotations.": {
-    "revision": "ac757577ecb95d29b0dd0cf5f5702a515f5d5d528c72023dfd54ced336700f20",
-    "textHash": "0fe407f30e79835e1e3c12a5532cbfee547f63f10cde117ed7866400e3a7bd66",
-    "model": "codex"
-  },
   "Choose Remember, Dismiss or Undo.": {
     "revision": "75d05bfe77f364c6b88f585fdfb9c1f6b341743b03cab0f79919bece1effbea1",
     "textHash": "43b9141eb29522e6f5be56cefdccc1aaf461e559f5bc81f0badeef1a84225902",
@@ -234,6 +229,16 @@
     "textHash": "94bee8b899b90adcf9bb1d17617984cb41fb09cd2ae42d2de4352757f49132c2",
     "model": "gemini-4-argon-medium"
   },
+  "Choose a valid judge model.": {
+    "revision": "eba757cc827e8b8ac99087aa8ca8e32b04dea80f8af943b21bfb1e5215188f48",
+    "textHash": "7551674016419bc7abde478a7cff938c3a8c8a45cef82d21ea22d9f9182787ab",
+    "model": "gemini-4-argon-medium"
+  },
+  "Choose a valid router model.": {
+    "revision": "fee767751262de7e39620a269e5bfdc23990a6e398b1384c5fb3315f5f6006f1",
+    "textHash": "058b0a1ddc7220aacf9ff3f636e1ad9175c03722e66e8a380f75c13678164144",
+    "model": "gemini-4-argon-medium"
+  },
   "Choose a valid update channel.": {
     "revision": "fe312d529478918f23c141157a5a1f78e75575c0aadf2e4f3fe92ce4f0490fcc",
     "textHash": "1552b64901e4370a02b0bec33ff21edf27b967b1e8e9f864506698499c3f8800",
@@ -257,6 +262,11 @@
   "Choose an existing TeX main file.": {
     "revision": "fbdbeb6b04c305797908d7a672854e835930d920925f37761409870854d6f76b",
     "textHash": "0f3a0fc86de2f94b2c99be5413e9f678787de4cc2bbe1b3313473dc9bb3b074a",
+    "model": "gemini-4-argon-medium"
+  },
+  "Choose another agent for an AI review. Collaboration mode edits annotations.": {
+    "revision": "0fb327601ba24aa9fe694edec2eef36fa2089c4c491c03a77dd4964203ad73e5",
+    "textHash": "4911b8a5fd44381fe5222505e8430bd4a2f3ca572751c200e21e3d03e704c662",
     "model": "gemini-4-argon-medium"
   },
   "Choose latexmk or PhiTeX.": {
@@ -287,6 +297,11 @@
   "Choose the quick, polish or rigorous role.": {
     "revision": "aec254c9d466074ec67ca1592b5e62aa8d921de6991e4cbae1b9c5e0f8c5e466",
     "textHash": "e72611ef892980e16dc8c0e40bffe1a5a1a0f3f9e6e59ab5cf82c93bc31b1c80",
+    "model": "gemini-4-argon-medium"
+  },
+  "Choose up to four supported models for the race pool.": {
+    "revision": "e4b772fe0b80b14b4347ce606f57dc322e6152502599636954524ca7eaa19581",
+    "textHash": "5dab37e4ff72bfe2cc7275ae7726e38ca354a4793a803887a64d76aa23d44aee",
     "model": "gemini-4-argon-medium"
   },
   "Choose where to keep this preference.": {
@@ -394,6 +409,16 @@
     "textHash": "5f02632347c49ff7ebe83ddaf49a4467a445135d826bc19fb099ef410e6980ef",
     "model": "gemini-4-argon-medium"
   },
+  "Connect at least one agent in Settings → Agents to use Collaboration mode.": {
+    "revision": "8bead1fdb0727b6cbfd8681780e93147982ecf844f086bfaee6c6eb05e5a7c94",
+    "textHash": "9aaa46984c0f97630ba8432edc03b4b5949c9ee6e15427a8a8d34f5a820af5c8",
+    "model": "gemini-4-argon-medium"
+  },
+  "Connect at least one agent to use Collaboration mode.": {
+    "revision": "803eb2ae0ced5b173f66f3c463b043173a63b225a80b06cfeaed904948e2a51e",
+    "textHash": "b80e03bc7b273b0f5c2983ce4f743ae00df082f25ae7f5f3e0e2e9dc11c8c86f",
+    "model": "gemini-4-argon-medium"
+  },
   "Could not check for updates.": {
     "revision": "d7bf7cd2d61f2a975955e1cdd05f87889e7ed031a19ba43daf43285ce5c129b4",
     "textHash": "003bb40a125f727c27d3dd226e6f5c638914b2ad7702232e0de26519f8fb2e75",
@@ -454,6 +479,11 @@
     "textHash": "1c75f0faefddec6d564793667cde2d46584530243354ebde8007e9496d315e16",
     "model": "gemini-4-argon-medium"
   },
+  "Cursor session closed.": {
+    "revision": "7942afd38c52ccd23391f318dd948e187e895ab72cf001adda0983ce5985f17c",
+    "textHash": "de39309a00aa7a5887fbaa1947c9c8be927d24b3d290ba2a65e47e89593ca6be",
+    "model": "gemini-4-argon-medium"
+  },
   "Delegated edits must stay within the selected source files.": {
     "revision": "0a6c682b7a7fba06256849f5c732ef0e1e69d60485de4a9d00e3f8635d03bed1",
     "textHash": "78312d56a7afc4f0510831ad0aacdc2e31646cf5e83c3a69fb9573e6c9e4552f",
@@ -493,6 +523,11 @@
     "revision": "f0e1c396177982c9d44a63d3262991ad997d4048cdbfefdd7cd7c180a0e777ad",
     "textHash": "ebcd62f0095bbc0d3074dc584e93fc09bb7e5423e53aaa22d21abf24c5ddf709",
     "model": "manual"
+  },
+  "Empty synthesis.": {
+    "revision": "63dff4b99e77173464a3bca0be4a7d4403e95382d73c1a6a731bbe27bab24f0f",
+    "textHash": "e5f74a154dc33ce48688173dd8f03c8d5fb8dc3943eb63732dcf1eff3ef1b496",
+    "model": "gemini-4-argon-medium"
   },
   "Enable collaboration mode before selecting it.": {
     "revision": "7c05982a88aa19113023a6e0db24d8ecf1ccb7a1194d13ec862ceb47f6e9c5a6",
@@ -969,6 +1004,16 @@
     "textHash": "7c50e3b37b7a7278599c4b32301a369df115baafff45b8a39d97a2c456a2b2e4",
     "model": "gemini-4-argon-medium"
   },
+  "Patch is missing a valid replace string.": {
+    "revision": "7740513fa6acf75e96d02c442cdee99e082c0232aeea1fb5408a5808e30043c0",
+    "textHash": "4df638e29a0eca85142ab4f6123d8e1ee39f8b348d05a968407f0d5e961ccad5",
+    "model": "gemini-4-argon-medium"
+  },
+  "Patch is missing an exact find string.": {
+    "revision": "abaf163e7440540ef474830b976102caf50914e0fae7fd96681855a014947509",
+    "textHash": "1dabc3744e7158dac22c18345995b87f60819b24167d3980b899c6d95b0d7267",
+    "model": "gemini-4-argon-medium"
+  },
   "Pause Codex before building a review.": {
     "revision": "4e4995d811e06eb3d6f2dac56a542b3da7d781775a024b374fc13706f958a774",
     "textHash": "880404476a28861e16dd0e434e47b5e4e9defb87424b85ff7375a0679e4a5c31",
@@ -1144,6 +1189,11 @@
     "textHash": "66cd662867cc26f582889650776dfcc0ea2e94f2cde8cfc0fdc9ed525d8c0a9e",
     "model": "gemini-4-argon-medium"
   },
+  "Send collaboration settings to update.": {
+    "revision": "b4cce21c75f24d61fc992468ca23c53afb953256631236117e1e7947a6da4a26",
+    "textHash": "7174633c3e5023797d61455664fcdde22a16ea583ee1b25540ffd04441156fe9",
+    "model": "gemini-4-argon-medium"
+  },
   "Send enabled as true or false.": {
     "revision": "b494e45bf63b08ffef13c37e276d36455306229a6b548bf80b7628ea9be45b27",
     "textHash": "7f292ab276db9901c8f1144df4cddf08f1433f0b6a2bf782dc0a6dd4251203c6",
@@ -1152,11 +1202,6 @@
   "Send enabled or hiddenModels.": {
     "revision": "9b7e2bbaf0dd5b3ea3dd830df466146d65110c6e004fb6e38254a8698070d11a",
     "textHash": "a700447c3b437a672ac4b2171080a2e748bdf0a9390cbedcca817ff0f82ee1a1",
-    "model": "gemini-4-argon-medium"
-  },
-  "Send enabled or routes.": {
-    "revision": "a2e0ff3217c0326448099a996d75f128684423a9f871b8287343df59fa529a15",
-    "textHash": "09c5033e67fd1009f1a29b2ba775e0dee43a4e353768202046ceb3922834edb5",
     "model": "gemini-4-argon-medium"
   },
   "Send hiddenModels as a list of model IDs.": {
@@ -1227,6 +1272,16 @@
   "Stop the check before deleting it.": {
     "revision": "20a9223df660842dc538ef5069c5e64743fcfa277e6800a32d24edc6da4982bd",
     "textHash": "4e0a03ad390a5e4fac35208a578ec9d90ec120e2c723784f020e16ec464220ef",
+    "model": "gemini-4-argon-medium"
+  },
+  "Stopped by author.": {
+    "revision": "0ead72102170dabb9740b477038896fa66dc8aec78bde5434d5619a4cb247af5",
+    "textHash": "ce127accb163e7c9c3e2f5c44992a6ef6e00d9dcf3e36012a85ea63d50f28d5f",
+    "model": "gemini-4-argon-medium"
+  },
+  "Stopped.": {
+    "revision": "b21ba4efbfe79fd41485da2c034e500a66ff46bd4a968eb6b66a10d8d508b9fa",
+    "textHash": "e00bbb6d81ece33de12fba39a86d4cf9ad6fd0834de68055d53cad93fd99b413",
     "model": "gemini-4-argon-medium"
   },
   "Task not found.": {
@@ -1508,6 +1563,11 @@
     "revision": "0b36aa5e7f6e9ae7c377dd4d0414da659b3b9d8cfe373a63a84220402ab18fec",
     "textHash": "900e625fb3ceaa41e7323284acdca60ae98b24f9d36699c07fd6930c88cdb618",
     "model": "codex"
+  },
+  "The source changed while preparing delegated edits.": {
+    "revision": "90d1b3fe59981dff00d374b350657c8e312982ca75e116aa4768a176b31dc44e",
+    "textHash": "47500112e760fad341c895e6a8a4e6bb110439c7b906ab0943a43a662baa7c84",
+    "model": "gemini-4-argon-medium"
   },
   "The source download exceeds 64 MB.": {
     "revision": "51c8b0432366e88ab611b325682605d1b4364908a19cbf0d6db7aede4e047736",
@@ -2097,6 +2157,11 @@
   "Wait for this task to switch agents before sending more instructions.": {
     "revision": "e0061c71095bc944229338e5a7daa5a459cb11a1ae31d93b63ee2c97fc796bc2",
     "textHash": "4facf1dcba8bc68a044f6234d19c4c9cf5c421cec4cd97b9fdbf5131639bfb4c",
+    "model": "gemini-4-argon-medium"
+  },
+  "Worker did not return a valid JSON patch.": {
+    "revision": "f326a15c15d135334c8c420456407b682ac94e493989392915f41ca7034bd722",
+    "textHash": "673fb4bd934109ed10b76f945751ae05a06aef174f9f90c53d4ca05c8cbe9182",
     "model": "gemini-4-argon-medium"
   },
   "Write the preference as text.": {

@@ -22,6 +22,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
+- Replace Codex-only **Collaboration mode** with a universal multi-agent orchestrator that works with any connected agent and model. A fast router assigns mechanical edits directly and races subjective or technical annotation clusters across competing models in parallel, with deterministic LaTeX/citation fidelity checks and a blind rigorous judge selecting the default proposal (or synthesizing a combined one) while showing competing proposals and rigor cautions inline inside each PDF change card. Auto-configuration builds a cross-family team from your connected models, with per-role, race-pool, and advanced Router/Judge overrides in **Settings → Experiments**. See [Collaboration mode](docs/annotation-routing.md).
 - Rename **Settings → Check references online** to **Look up references online**. It now also controls PDF downloads. A new **Settings → Zotero** page shows the Zotero library Papilot found on this computer, with its data directory and how many items have a PDF and a citation key, lets you choose another data directory, and holds the **Use PDFs from Zotero** switch; turned off, PDFs from Zotero are no longer used.
 
 ### Fixed

@@ -4,7 +4,7 @@ import type { Annotation, NoteChange, NoteResult, NoteReturnReceipt, NoteReturnS
 import { readNotesInstructions } from '../notes.ts';
 import { animateSubmittedNotes } from './note-flight.ts';
 import { Icon } from './icons.tsx';
-import { errorText, t } from './i18n.ts';
+import { errorText, t, tn } from './i18n.ts';
 import { reviewDraft, useReviewDraft } from './review-draft.ts';
 import { browserStorage } from './storage.ts';
 import { NotePreviewCache } from './note-preview-cache.ts';
@@ -406,7 +406,9 @@ export function InlineNoteBar({ note }: { note: NoteResult }) {
     view.addEventListener('papilot:option-action', onAction);
     return () => view.removeEventListener('papilot:option-action', onAction);
   }, [note.key, previewingAlt]);
-  const showDetailRow = Boolean(multiple && (active?.reason || editing || (locked && previewingAlt)));
+  const hasRigorCaution = Boolean(active?.meta?.rigor === 'warn' || active?.meta?.rigor === 'fail');
+  const showDetailRow = Boolean(multiple && (active?.reason || hasRigorCaution || editing || (locked && previewingAlt)));
+  const panelId = `${tabsId}-panel`;
 
   return <div ref={container} className="papilot-inline-note note-options" data-note-key={note.key} aria-busy={applying} onClick={event => event.stopPropagation()}>
     <div className="papilot-inline-note-main">
@@ -418,17 +420,42 @@ export function InlineNoteBar({ note }: { note: NoteResult }) {
       <div className="papilot-inline-tabs note-option-tabs" role="tablist" aria-label={t('Options for this note')} aria-busy={saving || previewBusy}>
         {data.options.map((option, index) => {
           const tabName = label(option.id, option.label);
-          return <button type="button" className="papilot-inline-tab note-option-tab" role="tab" key={option.id} id={`${tabsId}-${option.id}`} data-option={option.id} aria-selected={selected === option.id} tabIndex={selected === option.id ? 0 : -1} disabled={saving || Boolean(locked) || busy} aria-label={tabName} onClick={() => choose(option.id)} onKeyDown={event => {
+          const meta = option.meta;
+          const lineTag = meta?.lineDelta ? `${meta.lineDelta > 0 ? '+' : '−'}${Math.abs(meta.lineDelta)}L` : '';
+          const lineSpoken = meta?.lineDelta
+            ? (meta.lineDelta > 0 ? tn(meta.lineDelta, '+{n} line', '+{n} lines') : tn(Math.abs(meta.lineDelta), '−{n} line', '−{n} lines'))
+            : '';
+          const accessibleLabel = [
+            tabName,
+            meta?.recommended ? t('Recommended') : '',
+            meta?.rigor === 'warn' || meta?.rigor === 'fail' ? t('Rigor caution') : '',
+            lineSpoken,
+          ].filter(Boolean).join(' · ');
+          const isSelected = selected === option.id;
+          return <button type="button" className="papilot-inline-tab note-option-tab" role="tab" key={option.id} id={`${tabsId}-${option.id}`} data-option={option.id} data-rigor={meta?.rigor || undefined} data-recommended={meta?.recommended ? 'true' : undefined} aria-selected={isSelected} aria-controls={isSelected && showDetailRow ? panelId : undefined} tabIndex={isSelected ? 0 : -1} disabled={saving || Boolean(locked) || busy} aria-label={accessibleLabel} onClick={event => {
+            choose(option.id);
+            event.currentTarget.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+          }} onKeyDown={event => {
             const offset = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
             if (!offset && event.key !== 'Home' && event.key !== 'End') return;
             event.preventDefault();
             const next = event.key === 'Home' ? 0 : event.key === 'End' ? data.options.length - 1 : (index + offset + data.options.length) % data.options.length;
-            choose(data.options[next].id); (event.currentTarget.parentElement!.children[next] as HTMLButtonElement).focus();
-          }}><span className="note-option-label">{tabName}{selected === option.id && previewBusy && <span className="papilot-inline-spinner"/>}</span></button>;
+            choose(data.options[next].id);
+            const target = event.currentTarget.parentElement!.children[next] as HTMLButtonElement;
+            target.focus();
+            target.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+          }}><span className="note-option-label">
+            {meta?.recommended && <span className="papilot-opt-star" aria-hidden="true">★</span>}
+            {tabName}
+            {(meta?.rigor === 'warn' || meta?.rigor === 'fail') && <span className="papilot-opt-warn" aria-hidden="true" title={t('Rigor caution')}>!</span>}
+            {lineTag && <span className="papilot-opt-delta" aria-hidden="true">{lineTag}</span>}
+            {isSelected && previewBusy && <span className="papilot-inline-spinner" aria-hidden="true"/>}
+          </span></button>;
         })}
       </div>
       {(saving || previewBusy) && <span className="sr-only" role="status">{saving ? t('Saving choice…') : t('Preparing this option’s PDF diff…')}</span>}
-      {showDetailRow && <div className="papilot-inline-note-detail">
+      {showDetailRow && <div id={panelId} role="tabpanel" aria-labelledby={`${tabsId}-${selected}`} className="papilot-inline-note-detail">
+        {hasRigorCaution && <span className="papilot-inline-caution">{t('Rigor caution')}</span>}
         {active?.reason && <span className="papilot-inline-reason">{active.reason}</span>}
         {editing && <div className="papilot-inline-comment">
           <textarea ref={commentInput} rows={2} aria-label={t('Comment on {label}', { label: editing.option!.label })} placeholder={t('What should change here?')} value={editing.comment} readOnly={feedback.busy} onChange={event => draft.edit(editing.id, event.target.value)} onKeyDown={event => { event.stopPropagation(); if (event.key === 'Escape') setEditor(null); }}/>

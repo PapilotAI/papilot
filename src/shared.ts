@@ -148,14 +148,23 @@ export interface NoteReturnState { returned: boolean; undoReturnAt?: number }
 export interface RemovedNoteReturn { id: string; projectId: string; createdAt: number; originalId: string }
 export interface NoteReturnReceipt extends NoteReturnState { key: string; annotation?: Annotation; removed?: RemovedNoteReturn; moved?: boolean }
 export interface NoteResult extends Partial<NoteReturnState> { key: string; itemId: string; index: number; note: NoteSummary; round: number | null; state: 'waiting' | 'unmatched' | 'matched'; changes: NoteChange[] }
-export interface NoteOption { id: string; label: string; reason?: string; previewError?: string; edits: { unit: string; text: string }[] }
+export interface NoteOptionEdit { unit: string; text: string; before?: number; after?: number }
+export interface NoteOptionMeta {
+  recommended?: boolean;
+  rigor?: 'pass' | 'warn' | 'fail';
+  lineDelta?: number;
+  consensus?: string[];
+  model?: string;
+  synthesized?: boolean;
+}
+export interface NoteOption { id: string; label: string; reason?: string; meta?: NoteOptionMeta; previewError?: string; edits: NoteOptionEdit[] }
 export const NOTE_ALTERNATIVE_RANGES = { few: [1, 2], balanced: [2, 3], many: [3, 5] } as const;
 export type NoteAlternativeRange = keyof typeof NOTE_ALTERNATIVE_RANGES;
 export const noteAlternativeRange = (value: unknown): NoteAlternativeRange => typeof value === 'string' && Object.hasOwn(NOTE_ALTERNATIVE_RANGES, value) ? value as NoteAlternativeRange : 'few';
 // The requested range is guidance. Keep useful responses outside it bounded.
 export const MAX_NOTE_ALTERNATIVES = 6;
-// Prepared by the editing agent in the same turn, before review-unit IDs exist.
-export interface PreparedNoteOptions { note: number; current: { label: string; reason: string }; options: { label: string; reason: string; edits: { file: string; find: string; replace: string }[] }[] }
+// Prepared by the editing agent or collaboration race in the same turn, before review-unit IDs exist.
+export interface PreparedNoteOptions { note: number; current: { label: string; reason: string; meta?: NoteOptionMeta }; options: { label: string; reason: string; meta?: NoteOptionMeta; edits: { file: string; find: string; replace: string }[] }[] }
 export interface NoteOptions { noteReturn?: NoteReturnState & { annotation?: Annotation; moved?: boolean }; before?: Record<string, string>; round: number; key: string; options: NoteOption[]; selected?: string; locked?: string; comparisonKey?: string }
 // request: the author's own overall request sent with notes, which the prompt otherwise only embeds.
 export interface MessageMeta { attachments?: Attachment[]; skill?: { id: string; name: string; icon?: SkillIcon }; notes?: NoteSummary[]; request?: string; groupInstructions?: GroupInstructions; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author }
@@ -170,37 +179,102 @@ export type AgentId = 'papilot' | 'pi' | 'codex' | 'claude' | 'antigravity' | 'k
 // Every agent Papilot can drive, in menu order. Only the ones found on the host are offered.
 export const AGENT_IDS: AgentId[] = ['papilot', 'pi', 'codex', 'claude', 'cursor', 'copilot', 'grok', 'antigravity', 'kimi', 'glm', 'deepseek', 'qwen', 'opencode', 'qoder', 'codebuddy', 'workbuddy', 'collaboration'];
 export const AGENT_NAMES: Record<AgentId, string> = { papilot: 'Papilot Writer', pi: 'Pi', codex: 'Codex', claude: 'Claude', cursor: 'Cursor', copilot: 'Copilot', grok: 'Grok', antigravity: 'Antigravity', kimi: 'Kimi', glm: 'GLM', deepseek: 'DeepSeek', qwen: 'Qwen', opencode: 'OpenCode', qoder: 'Qoder', codebuddy: 'CodeBuddy', workbuddy: 'WorkBuddy', collaboration: 'Collaboration mode' };
-export const usesCodex = (id: AgentId) => id === 'codex' || id === 'collaboration';
-// Collaboration mode: the coordinator sends each piece of work to the worker
-// configured for its role. A Codex worker without a model uses the task's.
+export const usesCodex = (id: AgentId) => id === 'codex';
+// Collaboration mode: a fast router assigns deterministic annotations to role
+// workers and races subjective or high-stakes clusters across models, with a
+// rigorous judge selecting the default proposal and exposing alternatives inline.
+export type CollaborationStrategy = 'balanced' | 'fast' | 'thorough';
+export const COLLABORATION_STRATEGIES: CollaborationStrategy[] = ['balanced', 'fast', 'thorough'];
+export const isCollaborationStrategy = (value: unknown): value is CollaborationStrategy => typeof value === 'string' && COLLABORATION_STRATEGIES.includes(value as CollaborationStrategy);
 export type CollaborationRole = 'quick' | 'polish' | 'rigorous';
 export const COLLABORATION_ROLES: CollaborationRole[] = ['quick', 'polish', 'rigorous'];
-export type CollaborationWorkerAgent = 'codex' | 'antigravity' | 'opencode';
-export const COLLABORATION_WORKERS: CollaborationWorkerAgent[] = ['codex', 'antigravity', 'opencode'];
-export interface CollaborationRoute { agent: CollaborationWorkerAgent; model: string | null; effort: string | null }
-export type CollaborationRoutes = Record<CollaborationRole, CollaborationRoute>;
-export interface CollaborationSettings { enabled: boolean; routes: CollaborationRoutes }
-export const DEFAULT_COLLABORATION_ROUTE: CollaborationRoute = { agent: 'codex', model: null, effort: null };
-// A route update from a client: every role, a known worker, optional strings.
+export type CollaborationSlot = 'router' | CollaborationRole | 'judge';
+export type CollaborationWorkerAgent = Exclude<AgentId, 'collaboration'>;
+export const COLLABORATION_WORKERS: CollaborationWorkerAgent[] = AGENT_IDS.filter((id): id is CollaborationWorkerAgent => id !== 'collaboration');
+export interface CollaborationRoute { agent: CollaborationWorkerAgent; model: string | null; effort: string | null; serviceTier?: string | null }
+export type CollaborationRoutes = Record<CollaborationRole, CollaborationRoute | null>;
+export interface CollaborationResolved {
+  router: CollaborationRoute | null;
+  judge: CollaborationRoute | null;
+  routes: CollaborationRoutes;
+  racers: CollaborationRoute[];
+}
+export interface CollaborationConfig {
+  router: CollaborationRoute | null;
+  judge: CollaborationRoute | null;
+  routes: CollaborationRoutes;
+  racers: CollaborationRoute[];
+}
+export interface CollaborationSettings extends CollaborationConfig {
+  enabled: boolean;
+  resolved?: CollaborationResolved;
+  readOnlyAgents?: Partial<Record<CollaborationWorkerAgent, boolean>>;
+}
+export const MAX_COLLABORATION_RACERS = 4;
+export const DEFAULT_COLLABORATION_CONFIG: CollaborationConfig = {
+  router: null,
+  judge: null,
+  routes: { quick: null, polish: null, rigorous: null },
+  racers: [],
+};
+export function validRoute(value: unknown): value is CollaborationRoute {
+  if (!value || typeof value !== 'object') return false;
+  const route = value as Record<string, unknown>;
+  const optional = (field: unknown) => field === undefined || field === null || (typeof field === 'string' && field.length <= 300 && !field.includes('\0'));
+  return typeof route.agent === 'string' && COLLABORATION_WORKERS.includes(route.agent as CollaborationWorkerAgent)
+    && optional(route.model) && optional(route.effort) && optional(route.serviceTier);
+}
+export function normalizeRoute(value: unknown): CollaborationRoute | null {
+  if (!validRoute(value)) return null;
+  const text = (field: unknown) => typeof field === 'string' && field.trim() ? field.trim() : null;
+  const model = text(value.model), effort = text(value.effort), serviceTier = text(value.serviceTier);
+  return { agent: value.agent, model, effort, ...(value.agent === 'codex' && serviceTier && serviceTier !== 'default' ? { serviceTier } : {}) };
+}
+// A route update from a client: every role may be null (auto) or a valid route.
 export function validRoutes(value: unknown): value is CollaborationRoutes {
   if (!value || typeof value !== 'object') return false;
-  const optional = (field: unknown) => field === null || typeof field === 'string';
   return COLLABORATION_ROLES.every(role => {
-    const route = (value as Record<string, any>)[role];
-    return route && COLLABORATION_WORKERS.includes(route.agent) && optional(route.model) && optional(route.effort);
+    const route = (value as Record<string, unknown>)[role];
+    return route === null || validRoute(route);
   });
 }
-// Saved routes are validated field by field; anything else uses the default.
-export function collaborationRoutes(value: unknown): CollaborationRoutes {
-  const saved = value && typeof value === 'object' ? value as Record<string, any> : {};
+export function validRacers(value: unknown): value is CollaborationRoute[] {
+  return Array.isArray(value) && value.length <= MAX_COLLABORATION_RACERS && value.every(validRoute);
+}
+// Saved routes are validated field by field; anything else falls back to auto (null).
+export function collaborationRoutes(value: unknown, legacy = false): CollaborationRoutes {
+  const saved = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   return Object.fromEntries(COLLABORATION_ROLES.map(role => {
-    const route = saved[role];
-    if (!route || !COLLABORATION_WORKERS.includes(route.agent)) return [role, DEFAULT_COLLABORATION_ROUTE];
-    const text = (field: unknown) => typeof field === 'string' && field.trim() ? field.trim() : null;
-    const model = text(route.model);
-    // Without a model, a Codex worker also uses the task's reasoning effort.
-    return [role, { agent: route.agent, model, effort: route.agent === 'codex' && !model ? null : text(route.effort) }];
+    const normalized = normalizeRoute(saved[role]);
+    // Legacy v1 stored `{ agent: 'codex', model: null, effort: null }` as its
+    // untouched default. Treat that as Auto so v1 users are not locked to Codex.
+    if (legacy && normalized && normalized.agent === 'codex' && !normalized.model && !normalized.effort && !normalized.serviceTier) return [role, null];
+    return [role, normalized];
   })) as CollaborationRoutes;
+}
+export function collaborationConfig(value: unknown, legacyRoutes?: unknown): CollaborationConfig {
+  if (value && typeof value === 'object') {
+    const saved = value as Record<string, unknown>;
+    const seen = new Set<string>();
+    const racers = Array.isArray(saved.racers) ? saved.racers.flatMap(entry => {
+      const normalized = normalizeRoute(entry);
+      if (!normalized) return [];
+      const key = `${normalized.agent}\0${normalized.model || ''}\0${normalized.effort || ''}\0${normalized.serviceTier || ''}`;
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [normalized];
+    }).slice(0, MAX_COLLABORATION_RACERS) : [];
+    return {
+      router: normalizeRoute(saved.router),
+      judge: normalizeRoute(saved.judge),
+      routes: collaborationRoutes(saved.routes),
+      racers,
+    };
+  }
+  if (legacyRoutes && typeof legacyRoutes === 'object') {
+    return { ...DEFAULT_COLLABORATION_CONFIG, routes: collaborationRoutes(legacyRoutes, true) };
+  }
+  return { ...DEFAULT_COLLABORATION_CONFIG, routes: { ...DEFAULT_COLLABORATION_CONFIG.routes }, racers: [] };
 }
 // Papilot Writer's providers: subscriptions it signs in to, and API keys
 // stored by Papilot or read from the environment.

@@ -257,14 +257,28 @@ export class Review {
       }
     }
     const variants = this.variants(name, round.number);
-    return { decisions, comments, ...(Object.keys(variants).length ? { variants } : {}) };
+    const variantSpans = this.variantSpans(name, round.number);
+    return { decisions, comments, ...(Object.keys(variants).length ? { variants } : {}), ...(Object.keys(variantSpans).length ? { variantSpans } : {}) };
+  }
+  /** The full option edits accepted for this round's changes. */
+  variantEdits(name: string, number: number) {
+    const result: Record<string, { unit: string; text: string; before?: number; after?: number }> = {};
+    for (const action of this.actions(name, number))
+      if (action.kind === "accept" && LIVE.has(action.status))
+        for (const edit of action.detail.edits ?? []) result[edit.unit] = edit;
+    return result;
   }
   /** The wording of this round's changes accepted with a note option. */
   variants(name: string, number: number) {
     const result: Record<string, string> = {};
-    for (const action of this.actions(name, number))
-      if (action.kind === "accept" && LIVE.has(action.status))
-        for (const edit of action.detail.edits ?? []) result[edit.unit] = edit.text;
+    for (const [unit, edit] of Object.entries(this.variantEdits(name, number))) result[unit] = edit.text;
+    return result;
+  }
+  /** Non-zero [before, after] span expansions for accepted note options. */
+  variantSpans(name: string, number: number) {
+    const result: Record<string, [number, number]> = {};
+    for (const [unit, edit] of Object.entries(this.variantEdits(name, number)))
+      if (edit.before || edit.after) result[unit] = [edit.before ?? 0, edit.after ?? 0];
     return result;
   }
   /** `seen`: the page asking is on screen, so the author reads this task. */
@@ -569,7 +583,7 @@ export class Review {
       queue?: boolean;
       noteKey?: string;
       /** Accept these changes with a note option's wording. */
-      edits?: { unit: string; text: string }[];
+      edits?: { unit: string; text: string; before?: number; after?: number }[];
     },
   ) {
     return this.app.exclusive(() => this.decideNow(name, data));
@@ -584,7 +598,7 @@ export class Review {
       body?: string;
       queue?: boolean;
       noteKey?: string;
-      edits?: { unit: string; text: string }[];
+      edits?: { unit: string; text: string; before?: number; after?: number }[];
     },
   ) {
     const task = this.app.tasks.get(name),
@@ -598,8 +612,9 @@ export class Review {
     if (data.noteKey !== undefined && (kind !== 'reject' || typeof data.noteKey !== 'string' || data.noteKey.length > 200))
       throw new Error("Invalid note key.");
     const edits = data.edits;
+    const validSpan = (value: unknown) => value === undefined || (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 20000);
     if (edits !== undefined && (kind !== "accept" || !Array.isArray(edits) || !edits.length || edits.length > 100 || !Array.isArray(data.changes)
-      || edits.some((edit) => !edit || typeof edit.unit !== "string" || typeof edit.text !== "string" || edit.text.includes("\0") || edit.text.length > 20000)
+      || edits.some((edit) => !edit || typeof edit.unit !== "string" || typeof edit.text !== "string" || edit.text.includes("\0") || edit.text.length > 20000 || !validSpan(edit.before) || !validSpan(edit.after))
       || JSON.stringify(edits.map((edit) => edit.unit)) !== JSON.stringify(data.changes)))
       throw new Error("Invalid note option.");
     const identity = data.id || randomUUID();
@@ -736,7 +751,7 @@ export class Review {
       groups = this.byFile(units),
       files = Object.keys(groups),
       [before, after, records] = await Promise.all([round.before, round.after, task.accepted].map((rev) => app.repo.blobsAsync(rev, files))),
-      option = extra.edits && new Map(extra.edits.map((edit) => [edit.unit, edit.text]));
+      option = extra.edits && new Map(extra.edits.map((edit) => [edit.unit, edit]));
     for (const [file, group] of Object.entries(groups)) {
       // A note option's wording replaces the proposal of these changes. The
       // task's files take it too, so the next round does not propose the
@@ -745,9 +760,33 @@ export class Review {
         // The offsets must name exactly the change's two wordings in these
         // files; otherwise writing them would corrupt the text.
         const old = before[file]?.toString("utf8"), next = after[file]?.toString("utf8");
-        if (group.some((unit) => { const [, i, j, x, y] = unit.text_ops![0]; return old?.slice(i, j) !== unit.old_text || next?.slice(x, y) !== unit.new_text; }))
+        const existingVariants = this.variantEdits(task.name, round.number);
+        const groupIds = new Set(group.map((unit) => unit.id));
+        const otherSpans = round.units
+          .filter((unit) => unit.file === file && !groupIds.has(unit.id))
+          .map((unit) => {
+            if (unit.whole_file || !unit.text_ops?.length) return { whole: true as const, start: 0, end: Number.MAX_SAFE_INTEGER };
+            const prev = existingVariants[unit.id];
+            const lo = Math.min(...unit.text_ops.map(([, , , ox]) => ox)) - (prev?.before ?? 0);
+            const hi = Math.max(...unit.text_ops.map(([, , , , oy]) => oy)) + (prev?.after ?? 0);
+            return { whole: false as const, start: lo, end: hi };
+          });
+        if (group.some((unit) => {
+          const [, i, j, x, y] = unit.text_ops![0];
+          const edit = option.get(unit.id)!;
+          const b = edit.before ?? 0, a = edit.after ?? 0;
+          const lo = x - b, hi = y + a;
+          const overlapsOther = (b > 0 || a > 0) && otherSpans.some((span) => span.whole || (span.start < hi && lo < span.end));
+          return !old || !next || old.slice(i, j) !== unit.old_text || next.slice(x, y) !== unit.new_text
+            || i - b < 0 || lo < 0 || j + a > old.length || hi > next.length
+            || old.slice(i - b, i) !== next.slice(lo, x) || old.slice(j, j + a) !== next.slice(y, hi)
+            || overlapsOther;
+        }))
           throw new Error("This change cannot be replaced independently.");
-        const variant = replaceRanges(after[file], group.map((unit) => [unit.text_ops![0][3], unit.text_ops![0][4], option.get(unit.id)!])),
+        const variant = replaceRanges(after[file], group.map((unit) => {
+            const edit = option.get(unit.id)!;
+            return [unit.text_ops![0][3] - (edit.before ?? 0), unit.text_ops![0][4] + (edit.after ?? 0), edit.text];
+          })),
           target = safePath(task.worktree, file),
           current = readBytes(target),
           [merged, conflict] = await merge3Async(current, after[file], variant);
@@ -755,7 +794,10 @@ export class Review {
         if (!same(merged, current)) writes.push([target, current, merged]);
       }
       const proposed = option
-          ? replaceRanges(before[file], group.map((unit) => [unit.text_ops![0][1], unit.text_ops![0][2], option.get(unit.id)!]))
+          ? replaceRanges(before[file], group.map((unit) => {
+            const edit = option.get(unit.id)!;
+            return [unit.text_ops![0][1] - (edit.before ?? 0), unit.text_ops![0][2] + (edit.after ?? 0), edit.text];
+          }))
           : applyUnits(before[file], after[file], group),
         target = task.deferred ? "" : safePath(app.root, file),
         current = task.deferred ? records[file] : readBytes(target),
