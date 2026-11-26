@@ -22,7 +22,7 @@ const runtime = { connected: true, authenticated: true, account: null, error: nu
   { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', fastMode: { serviceTier: 'priority', description: 'Faster responses' } },
 ] };
 runtime.permissionOptions = [{ value: 'workspace', label: 'Workspace access', detail: 'Native approvals' }, { value: 'full', label: 'Full access', detail: 'Approve all tools' }];
-const snapshot = { version: 'test', csrf: 'test', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper', createdAt: 1 }], tasks: [task], requests: [], runtime, runtimes: { codex: runtime, claude: { ...runtime, models: [{ id: 'opus', name: 'Opus', isDefault: true, efforts: ['low', 'high'], defaultEffort: 'high' }] } } };
+const snapshot = { version: 'test', csrf: 'test', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper', createdAt: 1 }], tasks: [task], requests: [], runtime, runtimes: { codex: runtime, claude: { ...runtime, models: [{ id: 'opus', name: 'Opus', isDefault: true, efforts: ['low', 'high'], defaultEffort: 'high' }] }, zcode: { ...runtime, models: [], supportsReadOnlyTasks: false } } };
 const modelChanges = [], messages = [], switches = [];
 let failSwitch = true;
 let holdSwitch, releaseSwitch;
@@ -84,6 +84,7 @@ try {
   await expect(search).toBeFocused();
   await expect(menu.getByRole('option', { name: 'Opus · Claude', exact: true }).last()).toBeVisible();
   await expect(menu.getByRole('option', { name: 'Deep model · Codex', exact: true }).last()).toBeVisible();
+  await expect(menu.getByRole('option', { name: 'Default model · ZCode', exact: true })).toBeVisible();
   // Another agent's model continues this task, so it is not marked as starting over.
   for (const option of await menu.getByRole('option', { name: 'Opus · Claude', exact: true }).all()) {
     await expect(option).not.toHaveAttribute('aria-description');

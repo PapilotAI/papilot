@@ -106,7 +106,7 @@ Open Papilot on your phone or tablet over <a href="docs/guide.md#remote-access-w
       <source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="docs/assets/readme-agents/grid-compact-dark.png">
       <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme-agents/grid-dark.png">
       <source media="(max-width: 600px)" srcset="docs/assets/readme-agents/grid-compact.png">
-      <img src="docs/assets/readme-agents/grid.png" alt="Papilot Writer, Codex, Claude, Cursor, GitHub Copilot, Grok, Antigravity, Kimi, GLM, DeepSeek, Qwen, OpenCode, Qoder, CodeBuddy, WorkBuddy and Pi" width="848">
+      <img src="docs/assets/readme-agents/grid.png" alt="Papilot Writer, Codex, Claude, Cursor, GitHub Copilot, Grok, Antigravity, Kimi, GLM, ZCode, DeepSeek, Qwen, OpenCode, Qoder, CodeBuddy, WorkBuddy and Pi" width="848">
     </picture>
   </a>
 </p>

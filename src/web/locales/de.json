@@ -1559,6 +1559,7 @@
   "Uses the current conversation or new-task settings. Your choice resolves Git conflicts and prepares merge suggestions for tasks that overlap the manuscript.": "Verwendet die Einstellungen der aktuellen Unterhaltung oder für neue Aufgaben. Ihre Auswahl löst Git-Konflikte und bereitet Zusammenführungsvorschläge für Aufgaben vor, die sich im Manuskript überschneiden.",
   "Uses the local Antigravity CLI and its saved Google login.": "Verwendet die lokale Antigravity CLI und deren gespeicherte Google-Anmeldung.",
   "Uses the local Codex CLI and its saved login.": "Verwendet die lokale Codex CLI und deren gespeicherte Anmeldung.",
+  "Uses the local ZCode CLI and its configured default model.": "Verwendet die lokale ZCode-CLI und das dort eingestellte Standardmodell.",
   "Uses your Pi CLI, providers, skills and extensions. Tools run on the host with Pi’s permissions.": "Verwendet deine Pi CLI, Anbieter, Skills und Erweiterungen. Werkzeuge laufen auf dem Host mit den Berechtigungen von Pi.",
   "Verify": "Überprüfen",
   "Version": "Version",

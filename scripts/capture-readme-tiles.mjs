@@ -192,15 +192,15 @@ function drawCommunity({ icons, text, surface }) {
 
 // "Works with your agent": every agent the homepage lists, Papilot Writer
 // first and Pi last, as a uniform grid of the homepage's logo chips with
-// names beneath, eight to a row (four for phones).
+// names beneath, nine to a row (four for phones).
 function drawAgentGrid(columns) {
   const items = [...document.querySelectorAll('#agents .agent')].map(item => ({ className: item.className, name: item.textContent.trim() }));
   items.push(...items.splice(items.findIndex(item => item.className === 'agent pi'), 1));
   items.unshift({ className: 'agent writer', name: 'Papilot Writer' });
   const grid = document.createElement('div');
   grid.id = `readme-agent-grid-${columns}`;
-  grid.style.cssText = `display:grid;grid-template-columns:repeat(${columns},104px);gap:22px 0;width:max-content;margin:48px auto;padding:8px`;
-  grid.innerHTML = items.map(({ className, name }) => `<span class="${className}" style="flex-direction:column;gap:9px;font-size:13px;font-weight:500;line-height:1.2;text-align:center;color:var(--text-2)"><i style="width:56px;height:56px;border:0;border-radius:16px;background:light-dark(#fff,#1f2024);box-shadow:0 0 0 1px var(--line),0 1px 2px rgb(15 23 42/.05),0 8px 20px -10px rgb(15 23 42/.22)">${className.includes('writer') ? '<img src="/assets/logo.svg" alt="" style="width:28px;height:28px">' : ''}</i>${name}</span>`).join('');
+  grid.style.cssText = `display:flex;flex-wrap:wrap;justify-content:center;row-gap:22px;width:${columns === 9 ? 848 : 432}px;box-sizing:border-box;margin:48px auto;padding:8px`;
+  grid.innerHTML = items.map(({ className, name }) => `<span class="${className}" style="flex:0 0 calc(100% / ${columns});flex-direction:column;gap:9px;font-size:13px;font-weight:500;line-height:1.2;text-align:center;color:var(--text-2)"><i style="width:56px;height:56px;border:0;border-radius:16px;background:light-dark(#fff,#1f2024);box-shadow:0 0 0 1px var(--line),0 1px 2px rgb(15 23 42/.05),0 8px 20px -10px rgb(15 23 42/.22)">${className.includes('writer') ? '<img src="/assets/logo.svg" alt="" style="width:28px;height:28px">' : ''}</i>${name}</span>`).join('');
   document.body.append(grid);
   if (!document.querySelector('#readme-agent-grid-style')) document.head.append(Object.assign(document.createElement('style'), { id: 'readme-agent-grid-style', textContent: '[id^=readme-agent-grid] .agent i{display:grid;place-items:center}[id^=readme-agent-grid] .writer i::before{display:none}[id^=readme-agent-grid] .agent i::before{width:28px;height:28px}' }));
 }
@@ -271,7 +271,7 @@ function drawFlow({ text, compact }) {
   const steps = text.steps.map(step);
   flow.innerHTML = compact ? steps.join(down) : [0, 3].map(first => `<div style="display:flex;align-items:flex-start">${steps.slice(first, first + 3).join(right)}</div>`).join('');
   // The drawings use the app windows' palette, which the homepage scopes to them.
-  const palette = [...document.styleSheets].flatMap(sheet => [...sheet.cssRules]).find(rule => rule.selectorText === '.app-window, .mini').style;
+  const palette = [...document.styleSheets].flatMap(sheet => [...sheet.cssRules]).find(rule => rule.selectorText === '.app-window, .phone').style;
   for (const name of palette) if (name.startsWith('--')) flow.style.setProperty(name, palette.getPropertyValue(name));
   document.body.append(flow);
   if (compact) return;
@@ -317,15 +317,15 @@ try {
     await page.evaluate(drawPicker, pickerCopy[locale]);
     await page.evaluate(drawSystems, { text: systemsCopy[locale], icons: systemIcons, surface: cardSurface });
     await page.evaluate(drawCommunity, { icons: communityIcons, text: communityCopy[locale], surface: cardSurface });
-    await page.evaluate(drawAgentGrid, 8);
+    await page.evaluate(drawAgentGrid, 9);
     await page.evaluate(drawAgentGrid, 4);
     await page.evaluate(drawFlow, { text: flowCopy[locale], compact: false });
     await page.evaluate(drawFlow, { text: flowCopy[locale], compact: true });
-    await page.addStyleTag({ content: 'body>:not(#readme-overleaf,#readme-picker,#readme-systems,#readme-community,#readme-flow,#readme-flow-compact,#readme-agent-grid-8,#readme-agent-grid-4,svg){visibility:hidden!important}' });
+    await page.addStyleTag({ content: 'body>:not(#readme-overleaf,#readme-picker,#readme-systems,#readme-community,#readme-flow,#readme-flow-compact,#readme-agent-grid-9,#readme-agent-grid-4,svg){visibility:hidden!important}' });
     await page.evaluate(() => document.fonts.ready);
     art.overleaf = [await capture(page, '#readme-overleaf')];
     // Agent names are the same in every language.
-    if (locale === 'en') for (const [columns, suffix] of [[8, ''], [4, '-compact']]) {
+    if (locale === 'en') for (const [columns, suffix] of [[9, ''], [4, '-compact']]) {
       const grid = page.locator(`#readme-agent-grid-${columns}`);
       await grid.scrollIntoViewIfNeeded();
       await page.evaluate(() => Promise.all([...document.querySelectorAll('[id^=readme-agent-grid] img')].map(image => image.decode())));

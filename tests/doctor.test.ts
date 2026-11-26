@@ -92,6 +92,19 @@ test('doctor checks Qoder, CodeBuddy and an explicit WorkBuddy launcher without 
   } finally { f.cleanup(); }
 });
 
+test('doctor checks ZCode CLI support without sending a prompt', async () => {
+  const f = fixture();
+  try {
+    f.baseTools();
+    const cli = f.tool('zcode', 'console.log(JSON.stringify({ cli: { name: "zcode", version: "0.18.0" } }));');
+    const result = item((await f.run(['--json'], { PAPILOT_ZCODE_BIN: cli })).report, 'agent.zcode');
+    assert.equal(result.ok, true);
+    assert.match(result.detail, /login and generation were not tested/);
+    const calls = fs.readFileSync(f.log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.deepEqual(calls.filter(call => call[0] === 'zcode'), [['zcode', 'doctor', '--json']]);
+  } finally { f.cleanup(); }
+});
+
 test('doctor help and invalid options never run tools or create data', async () => {
   const f = fixture();
   try {

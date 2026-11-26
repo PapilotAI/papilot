@@ -23,6 +23,7 @@ import { GrokAgent } from './grok.ts';
 import { PiAgent } from './pi.ts';
 import { CodeBuddyAgent } from './codebuddy.ts';
 import { WorkBuddyAgent } from './workbuddy.ts';
+import { ZCodeAgent } from './zcode.ts';
 import { WriterAgent } from './writer/agent.ts';
 import { customModelUnavailable, isCustomProvider } from './writer/auth.ts';
 import type { CompiledPaper } from './writer/build-map.ts';
@@ -366,7 +367,7 @@ export class Workspace extends EventEmitter {
     this.attachments = new Attachments(store);
     if (store.preference<number>(MEMORY_SINCE) === undefined) store.savePreference(MEMORY_SINCE, Date.now());
     this.agents = { papilot: others.papilot || new WriterAgent(), pi: others.pi || new PiAgent(), codex, claude: others.claude || new ClaudeAgent(), cursor: others.cursor || new CursorAgent(), copilot: others.copilot || new AcpAgent(ACP_PROFILES.copilot), grok: others.grok || new GrokAgent(), antigravity: others.antigravity || new AntigravityAgent(),
-      kimi: others.kimi || new AcpAgent(ACP_PROFILES.kimi), glm: others.glm || new GlmAgent(), deepseek: others.deepseek || new AcpAgent(ACP_PROFILES.deepseek),
+      kimi: others.kimi || new AcpAgent(ACP_PROFILES.kimi), glm: others.glm || new GlmAgent(), zcode: others.zcode || new ZCodeAgent(), deepseek: others.deepseek || new AcpAgent(ACP_PROFILES.deepseek),
       qwen: others.qwen || new AcpAgent(ACP_PROFILES.qwen), opencode: others.opencode || new AcpAgent(ACP_PROFILES.opencode),
       qoder: others.qoder || new AcpAgent(ACP_PROFILES.qoder), codebuddy: others.codebuddy || new CodeBuddyAgent(), workbuddy: others.workbuddy || new WorkBuddyAgent(),
       collaboration: others.collaboration || new Codex() };
@@ -461,7 +462,12 @@ export class Workspace extends EventEmitter {
   // Each agent's status with the author's choices in Settings → Agents.
   private runtimeStatus() {
     const off = this.agentsOff, hidden = this.hiddenModels;
-    return Object.fromEntries(AGENTS.map(id => [id, { ...this.runtimes[id], ...(off.includes(id) ? { hidden: true } : {}), ...(hidden[id] ? { hiddenModels: hidden[id] } : {}) }])) as Record<AgentId, RuntimeStatus>;
+    return Object.fromEntries(AGENTS.map(id => [id, {
+      ...this.runtimes[id],
+      ...(this.agents[id].supportsReadOnlyTasks === false ? { supportsReadOnlyTasks: false } : {}),
+      ...(off.includes(id) ? { hidden: true } : {}),
+      ...(hidden[id] ? { hiddenModels: hidden[id] } : {}),
+    }])) as Record<AgentId, RuntimeStatus>;
   }
   /** Loads the SDKs of the agents this host has before the server answers
    *  requests. Evaluating one blocks for up to a few hundred milliseconds,
@@ -1099,7 +1105,7 @@ ${permissionScope} Never edit other task worktrees or Papilot's own source/state
 ${scope.length ? `The review covers only ${scope.join(', ')} in this worktree, and an edit to any other file stops the PDF build. Leave other files unchanged even when project instructions ask for a matching update; mention that update in your summary instead.\n` : ''}Papilot owns the LaTeX review lifecycle: it compiles and publishes automatically AFTER your turn finishes, and delivers review feedback in a new turn. Do not create another review task, invoke publish, or wait on feedback --wait. This workflow replaces the publish-and-wait loop of any review skill you have. End your turn with a direct answer or, when you made edits, a concise summary of what changed and why; do not describe Papilot's review workflow.
 Preserve meaning and mathematical correctness. Read relevant project instructions. Treat reviewer comments as instructions tied to their round, file and changes. Rejected edits must not be reintroduced unless explicitly requested. If there is a conflict with accepted text, explain it and propose a revision for a new review round; do not overwrite accepted manuscript content unless the user explicitly requests that replacement.
 Never invent a bibliography entry or any of its details. Add a .bib entry only for a work you can identify, take its authors, title, year and venue from the published record, and include its doi or arXiv eprint when it has one. Papilot looks up every added or changed entry in Crossref, DBLP and arXiv and shows the author any it cannot confirm. Name the entries you added or changed in your summary.
-${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. Shell commands follow the current native permission policy; requests needing interactive approval are refused in this headless session.' : this.agentOf(task) === 'papilot' ? 'Use your paper tools to inspect and validate your changes, and view_pages when the look of the pages matters.' : 'You may run tools in the task worktree to inspect and validate your changes.'} ${viewPdf ? `When the look of the pages matters, such as line breaks, spacing, figures, tables or displayed formulas, use the ${VIEW_PDF} tool and open the pages it draws with your image viewer to see them as the author does. It compiles the paper, so do not call it for wording alone. ` : ''}If a decision requires the user, ask through the available user-input tool or explain it in your final response. Use English for your progress updates, questions, and final summaries unless the user explicitly requests another language. Preserve the manuscript language unless asked to translate it.` + remembered;
+${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for manuscript edits. Shell commands follow the current native permission policy; requests needing interactive approval are refused in this headless session.' : this.agentOf(task) === 'papilot' ? 'Use your paper tools to inspect and validate your changes, and view_pages when the look of the pages matters.' : 'You may run tools in the task worktree to inspect and validate your changes.'} ${viewPdf ? `When the look of the pages matters, such as line breaks, spacing, figures, tables or displayed formulas, use the ${VIEW_PDF} tool and open the pages it draws with your image viewer to see them as the author does. It compiles the paper, so do not call it for wording alone. ` : ''}If a decision requires the user, ask through the available user-input tool or explain it in your final response. Use English for your progress updates, questions, and final summaries unless the user explicitly requests another language. Preserve the manuscript language unless asked to translate it.` + remembered;
   }
   private async approvalReviewer(task: Task): Promise<{ approvalsReviewer?: 'user' | 'auto_review' | 'guardian_subagent' }> {
     if (!usesCodex(this.agentOf(task))) return {};

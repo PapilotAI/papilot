@@ -1,7 +1,7 @@
 import '../../engine/src/web/legacy-storage.ts';
 import { TaskDocument } from './task-document.tsx';
 import { requestApi, requestState } from './api.ts';
-import { agentLabel, agentsSettled, chosenAgent, defaultOfferedModel, noAgent, offeredAgents } from './agent-choice.ts';
+import { agentLabel, agentsSettled, canReviewWith, chosenAgent, defaultOfferedModel, noAgent, offeredAgents } from './agent-choice.ts';
 import { isPlayground, pdfAsset, wordAsset, requestPlaygroundDownload } from './playground-mode.ts';
 import { annotationGroupState, canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
 import { NOTE_SORT_MODES, groupNoteEntries, isNoteSortMode, sortNoteEntries, type NoteSortMode } from '../note-sort.ts';
@@ -1738,8 +1738,11 @@ function App() {
   }), []);
   // Fallbacks keep saved preferences intact in case they become available again.
   const runtimes: Partial<Record<AgentId, RuntimeStatus>> = state?.runtimes || (state ? { codex: state.runtime } : {});
-  const offered = offeredAgents(runtimes).filter(id => id !== 'collaboration' || newSkill?.output !== 'annotations'), agentChoice = chosenAgent(savedAgent, offered, runtimes), missingAgent = noAgent(runtimes);
   const settled = agentsSettled(runtimes);
+  const isReviewDraft = newSkill?.output === 'annotations';
+  const offered = offeredAgents(runtimes).filter(id => !isReviewDraft || canReviewWith(id, runtimes[id]));
+  const agentChoice = chosenAgent(savedAgent, offered, runtimes);
+  const missingAgent = noAgent(runtimes) || (isReviewDraft && settled && !offered.length);
   useEffect(() => {
     // A later disconnect must keep the chosen agent and show its notice.
     // Nothing offered is not a choice: Codex is only the empty-state fallback.

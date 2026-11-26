@@ -6514,6 +6514,11 @@
     "textHash": "61e98db78a88d76ccf7e685e4662cd67f84b734ae4f586246e7a254572ca03ea",
     "model": "gemini-4-argon-medium"
   },
+  "Uses the local ZCode CLI and its configured default model.": {
+    "revision": "32bc30b71b65031d81dfb162f0018d410dc58f0ffc06565cf25ccaeb3c8bc9dd",
+    "textHash": "61ff54b424d46719b51170f8bbbf8aa9ae56b5d2b57ca4861a3149b8e6378959",
+    "model": "manual"
+  },
   "Uses your Pi CLI, providers, skills and extensions. Tools run on the host with Pi’s permissions.": {
     "revision": "6c56315684c82c309705768b091d6cebf4891fa7a4620c48e224a34b0053f6c6",
     "textHash": "38bcaf3a637ccb4d36130dac2f395fa2e6231db58051eda28f55383afc725a8d",

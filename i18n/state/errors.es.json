@@ -1449,6 +1449,11 @@
     "textHash": "278080523889a1429ae456c42c1ec9410579b8792d838ebbc69b1b97ed8300d7",
     "model": "codex-manual"
   },
+  "The selected agent does not support read-only tasks. Select another agent.": {
+    "revision": "8d2c934544f6239ab80f3fe59df1cda68a47f237c257fa3279a66b64b10966cf",
+    "textHash": "8525f356d6712e238e2dbc18598d7ee7d53fdc6a8e81db1a64e1da2eed419854",
+    "model": "manual"
+  },
   "The selected commit-message agent does not support read-only tasks. Choose another in Settings → Git.": {
     "revision": "7631efe2b153f89ca134bab9d17756ae596aff56a581ac587109fead4a89312b",
     "textHash": "1ed116a63730bebd23bc5a51e40121a38d66558dc057b7b25cc4435c00ff1b78",
@@ -2103,6 +2108,31 @@
     "revision": "2f8cd0c2f5f6729a5c0b99a4342ed3cc70059d5c9c9482936ccf60009564f38d",
     "textHash": "b68fc4fadf16208bdc4ada7c2222b5c4a38405a37cf1201c8e4e79ffaf57b07b",
     "model": "gemini-4-argon-medium"
+  },
+  "ZCode CLI could not be run. Install ZCode CLI 0.18.0 or newer, then select Reconnect.": {
+    "revision": "d7d8f78921cb377596ada25d2d273abad6dc9473afee412d928ccba27cf874cd",
+    "textHash": "dffd807df038fe25d1b56b74a76faf4f1db74391b58f4c3efee17a37b80ad9f1",
+    "model": "manual"
+  },
+  "ZCode CLI was not found. Install it on the Papilot host, then select Reconnect.": {
+    "revision": "47087ea040b88299db8d5e078983b3c02598ef20b463a7c6f019c4165ae8cfae",
+    "textHash": "ff155d95f8c0aefd21936407ad040714996ac9ee5c65556f690f607be3752c6a",
+    "model": "manual"
+  },
+  "ZCode could not restore this task’s session.": {
+    "revision": "99f4b91df307db0285e0dbabf235ed56238cf631f57f36c9c0fd6b2af4e3b138",
+    "textHash": "3fe1fca4b04489c9e2fcda9d51611ecf56f50b56acba6c23be2289cf61009222",
+    "model": "manual"
+  },
+  "ZCode did not exit. Close its process before resuming the task.": {
+    "revision": "4dc560afb9e3efdc5250be244defe741d1a2181d4791f0aa12e806f428e6abaf",
+    "textHash": "500e3a1d494ef3748db74efd5aedf87e4bae9851ccf2b854e3e0567b9b319f8c",
+    "model": "manual"
+  },
+  "ZCode stopped without a result.": {
+    "revision": "d039289953b899cdee6da6ce7664b1f6b53ab9f82cf28a67f7a747ffc8d37b96",
+    "textHash": "7b9f09e78fbd6adda9b31b84e1336bdafb042f796a429cc4a608acaffd6d4df2",
+    "model": "manual"
   },
   "ZIP links and special files are not supported.": {
     "revision": "80a81e0009272d7a068c5f6f61d9cfd93e6321607c61a2e8a488feb5de376de9",

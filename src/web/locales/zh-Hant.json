@@ -1559,6 +1559,7 @@
   "Uses the current conversation or new-task settings. Your choice resolves Git conflicts and prepares merge suggestions for tasks that overlap the manuscript.": "使用目前對話或新任務的設定。所選項目會負責解決 Git 衝突，並為與論文原稿重疊的任務準備合併建議。",
   "Uses the local Antigravity CLI and its saved Google login.": "使用本機 Antigravity CLI 及其儲存的 Google 登入資訊。",
   "Uses the local Codex CLI and its saved login.": "使用本機的 Codex CLI 及其已儲存的登入資訊。",
+  "Uses the local ZCode CLI and its configured default model.": "使用本機的 ZCode CLI 與其中設定的預設模型。",
   "Uses your Pi CLI, providers, skills and extensions. Tools run on the host with Pi’s permissions.": "使用你的 Pi CLI、模型供應商、技能和擴充功能。工具依照 Pi 的權限設定在主機上執行。",
   "Verify": "查證",
   "Version": "版本",

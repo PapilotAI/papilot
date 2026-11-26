@@ -10,7 +10,7 @@ export function agentSetup(id: AgentId) {
     copilot: ['copilot', 'PAPILOT_COPILOT_BIN'], grok: ['grok', 'PAPILOT_GROK_BIN'],
     antigravity: ['agy', 'PAPILOT_AGY_BIN'], kimi: ['kimi', 'PAPILOT_KIMI_BIN'],
     deepseek: ['dsh', 'PAPILOT_DSH_BIN'], qwen: ['qwen', 'PAPILOT_QWEN_BIN'], opencode: ['opencode', 'PAPILOT_OPENCODE_BIN'],
-    qoder: ['qoder', 'PAPILOT_QODER_BIN'], codebuddy: ['codebuddy', 'PAPILOT_CODEBUDDY_BIN'],
+    qoder: ['qoder', 'PAPILOT_QODER_BIN'], codebuddy: ['codebuddy', 'PAPILOT_CODEBUDDY_BIN'], zcode: ['zcode', 'PAPILOT_ZCODE_BIN'],
   };
   if (id === 'workbuddy') return {
     summary: t('No WorkBuddy ACP launcher is configured.'),

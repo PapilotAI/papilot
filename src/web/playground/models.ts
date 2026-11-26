@@ -39,5 +39,6 @@ const permissions: Partial<Record<AgentId, TaskPermissionOption[]>> = {
 };
 export const demoRuntimes = Object.fromEntries(AGENT_IDS.map(id => [id, {
   permissionOptions: permissions[id] || [],
+  ...(id === 'zcode' ? { supportsReadOnlyTasks: false } : {}),
   installed: true, connected: true, authenticated: true, account: null, error: null, models: catalog[id] || [],
 }])) as Record<AgentId, RuntimeStatus>;

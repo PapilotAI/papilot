@@ -26,6 +26,7 @@ function connectionInfo(id: AgentId) {
     antigravity: t('Uses the local Antigravity CLI and its saved Google login.'),
     kimi: t('Uses Kimi Code CLI and its saved login through ACP.'),
     glm: t('Uses Claude Code or the Claude Agent SDK with ZHIPU_API_KEY or ZAI_API_KEY.'),
+    zcode: t('Uses the local ZCode CLI and its configured default model.'),
     deepseek: t('Uses DeepSeek Harness and the providers configured in dsh.'),
     qwen: t('Uses Qwen Code and its saved login through ACP.'),
     opencode: t('Uses OpenCode with the providers and models you have connected.'),
@@ -33,7 +34,7 @@ function connectionInfo(id: AgentId) {
     codebuddy: t('Uses CodeBuddy CLI and its saved login through ACP.'),
     workbuddy: t('Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.'),
   };
-  const commands = { collaboration: window.papilotDesktop ? 'codex login' : 'papilot codex login', papilot: '', pi: 'pi → /login', codex: window.papilotDesktop ? 'codex login' : 'papilot codex login', claude: 'claude auth login', cursor: 'CURSOR_API_KEY', copilot: 'copilot login', grok: 'grok login', antigravity: 'agy', kimi: 'kimi login', glm: 'ZHIPU_API_KEY / ZAI_API_KEY', deepseek: 'dsh web', qwen: 'qwen', opencode: 'opencode auth login', qoder: 'qoder login', codebuddy: 'codebuddy', workbuddy: 'PAPILOT_WORKBUDDY_BIN' };
+  const commands = { collaboration: window.papilotDesktop ? 'codex login' : 'papilot codex login', papilot: '', pi: 'pi → /login', codex: window.papilotDesktop ? 'codex login' : 'papilot codex login', claude: 'claude auth login', cursor: 'CURSOR_API_KEY', copilot: 'copilot login', grok: 'grok login', antigravity: 'agy', kimi: 'kimi login', glm: 'ZHIPU_API_KEY / ZAI_API_KEY', zcode: 'zcode login', deepseek: 'dsh web', qwen: 'qwen', opencode: 'opencode auth login', qoder: 'qoder login', codebuddy: 'codebuddy', workbuddy: 'PAPILOT_WORKBUDDY_BIN' };
   return { description: descriptions[id], command: commands[id], key: id === 'cursor' || id === 'glm' };
 }
 

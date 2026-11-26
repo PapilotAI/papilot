@@ -1219,6 +1219,11 @@
     "textHash": "5afaea8ea62bc02ee4ef235065218b02fdd1fe13fded9a76c69391a9a47949ab",
     "model": "manual"
   },
+  "Uses the local ZCode CLI and its configured default model.": {
+    "revision": "87c37dbda1d236923dac7e59e81a565082a618fe18aafa63660222a233b4c04c",
+    "textHash": "b9ef55ff4e1044fbc7acc7a1d57404e516fa2d11c1de6687140ba23decb69cf9",
+    "model": "manual"
+  },
   "Uses your Pi CLI, providers, skills and extensions. Tools run on the host with Pi’s permissions.": {
     "revision": "a9fff0a20cda2a7b3fbe5ea0e1d71ae2f0dd51c0c3575b5ee81d82384e54c6fc",
     "textHash": "4a91a9751eee710153d283fb247e2316687a1b29cb836f8ce49ada8974aa4319",

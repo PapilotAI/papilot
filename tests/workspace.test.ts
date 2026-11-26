@@ -3218,7 +3218,7 @@ test('creating an AI review skill task persists its snapshot and queues review-o
     await assert.rejects(f.workspace.createTask({ ...input, prepareReview: undefined, instructions: 'Edit it.' }), /Invalid task ID/);
     for (const agent of AGENT_IDS.filter(id => id !== 'collaboration')) {
       const selection = { ...input, id: `ai-review-client-${agent}`, agent };
-      if (['qoder', 'codebuddy', 'workbuddy'].includes(agent)) {
+      if (['qoder', 'codebuddy', 'workbuddy', 'zcode'].includes(agent)) {
         await assert.rejects(f.workspace.createTask(selection), /The selected agent does not support read-only AI review\. Select another agent\./);
         assert.equal(f.store.findTask(selection.id), undefined);
         continue;

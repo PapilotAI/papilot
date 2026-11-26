@@ -406,7 +406,7 @@ try {
   assert.equal(await diagnostics.getByRole('heading', { name: 'Agent configuration', exact: true }).count(), 0);
   assert.equal(await diagnostics.getByRole('button', { name: 'Check again', exact: true }).count(), 0);
   const agentCards = diagnostics.locator('.diagnostic-agent-card[data-agent]');
-  assert.deepEqual(await agentCards.locator('h4').allTextContents(), ['Codex', 'Claude', 'Papilot WriterBased on Pi', 'Pi', 'Cursor', 'Copilot', 'Grok', 'Antigravity', 'Kimi', 'GLM', 'DeepSeek', 'Qwen', 'OpenCode', 'Qoder', 'CodeBuddy', 'WorkBuddy']);
+  assert.deepEqual(await agentCards.locator('h4').allTextContents(), ['Codex', 'Claude', 'Papilot WriterBased on Pi', 'Pi', 'Cursor', 'Copilot', 'Grok', 'Antigravity', 'Kimi', 'GLM', 'ZCode', 'DeepSeek', 'Qwen', 'OpenCode', 'Qoder', 'CodeBuddy', 'WorkBuddy']);
   const availability = id => diagnostics.locator(`[data-agent="${id}"] .diagnostic-availability`);
   assert.equal(await availability('codex').innerText(), 'Ready');
   assert.equal(await availability('cursor').innerText(), 'Not detected');

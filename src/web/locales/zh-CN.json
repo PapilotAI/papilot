@@ -429,6 +429,7 @@
   "Uses CodeBuddy CLI and its saved login through ACP.": "通过 ACP 使用 CodeBuddy CLI 及其已保存的登录信息。",
   "Uses Qoder CLI and its saved login through ACP.": "通过 ACP 使用 Qoder CLI 及其已保存的登录信息。",
   "Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.": "使用已配置的 WorkBuddy ACP 启动器。该启动器必须能够使用登录信息。",
+  "Uses the local ZCode CLI and its configured default model.": "使用本机的 ZCode CLI 和其中配置的默认模型。",
   "Uses your Pi CLI, providers, skills and extensions. Tools run on the host with Pi’s permissions.": "使用你的 Pi CLI、模型提供商、技能和扩展。工具按 Pi 的权限设置在主机上运行。",
   "View only": "仅查看",
   "Wait for the current task and review actions to finish.": "请等待当前任务和审阅操作完成。",
