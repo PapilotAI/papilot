@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { browserStorage } from './storage.ts';
-import { APPEARANCE_KEY, appearanceVariables, parseAppearance, type Appearance } from './appearance.ts';
+import { APPEARANCE_KEY, appearanceVariables, parseAppearance, stepInterfaceSize, type Appearance } from './appearance.ts';
 
 export type Theme = 'system' | 'light' | 'dark';
 const key = 'papilot:theme';
@@ -15,6 +15,10 @@ export function useTheme() {
   const [appearance, setAppearance] = useState(() => parseAppearance(browserStorage.getItem(APPEARANCE_KEY)));
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches);
   const resolved = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
+  const saveAppearance = useCallback((value: Appearance) => {
+    browserStorage.setItem(APPEARANCE_KEY, JSON.stringify(value));
+    setAppearance(value);
+  }, []);
   useEffect(() => {
     const media = matchMedia('(prefers-color-scheme: dark)');
     const change = () => setSystemDark(media.matches);
@@ -33,8 +37,16 @@ export function useTheme() {
     for (const [name, value] of Object.entries(variables)) document.documentElement.style.setProperty(name, value);
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', variables['--bg']);
   }, [resolved, appearance]);
+  // The desktop app zooms the whole window, including the review frame.
+  useLayoutEffect(() => { window.papilotDesktop?.setZoom?.(appearance.size); }, [appearance.size]);
+  // View › Zoom In/Out/Actual Size step the saved size rather than a separate
+  // zoom. Repeated steps build on each other even before a render.
+  useEffect(() => window.papilotDesktop?.onZoom?.(direction => {
+    const current = parseAppearance(browserStorage.getItem(APPEARANCE_KEY));
+    saveAppearance({ ...current, size: stepInterfaceSize(current.size, direction) });
+  }), [saveAppearance]);
   return { theme, resolved, appearance,
     setTheme: (value: Theme) => { browserStorage.setItem(key, value); setTheme(value); },
-    setAppearance: (value: Appearance) => { browserStorage.setItem(APPEARANCE_KEY, JSON.stringify(value)); setAppearance(value); },
+    setAppearance: saveAppearance,
   };
 }

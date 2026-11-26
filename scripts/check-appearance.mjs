@@ -22,7 +22,7 @@ page.on('pageerror', error => errors.push(error.message));
 const task = { id: 'appearance-task', projectId: 'appearance-paper', name: 'p-appearance', title: 'Refine the introduction', instructions: '', worktree: '/tmp/appearance', threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: { state: 'reviewing', round: 1, counts: { pending: 1, commented: 0 } } };
 const runtime = { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'model', name: 'Model', isDefault: true, efforts: ['high'], defaultEffort: 'high' }] };
 const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: task.projectId, name: 'Example paper', path: '/tmp/appearance', createdAt: 1 }], tasks: [task], requests: [], runtime };
-await context.route('**/api/**', route => {
+const api = route => {
   const url = new URL(route.request().url());
   const json = data => route.fulfill({ json: data });
   if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
@@ -40,7 +40,8 @@ await context.route('**/api/**', route => {
   if (url.pathname === '/api/quick-model') return json({ choice: null });
   if (url.pathname.endsWith('/manuscript/evidence')) return json({ key: url.searchParams.get('key'), marks: [], running: false });
   throw new Error(`Unexpected appearance request: ${url.pathname}`);
-});
+};
+await context.route('**/api/**', api);
 await context.route('**/review/**', route => route.fulfill({ contentType: 'text/html', body: '<html><head></head><body><div class="bar">Review</div><main id="paper">Paper</main></body></html>' }));
 const dialog = page.locator('.settings-dialog');
 const modes = dialog.getByRole('radiogroup', { name: 'Mode', exact: true });
@@ -169,6 +170,76 @@ try {
   await other.evaluate(() => localStorage.setItem('papilot:appearance', '{broken'));
   await rootHas('--bg', '#ffffff');
   await other.close();
+
+  // Browsers keep their own page zoom; Settings points to it instead of a size picker.
+  await expect(dialog.getByRole('combobox', { name: 'Interface size', exact: true })).toHaveCount(0);
+  await expect(dialog.getByText('Use your browser’s zoom to scale text and controls.')).toBeVisible();
+
+  // The desktop app zooms its window to the saved interface size, and its
+  // View menu steps the same setting.
+  const desktop = await browser.newContext({ locale: 'en-US', colorScheme: 'light', viewport: { width: 1440, height: 960 } });
+  desktop.setDefaultTimeout(15000);
+  await desktop.addInitScript(() => {
+    window.zoomCalls = [];
+    const listeners = new Set();
+    window.zoomMenu = direction => { for (const listener of listeners) listener(direction); };
+    window.papilotDesktop = { platform: 'linux', minimize() {}, maximize() {}, close() {},
+      setZoom: factor => window.zoomCalls.push(factor),
+      onZoom: listener => { listeners.add(listener); return () => listeners.delete(listener); } };
+  });
+  await desktop.route('**/api/**', api);
+  const app = await desktop.newPage();
+  app.on('pageerror', error => errors.push(error.message));
+  const lastZoom = () => app.evaluate(() => window.zoomCalls.at(-1));
+  await app.goto(origin);
+  await app.waitForFunction(() => window.zoomCalls.length > 0);
+  assert.equal(await lastZoom(), 1);
+  await app.getByRole('button', { name: 'Settings', exact: true }).click();
+  const settings = app.locator('.settings-dialog');
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  const size = settings.getByRole('combobox', { name: 'Interface size', exact: true });
+  await selectOption(size, '1.5');
+  await app.waitForFunction(() => window.zoomCalls.at(-1) === 1.5);
+  await app.evaluate(() => window.zoomMenu('in'));
+  await expect(size).toHaveAttribute('data-value', '1.75');
+  assert.equal(await lastZoom(), 1.75);
+  await app.evaluate(() => window.zoomMenu('out'));
+  await app.evaluate(() => window.zoomMenu('out'));
+  await expect(size).toHaveAttribute('data-value', '1.25');
+  // Electron zoom shrinks the layout viewport (and raises the pixel ratio, which
+  // does not affect layout); Settings must stay usable at the largest sizes.
+  // The default window (1380×900) and the minimum one (900×620) at large sizes.
+  for (const [factor, width, height] of [[1.5, 1380, 900], [2, 1380, 900], [2, 900, 620]]) {
+    await selectOption(size, String(factor));
+    await app.setViewportSize({ width: Math.round(width / factor), height: Math.round(height / factor) });
+    await size.scrollIntoViewIfNeeded();
+    await expect(size).toBeInViewport();
+    assert.equal(await settings.locator('.settings-content').evaluate(el => el.scrollWidth > el.clientWidth), false, `No horizontal overflow at ${factor * 100}% of ${width}px`);
+    await app.screenshot({ animations: 'disabled', path: `test-results/appearance-size-${factor * 100}-${width}.png` });
+  }
+  await settings.locator('.settings-mobile-back').click();
+  await expect(settings.getByRole('button', { name: 'Keyboard shortcuts', exact: true })).toBeVisible();
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await settings.getByRole('radio', { name: 'Dark', exact: true }).check();
+  await size.scrollIntoViewIfNeeded();
+  await app.screenshot({ animations: 'disabled', path: 'test-results/appearance-size-200-900-dark.png' });
+  await app.setViewportSize({ width: 1440, height: 960 });
+  await selectOption(size, '1.25');
+  await app.reload();
+  await app.waitForFunction(() => window.zoomCalls.at(-1) === 1.25);
+  assert.equal(JSON.parse(await app.evaluate(() => localStorage.getItem('papilot:appearance'))).size, 1.25);
+  await app.evaluate(() => { window.zoomMenu('in'); window.zoomMenu('in'); });
+  await app.waitForFunction(() => window.zoomCalls.at(-1) === 1.75);
+  await app.evaluate(() => window.zoomMenu('reset'));
+  await app.waitForFunction(() => window.zoomCalls.at(-1) === 1);
+  await app.evaluate(() => window.zoomMenu('in'));
+  await app.waitForFunction(() => window.zoomCalls.at(-1) === 1.1);
+  await app.getByRole('button', { name: 'Settings', exact: true }).click();
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await settings.getByRole('button', { name: 'Reset appearance', exact: true }).click();
+  await app.waitForFunction(() => window.zoomCalls.at(-1) === 1);
+  await desktop.close();
+
   assert.deepEqual(errors, []);
-  console.log('Appearance: live colors, iframe sync, validation, per-mode persistence, system mode, cross-tab sync, reset and responsive layouts passed.');
+  console.log('Appearance: live colors, iframe sync, validation, per-mode persistence, system mode, cross-tab sync, reset, interface size and responsive layouts passed.');
 } catch (error) { await page.screenshot({ animations: 'disabled', path: 'test-results/appearance-failure.png' }); console.error(await page.locator('body').innerText()); throw error; } finally { await browser.close(); await server.close(); }

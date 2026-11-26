@@ -23,8 +23,12 @@ function showRailTip(button: Element | null) {
   if (menu && document.getElementById(menu)?.matches(':popover-open')) { hideRailTips(rail); return; }
   const tip = button.querySelector<HTMLElement>('.rail-tip');
   if (!tip) { hideRailTips(rail); return; }
-  const rect = button.getBoundingClientRect(), viewport = button.closest('.rail-tools, .pdf-anchor-slots')?.getBoundingClientRect();
-  if (viewport && (rect.bottom <= viewport.top || rect.top >= viewport.bottom)) { hideRailTips(rail); return; }
+  const rect = button.getBoundingClientRect();
+  const clipped = ['.rail-tools, .pdf-anchor-slots', '.rail-items'].some(selector => {
+    const viewport = button.closest(selector)?.getBoundingClientRect();
+    return viewport && (rect.bottom <= viewport.top || rect.top >= viewport.bottom);
+  });
+  if (clipped) { hideRailTips(rail); return; }
   hideRailTips(rail, tip);
   if (!tip.matches(':popover-open')) tip.showPopover();
   tip.style.left = `${Math.max(8, Math.min(rect.right + 12, window.innerWidth - tip.offsetWidth - 8))}px`;

@@ -55,6 +55,9 @@ function openLink(url: string | undefined) {
 function external(url: string) {
   try { if (['https:', 'http:'].includes(new URL(url).protocol)) void shell.openExternal(url); } catch { /* invalid link */ }
 }
+function zoom(direction: 'in' | 'out' | 'reset') {
+  window?.webContents.send('papilot:zoom', direction);
+}
 function showWindow() {
   if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); return; }
   if (!origin) return;
@@ -221,7 +224,18 @@ else {
       ] },
       { label: 'File', submenu: [{ id: 'open-folder', label: 'Open Paper…', accelerator: 'CmdOrCtrl+O', click: () => void openFolder() }, { type: 'separator' }, process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' }] },
       ...(process.platform === 'win32' ? [{ label: 'Environment', submenu: [{ label: environment.kind === 'wsl' ? `WSL · ${environment.distribution}…` : 'Windows…', click: () => openEnvironment() }] }] : []),
-      { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
+      { role: 'editMenu' },
+      // Zoom steps the interface size saved in Settings › Appearance, so the
+      // setting, the menu and the next launch agree.
+      { label: 'View', submenu: [
+        { role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' },
+        { id: 'zoom-reset', label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => zoom('reset') },
+        { id: 'zoom-in', label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: () => zoom('in') },
+        { label: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', visible: false, acceleratorWorksWhenHidden: true, click: () => zoom('in') },
+        { id: 'zoom-out', label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: () => zoom('out') },
+        { type: 'separator' }, { role: 'togglefullscreen' },
+      ] },
+      { role: 'windowMenu' },
       { role: 'help', submenu: [{ label: 'Papilot Guide', click: () => external('https://github.com/PapilotAI/papilot#readme') }, { label: 'Show Logs', click: () => shell.showItemInFolder(log) }] },
     ]));
     let server = root;

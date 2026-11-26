@@ -784,7 +784,9 @@ progress.pdf-preparing::-moz-progress-bar{background:none}
 .pdf-toolbar .icon-button{width:28px;height:28px}
 .pdf-toolbar .icon-button.active,.pdf-find .icon-button.active{background:var(--bg-active);color:var(--text)}
 @container (max-width:1120px){.review-host-bar.pdf-toolbar .pdf-zoom>.icon-button{display:none}}
-@container (max-width:760px){.pdf-toolbar .pdf-zoom,.review-host-bar.pdf-toolbar .pdf-pager>.icon-button{display:none}}
+@container (max-width:760px){
+  html:not([data-desktop]) .pdf-toolbar .pdf-zoom,.pdf-toolbar .pdf-zoom>.icon-button,.review-host-bar.pdf-toolbar .pdf-pager>.icon-button{display:none}
+}
 @container (max-width:620px){.pdf-pager>.icon-button{display:none}}
 @container (max-width:400px){.pdf-toolbar .pdf-modes>button{padding:0 6px}.pdf-pages{min-width:24px;padding-left:2px}}
 .pdf-find{display:flex;align-items:center;gap:6px;height:40px;padding:0 8px 0 14px;border-bottom:1px solid var(--line);background:var(--bg);flex-shrink:0}
@@ -1175,7 +1177,7 @@ progress.pdf-preparing::-moz-progress-bar{background:none}
   .review-host-bar.pdf-toolbar{height:auto;min-height:42px;gap:0;padding:0;background:transparent;border-bottom:0;pointer-events:none}
   .review-host-bar.pdf-toolbar .review-lead{min-height:42px;padding-left:6px}
   .review-host-bar.pdf-toolbar .review-tools{min-height:42px;padding-left:8px}
-  .pdf-zoom{display:none}
+  html:not([data-desktop]) .pdf-zoom{display:none}
   .pdf-modes{border:0;padding:2px;border-radius:8px;background:var(--bg-muted)}
   .pdf-modes>button{width:30px;height:28px;padding:0;border-radius:6px}
   .pdf-modes>button>span{display:none}

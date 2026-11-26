@@ -7,6 +7,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 ### Added
 
 - Use a third-party OpenAI-compatible Chat Completions API with **Settings → Runtime → Agents → Papilot Writer → Custom API**. Save the provider's base URL, model ID and API key, then choose that model for a task. ([#338](https://github.com/PapilotAI/papilot/issues/338))
+- Choose an **Interface size** from 100% to 200% in **Settings → Appearance** in the desktop app. It zooms text, controls, the editor, PDF and review viewer together, follows **View → Zoom In / Zoom Out / Actual Size**, and is restored after a restart. Browsers keep using their own page zoom. ([#314](https://github.com/PapilotAI/papilot/issues/314))
 - Keep a PDF for every cited work in the new **Library** (**Research Tools → Library**), which replaces **Reference check**. PDFs come from your local Zotero library (matched by citation key, DOI, arXiv identifier or title, and read where Zotero keeps them), from arXiv and open-access copies listed by OpenAlex, or from PDFs you drop on the library or on an entry. Copies found by DOI or title are kept only when their first pages show the entry's DOI or full title. Works without an open copy link to their publisher page. With online lookups on, the library checks entries and looks for missing PDFs as soon as it opens, where **Reference check** waited for **Check online**. PDFs are stored once for all papers in Papilot's data folder, never in the paper's repository. The bibliography's problems, online record checks and **Ask an agent to look into** remain in the library.
 - Check whether the works a paper cites say what it says of them with a citation check, a task of its own started from **Check** in the Library with the quick model; its page checks again with another model. For each citing sentence, Papilot picks the passages of the cited work's PDF that share its words and asks the model for a verdict (supported, partly supported, not supported, cannot tell) with its reason and the lines that show it; Papilot quotes those lines from the PDF itself, and a quote opens the PDF there. The check's page shows its progress, then what needs you first; **Check again** runs it once more and deleting it takes its findings with it. The Library, now in the sidebar below **Version Management**, opens on what needs you, with each work's citing sentences as rows that open for the reason and the quotes.
 - See a check's findings in the paper's PDF when you turn on **Show in the paper** on its page: a bar in the margin beside each paragraph, one segment per citation in reading order, coloured by its verdict. Its card lists the paragraph's sentences with each verdict, why and the quotes, and a quote opens the cited work's PDF at those lines in the Library. There, each passage the paper relies on has its own bar, whose card shows the citing sentences and goes back to them in the paper with **Show in paper**.
@@ -22,6 +23,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 ### Changed
 
 - Rename **Settings → Check references online** to **Look up references online**. It now also controls PDF downloads. A new **Settings → Zotero** page shows the Zotero library Papilot found on this computer, with its data directory and how many items have a PDF and a citation key, lets you choose another data directory, and holds the **Use PDFs from Zotero** switch; turned off, PDFs from Zotero are no longer used.
+
+### Fixed
+
+- The `papilot` command uses the Codex it downloads on the same launch, even when an older copy is on `PATH`.
 
 ## [0.14.1] - 2026-11-23
 

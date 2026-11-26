@@ -123,7 +123,7 @@
   .settings-search>svg{top:11px;left:10px;width:16px;height:16px}
   .settings-dialog .settings-search input{height:38px;padding-left:34px;font-size:16px}
   .settings-category-group h3{min-height:32px;font-size:13px}
-  .settings-category[data-settings-page="shortcuts"]{display:none}
+  html:not([data-desktop]) .settings-category[data-settings-page="shortcuts"]{display:none}
   .settings-category{min-height:44px;gap:12px;font-size:15px}
   .settings-category>svg,.settings-category>img{width:20px;height:20px}
   .settings-category>.brand-icon{width:20px!important;height:20px!important}
