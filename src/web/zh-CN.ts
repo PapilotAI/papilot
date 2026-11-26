@@ -373,7 +373,7 @@ export const zhCN: Record<string, string> = {
   '{agent} was not found on this computer. Install or set it up, then select Reconnect.': '本机未找到 {agent}。安装或配置后点“重新连接”。', 'Search models': '搜索模型', 'Models': '模型', 'Recent': '最近使用', 'Default': '默认', 'No models match “{query}”': '没有匹配“{query}”的模型', 'Wait for the PDF to compile.': '请等待 PDF 编译完成。',
   'Fit width': '适合宽度', 'Fit page': '适合页面', 'What should change here?': '这里应该怎么改？', 'Add note': '添加批注',
   'PDF controls': 'PDF 控件', 'Previous page': '上一页', 'Page number': '页码', 'Next page': '下一页',
-  'Zoom out': '缩小', 'Zoom out (⌘−)': '缩小（⌘−）', 'Zoom': '缩放', 'Zoom in': '放大', 'Zoom in (⌘+)': '放大（⌘+）',
+  'Zoom out': '缩小', 'Zoom': '缩放', 'Zoom in': '放大',
   'Find in PDF': '在 PDF 中查找', 'Find (⌘F)': '查找（⌘F）', 'Mark region': '标记区域', 'Mark a figure or region': '标记图表或区域', 'Search the PDF': '搜索 PDF',
   'No matches': '无匹配', '{current} of {total}': '{current}/{total}', 'Previous match': '上一个匹配', 'Next match': '下一个匹配', 'Close search': '关闭搜索',
   'PDF pages': 'PDF 页面', 'The PDF could not be opened: {error}': '无法打开 PDF：{error}', 'Note {n}: {comment}': '批注 {n}：{comment}',

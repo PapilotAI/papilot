@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { browserStorage } from './storage.ts';
+import { browserStorage, storageKey } from './storage.ts';
 
 // The LaTeX source editor's font size, separate from the interface size so
 // the editor can grow without scaling the PDF, sidebars or dialogs.
@@ -19,7 +19,8 @@ function apply(value: number) {
   for (const listener of listeners) listener(size);
 }
 if (typeof window !== 'undefined') window.addEventListener('storage', event => {
-  if (event.key === EDITOR_FONT_KEY || event.key === null) apply(parseEditorFontSize(browserStorage.getItem(EDITOR_FONT_KEY)));
+  // The playground keeps its preferences under a prefix.
+  if (event.key === storageKey(EDITOR_FONT_KEY) || event.key === null) apply(parseEditorFontSize(browserStorage.getItem(EDITOR_FONT_KEY)));
 });
 
 export const editorFontSize = () => size;

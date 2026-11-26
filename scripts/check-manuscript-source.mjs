@@ -159,7 +159,7 @@ try {
   await shot('open');
 
   // The editor's own font size comes from Settings and changes only the
-  // editor; Ctrl/⌘ +/− stay with the PDF and interface even while it is focused.
+  // editor; Ctrl/⌘ +/− stay with the window zoom even while it is focused.
   const editorFont = () => panel.locator('.cm-content').evaluate(content => [getComputedStyle(content).fontSize, getComputedStyle(content.closest('.cm-scroller')).lineHeight]);
   const tabFont = () => tabs.getByRole('tab', { name: 'intro.tex' }).evaluate(tab => getComputedStyle(tab).fontSize);
   const interfaceFont = await tabFont();

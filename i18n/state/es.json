@@ -6834,19 +6834,9 @@
     "textHash": "3aa1970d859b19251c7b6be2882c6605f92d289b0ac2c2a532d60f04e713ff3c",
     "model": "gemini-4-argon-medium"
   },
-  "Zoom in (⌘+)": {
-    "revision": "9f469a36eebc0575d7483872c77652da08c38c8af557558a047e30a91bc08fbc",
-    "textHash": "6be8e9956e039da35181bf008cc6e56a963d5a4bd927be97f8a4e4ec05ea1455",
-    "model": "gemini-4-argon-medium"
-  },
   "Zoom out": {
     "revision": "84d4afc1c79982acacbd8381131e35b87628b92aaab7c4ded8ab79e4e1354236",
     "textHash": "d9865e34c2d64dd109e35555d29113199685ff0e1bc5319271f048a980807e18",
-    "model": "gemini-4-argon-medium"
-  },
-  "Zoom out (⌘−)": {
-    "revision": "2bf9f6d16a46172ab33eeaa272882c9424e67426f06c3acb8a7193ab0e3fd18e",
-    "textHash": "d194a15c70e3e6b91a64bf3802c0853cdd047c791b8b4b84e76ff4d733f8683a",
     "model": "gemini-4-argon-medium"
   },
   "Zotero": {
