@@ -100,15 +100,6 @@ export function ShortcutSettings() {
       })}</div>
     </section>)}
     <section className="shortcut-system">
-      <h3 className="settings-section-title">{t('LaTeX source editor')}</h3>
-      <p className="settings-intro">{t('These work while the source editor is focused. Elsewhere, the same keys zoom the PDF or, in the desktop app, the whole interface.')}</p>
-      <dl>
-        <div><dt>{t('Larger editor text')}</dt><dd><kbd>{mac ? '⌘=' : 'Ctrl+='}</kbd></dd></div>
-        <div><dt>{t('Smaller editor text')}</dt><dd><kbd>{mac ? '⌘−' : 'Ctrl+−'}</kbd></dd></div>
-        <div><dt>{t('Default editor text size')}</dt><dd><kbd>{mac ? '⌘0' : 'Ctrl+0'}</kbd></dd></div>
-      </dl>
-    </section>
-    <section className="shortcut-system">
       <h3 className="settings-section-title">{t('Standard shortcuts')}</h3>
       <p className="settings-intro">{t('These keep the usual browser and text-editing behavior.')}</p>
       <dl>

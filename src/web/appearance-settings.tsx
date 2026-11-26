@@ -50,7 +50,6 @@ function PaperAppearanceOptions<T extends Appearance['review']>({ label, name, v
 
 // Only the desktop app can zoom its own window; browsers already offer page zoom.
 const nativeZoom = Boolean(window.papilotDesktop?.setZoom);
-const mac = /Mac|iPhone|iPad/.test(navigator.platform);
 
 export function AppearanceSettings({ theme, onTheme, resolved, appearance, onAppearance }: AppearanceSettingsProps) {
   const editorFont = useEditorFontSize();
@@ -87,7 +86,7 @@ export function AppearanceSettings({ theme, onTheme, resolved, appearance, onApp
       </div>
       <div className="settings-card">
         <div className="settings-row settings-choice">
-          <div className="settings-text"><span className="settings-name">{t('Editor font size')}</span><p>{t('Sizes the LaTeX source editor only. While it is focused, {larger} and {smaller} change it.', { larger: mac ? '⌘=' : 'Ctrl+=', smaller: mac ? '⌘−' : 'Ctrl+−' })}</p></div>
+          <div className="settings-text"><span className="settings-name">{t('Editor font size')}</span><p>{t('Sizes the LaTeX source editor only. The PDF and the rest of the interface keep their size.')}</p></div>
           <ChipSelect label={t('Editor font size')} value={String(editorFont)} options={EDITOR_FONT_SIZES.map(size => ({ value: String(size), label: size === DEFAULT_EDITOR_FONT_SIZE ? t('{size} px (default)', { size }) : t('{size} px', { size }) }))} onChange={value => setEditorFontSize(Number(value))}/>
         </div>
       </div>

@@ -10,12 +10,6 @@ export const DEFAULT_EDITOR_FONT_SIZE = 12;
 export function parseEditorFontSize(value: string | null) {
   return EDITOR_FONT_SIZES.find(size => String(size) === value) ?? DEFAULT_EDITOR_FONT_SIZE;
 }
-export function stepEditorFontSize(size: number, direction: 'in' | 'out' | 'reset') {
-  if (direction === 'reset') return DEFAULT_EDITOR_FONT_SIZE;
-  const index = EDITOR_FONT_SIZES.findIndex(value => value >= size);
-  const current = index < 0 ? EDITOR_FONT_SIZES.length - 1 : index;
-  return EDITOR_FONT_SIZES[Math.max(0, Math.min(EDITOR_FONT_SIZES.length - 1, current + (direction === 'in' ? 1 : -1)))];
-}
 
 let size: number = parseEditorFontSize(browserStorage.getItem(EDITOR_FONT_KEY));
 const listeners = new Set<(size: number) => void>();

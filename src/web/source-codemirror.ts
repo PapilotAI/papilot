@@ -7,7 +7,7 @@ import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/sea
 import { Chunk } from '@codemirror/merge';
 import { tags } from '@lezer/highlight';
 import { personHue } from './overleaf-presence.ts';
-import { editorFontSize, onEditorFontSize, setEditorFontSize, stepEditorFontSize } from './editor-font.ts';
+import { editorFontSize, onEditorFontSize } from './editor-font.ts';
 
 // The LaTeX editor of the manuscript's source tab, loaded when a source is
 // first opened. It shows the whole file, with bars beside the lines that
@@ -49,7 +49,6 @@ const fontTheme = (size: number) => EditorView.theme({
   '.cm-scroller': { lineHeight: `${Math.round(size * 5 / 3)}px` },
   '.cm-lineNumbers .cm-gutterElement': { fontSize: `${size - 1}px` },
 });
-const changeFontSize = (direction: 'in' | 'out' | 'reset') => () => { setEditorFontSize(stepEditorFontSize(editorFontSize(), direction)); return true; };
 const theme = EditorView.theme({
   '&': { height: '100%', color: 'var(--text)', backgroundColor: 'var(--bg)' },
   '&.cm-focused': { outline: 'none' },
@@ -432,11 +431,6 @@ export class SourceCodeEditor {
       keymap.of([
         { key: 'Mod-s', preventDefault: true, run: () => { options.onSave(); return true; } },
         { key: 'Mod-Enter', preventDefault: true, run: () => { options.onSave(); return true; } },
-        // With the editor focused, these size its text rather than the whole interface.
-        { key: 'Mod-=', preventDefault: true, run: changeFontSize('in') },
-        { key: 'Mod-+', preventDefault: true, run: changeFontSize('in') },
-        { key: 'Mod--', preventDefault: true, run: changeFontSize('out') },
-        { key: 'Mod-0', preventDefault: true, run: changeFontSize('reset') },
         ...searchKeymap, ...historyKeymap, indentWithTab, ...defaultKeymap,
         { key: 'Escape', run: () => options.onEscape() },
       ]),

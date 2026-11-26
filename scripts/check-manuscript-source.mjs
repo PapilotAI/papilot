@@ -148,21 +148,15 @@ try {
   await page.waitForTimeout(700);
   await shot('open');
 
-  // The editor's own font size: keys while it is focused and the Settings
-  // picker change only the editor, and the choice is saved.
+  // The editor's own font size comes from Settings and changes only the
+  // editor; Ctrl/⌘ +/− stay with the PDF and interface even while it is focused.
   const editorFont = () => panel.locator('.cm-content').evaluate(content => [getComputedStyle(content).fontSize, getComputedStyle(content.closest('.cm-scroller')).lineHeight]);
   const tabFont = () => tabs.getByRole('tab', { name: 'intro.tex' }).evaluate(tab => getComputedStyle(tab).fontSize);
   const interfaceFont = await tabFont();
   assert.deepEqual(await editorFont(), ['12px', '20px']);
-  await page.keyboard.press('ControlOrMeta+='); await page.keyboard.press('ControlOrMeta+=');
-  await expect.poll(editorFont).toEqual(['14px', '23px']);
-  assert.equal(await tabFont(), interfaceFont, 'the rest of the interface keeps its size');
-  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:editor-font-size')), '14');
   await expect(field).toBeFocused();
-  await page.keyboard.press('ControlOrMeta+-');
-  await expect.poll(editorFont).toEqual(['13px', '22px']);
-  await page.keyboard.press('ControlOrMeta+0');
-  await expect.poll(editorFont).toEqual(['12px', '20px']);
+  await page.keyboard.press('ControlOrMeta+='); await page.keyboard.press('ControlOrMeta+0');
+  assert.deepEqual(await editorFont(), ['12px', '20px'], 'zoom keys do not resize the editor');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   const settings = page.locator('.settings-dialog');
   await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
@@ -170,8 +164,14 @@ try {
   await expect.poll(editorFont).toEqual(['18px', '30px']);
   await settings.getByRole('button', { name: 'Close', exact: true }).click();
   await shot('editor-font-18');
-  await field.focus(); await page.keyboard.press('ControlOrMeta+0');
+  assert.equal(await tabFont(), interfaceFont, 'the rest of the interface keeps its size');
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:editor-font-size')), '18');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await selectOption(settings.getByRole('combobox', { name: 'Editor font size', exact: true }), '12');
   await expect.poll(editorFont).toEqual(['12px', '20px']);
+  await settings.getByRole('button', { name: 'Close', exact: true }).click();
+  await field.focus();
 
   // What changed since the last commit, as bars beside the lines while editing.
   await page.keyboard.press('End');
