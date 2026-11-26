@@ -340,6 +340,15 @@ try {
   await page.getByRole('button', { name: 'Check citations', exact: true }).click();
   await page.getByRole('alert').getByText('Connect an agent that supports read-only tasks, such as Codex.', { exact: true }).waitFor();
   assert.equal(checks.length, checksBefore);
+
+  // A stored editing-only Quick model also stays pinned until the author changes it.
+  quickModel = { agent: 'qoder', model: 'qoder-model', effort: null };
+  state.runtimes.qoder = { ...state.runtime, authenticated: true, supportsReadOnlyTasks: false };
+  await page.reload();
+  await openLibrary();
+  await page.getByRole('button', { name: 'Check citations', exact: true }).click();
+  await page.getByRole('alert').getByText('The selected agent does not support read-only tasks. Select another agent.', { exact: true }).waitFor();
+  assert.equal(checks.length, checksBefore);
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();

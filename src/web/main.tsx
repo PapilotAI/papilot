@@ -1435,8 +1435,9 @@ function App() {
     const id = crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
     const quick = await api<{ choice: ModelChoice | null }>('/quick-model').then(result => result.choice, () => null);
     const fallback = readOnlyChoice(defaultSelection.agent);
-    const choice = quick && runtimes[quick.agent]?.supportsReadOnlyTasks !== false ? quick : fallback && { agent: fallback.agent, model: fallback.model || null, effort: null };
+    const choice = quick ?? (fallback && { agent: fallback.agent, model: fallback.model || null, effort: null });
     const runtime = choice && runtimes[choice.agent];
+    if (runtime?.supportsReadOnlyTasks === false) throw new Error(errorText('The selected agent does not support read-only tasks. Select another agent.'));
     if (!choice || runtime?.hidden || runtime?.installed === false || (runtime?.connected && !runtime.authenticated)) throw new Error(errorText(noReadOnlyAgent));
     await api('/citation-checks', { id, projectId: project.id, agent: choice.agent, model: choice.model, effort: choice.effort, title: t('Check citations') });
     await refresh(true); setSelected(id); setSidebar(false);
