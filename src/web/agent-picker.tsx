@@ -32,9 +32,9 @@ export function AgentConnectionNotice({ name, runtime, reconnecting, onReconnect
 
 // Adding an agent is the way forward, so it is the main action; Reconnect
 // checks again once one is installed.
-export function NoAgentNotice({ reconnecting, onReconnect, onAdd }: { reconnecting: boolean; onReconnect: () => void; onAdd: () => void }) {
+export function NoAgentNotice({ message, reconnecting, onReconnect, onAdd }: { message?: string; reconnecting: boolean; onReconnect: () => void; onAdd: () => void }) {
   return <div className="agent-connection no-agent" data-state="error">
-    <div className="agent-connection-message" role="status"><Icon name="alert" size={14}/><span>{t('No agent is set up on this computer yet. Add one, such as Codex or Claude Code, then select Reconnect.')}</span></div>
+    <div className="agent-connection-message" role="status"><Icon name="alert" size={14}/><span>{message || t('No agent is set up on this computer yet. Add one, such as Codex or Claude Code, then select Reconnect.')}</span></div>
     <div className="agent-connection-actions">
       <button type="button" className="button primary compact" onClick={onAdd}>{t('Add an agent')}</button>
       <button type="button" className="button secondary compact" disabled={reconnecting} onClick={onReconnect}><Icon name="refresh" size={13}/>{reconnecting ? t('Connecting…') : t('Reconnect')}</button>

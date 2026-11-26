@@ -65,11 +65,15 @@ for (const task of store.tasks()) {
 }
 let shuttingDown = false;
 function shutdown() {
-  if (shuttingDown) return; shuttingDown = true; updates.close(); workspace.close(); void manuscripts.stop().catch(() => undefined);
-  void app.close().finally(() => { store.close(); process.exit(0); });
-  setTimeout(() => process.exit(0), 2500).unref();
+  if (shuttingDown) return; shuttingDown = true; updates.close();
+  const agentsClosed = workspace.close();
+  void manuscripts.stop().catch(() => undefined);
+  void Promise.allSettled([agentsClosed, app.close()]).then(() => { store.close(); process.exit(0); });
+  // A detached agent may need time to close its own tools before the server exits.
+  setTimeout(() => process.exit(0), 11000).unref();
 }
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, shutdown);
+if (process.platform !== 'win32') process.on('SIGHUP', shutdown);
 if (desktop && process.send) {
   process.on('disconnect', shutdown);
   process.on('message', message => {

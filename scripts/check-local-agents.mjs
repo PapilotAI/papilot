@@ -55,7 +55,7 @@ try {
         state.runtimes.codebuddy = { ...missing, installed: true, connected: true, authenticated: true, account: 'CodeBuddy CLI',
           models: [{ id: 'research', name: 'Research model', isDefault: true, efforts: [], defaultEffort: null }] };
         for (const id of ['qoder', 'workbuddy']) state.runtimes[id] = { ...missing, installed: true, error: 'Authentication required' };
-        state.runtimes.zcode = { ...missing, installed: true, connected: true, authenticated: true };
+        state.runtimes.zcode = { ...missing, installed: true, connected: true, authenticated: true, authenticationUnchecked: true, supportsReadOnlyTasks: false };
         return route.fulfill({ json: { ok: true } });
       }
       if (pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
@@ -93,11 +93,16 @@ try {
     await page.locator('.runtime-agent-help .runtime-setup-actions button').click();
     await expect(page.locator('[data-agent="codebuddy"]')).toHaveAttribute('data-availability', 'ready');
     await expect(page.locator('.runtime-agent-detail')).toContainText('Research model');
-    await expect(page.locator('[data-agent="zcode"]')).toHaveAttribute('data-availability', 'ready');
+    const zcode = page.locator('[data-agent="zcode"]');
+    await expect(zcode).toHaveAttribute('data-availability', 'unchecked');
+    await expect(zcode.locator('.diagnostic-availability')).toHaveText(language === 'en' ? 'Sign-in not checked' : '尚未检查登录状态');
     for (const id of ['qoder', 'workbuddy']) await expect(page.locator(`[data-agent="${id}"]`)).toHaveAttribute('data-availability', 'unavailable');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
     await page.locator('.settings-content').evaluate(element => { element.scrollTop = 0; });
     await page.screenshot({ path: `test-results/local-agents-ready-${width}-${language}.png`, animations: 'disabled' });
+    await zcode.locator('button').click();
+    await expect(page.locator('.runtime-agent-detail .runtime-agent-account')).toHaveCount(0);
+    await zcode.screenshot({ path: `test-results/zcode-setup-unchecked-${width}-${language}.png`, animations: 'disabled' });
     await context.close();
   }
   assert.deepEqual(errors, []);

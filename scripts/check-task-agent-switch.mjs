@@ -22,7 +22,8 @@ const runtime = { connected: true, authenticated: true, account: null, error: nu
   { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', fastMode: { serviceTier: 'priority', description: 'Faster responses' } },
 ] };
 runtime.permissionOptions = [{ value: 'workspace', label: 'Workspace access', detail: 'Native approvals' }, { value: 'full', label: 'Full access', detail: 'Approve all tools' }];
-const snapshot = { version: 'test', csrf: 'test', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper', createdAt: 1 }], tasks: [task], requests: [], runtime, runtimes: { codex: runtime, claude: { ...runtime, models: [{ id: 'opus', name: 'Opus', isDefault: true, efforts: ['low', 'high'], defaultEffort: 'high' }] }, zcode: { ...runtime, models: [], supportsReadOnlyTasks: false } } };
+const zcode = { ...runtime, models: [], authenticationUnchecked: true, supportsReadOnlyTasks: false };
+const snapshot = { version: 'test', csrf: 'test', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper', createdAt: 1 }], tasks: [task], requests: [], runtime, runtimes: { codex: runtime, claude: { ...runtime, models: [{ id: 'opus', name: 'Opus', isDefault: true, efforts: ['low', 'high'], defaultEffort: 'high' }] }, zcode } };
 const modelChanges = [], messages = [], switches = [];
 let failSwitch = true;
 let holdSwitch, releaseSwitch;
@@ -57,7 +58,7 @@ async function routeApi(route) {
     if (snapshot.runtimes[body.agent]?.connected === false) return route.fulfill({ status: 503, json: { error: 'Connect and sign in to the destination agent before switching.' } });
     if (holdSwitch) await holdSwitch;
     if (failSwitch) return route.fulfill({ status: 409, json: { error: 'The current turn is still stopping. Wait for it to finish, then retry.' } });
-    Object.assign(task, { agent: body.agent, model: body.model, effort: body.effort || null, permissions: body.permissions, status: 'interrupted', threadId: null, turnId: null, handoff: true, updatedAt: Date.now() });
+    Object.assign(task, { agent: body.agent, model: body.model || null, effort: body.effort || null, permissions: body.permissions, status: 'interrupted', threadId: null, turnId: null, handoff: true, updatedAt: Date.now() });
     if (body.agent === 'codex') task.serviceTier = body.serviceTier; else delete task.serviceTier;
     return json(task);
   }
@@ -200,7 +201,19 @@ try {
   await expect(menu.getByRole('button', { name: 'Reconnect', exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/task-agent-switch-empty.png', animations: 'disabled' });
   await search.press('Escape');
-  assert.equal(switches.length, 3, 'Only explicit cross-agent choices switch agents');
+
+  snapshot.runtimes.zcode = zcode;
+  await page.reload();
+  await opener.click();
+  await menu.getByRole('option', { name: 'Default model · ZCode', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Instructions for ZCode' })).toHaveValue('My updated unsent instructions.');
+  await expect(opener).toBeEnabled();
+  await expect(opener).toHaveAccessibleDescription(/ZCode · Default model/);
+  await expect(activity).toContainText('Revised the opening paragraph.');
+  assert.deepEqual(switches[3], { agent: 'zcode', model: '', effort: '', permissions: 'workspace', stop: true });
+  assert.equal(task.model, null);
+  assert.equal(switches.length, 4, 'Only explicit cross-agent choices switch agents');
+  assert.equal(messages.length, 0, 'Switching to ZCode does not send the draft');
   assert.deepEqual(errors, []);
   console.log('Task agent switch checks passed: all agent models, same-agent saves, queued cross-agent switch, busy/error/retry, one task with its conversation and drafts kept, and localized mobile/light/dark layouts.');
 } finally {

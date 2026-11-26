@@ -422,6 +422,37 @@ try {
   assert.equal(messageRequests.at(-1).effort, 'high');
   await page.reload();
   await expectAgent('claude');
+
+  // Following an editing-only conversation uses a connected read-only agent.
+  const zcodeTask = { ...task, id: 'zcode-conversation', name: 'zcode-conversation', title: 'ZCode conversation', agent: 'zcode', model: null, effort: null };
+  snapshot.runtimes.zcode = { ...runtime, models: [], supportsReadOnlyTasks: false, authenticationUnchecked: true };
+  snapshot.tasks.push(zcodeTask);
+  await page.reload();
+  await page.locator(`[data-task="${zcodeTask.id}"] .task-link`).click();
+  await openGit();
+  await expectAgent('codex');
+  const commitPicker = await settings();
+  await commitPicker.click();
+  const commitMenu = page.getByRole('dialog', { name: 'Agent settings', exact: true });
+  await expect(commitMenu.getByRole('group', { name: 'Codex', exact: true })).toBeVisible();
+  await expect(commitMenu.getByRole('group', { name: 'ZCode', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await closeSettings();
+  const requestsBefore = messageRequests.length;
+  snapshot.runtimes.codex = { ...runtime, hidden: true };
+  snapshot.runtimes.claude = { ...runtime, hidden: true };
+  await page.reload();
+  await openGit();
+  await generate.click();
+  await expect(panel.getByText('Connect an agent that supports read-only tasks, such as Codex.', { exact: true })).toBeVisible();
+  assert.equal(messageRequests.length, requestsBefore);
+  snapshot.runtimes.codex = runtime;
+  snapshot.runtimes.claude = { ...runtime };
+  await page.reload();
+  await openTask(); await openGit();
+  snapshot.tasks.pop();
+  delete snapshot.runtimes.zcode;
+
   const otherTask = { ...task, id: 'other-conversation', name: 'other-conversation', title: 'Another conversation', agent: 'codex' };
   snapshot.tasks.push(otherTask);
   const otherTab = await page.context().newPage();

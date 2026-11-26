@@ -23,16 +23,21 @@ const error = { kind: 'missing-file', severity: 'error', message: "LaTeX Error: 
 const bibtex = { kind: 'error', severity: 'error', message: 'LaTeX failed to compile.\nDatabase file #1: refs.bib\nIllegal end of database file---line 2 of file refs.bib' };
 const state = { build: { status: 'ready', key: 'pdf', pages: [[612, 792], [612, 792]], current: true, problems: { errors: 0, warnings: 2, minor: 2 } }, problems: { status: 'ready', key: 'pdf', problems: warnings, log: true } };
 let problemReads = 0;
+const diagnoses = [];
 
-async function open(options, { desktop = false } = {}) {
+async function open(options, { desktop = false, zcode = false, codexHidden = false } = {}) {
   const page = await browser.newPage({ locale: 'en-US', colorScheme: 'light', viewport: { width: 1440, height: 900 }, ...options });
   await page.addInitScript(() => localStorage.setItem('papilot:task', ''));
   if (desktop) await page.addInitScript(() => { window.papilotDesktop = { platform: 'darwin', minimize() {}, maximize() {}, close() {} }; });
+  if (zcode) await page.addInitScript(() => localStorage.setItem('papilot:agent', 'zcode'));
+  const sentSnapshot = zcode ? { ...snapshot, runtimes: {
+    codex: { ...snapshot.runtime, hidden: codexHidden }, zcode: { ...snapshot.runtime, supportsReadOnlyTasks: false, authenticationUnchecked: true },
+  } } : snapshot;
   const errors = []; page.on('pageerror', failure => errors.push(failure.message));
   await page.route('**/api/**', async route => {
     const url = new URL(route.request().url()), json = value => route.fulfill({ json: value });
     if (url.pathname === '/api/runtime/requirements') return route.fulfill({ json: readyRequirements });
-    if (url.pathname === '/api/state') return json(snapshot);
+    if (url.pathname === '/api/state') return json(sentSnapshot);
     if (url.pathname === '/api/note-alternatives') return route.fulfill({ json: { noteAlternatives: true, noteAlternativeRange: 'few' } });
     if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
     if (url.pathname === '/api/updates') return json({ phase: 'idle', currentVersion: 'test', latestVersion: 'test', canUpdate: false });
@@ -44,6 +49,10 @@ async function open(options, { desktop = false } = {}) {
     if (url.pathname.endsWith('/git')) return json({ branch: 'main', files: [] });
     if (url.pathname.endsWith('/manuscript')) return json({ git: { branch: 'main', files: [] }, build: state.build, annotations: [] });
     if (url.pathname.endsWith('/manuscript/problems')) { problemReads++; return json(state.problems); }
+    if (url.pathname.endsWith('/manuscript/repair')) {
+      diagnoses.push(route.request().postDataJSON());
+      return json({ kind: 'source', summary: 'Restore the missing figure.' });
+    }
     if (url.pathname.endsWith('/manuscript/log')) return route.fulfill({ contentType: 'text/plain', body: 'LaTeX Warning: fixture' });
     if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
     if (url.pathname.endsWith('/manuscript/words')) return json(JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'))[Number(url.searchParams.get('page'))]);
@@ -140,6 +149,26 @@ try {
   assert.ok(regions.every(([, region]) => region === 'no-drag'), `Toolbar popovers are not drag handles: ${JSON.stringify(regions)}`);
   assert.deepEqual(desktop.errors, []);
   await desktop.page.close();
+
+  // Diagnosis uses Codex while ZCode stays selected for editing.
+  state.build.failureId = state.problems.failureId = 'fixture-failure';
+  const diagnosis = await open(undefined, { zcode: true });
+  await diagnosis.page.locator('.pdf-toolbar .problems-button').click();
+  const diagnosisPanel = diagnosis.page.locator('.problems-panel');
+  await diagnosisPanel.getByRole('button', { name: 'Fix with an agent…' }).click();
+  await expect(diagnosisPanel.getByRole('status')).toContainText('Restore the missing figure.');
+  assert.deepEqual(diagnoses, [{ failureId: 'fixture-failure', agent: 'codex', model: '' }]);
+  assert.equal(await diagnosis.page.evaluate(() => localStorage.getItem('papilot:agent')), 'zcode');
+  assert.deepEqual(diagnosis.errors, []);
+  await diagnosis.page.close();
+
+  const editingOnly = await open(undefined, { zcode: true, codexHidden: true });
+  await editingOnly.page.locator('.pdf-toolbar .problems-button').click();
+  await editingOnly.page.locator('.problems-panel').getByRole('button', { name: 'Fix with an agent…' }).click();
+  await expect(editingOnly.page.getByRole('textbox', { name: 'Describe the revision' })).toHaveValue(/figures\/plot/);
+  assert.equal(diagnoses.length, 1);
+  assert.deepEqual(editingOnly.errors, []);
+  await editingOnly.page.close();
 
   // On a phone the list is a sheet along the bottom, inside the screen.
   state.build = { ...state.build, status: 'ready', current: true, error: undefined, problems: { errors: 0, warnings: 2, minor: 2 } };

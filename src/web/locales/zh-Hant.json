@@ -1297,6 +1297,7 @@
   "Sign in with a subscription or add an API key in Settings → Agents → Papilot Writer.": "請使用訂閱登入，或在 設定 → 智慧代理 → Papilot Writer 中新增 API 金鑰。",
   "Sign in with a subscription or add an API key.": "使用訂閱登入，或新增 API 金鑰。",
   "Sign out": "登出",
+  "Sign-in not checked": "尚未檢查登入狀態",
   "Sign-in required": "需要登入",
   "Signed in": "已登入",
   "Signed out": "已登出",

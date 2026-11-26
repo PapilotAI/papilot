@@ -43,7 +43,7 @@ function agentAvailability(online: boolean, runtime?: RuntimeStatus, off = false
   if (off) return 'off';
   if (!online || !runtime) return 'unknown';
   if (runtime.installed === false) return 'missing';
-  if (runtime.connected) return runtime.authenticated ? runtime.usage?.reached ? 'limited' : 'ready' : 'signin';
+  if (runtime.connected) return runtime.authenticated ? runtime.authenticationUnchecked ? 'unchecked' : runtime.usage?.reached ? 'limited' : 'ready' : 'signin';
   return runtime.error ? 'unavailable' : 'connecting';
 }
 
@@ -85,8 +85,8 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
   }
   const cards = useRef<Partial<Record<AgentId, HTMLButtonElement | null>>>({});
   const [reconnecting, setReconnecting] = useState(false), [reconnectError, setReconnectError] = useState(false);
-  const labels = { ready: t('Ready'), limited: t('Limit reached'), missing: t('Not detected'), signin: t('Sign-in required'), connecting: t('Connecting…'), unavailable: t('Unavailable'), unknown: t('Unknown'), off: t('Off') };
-  const icons = { ready: 'check', limited: 'alert', missing: 'minus', signin: 'key', connecting: 'refresh', unavailable: 'alert', unknown: 'minus', off: 'pause' };
+  const labels = { ready: t('Ready'), limited: t('Limit reached'), missing: t('Not detected'), signin: t('Sign-in required'), unchecked: t('Sign-in not checked'), connecting: t('Connecting…'), unavailable: t('Unavailable'), unknown: t('Unknown'), off: t('Off') };
+  const icons = { ready: 'check', limited: 'alert', missing: 'minus', signin: 'key', unchecked: 'key', connecting: 'refresh', unavailable: 'alert', unknown: 'minus', off: 'pause' };
   useEffect(() => { setReconnectError(false); }, [selected]);
   const close = () => { if (selected) cards.current[selected]?.focus(); setSelected(null); };
   const runtime = selected ? runtimes[selected] : undefined;
@@ -148,7 +148,7 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
       <header className="runtime-agent-header">
         {selected === 'papilot' && <BrandIcon name="papilot" size={22}/>}
         <h4 id="runtime-agent-title" tabIndex={-1}>{agentLabel(selected)}</h4>
-        {current && selected !== 'papilot' && <span className="runtime-agent-account" aria-label={t('Account')}>{runtime.account || t('Signed in')}</span>}
+        {current && selected !== 'papilot' && !runtime.authenticationUnchecked && <span className="runtime-agent-account" aria-label={t('Account')}>{runtime.account || t('Signed in')}</span>}
         <button type="button" className="icon-button" aria-label={t('Close agent details')} onClick={close}><Icon name="close" size={16}/></button>
       </header>
       {state === 'off' ? <p className="runtime-agent-note">{t('Off. Papilot does not start it or offer it for new tasks.')}</p> : selected === 'papilot' ? <>

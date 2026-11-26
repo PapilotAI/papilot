@@ -53,6 +53,17 @@ test('once settled, the first connected and authenticated agent is chosen unless
   assert.equal(chosenAgent(saved, offered, runtimes), 'codex', 'saving the automatic choice preserves it after a crash');
 });
 
+test('the automatic choice prefers a checked sign-in and still lets authors use ZCode', () => {
+  const ready = { ...runtime(true), connected: true, authenticated: true };
+  const zcode = { ...ready, authenticationUnchecked: true as const };
+  const runtimes = { zcode, qwen: ready };
+  const offered = offeredAgents(runtimes);
+  assert.deepEqual(offered, ['zcode', 'qwen']);
+  assert.equal(chosenAgent(null, offered, runtimes), 'qwen');
+  assert.equal(chosenAgent('zcode', offered, runtimes), 'zcode');
+  assert.equal(chosenAgent(null, ['zcode'], { zcode }), 'zcode');
+});
+
 test('no agent is reported only after every runtime is known to be missing', () => {
   assert.equal(noAgent({}), false);
   assert.equal(noAgent({ codex: runtime(false) }), false, 'unreported runtimes are still unknown');

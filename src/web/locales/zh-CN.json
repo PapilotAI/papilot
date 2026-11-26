@@ -371,6 +371,7 @@
   "Sign in with a subscription or add an API key in Settings → Agents → Papilot Writer.": "请使用订阅登录，或在 设置 → 智能体 → Papilot Writer 中添加 API 密钥。",
   "Sign in with a subscription or add an API key.": "使用订阅登录，或添加 API 密钥。",
   "Sign out": "退出登录",
+  "Sign-in not checked": "尚未检查登录状态",
   "Signed out": "已退出登录",
   "Skip approval prompts; native rules still apply": "跳过审批提示；仍遵循原生规则",
   "Source unavailable": "源码不可用",

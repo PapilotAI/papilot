@@ -5399,6 +5399,11 @@
     "textHash": "f3e987e68d060b8fdb239277f0a2d55a99d149d6a41be37f201c8d25759bb234",
     "model": "gemini-4-argon-medium"
   },
+  "Sign-in not checked": {
+    "revision": "3e2032befb5f2331805965698ce179582d28adc3e3ae1217ec67990b92c5bbd9",
+    "textHash": "384c87046fc381dfcf4b4cda0429e9d728d93c855292aaf290d4004f6e50c681",
+    "model": "manual"
+  },
   "Sign-in required": {
     "revision": "199b9934a32317d22db82aeb86ec88f6ece1d74016e20b2aaf8b8c78a81b4d24",
     "textHash": "86840743f91e02b96bb33174fe7cd5e1ba8b78114ab93f7163483e3cbd58e68b",

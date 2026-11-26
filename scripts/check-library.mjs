@@ -40,6 +40,7 @@ const report = {
 let zotero = { local: { chosen: null, state: 'ready', dataDir: '/Users/researcher/Zotero', items: 1204, withPdf: 873, citationKeys: 1204 }, account: null, use: true };
 const account = { username: 'researcher', libraries: [{ name: null, items: 310, withPdf: 288, citationKeys: 12 }, { name: 'Lab', items: 40, withPdf: 31, citationKeys: 0 }], syncing: false, synced: Date.UTC(2026, 10, 23, 9, 30), problem: null };
 const checks = [], shows = [], searches = [], uploads = [], removals = [], forgotten = [], errors = [], keys = [], switched = [], looks = [], located = [];
+let quickModel = { agent: 'deepseek', model: 'deepseek/deepseek-v4.1-flash-ultrafast', effort: null };
 fs.mkdirSync('test-results', { recursive: true });
 try {
   const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 800 } });
@@ -69,7 +70,7 @@ try {
       searches.push(url.searchParams.get('q'));
       return route.fulfill({ json: { matches: url.searchParams.get('q') === 'total-fit' ? [{ entry: 'refs.bib#knuth', key: 'knuth', hash, page: 1, text: 'TeX breaks paragraphs into lines with a total-fit algorithm.', marks: [{ page: 1, rect: [0.1, 0.1, 0.9, 0.16] }] }] : [], nextCursor: null } });
     }
-    if (url.pathname === '/api/quick-model') return route.fulfill({ json: { choice: { agent: 'deepseek', model: 'deepseek/deepseek-v4.1-flash-ultrafast', effort: null } } });
+    if (url.pathname === '/api/quick-model') return route.fulfill({ json: { choice: quickModel } });
     if (url.pathname === '/api/citation-checks' && request.method() === 'POST') {
       const body = request.postDataJSON();
       checks.push(body);
@@ -308,6 +309,37 @@ try {
   const draft = await page.evaluate(() => localStorage.getItem('papilot:new-task'));
   assert.match(draft, /^- wadler: Linear types can change the world! \(Philip Wadler, 1990\) https:\/\/doi\.org\/10\.1000\/open$/m);
   assert.match(draft, /never shadow libraries/);
+
+  // Automatic citation checks use a read-only agent when the editing default is ZCode.
+  quickModel = null;
+  state.runtimes = {
+    codex: { ...state.runtime, authenticated: true },
+    zcode: { ...state.runtime, authenticated: true, authenticationUnchecked: true, supportsReadOnlyTasks: false },
+  };
+  await page.evaluate(() => localStorage.setItem('papilot:agent', 'zcode'));
+  await page.reload();
+  await openLibrary();
+  await page.getByRole('button', { name: 'Check citations', exact: true }).click();
+  await view.getByRole('heading', { name: 'Check citations', exact: true }).waitFor();
+  assert.deepEqual([checks.at(-1).projectId, checks.at(-1).agent, checks.at(-1).model], ['paper', 'codex', null]);
+
+  // An author-disabled runtime cannot be used as a fallback.
+  state.runtimes.codex = { ...state.runtimes.codex, hidden: true };
+  await page.reload();
+  await openLibrary();
+  const checksBefore = checks.length;
+  await page.getByRole('button', { name: 'Check citations', exact: true }).click();
+  await page.getByRole('alert').getByText('Connect an agent that supports read-only tasks, such as Codex.', { exact: true }).waitFor();
+  assert.equal(checks.length, checksBefore);
+  // Explicit quick models stay pinned when an alternate provider is ready.
+  await page.getByRole('button', { name: 'Dismiss error' }).click();
+  quickModel = { agent: 'codex', model: null, effort: null };
+  state.runtimes.deepseek = { ...state.runtime, authenticated: true };
+  await page.reload();
+  await openLibrary();
+  await page.getByRole('button', { name: 'Check citations', exact: true }).click();
+  await page.getByRole('alert').getByText('Connect an agent that supports read-only tasks, such as Codex.', { exact: true }).waitFor();
+  assert.equal(checks.length, checksBefore);
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();

@@ -1297,6 +1297,7 @@
   "Sign in with a subscription or add an API key in Settings → Agents → Papilot Writer.": "サブスクリプションでサインインするか、設定 → エージェント → Papilot Writer で API キーを追加してください。",
   "Sign in with a subscription or add an API key.": "サブスクリプションでサインインするか、API キーを追加します。",
   "Sign out": "サインアウト",
+  "Sign-in not checked": "ログイン状態は未確認",
   "Sign-in required": "サインインが必要",
   "Signed in": "サインイン済み",
   "Signed out": "サインアウト済み",

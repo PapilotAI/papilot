@@ -519,6 +519,7 @@ export class Workspace extends EventEmitter {
       runtime.permissionOptions = agent.permissionOptions?.() || [];
       runtime.connected = true;
       runtime.authenticated = Boolean(account.account) || account.requiresOpenaiAuth === false;
+      runtime.authenticationUnchecked = account.authenticationUnchecked ? true : undefined;
       runtime.account = account.account?.email || account.account?.type || (runtime.authenticated ? `Local ${name} configuration` : null);
       runtime.error = runtime.authenticated ? null : account.reason || `Sign in to ${name} on this host, then select Refresh.`;
       const [catalog, configuration] = await Promise.allSettled([
@@ -664,6 +665,8 @@ export class Workspace extends EventEmitter {
     const existing = this.store.findTask(input.id);
     if (existing) { if (existing.projectId !== input.projectId || existing.mode !== 'citations') throw new Error('Invalid task ID.'); return existing; }
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
+    this.requireReadOnlyAgent(input.agent);
+    if (input.agent && (this.agentOff(input.agent) || this.runtimes[input.agent].installed === false)) throw new Error('Connect an agent that supports read-only tasks, such as Codex.');
     this.store.project(input.projectId);
     const now = Date.now(), task: Task = {
       id: input.id, projectId: input.projectId, name: `c-${input.id}`, title: 'Check citations', titleSource: 'prompt', instructions: '',
@@ -680,6 +683,7 @@ export class Workspace extends EventEmitter {
     const task = this.store.task(taskId);
     if (task.mode !== 'citations') throw new Error('This task does not check citations.');
     if (task.status === 'running') return task;
+    this.requireReadOnlyAgent(choice?.agent || task.agent);
     this.store.updateTask(task.id, { status: 'running', error: null, ...(choice ? { agent: choice.agent, model: choice.model ?? null, effort: choice.effort ?? null } : {}) });
     this.runCitationCheck?.(this.store.task(task.id));
     return this.store.task(task.id);
@@ -777,9 +781,9 @@ export class Workspace extends EventEmitter {
       const runtime = this.runtimes[input.agent];
       if (!runtime?.connected || !runtime.authenticated) throw new Error('Connect and sign in to the destination agent before switching.');
       const model = runtime.models.find(model => input.model ? model.id === input.model : model.isDefault);
-      if (!model) throw new Error('Choose an available model for the destination agent.');
-      if (input.effort && !model.efforts.includes(input.effort)) throw new Error('This model does not support that reasoning effort.');
-      if (input.serviceTier && input.serviceTier !== 'default' && (input.agent !== 'codex' || input.serviceTier !== model.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
+      if (!model && (input.model || runtime.models.length)) throw new Error('Choose an available model for the destination agent.');
+      if (input.effort && !model?.efforts.includes(input.effort)) throw new Error('This model does not support that reasoning effort.');
+      if (input.serviceTier && input.serviceTier !== 'default' && (input.agent !== 'codex' || input.serviceTier !== model?.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
       this.validateTaskPermissions(permissions, input.agent, task.mode === 'review');
       return model;
     };
@@ -812,7 +816,7 @@ export class Workspace extends EventEmitter {
     }
     // Settings may have changed while the turn stopped.
     const model = destination();
-    return this.handOver(current(), from, { agent: input.agent, model: model.id, effort: input.effort || null, serviceTier: input.agent === 'codex' ? input.serviceTier || 'default' : undefined, permissions: permissions as string });
+    return this.handOver(current(), from, { agent: input.agent, model: model?.id ?? null, effort: input.effort || null, serviceTier: input.agent === 'codex' ? input.serviceTier || 'default' : undefined, permissions: permissions as string });
   }
   // The task continues on another agent, whose next turn starts a session of
   // its own and is given the conversation so far.
@@ -2233,7 +2237,10 @@ ${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for ma
     const choice = this.store.preference<QuickModel | null>(QUICK_MODEL);
     return choice && isAgentId(choice.agent) ? choice : null;
   }
-  setQuickModel(choice: QuickModel | null) { this.store.savePreference(QUICK_MODEL, choice); }
+  setQuickModel(choice: QuickModel | null) {
+    this.requireReadOnlyAgent(choice?.agent);
+    this.store.savePreference(QUICK_MODEL, choice);
+  }
   // The agent, model and effort for a quick job. The author's choice wins
   // while it is signed in; otherwise the fallback agent's small model does it.
   private quick(fallback: { agent?: AgentId; model?: string }, what: string) {
@@ -2259,6 +2266,7 @@ ${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for ma
   /** One quick job's reply, from a read-only turn that has everything it
    * needs in its prompt, and the agent and model that wrote it. */
   async quickReply(options: { instructions: string; prompt: string; what: string; projectId?: string; signal?: AbortSignal; onText?: (text: string) => void; choice?: { agent?: AgentId; model?: string | null; effort?: string | null } }) {
+    this.requireReadOnlyAgent(options.choice?.agent);
     const { id, model, effort } = options.choice?.agent ? await this.chosen(options.choice as { agent: AgentId; model?: string | null; effort?: string | null }, options.what) : this.quick({}, options.what);
     const reply = await this.oneOff(id, { cwd: os.tmpdir(), sandbox: 'read-only', instructions: options.instructions, prompt: options.prompt, model, effort, what: options.what, projectId: options.projectId, signal: options.signal, onText: options.onText });
     return { reply, agent: id, model: model?.name || model?.id || null };
@@ -2270,7 +2278,7 @@ ${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for ma
     const usable = (id: AgentId) => this.agents[id].ready && this.runtimes[id].authenticated && (!options.readOnly || this.agents[id].supportsReadOnlyTasks !== false);
     if (usesCustomModel(choice.agent, choice.model) && !usable('papilot')) throw customModelUnavailable();
     if (options.strict && choice.agent) {
-      if (!this.agents[choice.agent].ready || !this.runtimes[choice.agent].authenticated) {
+      if ((options.readOnly && this.agentOff(choice.agent)) || !this.agents[choice.agent].ready || !this.runtimes[choice.agent].authenticated) {
         throw new Error(options.strict === 'commit-message'
           ? 'The selected commit-message agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.'
           : 'The selected conflict-resolution agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.');
@@ -2287,7 +2295,7 @@ ${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for ma
   }
   async diagnoseLatexBuild(root: string, prompt: string, choice: { agent: AgentId; model?: string; projectId?: string }) {
     const id = choice.agent, runtime = this.runtimes[id];
-    if (!this.agents[id].ready || !runtime.authenticated) throw new Error('Connect the selected agent before diagnosing compilation problems.');
+    if (this.agentOff(id) || !this.agents[id].ready || !runtime.authenticated) throw new Error('Connect the selected agent before diagnosing compilation problems.');
     if (this.agents[id].supportsReadOnlyTasks === false) throw new Error('The selected agent does not support read-only compilation diagnosis. Select another agent.');
     const models = this.helperChoices(id, choice.model);
     const model = models.find(item => item.id === choice.model) || models.find(item => item.isDefault);
@@ -2605,6 +2613,9 @@ ${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for ma
   private requireReviewAgent(agent: AgentId) {
     if (this.agents[agent].supportsReadOnlyTasks === false) throw new Error('The selected agent does not support read-only AI review. Select another agent.');
   }
+  private requireReadOnlyAgent(agent?: AgentId) {
+    if (agent && this.agents[agent].supportsReadOnlyTasks === false) throw new Error('The selected agent does not support read-only tasks. Select another agent.');
+  }
   private validateTaskPermissions(value: unknown, agent: AgentId, reviewing: boolean) {
     if (typeof value !== 'string' || !value) throw new Error('Invalid task permissions.');
     if (value === 'workspace') return;
@@ -2720,7 +2731,17 @@ ${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for ma
       throw error;
     } finally { this.deletions.delete(taskId); this.schedule(); }
   }
-  close() { this.closing = true; this.toolBridge.close(); for (const taskId of this.workflowStops.keys()) this.stopWorkflow(taskId); for (const stop of this.helperStops) stop(); for (const timer of this.usageTimers.values()) clearTimeout(timer); this.flush(); for (const id of AGENTS) this.agents[id].close(); this.attachments.close(); }
+  close() {
+    this.closing = true;
+    this.toolBridge.close();
+    for (const taskId of this.workflowStops.keys()) this.stopWorkflow(taskId);
+    for (const stop of this.helperStops) stop();
+    for (const timer of this.usageTimers.values()) clearTimeout(timer);
+    this.flush();
+    const agents = AGENTS.map(async id => this.agents[id].close());
+    this.attachments.close();
+    return Promise.allSettled(agents);
+  }
 }
 
 // A loaded Codex thread runs the user's stdio MCP servers in its working

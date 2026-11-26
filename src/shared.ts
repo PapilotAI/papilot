@@ -218,7 +218,7 @@ export interface Usage { plan: string | null; windows: UsageWindow[]; credits: {
 // credentials or key); such agents are not offered. Older servers omit it.
 // hidden: collaboration mode is not enabled, or the author turned the agent
 // off in Settings → Agents. hiddenModels: models left out of the pickers.
-export interface RuntimeStatus { hidden?: boolean; hiddenModels?: string[]; permissionOptions?: TaskPermissionOption[]; supportsReadOnlyTasks?: false; connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null; installed?: boolean }
+export interface RuntimeStatus { hidden?: boolean; hiddenModels?: string[]; permissionOptions?: TaskPermissionOption[]; supportsReadOnlyTasks?: false; connected: boolean; authenticated: boolean; authenticationUnchecked?: true; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null; installed?: boolean }
 // A change in Settings → Agents: turn an agent on or off, choose which of its
 // models the pickers offer, or turn every agent on and show every model.
 export type AgentSettingsChange = { agent: AgentId; enabled?: boolean; hiddenModels?: string[] } | { reset: true };

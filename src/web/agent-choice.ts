@@ -36,6 +36,7 @@ export function agentsSettled(runtimes: Partial<Record<AgentId, RuntimeStatus>>)
 }
 // Wait for startup to settle before preferring an agent ready for the first task.
 export function chosenAgent(saved: AgentId | null, offered: AgentId[], runtimes: Partial<Record<AgentId, RuntimeStatus>>): AgentId {
-  return saved && offered.includes(saved) ? saved
-    : (agentsSettled(runtimes) && offered.find(id => runtimes[id]?.connected && runtimes[id]?.authenticated)) || offered[0] || 'codex';
+  if (saved && offered.includes(saved)) return saved;
+  const available = agentsSettled(runtimes) ? offered.filter(id => runtimes[id]?.connected && runtimes[id]?.authenticated) : [];
+  return available.find(id => !runtimes[id]?.authenticationUnchecked) || available[0] || offered[0] || 'codex';
 }
