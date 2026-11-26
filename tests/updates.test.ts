@@ -202,7 +202,7 @@ test('a registered Windows desktop stages its installer but waits for requests a
     assert.equal(status.canUpdate, true);
     assert.equal(status.downloadUrl, undefined);
     assert.equal(f.updates.snapshot(false).downloadUrl, windowsRelease.downloadUrl);
-    assert.throws(() => f.updates.install(windowsInstaller.version, false), /Open Papilot on the Windows computer/);
+    assert.throws(() => f.updates.install(windowsInstaller.version, false), /GitHub Releases/);
     assert.deepEqual(staged, []);
 
     const leave = f.updates.enter();

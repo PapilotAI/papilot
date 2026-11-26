@@ -239,7 +239,7 @@ export class Updates {
     if (this.options.desktop && this.downloadUrl) throw new Error('Download desktop updates from GitHub Releases.');
     if (!this.state.canUpdate) throw new Error('npm is unavailable to Papilot.');
     if (!validTarget(version, this.channel) || version !== this.state.latestVersion || !available(version, this.options.version, this.channel)) throw new Error('Check for a newer release before updating.');
-    if (!allowWindowsInstaller && this.needsWindowsInstaller(version)) throw new Error('Open Papilot on the Windows computer to install this update.');
+    if (!allowWindowsInstaller && this.needsWindowsInstaller(version)) throw new Error('Download desktop updates from GitHub Releases.');
     fs.mkdirSync(path.dirname(this.lock), { recursive: true, mode: 0o700 });
     const previous = readJson(this.lock);
     if (previous && alive(previous.pid)) throw new Error('Another Papilot instance is already updating.');
