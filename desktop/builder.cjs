@@ -4,7 +4,8 @@ module.exports = {
   // Universe pages open templates with papilot://new?template=<id>&version=<version>.
   protocols: [{ name: 'Papilot', schemes: ['papilot'] }],
   directories: { app: '.desktop/app', output: 'release/desktop', buildResources: 'desktop/assets' },
-  files: ['*.js', '*.mjs', '*.cjs', '*.html', '*.css', 'typeless-keyboard', 'package.json', '!node_modules{,/**/*}'],
+  files: ['*.js', '*.mjs', '*.cjs', '*.html', '*.css', 'typeless-keyboard', 'package.json',
+    ...(process.platform === 'win32' ? ['windows-update.ps1'] : []), '!node_modules{,/**/*}'],
   asarUnpack: ['typeless-keyboard'],
   extraResources: [
     { from: '.desktop/server', to: 'server' },
@@ -13,10 +14,7 @@ module.exports = {
     { from: '.desktop/runtime', to: 'runtime' },
     { from: 'desktop/assets/icon.png', to: 'desktop/assets/icon.png' },
     { from: 'desktop/assets/icon.ico', to: 'desktop/assets/icon.ico' },
-    ...(process.platform === 'win32' ? [
-      { from: '.desktop/wsl', to: 'wsl' },
-      { from: 'desktop/windows-update.ps1', to: 'windows-update.ps1' },
-    ] : []),
+    ...(process.platform === 'win32' ? [{ from: '.desktop/wsl', to: 'wsl' }] : []),
   ],
   asar: true,
   npmRebuild: false,

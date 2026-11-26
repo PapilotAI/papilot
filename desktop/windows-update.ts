@@ -78,7 +78,7 @@ export async function prepareWindowsInstaller(data: string, input: unknown, bund
     throw new Error('The staged Windows installer could not be verified.');
   }
 
-  const helper = await fs.readFile(path.join(process.resourcesPath, 'windows-update.ps1'));
+  const helper = await fs.readFile(new URL('./windows-update.ps1', import.meta.url));
   return async () => {
     const job = await fs.mkdtemp(path.join(folder, 'windows-handoff-'));
     const script = path.join(job, 'windows-update.ps1'), configuration = path.join(job, 'job.json');

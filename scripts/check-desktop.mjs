@@ -28,6 +28,12 @@ const base = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
 // A nightly dev build bundles a dev version.
 const version = packaged ? JSON.parse(fs.readFileSync(path.join(resources, 'server/package.json'), 'utf8')).version : base;
 if (packaged) {
+  if (process.platform === 'win32') {
+    const asar = require('@electron/asar'), archive = path.join(resources, 'app.asar'), helper = 'windows-update.ps1';
+    assert.ok(!fs.existsSync(path.join(resources, helper)), 'The Windows installer helper has no loose resource');
+    assert.ok(!asar.statFile(archive, helper).unpacked, 'The Windows installer helper is inside the app archive');
+    assert.deepEqual(asar.extractFile(archive, helper), fs.readFileSync(path.join('desktop', helper)));
+  }
   // Exercise the bundled tools with no development Node on PATH.
   for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key];
   const git = process.platform === 'win32' && findCommand('git');
