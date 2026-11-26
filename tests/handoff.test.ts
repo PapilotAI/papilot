@@ -82,7 +82,8 @@ test('exchanges a proposal over Git and a Page export with the same checked rece
   writeFileSync(path.join(repo, file), source.replace(original, suggestion));
   git(repo, 'add', '--', file);
   const resultCommit = commit(repo, 'Implement the proposed edit');
-  const receipt = run(repo, 'receipt', ['--result', 'HEAD', request, page]);
+  git(repo, 'config', 'diff.relative', 'true');
+  const receipt = run(path.join(repo, 'chapters'), 'receipt', ['--result', 'HEAD', request, page]);
   assert.equal(receipt.status, 0, receipt.stderr);
   assert.deepEqual(json(receipt.stdout), {
     schema: proposal.schema, kind: 'receipt', requestId: proposal.requestId, baseCommit: proposal.baseCommit,

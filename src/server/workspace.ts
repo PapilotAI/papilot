@@ -678,7 +678,7 @@ export class Workspace extends EventEmitter {
     this.runCitationCheck?.(this.store.task(task.id));
     return this.store.task(task.id);
   }
-  async createTask(input: { permissions?: TaskPermissions; prepareReview?: (worktree: string, document?: string) => Promise<ReviewSnapshot>; projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; noteContexts?: Record<string, TaskNoteContext>; groupInstructions?: GroupInstructions; attachments?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string }) {
+  async createTask(input: { permissions?: TaskPermissions; prepareReview?: (worktree: string, document?: string) => Promise<ReviewSnapshot>; projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; noteContexts?: Record<string, TaskNoteContext>; groupInstructions?: GroupInstructions; attachments?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string; externalReview?: Task['externalReview'] }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
     // A retried request returns its task, preparing it again if that failed;
@@ -729,7 +729,7 @@ export class Workspace extends EventEmitter {
       if (!input.prepareReview && !skill && !notes.length && !files.length && !input.instructions.trim()) throw new Error('Describe the revision, choose a skill, or add a PDF note.');
       const instructions = notes.length ? notesInstructions(notes, input.instructions, groupInstructions) : input.instructions;
       const name = 'p-' + input.id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48);
-    const task: Task = { ...(input.prepareReview ? { mode: 'review' as const } : {}), id: input.id, projectId: project.id, name, title: input.title, titleSource: 'prompt', instructions: skill ? skillPrompt(skill, instructions) : instructions,
+    const task: Task = { ...(input.prepareReview ? { mode: 'review' as const } : {}), ...(input.externalReview ? { externalReview: input.externalReview } : {}), id: input.id, projectId: project.id, name, title: input.title, titleSource: 'prompt', instructions: skill ? skillPrompt(skill, instructions) : instructions,
       permissions: input.permissions || 'workspace', worktree: '', deferred: true, threadId: null, turnId: null, agent: input.agent || 'codex', model: input.model || null, effort: input.effort || null, ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}), status: 'preparing', preparation: {},
         createdAt: Date.now(), updatedAt: Date.now(), feedbackCursor: 0, error: null, review: null };
     // One transaction saves the task, its first message and the claims on
@@ -897,7 +897,8 @@ export class Workspace extends EventEmitter {
       // and a switch of document, is copied for that one again. A switch
       // while this waited may have just recorded it.
       const document = this.store.findTask(taskId)?.document ?? task.document;
-      try { info = await client.post('/api/tasks', { name: task.name, title: task.title, deferred: true, ...(document ? { document } : {}) }); break; }
+      try { info = await client.post('/api/tasks', { name: task.name, title: task.title, deferred: true, ...(document ? { document } : {}),
+        ...(task.externalReview ? { baseCommit: task.externalReview.baseCommit, files: task.externalReview.files } : {}) }); break; }
       catch (error) {
         if (this.closing || !/ is being created\. Try again in a moment\.$/.test(errorText(error))) throw error;
         await delay(1000);
@@ -2687,7 +2688,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
           // A lost response may leave the engine still creating the copy,
           // before it appears in the task list. Repeating the same request
           // either confirms that copy or refuses while it is being created.
-          const info = await client.post('/api/tasks', { name: task.name, title: task.title, deferred: true });
+          const info = await client.post('/api/tasks', { name: task.name, title: task.title, deferred: true,
+            ...(task.externalReview ? { baseCommit: task.externalReview.baseCommit, files: task.externalReview.files } : {}) });
           if (info?.task !== task.name || typeof info.worktree !== 'string' || !info.worktree) throw new Error('The review engine could not confirm this task’s cleanup status.');
           await finish();
         }

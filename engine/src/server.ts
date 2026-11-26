@@ -131,6 +131,8 @@ export class App {
       scope = reconciliation ? { ...task.scope, paths: reconciliation.files, ranges: null } : task.scope;
     return {
       ...this.review.summary(name),
+      baseCommit: task.base,
+      acceptedCommit: task.accepted,
       deferred: Boolean(task.deferred),
       delivery: delivery ? { ...this.delivery.result(delivery), pending: !delivery.done } : null,
       reconciliation: reconciliation ?? null,
@@ -465,6 +467,7 @@ export function createServer(app: App) {
         files?: string[];
         deferred?: boolean;
         document?: string;
+        baseCommit?: string;
       };
     }>(
       "/api/tasks",
@@ -480,6 +483,7 @@ export function createServer(app: App) {
               deferred: { type: "boolean" },
               // The root document a new task compiles; the current one by default.
               document: { type: "string" },
+              baseCommit: { type: "string", pattern: "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
             },
           },
         },
@@ -487,7 +491,7 @@ export function createServer(app: App) {
       async (request) => {
         const d = request.body;
         return app.taskInfo(
-          (await app.tasks.createAsync(d.name, d.title, d.sections, d.files, d.deferred, d.document)).name,
+          (await app.tasks.createAsync(d.name, d.title, d.sections, d.files, d.deferred, d.document, d.baseCommit)).name,
         );
       },
     );

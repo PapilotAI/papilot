@@ -1,0 +1,66 @@
+.external-review-backdrop:modal, .external-review-dialog { overscroll-behavior: contain; }
+.external-review-backdrop::backdrop { overflow: hidden; overscroll-behavior: contain; }
+.modal.external-review-dialog { inline-size: 660px; padding: 0; font-size: 13px; }
+.external-review-header, .external-review-footer, .external-review-history, .external-step {
+  padding: 16px clamp(14px, 3vw, 24px);
+}
+.external-review-header, .external-review-footer, .external-review-history, .external-actions, .external-base {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.external-review-header { justify-content: space-between; border-block-end: 1px solid var(--line); }
+.external-review-header h2 { margin: 0; font-size: 19px; }
+.external-review-header p, .external-review-dialog .external-hint { margin: 0; color: var(--text-2); }
+.external-review-footer { justify-content: space-between; border-block-start: 1px solid var(--line); }
+.external-review-footer:empty { display: none; }
+.external-review-history { padding-block: 10px; }
+.external-review-history select { flex: 1 1 15em; min-inline-size: 0; }
+.external-steps {
+  margin: 0; padding: 6px clamp(14px, 3vw, 24px); list-style: none;
+  display: flex; gap: 4px; flex-wrap: wrap; border-block-end: 1px solid var(--line); background: var(--bg);
+}
+.external-steps button { min-block-size: 32px; padding: 4px 8px; border-radius: var(--r); color: var(--text-2); }
+.external-steps button:where(:hover, :focus-visible):not(:disabled) { color: var(--text); background: var(--bg-muted); }
+.external-steps [aria-current="step"] button { color: var(--accent); background: var(--accent-soft); font-weight: 650; }
+.external-step { display: grid; gap: 12px; }
+.external-step > h3 { margin: 0; font-size: 17px; }
+.external-step p, .external-step blockquote { margin: 0; line-height: 1.55; overflow-wrap: anywhere; }
+.external-step form, .external-channel, .external-proposal, .external-copy { display: grid; gap: 8px; }
+.modal.external-review-dialog :is(input[type="url"], textarea, select) {
+  min-inline-size: 0; block-size: auto; margin: 0; padding: 7px 8px; border: 1px solid var(--line-strong); border-radius: var(--r);
+  color: var(--text); background: var(--bg); font-size: max(1rem, 1em);
+}
+.modal.external-review-dialog textarea[hidden] { display: none; }
+.external-review-dialog :is(input, textarea, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.external-review-dialog :is(input, textarea):user-invalid { border-color: var(--red); }
+.external-step textarea { inline-size: 100%; resize: vertical; }
+.external-step :is(textarea[readonly], textarea[name="proposal"]) { font-family: var(--mono); overflow-wrap: anywhere; }
+.external-step input[type="url"] { flex: 1 1 13em; }
+.external-step .button { min-block-size: 34px; height: auto; padding-block: 5px; text-align: start; white-space: normal; }
+.external-review-dialog fieldset { min-inline-size: 0; border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; }
+.external-review-dialog legend { padding-inline: 4px; font-weight: 600; }
+.external-files { display: grid; gap: 6px; }
+.external-file-list { max-block-size: min(20dvh, 180px); overflow: auto; overscroll-behavior: contain; }
+.external-file-list label, .external-choices label { display: flex; align-items: center; gap: 8px; min-block-size: 30px; cursor: pointer; }
+.external-file-list span { font-family: var(--mono); overflow-wrap: anywhere; }
+.modal.external-review-dialog input:is([type="checkbox"], [type="radio"]) {
+  inline-size: 16px; block-size: 16px; margin: 0; padding: 0; accent-color: var(--accent); flex-shrink: 0;
+}
+.external-choices { display: flex; flex-wrap: wrap; gap: 0 16px; }
+.external-channel, .external-proposal { min-inline-size: 0; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px; }
+.external-channel > a { justify-self: start; }
+.external-branch, .external-base code { color: var(--text-2); overflow-wrap: anywhere; }
+.external-base { justify-content: space-between; color: var(--text-2); background: var(--bg); border-radius: var(--r); padding: 6px 10px; }
+.external-hint .spinner { vertical-align: middle; margin-inline-end: 6px; }
+.external-proposal ol { padding-inline-start: 20px; margin: 0; }
+.external-proposal li + li { margin-block-start: 8px; }
+.external-proposal blockquote { padding-inline-start: 8px; border-inline-start: 2px solid var(--line-strong); color: var(--text-2); }
+.external-proposal small, .external-copy [role="status"] { color: var(--text-2); }
+@media (max-width: 520px) {
+  .modal-backdrop.external-review-backdrop { padding: 0; }
+  .modal.external-review-dialog { inline-size: 100%; }
+  .modal.external-review-dialog :is(input[type="url"], textarea, select) { font-size: max(16px, 1em); }
+}
+@media (pointer: coarse) {
+  .external-review-dialog :is(.button, .icon-button, .external-steps button, .external-file-list label, .external-choices label) { min-block-size: 44px; }
+  .external-review-dialog .icon-button { min-inline-size: 44px; }
+}

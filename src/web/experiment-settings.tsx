@@ -5,6 +5,26 @@ import { t } from './i18n.ts';
 import { TypelessExperiment } from './typeless.tsx';
 
 export type ChooseCompiler = (compiler?: CompilerChoice['compiler']) => Promise<CompilerChoice>;
+export interface ExternalReviewSetting { enabled: boolean; save: (enabled: boolean) => Promise<void> }
+
+function ExternalReviewExperiment({ setting, online }: { setting: ExternalReviewSetting; online: boolean }) {
+  const id = useId(), [saving, setSaving] = useState(false), [error, setError] = useState('');
+  async function save(enabled: boolean) {
+    setSaving(true); setError('');
+    try { await setting.save(enabled); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
+    finally { setSaving(false); }
+  }
+  return <div className="settings-card">
+    <div className="settings-row settings-toggle">
+      <div className="settings-text"><label className="settings-name" htmlFor={id}>{t('Enable external reviews')}</label>
+        <p id={`${id}-help`}>{t('Ask ChatGPT Pro or another reviewer for suggestions through Git or Space, then let a local agent implement them.')}</p>
+        {error && <p className="settings-warning" role="alert">{error}</p>}
+      </div>
+      <input id={id} type="checkbox" className="switch" role="switch" aria-describedby={`${id}-help`} checked={setting.enabled} disabled={saving || !online} onChange={event => void save(event.target.checked)}/>
+    </div>
+  </div>;
+}
 
 // PhiTeX compiles every paper on this host instead of latexmk, once installed.
 function PhitexExperiment({ choose, online }: { choose: ChooseCompiler; online: boolean }) {
@@ -33,10 +53,11 @@ function PhitexExperiment({ choose, online }: { choose: ChooseCompiler; online: 
   </div>;
 }
 
-export function ExperimentSettings({ compiler, workflow, online }: { compiler?: ChooseCompiler; workflow?: CollaborationSettingsProps; online: boolean }) {
+export function ExperimentSettings({ compiler, workflow, externalReview, online }: { compiler?: ChooseCompiler; workflow?: CollaborationSettingsProps; externalReview?: ExternalReviewSetting; online: boolean }) {
   return <div className="settings-page experiment-settings">
     <TypelessExperiment/>
     {compiler && <PhitexExperiment choose={compiler} online={online}/>}
     {workflow && <CollaborationSettings {...workflow}/>}
+    {externalReview && <ExternalReviewExperiment setting={externalReview} online={online}/>}
   </div>;
 }

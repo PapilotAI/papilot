@@ -1,8 +1,22 @@
 # Experimental review handoffs
 
-Use `papilot handoff` to ask an external reviewer such as GPT Pro in ChatGPT on the web to suggest changes to a committed version of a paper. The local agent implements the suggestions in an isolated task. You can exchange the request, proposal, and receipt through a Git repository or a ChatGPT Space Page.
+Ask ChatGPT Pro on the web or another reviewer to suggest changes to a committed version of a paper. A Papilot agent implements the proposal in a task you can review against that same version.
 
-## Request a review
+## Follow a review in Papilot
+
+Enable **External reviews** under **Settings → Experiments**, then open **External review** from the paper's sidebar. Papilot saves the request, checked proposal, and task link on the host. Use **Review request** to reopen an earlier review.
+
+1. **Prepare.** Ask a focused question and choose the committed files the reviewer should check. Commit any edits you want included before preparing the request.
+2. **Send to reviewer.** Open an ordinary ChatGPT web chat, choose **Pro**, and paste the prompt Papilot provides. For GitHub, publish the review branch first and use `@GitHub` in the chat if the app is available. Publishing sends the base commit and its history to the selected Git remote. For a Space Page, use the Space prompt, which includes the selected committed text. Ask ChatGPT to create a private Page or edit one you can access. Save its link in Papilot if you want to open it again from the request. If the chat returns the JSON in its reply, you can import it directly.
+3. **Import proposal.** Fetch from the published Git branch or paste the JSON block from Space or the chat. Papilot checks that it matches the request, the approved files, and the exact original passages. Read the checked suggestions before continuing.
+4. **Implement locally.** Choose a local agent and start the task. Papilot gives the agent a copy of the requested commit and shows its changes in the normal PDF review. Accept or reject the changes you want to share.
+5. **Return result.** Prepare a receipt of the accepted changes. Publish a separate Git result branch with the receipt, or copy the receipt and paste it into the Space Page or review chat. The result branch is based on the requested commit. To apply the changes to your manuscript, use the ordinary Papilot task controls.
+
+## Command line handoffs
+
+`papilot handoff` uses the same review format without opening the app. Use it to exchange files with other reviewers or local agents.
+
+### Request a review
 
 From the paper's Git repository, choose the files and ask a focused question. Keep the exchange files outside the paper checkout.
 
@@ -14,7 +28,7 @@ The request contains the current commit, a request ID, approved file paths, and 
 
 In ChatGPT, provide the request and ask for a proposal using its template. If the GitHub plugin is available in that conversation, point the reviewer to the repository, base commit, and file paths. For a Space Page, paste the request and keep the proposal in its own JSON code block. Where the conversation can edit the Page directly, ask it to put the block there. You can also copy its response into the Page or save the JSON locally. A GitHub plugin's write actions depend on the ChatGPT surface, selected model, and repository access.
 
-## Implement a proposal
+### Implement a proposal
 
 Save the proposal JSON or the Page's Markdown locally. For proposals stored in Git, fetch the review branch and use `git show origin/review:proposal.json` to retrieve the file. For Space, copying the JSON block into `proposal.json` is sufficient. The second argument to `prepare` also accepts `-` for standard input.
 
@@ -27,7 +41,7 @@ papilot handoff prepare -C ../paper-review /path/to/exchange/request.md /path/to
 
 Always use your original local request as the first input. The command checks the request ID, base commit, listed files, and whether each quoted passage appears exactly once in the corresponding committed file. Read the generated task, then paste it into a Papilot task on that base with your chosen local agent, or give it to a local agent in the review worktree. Review the agent's diff and run the paper's normal checks before saving the result. The proposal can suggest prose changes to existing UTF-8 files. Record any omitted suggestions when you report the result.
 
-## Return the result
+### Return the result
 
 After checking and committing the changes, run the following in the repository that contains the result commit. Replace `RESULT_COMMIT` with the commit you reviewed.
 

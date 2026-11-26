@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Annotation, Project, Task, Run, TimelineItem } from '../shared.ts';
+import type { Annotation, ExternalReview, Project, Task, Run, TimelineItem } from '../shared.ts';
 
 // A thread's task, through the task_threads index.
 export const TASK_BY_THREAD = "SELECT data FROM tasks WHERE json_extract(data,'$.threadId')=? ORDER BY rowid LIMIT 1";
@@ -24,6 +24,7 @@ export class Store extends EventEmitter {
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, path TEXT UNIQUE NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS external_reviews(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS task_pins(task_id TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, task_id TEXT NOT NULL, request_key TEXT UNIQUE NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY, task_id TEXT NOT NULL, created INTEGER NOT NULL, data TEXT NOT NULL);
@@ -96,7 +97,7 @@ export class Store extends EventEmitter {
       this.db.prepare('DELETE FROM settings WHERE key=?').run(`memory-dismissed:${id}`);
       const clearPrefix = `annotation-clear:${id}:`;
       this.db.prepare('DELETE FROM settings WHERE substr(key,1,?)=?').run(clearPrefix.length, clearPrefix);
-      for (const table of ['tasks', 'annotations', 'anchor_sources']) this.db.prepare(`DELETE FROM ${table} WHERE project_id=?`).run(id);
+      for (const table of ['tasks', 'annotations', 'anchor_sources', 'external_reviews']) this.db.prepare(`DELETE FROM ${table} WHERE project_id=?`).run(id);
       this.db.prepare('DELETE FROM projects WHERE id=?').run(id);
     });
     for (const task of tasks) this.itemRevisions.delete(task);
@@ -107,6 +108,17 @@ export class Store extends EventEmitter {
     return (this.db.prepare("SELECT data FROM settings WHERE substr(key,1,16)='memory-evidence:' AND json_extract(data,'$.projectId')=? ORDER BY json_extract(data,'$.at') DESC").all(projectId) as { data: string }[]).map(row => JSON.parse(row.data));
   }
   preference<T>(key: string) { const row = this.db.prepare('SELECT data FROM settings WHERE key=?').get(key) as { data: string } | undefined; return row ? JSON.parse(row.data) as T : undefined; }
+  externalReviews<T extends ExternalReview = ExternalReview>(projectId: string): T[] {
+    return (this.db.prepare('SELECT data FROM external_reviews WHERE project_id=? ORDER BY rowid DESC').all(projectId) as { data: string }[]).map(row => JSON.parse(row.data));
+  }
+  externalReview<T extends ExternalReview = ExternalReview>(projectId: string, id: string): T | undefined {
+    const row = this.db.prepare('SELECT data FROM external_reviews WHERE id=? AND project_id=?').get(id, projectId) as { data: string } | undefined;
+    return row ? JSON.parse(row.data) : undefined;
+  }
+  saveExternalReview(projectId: string, review: ExternalReview) {
+    this.db.prepare('INSERT INTO external_reviews VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data WHERE project_id=excluded.project_id').run(review.request.requestId, projectId, JSON.stringify(review));
+    return review;
+  }
   // One durable copy per revision, shared by all anchors made in that file.
   saveAnchorSource(projectId: string, revision: string, text: string) {
     this.db.prepare('INSERT OR IGNORE INTO anchor_sources VALUES(?,?,?)').run(projectId, revision, text);

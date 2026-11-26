@@ -36,6 +36,7 @@ import { gitOverview } from './git-overview.ts';
 import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import { registerSkillRoutes } from './skill-routes.ts';
 import { registerMemoryRoutes } from './memory-routes.ts';
+import { EXTERNAL_REVIEWS, registerExternalReviewRoutes } from './review-handoff-routes.ts';
 import { type Listener, equals, guard } from './access.ts';
 import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type Annotation, type EvidenceMark, type LibraryReport, type AnnotationBatch, type AnnotationBatchResult, type NoteReturnState, type NoteSummary, type QuickNote, type SourceFile, type Task } from '../shared.ts';
 import type { SourceFileRead } from '../../engine/src/types.ts';
@@ -386,7 +387,7 @@ export async function buildApp(options: AppOptions) {
     await options.prepareDemo?.();
     // Check the backend environment (Linux when using WSL), again on each poll
     // so installing Git unlocks version management without a page reload.
-    const body = JSON.stringify({ ...workspace.snapshot(), gitAvailable: Boolean(findExecutable('git')), overleaf: overleaf.state(), csrf: options.csrf });
+    const body = JSON.stringify({ ...workspace.snapshot(), gitAvailable: Boolean(findExecutable('git')), overleaf: overleaf.state(), externalReviews: store.preference<boolean>(EXTERNAL_REVIEWS) === true, csrf: options.csrf });
     // The app polls every second or two and most polls find nothing new: those
     // get an empty 304 instead of every task again to download and parse.
     const tag = `"${createHash('sha1').update(body).digest('base64url')}"`;
@@ -403,6 +404,7 @@ export async function buildApp(options: AppOptions) {
     return { quickNotes: quickNotes || null };
   });
   app.get('/api/collaboration', () => workspace.collaborationSettings());
+  registerExternalReviewRoutes(app, { store, workspace, serialGit, connectReview });
   app.post('/api/collaboration', (request, reply) => {
     const { enabled, routes } = (request.body as any) || {};
     if (enabled === undefined && routes === undefined) return reply.code(400).send({ error: 'Send enabled or routes.' });

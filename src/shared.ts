@@ -33,6 +33,24 @@ export interface PendingReview { returnNote?: Annotation; returnNotes?: Annotati
 // this record for Retry. submitted is saved before the engine is asked, so a
 // task it never saw is deleted without it.
 export interface TaskPreparation { submitted?: boolean }
+export interface ExternalReviewChange { file: string; original: string; suggestion: string; reason: string }
+export interface ExternalReviewRequest {
+  schema: 'papilot-handoff/v1'; kind: 'request'; requestId: string; baseCommit: string; question: string; files: string[];
+}
+export interface ExternalReviewRemote { name: string; revision: string; repository?: string; url?: string }
+export interface ExternalReviewReceipt {
+  schema: 'papilot-handoff/v1'; kind: 'receipt'; requestId: string; baseCommit: string; proposalSha256: string;
+  resultCommit: string; files: string[]; status: 'ready_for_review' | 'no_changes';
+}
+export interface ExternalReview {
+  request: ExternalReviewRequest;
+  page?: string;
+  git?: { remote: ExternalReviewRemote; branch: string; proposalFile: string };
+  proposal?: { digest: string; changes: ExternalReviewChange[]; source: 'git' | 'paste'; commit?: string };
+  taskId?: string;
+  result?: { accepted: string; receipt: ExternalReviewReceipt; published?: { branch: string; url?: string } };
+}
+export interface ExternalReviewOptions { baseCommit: string; files: string[]; remotes: ExternalReviewRemote[]; reviews: ExternalReview[] }
 export interface TaskCommitReview { token: string; files: string[]; diff: string }
 export interface TaskReconciliation {
   id: string; round: number; files: string[];
@@ -45,6 +63,8 @@ export interface TaskPermissionOption { value: TaskPermissions; label: string; d
 /** An agent chosen for a helper step, such as resolving conflicts. */
 export interface HelperChoice { agent: AgentId; model?: string; effort?: string; serviceTier?: string }
 export interface Task {
+  /** An external review edits a pinned commit in this task's own worktree. */
+  externalReview?: { requestId: string; baseCommit: string; files: string[] };
   // Papilot 0.13 and earlier switched agents by replaying a task's original
   // request in a new task; such a task links to the one it replaced.
   restart?: { taskId: string; draftAttachments?: Attachment[] };
@@ -243,7 +263,7 @@ export interface DiagnosticReport {
   version: string; checkedAt: number; platform: string; arch: string; node: string;
   ok: boolean; checks: DiagnosticCheck[];
 }
-export interface Snapshot { projects: Project[]; manuscriptNoteCounts?: Record<string, number>; tasks: Task[]; pinnedTaskIds?: string[]; requests: PendingRequest[]; runtime: RuntimeStatus; runtimes?: Partial<Record<AgentId, RuntimeStatus>>; version: string; gitAvailable?: boolean; overleaf?: OverleafState }
+export interface Snapshot { projects: Project[]; manuscriptNoteCounts?: Record<string, number>; tasks: Task[]; pinnedTaskIds?: string[]; requests: PendingRequest[]; runtime: RuntimeStatus; runtimes?: Partial<Record<AgentId, RuntimeStatus>>; version: string; gitAvailable?: boolean; overleaf?: OverleafState; externalReviews?: boolean }
 // Live synchronization of a paper folder with an Overleaf project. A conflict
 // is a passage (or whole file) both sides changed while Papilot was away:
 // Overleaf's version stayed, and the author's can be put back.

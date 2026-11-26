@@ -164,6 +164,11 @@
     "textHash": "389bad03b27a5b5bcada95e4ba24769b60d79425a1a5c017b2715f9524d0321c",
     "model": "gemini-4-argon-medium"
   },
+  "Choose a Git remote with matching fetch and push destinations.": {
+    "revision": "f5cb715f1edbfd77542eb7404a888ca77cea12f3c86682701a83b9537b2c100a",
+    "textHash": "353aec10cc2d9f7cbc8b2807ad5b0df7a5d9473746aca6944182b0da92424cdd",
+    "model": "gemini-4-argon-medium"
+  },
   "Choose a Pi provider and model.": {
     "revision": "d96644f5d0c053719d11728fda6fb3392e25a5d11ce5fd4db21581dbbb964368",
     "textHash": "bbb05b3659363d7375c1639063bc527a31f79a50051f233847102e9ae9e266b5",
@@ -189,9 +194,19 @@
     "textHash": "f0ea5705d2e7ee19f549d5ceba78cdd07ff21286cc916774ff1c241fdb5c5925",
     "model": "gemini-4-argon-medium"
   },
+  "Choose a committed version to review.": {
+    "revision": "45b87e30f08948a0418ba0e473bbf936b01599bd043f51362a6660bca6b58dc2",
+    "textHash": "824ab3c73bfa5880f8ec96b16362994362c0b55bd8e5b6795be6aa48b3f43ccd",
+    "model": "gemini-4-argon-medium"
+  },
   "Choose a file with a valid name.": {
     "revision": "dfcc6bef5da34ad36d5b48d146399c95a38f420be8dd9382a92ce81a5a6fda68",
     "textHash": "56612d6df5b8c4929939ae0bd3e47a793e88f14c92fd16d072d22e6009e57d83",
+    "model": "gemini-4-argon-medium"
+  },
+  "Choose a local agent.": {
+    "revision": "b4e13f8fcaa7814ca9c01c5534683899dba9b56eb4f2cc53ab540b8748d20a39",
+    "textHash": "5e2e8d1834a1505ff8174e064c6df659071017f5cc6f2fa5edff363f51e3212d",
     "model": "gemini-4-argon-medium"
   },
   "Choose a model and reasoning effort.": {
@@ -394,6 +409,11 @@
     "textHash": "bef4e5c2ab23c0e1244658f39f115dc1371a03ce413b63c766f1bd0650944829",
     "model": "gemini-4-argon-medium"
   },
+  "Copy one proposal JSON block for this request.": {
+    "revision": "067fbe9780db082635ef1c73b66e9f6089a466544f1072dd271c456b50cdb080",
+    "textHash": "f715b34795a4136e4157da7666ffcba27fd6ce2cf4d19f9823637cf9fa321d64",
+    "model": "gemini-4-argon-medium"
+  },
   "Could not check for updates.": {
     "revision": "1c5afb64f1b0310a868ec590a6ed46a51f0a110d97acce5fb438073e3237ca70",
     "textHash": "b0ac097141415440f48e1c5dff90379d48275ef93975fcef803da348d05d6131",
@@ -427,6 +447,11 @@
   "Could not load templates. Check the internet connection and try again.": {
     "revision": "65ab568eae27830d2e68e46d14f819dace45a2cbcd86da665d5651a38b74a130",
     "textHash": "aae05227dc6f925959221e56cd2b373d1e11a2d90bbcba646f8bd5ebbafdfa12",
+    "model": "gemini-4-argon-medium"
+  },
+  "Could not prepare a Git commit containing only the receipt.": {
+    "revision": "8fb6265090fe6746a863467965eb204cf0762952298c1ca3ab10514d7523001b",
+    "textHash": "9c1fc4d619af911a044910058fa27e371cbc97a5f4877167deb764868adcde11",
     "model": "gemini-4-argon-medium"
   },
   "Could not reach Overleaf. Papilot keeps trying.": {
@@ -504,6 +529,11 @@
     "textHash": "f3f5920002d695ec783067042d57a5c1cf581c67ee01146fca365d2a52e4cf92",
     "model": "gemini-4-argon-medium"
   },
+  "Enable external reviews in Settings → Experiments first.": {
+    "revision": "4c1acd78294089d7f8f58f7404084d96e68fef2bed8ce44b32f47db45c0c9338",
+    "textHash": "846d825605581c4e1b74f2c57448859d67dcb2a7bb59b1c8ebadb50c66282781",
+    "model": "gemini-4-argon-medium"
+  },
   "Enter a folder path.": {
     "revision": "4bbe571178ad5e505cff1af67f578531b70790645a74c781f5fee5a5a699973a",
     "textHash": "179bb9d0bfc1c367cd1cedad023089a2c6f90aa6a62afc20f3b75080e404ab0c",
@@ -559,6 +589,16 @@
     "textHash": "18dfdef9731d14b32981a489ab92a7fde8d327987e03a8f91a0dc8cea51115c1",
     "model": "gemini-4-argon-medium"
   },
+  "Finish reviewing the local task before preparing a receipt.": {
+    "revision": "406af55ff1333ac63d8c81dd98958874775475846ad0cbc4ceafef6ddf156d0a",
+    "textHash": "f35634addf26169b874d864f34283c25aef66264ee9273ac28abc4ad1663f64f",
+    "model": "gemini-4-argon-medium"
+  },
+  "Finish the local task and review its changes before preparing a receipt.": {
+    "revision": "973277af6176c311404ff3745ee28a95dabdf5ee5af54dae030d03bce159a136",
+    "textHash": "e489bcc0a4bd3f6ed7fafa2c3e531f6aa03196ad6225e31252fe679d52ba6f5c",
+    "model": "gemini-4-argon-medium"
+  },
   "GLM does not report usage to Papilot.": {
     "revision": "85d51401103a53a6a9fcf39097c4c40132b1c82445da52cbdf7df9e3d66476e9",
     "textHash": "57b5f1474a68787735f45d0414f1a7bbc155056084762fc902d1cf446d95bf28",
@@ -582,6 +622,11 @@
   "Images must be 5 MB or smaller.": {
     "revision": "387f67eea148392b31b94d7e68c29d73967b6f6fed73b513c8e6f12a2dc9379a",
     "textHash": "33d5a895864de04b2257ee827ef75ebe1da80b30634d8306d1d5e08f012628d5",
+    "model": "gemini-4-argon-medium"
+  },
+  "Import a proposal before starting a local agent.": {
+    "revision": "fa4e69b8c187f4bdb13e9b3a6a0cf71c96abcdbeba47712b74ff9cfd97c2732b",
+    "textHash": "cbcaaa73a2bec21c16a4090dd603297a5f2b8bbf1ccc3c0581c9448d1a07190b",
     "model": "gemini-4-argon-medium"
   },
   "Import not found.": {
@@ -747,6 +792,11 @@
   "No merge is in progress.": {
     "revision": "af1e66b6448c3ae94775bf7f667279d1129ad3cc010521979eba68b877d62180",
     "textHash": "e4d9f3b4bd6bf462b4c89a58eb8daa2760ff8aae1e7a2b6b6b22f3bf8ee3c69a",
+    "model": "gemini-4-argon-medium"
+  },
+  "No readable proposal was found on the review branch. Try again after the reviewer writes it, or paste the JSON.": {
+    "revision": "8f41fcd8ac402f44c6bc67aa491dcad91627938e54d8c543fab269d789ee88ec",
+    "textHash": "db8e18e11c637207c8e64cea47c87f087c083b1a25c55882d9af71290fc6a801",
     "model": "gemini-4-argon-medium"
   },
   "No source was found at this link. Check the paper link and version.": {
@@ -954,6 +1004,11 @@
     "textHash": "4d707e9d66528cca71f94a4e0bca00756a41a6f12a94ce162eb52deffb5124a6",
     "model": "gemini-4-argon-medium"
   },
+  "Paste a ChatGPT Space Page link.": {
+    "revision": "993991ae4d5fdcebd2f0179e396e6b5b2c20e710aec2511b820cb18c607be6ba",
+    "textHash": "92301b8874ccde8cea83a09bcd9e41b46430aa653a30e27d853ae0868b372967",
+    "model": "gemini-4-argon-medium"
+  },
   "Paste an arXiv paper link, an Overleaf sharing link, a public GitHub repository link, or a source archive link.": {
     "revision": "3fbc404b8fb7cec559dd85bc70ce123b34dbb70e42932800621e858a1df365f4",
     "textHash": "2512a8fa24184ff717b1f866abeb4f640013a51c112bc697a708e8aa6ec323ed",
@@ -967,6 +1022,11 @@
   "Paste the link of an Overleaf project.": {
     "revision": "0b7ff07c61e445cfbab0e75c8ccdc745fbef0af7a5a625aced500b79391cf31c",
     "textHash": "36eebdba704e838bc6f99aaf3d3aa8f874f384941d4c629017e685817b19a472",
+    "model": "gemini-4-argon-medium"
+  },
+  "Paste the proposal JSON from the review.": {
+    "revision": "137381a07e0e5bc1d44b6ae5653a651b5b2b6767a21c9c545a473577b38847ab",
+    "textHash": "78de6c197b9302d42e4e6c0b64b54bb5e80a6997b972ee5e7fe2fe60e6e3eec3",
     "model": "gemini-4-argon-medium"
   },
   "Pause Codex before building a review.": {
@@ -1004,6 +1064,16 @@
     "textHash": "785897bdc9f891b577bee9b4871ca6cf6cfddfd2d43eeb61a9c97c6836aba1c2",
     "model": "manual"
   },
+  "Prepare a receipt and publish the review branch before sharing the result.": {
+    "revision": "ef00b8d00dc08305161a38af8f7ead085c90de3aa9d9e617e21f511cd68fc8f7",
+    "textHash": "6c422682e91ccf4ba7cfe1403306700f0c521b48ea1c9c36e48232c815c9c7e0",
+    "model": "gemini-4-argon-medium"
+  },
+  "Prepare a receipt before sharing it.": {
+    "revision": "4621ab20badf56c7e61fb70d89bcecff01f0d4d9a451c00fa6c0cf3ecde6711d",
+    "textHash": "80248af3273f5ff8947f396a158839b93169b7fbe6cd657abd71de8e424e4e33",
+    "model": "gemini-4-argon-medium"
+  },
   "Provide source evidence as an array.": {
     "revision": "30e0bf1395d769e01a99536bd4adf4f4c8d17fe97e48ad2e02b46d170d5152e6",
     "textHash": "d40a8a5e928ab3729aeb81d4ab9c56c0dc39e5878cab42b8c2f940308e33285e",
@@ -1013,6 +1083,11 @@
     "revision": "a046074f4f82ed0c1e78bb992d9d465cff2834fecb32da8a0acf0da782fcc93e",
     "textHash": "13ad6f2a39a0b3ca0a3030e21a8bdeee3150ac96098e3ebe8db535b4cc049943",
     "model": "codex"
+  },
+  "Publish the review branch before copying its prompt.": {
+    "revision": "79af5b790082fa451536db60d5f02c3079e48c256b0cbc2cdd040e5ce5f0450c",
+    "textHash": "40d72a5caa567ab1955cc7837832d2e91c9451bc71e308e9dccc8b1f53d47b50",
+    "model": "gemini-4-argon-medium"
   },
   "Read the relevant source before delegating.": {
     "revision": "da09589b9772b05fba9cff16509f5a25d56a14dfd5c89fdbf5b9e9c4a35f95f8",
@@ -1112,6 +1187,11 @@
   "Select at least one changed file.": {
     "revision": "b949d4496d4440f46b21439fec1b4799fe2e1e9321300786af0afdaef87199be",
     "textHash": "bc6946d8364b0b623b176b548d697307c889946b33a7008f283fd7e6570bdb1f",
+    "model": "gemini-4-argon-medium"
+  },
+  "Select at least one file to review.": {
+    "revision": "185e40c2d211481b7984e6437c43add410ce0f615d591e090ce6c25c89574770",
+    "textHash": "4b3bb2c29f342d78b7f0382d58f8350013c3c02209baace086a18cc97d8522af",
     "model": "gemini-4-argon-medium"
   },
   "Select text or mark a region on the page first.": {
@@ -1289,6 +1369,11 @@
     "textHash": "b85db4dd8d92d80b54d0e20300390ac7d6990799f57d6d367d76e046f2e82e41",
     "model": "gemini-4-argon-medium"
   },
+  "The accepted changes have moved. Prepare a new receipt.": {
+    "revision": "e7b50ff566205ee4d0ca984fc69cbf91dc9baf3541812884c428e349c8b3e2c2",
+    "textHash": "b8342e9fa954587ab1e6c501f03e784e6a0c308be6d444fd1397d045828cae3b",
+    "model": "gemini-4-argon-medium"
+  },
   "The agent is editing this task's files. Pause the task before rejecting or editing changes.": {
     "revision": "c6965ef316649815912d5f3f05c2068353ff9909227ac7f9c08dc81e4721cc25",
     "textHash": "83daa567a21f243b0f4f823a2221dab7417e16f7670c785e369dff9dc1c3041f",
@@ -1349,6 +1434,11 @@
     "textHash": "dbc1c9a177f8998106100b7fcbce56c367fccd83d6c0e0eb712fbd2ede6a8dc2",
     "model": "codex"
   },
+  "The local task starts from a different commit.": {
+    "revision": "989e00d5095377071377d1098e94bd4ada4149b2d8b597cdead32faa611896a2",
+    "textHash": "6726afd75024b5b89a66232d884bce765e43105d134f6df46af2f0f692f73dd6",
+    "model": "gemini-4-argon-medium"
+  },
   "The manuscript changed during the audit. Audit again.": {
     "revision": "886eb693a551a2c3e9c150df5e2d5235921836e5140d442af6e60c00a5faa235",
     "textHash": "4e650911d90da10dddff837b0e86d561c9944c2e8069b849bae65c0dbd465afe",
@@ -1394,9 +1484,54 @@
     "textHash": "c1534c336961a9eb5f82582eaa1deadcb38f8b2e6f5102ea4a44afe12b26b477",
     "model": "gemini-4-argon-medium"
   },
+  "The proposal must list at least one change.": {
+    "revision": "f1ced1668ef12687736649ad95ea8227418a49d83bf7875fdcba954a3e17e418",
+    "textHash": "73dca0c0c918c7ec4239554cc34bae83be67b98e8c3f7ff087029411490e06b1",
+    "model": "gemini-4-argon-medium"
+  },
+  "The proposal must match the local request ID and base commit.": {
+    "revision": "a9bbc7a603e3ca2d446ef79b5d1a65c7bb9c37eb0e174926522f19d0b06cd83b",
+    "textHash": "696f6bf73c0a980494a05df39737f870a10d78da4ad5449fde3e39686c0b2613",
+    "model": "gemini-4-argon-medium"
+  },
+  "The receipt file already exists in the manuscript.": {
+    "revision": "57253f1eb36624bd8ae7b7a0d437701f42d3c457ff9b8b1dcca7173e42e7e033",
+    "textHash": "9d1460502457759c938c44019c3029d7d4ef3f1cedf641751b411a0a1b416c29",
+    "model": "gemini-4-argon-medium"
+  },
+  "The request must list files to review.": {
+    "revision": "acd938632c16ef2fc1f7aff1ce8e96945d5321ac07bdd3cd01b4d066837ab695",
+    "textHash": "8719be1874b074fa7b72374a01608b740e2d24b5cea94edabc6b0615f2ae6a63",
+    "model": "gemini-4-argon-medium"
+  },
+  "The result commit has no changes from the requested base commit.": {
+    "revision": "79fe52bdd21d871567c0c4725001884b194cd972797a1cbf16099a0c2dc2e617",
+    "textHash": "0fcff83be87c563d5a7469f0b8b3f617454bd8763b8a1f0123d56829f158f314",
+    "model": "gemini-4-argon-medium"
+  },
+  "The result commit must descend from the requested base commit.": {
+    "revision": "b58f0b2d54f5a7a1baa1f56699c5e65062e62957537b8735f9694d947ac41a3c",
+    "textHash": "5eb0a7d2e39715f2bee5fa5ec629212307c52afd56b8de6539057cffa447e7c6",
+    "model": "gemini-4-argon-medium"
+  },
+  "The review Git remote changed. Restore it to continue or use the Space Page.": {
+    "revision": "3c08da3ff7fd6168715c2040bd3808c34e10d12317fe18b569071d26da430fd0",
+    "textHash": "125c6693ad32b0907bae425a3d85fffea3fd2cf6c92f3be8b360129770dfd8ba",
+    "model": "gemini-4-argon-medium"
+  },
+  "The review JSON is invalid. Copy the complete JSON block and try again.": {
+    "revision": "20aae3451e3af8f78751b48af6c94fee479aafd7498e9edb53123f5a6f3cf698",
+    "textHash": "a730e38c21ef90c34297898a684a698ad6aa1a9ed3954b58e6348a3e226fdf2c",
+    "model": "gemini-4-argon-medium"
+  },
   "The review action is still being checked. Wait for it to finish.": {
     "revision": "b9e4e2790a4487383347232d24f56227f8769deb72d46fe1a8c354c203affedc",
     "textHash": "180420ca80beca716d100297407e3c0c1f7878e361b860e11275a3c1039547b9",
+    "model": "gemini-4-argon-medium"
+  },
+  "The review branch no longer contains the requested commit.": {
+    "revision": "84cc2f765807c615df3de49f9e23c7081d755798f51d582881d8e5f7875b94d2",
+    "textHash": "ef09ba4cf1de3a8a93adc26bbe70cc83f30bff19f6b9876ae842188a318e2390",
     "model": "gemini-4-argon-medium"
   },
   "The review could not be loaded. Try again.": {
@@ -1704,6 +1839,11 @@
     "textHash": "842b2735ca52f27856655d4b8f182f051be29946329cd5fcf88265ffcc5a1016",
     "model": "gemini-4-argon-medium"
   },
+  "This external review no longer exists.": {
+    "revision": "98b103a98d7a1dd302096210f77bbab98e8a3c10a6f570d61577186b43cc94a4",
+    "textHash": "f98aa7e358efece41a9fa635143a6ed4acbbef4c7f3656ade1ee4cb1d6995ad2",
+    "model": "gemini-4-argon-medium"
+  },
   "This file cannot be edited here.": {
     "revision": "f3b57665bf86d032c6fb9f61447396755f128d30d0f4c130438e1f07423dcd69",
     "textHash": "0d1195fb1fca88a62728ba1399d6c9e1dd40275b032ab3c0a2bbb001c0c45bc3",
@@ -1834,6 +1974,16 @@
     "textHash": "922bd9a34b8f65a82329f6900eb43f66503009f17bd637381180f4ee1bbed0fd",
     "model": "gemini-4-argon-medium"
   },
+  "This proposal already has a local task. Start a new review for another proposal.": {
+    "revision": "03f7dcf1c9a2ea6b4f80c8e0cd9195750e4c3daaea497539978f8d21e9446ff1",
+    "textHash": "51c57a259f6f75c448bae94faf2f3c480ae000bdbe10837b683e05386885d8a8",
+    "model": "gemini-4-argon-medium"
+  },
+  "This proposal changed. Reopen the review and check the latest proposal.": {
+    "revision": "1ac202a5e6d6846e1f14d57f884f6416f1c29719d1bda363217d472d15e6f272",
+    "textHash": "9dc40278a7fc43a365094d26a396caefbe303120005692345e10dd59b95b8320",
+    "model": "gemini-4-argon-medium"
+  },
   "This repository has no commits yet. Commit once to compare later changes in the PDF.": {
     "revision": "913c3241a0065d004fa95971da7eb8fb9f6ff8631fe92db91a7e2ca7cb065a3e",
     "textHash": "a0fed349f01afc6090782ff7729b0a02b90a029d9150de0c190bf16524f1b434",
@@ -1907,6 +2057,11 @@
   "This task already has queued instructions. Wait or pause it first.": {
     "revision": "7a992b11a73e522ed6908852af4d4ee72c52d3db9795f5663610b2eb5833775e",
     "textHash": "f8806eef967439e0385c413a6607cb39740531a6c01971cb7e0421dbdc9e4bf5",
+    "model": "gemini-4-argon-medium"
+  },
+  "This task belongs to a different review.": {
+    "revision": "d4e7bbb8ffe8f7cea8670d5f65c58eeb3b1f6a0b682d9e72428d01041bf21fef",
+    "textHash": "6d1ac63a81996a9b07907b6ca4a87d0a219ae07cd2e2328d6575f33e3568ade8",
     "model": "gemini-4-argon-medium"
   },
   "This task does not check citations.": {
@@ -2029,6 +2184,11 @@
     "textHash": "3b6f3e93fb6bedfd4a7c9b61ce076f94bbd8ef2201e9dd6762674c5f275a3300",
     "model": "codex"
   },
+  "Use a repository-relative file path with forward slashes.": {
+    "revision": "a509c849417b00e384550001eccd6883ecb031cf69c19b6411d9d2dcb36bb65b",
+    "textHash": "09af3a0df4789c56b5e1970e965a1509135e4a74f64199ecb3b28fe2f4e59d3d",
+    "model": "gemini-4-argon-medium"
+  },
   "Use an arXiv abstract, PDF, HTML or source link for one paper.": {
     "revision": "28ea8789ac9441a6b6c7d8b1f8b28a824a84903999943bbbc725331401334acd",
     "textHash": "ddf8dd38870e0a3134df39f0467f16cc2957654dcf764879b9398469d4d14ecb",
@@ -2038,6 +2198,11 @@
     "revision": "bc82ff9712340fa6f214e8be01f5007fd3c339cbce5dd29cd390be6a3aee4357",
     "textHash": "bdef9da7b58e427d11629c345d9b66758a304b16a4b1b3338ac37d0667b5c48b",
     "model": "codex"
+  },
+  "Use the original review request.": {
+    "revision": "023474d7501663222990f7b0cc1c8283b242f7be4b6c5b54dcf3cba796156988",
+    "textHash": "35ca749505fccc4c23321009eb8eb453a778e54701b4617f92318e4b245b9da5",
+    "model": "gemini-4-argon-medium"
   },
   "Wait for repository preparation to finish.": {
     "revision": "420236eb72e9318125dbf97d42fc26c03b1c6aa0d35d28fcdb6c8816faa0fb3e",

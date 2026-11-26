@@ -3768,12 +3768,16 @@ test('attachments are claimed when the task is saved, and deleting a failed prep
 });
 
 test('deletion retains a failed preparation while the engine is still making its copy', async () => {
-  const input = { id: 'lost-copy-reply-0001', projectId: 'paper', title: 'Revise', instructions: 'Revise.' };
+  const externalReview = { requestId: 'test-review', baseCommit: '1'.repeat(40), files: ['paper.tex'] };
+  const input = { id: 'lost-copy-reply-0001', projectId: 'paper', title: 'Revise', instructions: 'Revise.', externalReview };
   const name = 'p-' + input.id;
   let attempts = 0, creating = true, finished = false;
-  const f = fixture(async (method, route) => {
+  const f = fixture(async (method, route, body) => {
     if (route === '/api/tasks' && method === 'GET') return { tasks: [] }; // No task is recorded until its copy is ready.
     if (route === '/api/tasks') {
+      assert.ok(body && typeof body === 'object' && 'baseCommit' in body && 'files' in body);
+      assert.equal(body.baseCommit, externalReview.baseCommit);
+      assert.deepEqual(body.files, externalReview.files);
       if (++attempts === 1) throw new Error('The create response was lost.');
       if (creating) throw new Error(`Task ${JSON.stringify(name)} is being created. Try again in a moment.`);
       return { ...engineCopy(), task: name };

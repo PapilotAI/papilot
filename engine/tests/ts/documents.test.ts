@@ -157,6 +157,32 @@ it("creates a task on the document asked for, as a retry after a switch does", a
   }
 });
 
+it("creates an external review from an older commit while leaving the current manuscript alone", async () => {
+  const original = f.repo.rev("HEAD"), source = f.repo.blob(original, "paper/main.tex")!.toString();
+  f.write("paper/main.tex", source + "\n% A newer committed note.\n");
+  f.repo.run(["add", "paper/main.tex"]);
+  f.repo.run(["commit", "-qm", "Advance the paper"]);
+  const current = f.repo.rev("HEAD"), draft = source + "\n% An uncommitted note.\n";
+  f.write("paper/main.tex", draft);
+  const app = f.app();
+  await app.ready;
+  const server = createServer(app);
+  try {
+    const post = (body: object) => server.inject({ method: "POST", url: "/api/tasks", headers: { host: "127.0.0.1:9", origin: app.url, "x-review-token": app.csrf }, payload: body });
+    const payload = { name: "external", deferred: true, baseCommit: original, files: ["paper/main.tex"] };
+    const created = await post(payload);
+    expect(created.statusCode, created.body).toBe(200);
+    const info = created.json(), task = app.tasks.get("external");
+    expect(info).toMatchObject({ baseCommit: task.base, acceptedCommit: task.base });
+    expect(f.repo.rev(`${task.base}^`)).toBe(original);
+    expect(f.repo.treeId(task.base)).toBe(f.repo.treeId(original));
+    expect(fs.readFileSync(path.join(task.worktree, "paper/main.tex"), "utf8")).toBe(source);
+    expect(fs.readFileSync(path.join(f.root, "paper/main.tex"), "utf8")).toBe(draft);
+    expect((await post(payload)).json().worktree).toBe(task.worktree);
+    expect((await post({ ...payload, baseCommit: current })).statusCode).toBe(400);
+  } finally { await server.close(); }
+});
+
 it("gives the paper's document settings to the document chosen while none could be told apart", () => {
   // Two main files of the same rank: detection cannot choose, so nothing compiles yet.
   f.write("thesis/main.tex", TALK);

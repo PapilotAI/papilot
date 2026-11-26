@@ -24,7 +24,7 @@ import info from 'virtual:papilot-info';
 import { DiagnosticsSettings, type DiagnosticsSettingsProps } from './diagnostics-settings.tsx';
 import { ToolRequirement, type RequirementsState } from './system-requirements.tsx';
 import { LatexSettings } from './latex-settings.tsx';
-import { ExperimentSettings } from './experiment-settings.tsx';
+import { ExperimentSettings, type ExternalReviewSetting } from './experiment-settings.tsx';
 import { UpdateSettings, versionLabel, type UpdateApi } from './update-notice.tsx';
 import { SkillLibraryPanel, type SkillLibraryControls, type SkillLibraryOptions } from './skill-library.tsx';
 import { MemorySettings, type MemorySettingsOptions } from './memory-settings.tsx';
@@ -42,7 +42,7 @@ type SettingsEntry = { page: SettingsPage; label: string; icon: string; keywords
 // Shared with the review page's bibliography checks.
 const REFERENCE_CHECKS = 'papilot:review:references';
 
-export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppearance, onClose, diagnostics, requirements, skills, activity, updates, modelDefaults, workflow, overleaf, zotero, commitWriter, conflictWriter, refreshUsage, memory, initialPage = 'general' }: AppearanceSettingsProps & { onClose: () => void; diagnostics?: DiagnosticsSettingsProps; requirements?: { state: RequirementsState; online: boolean }; skills?: SkillLibraryOptions; activity?: LoadActivity; memory?: MemorySettingsOptions; updates?: UpdateApi; modelDefaults: ModelDefaultSettingsProps; commitWriter: CommitMessageChoice; conflictWriter: CommitMessageChoice; refreshUsage?: RefreshUsage; workflow?: CollaborationSettingsProps; overleaf?: { api: UpdateApi; state: OverleafState | undefined }; zotero?: ZoteroApi; initialPage?: SettingsInitialPage }) {
+export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppearance, onClose, diagnostics, requirements, skills, activity, updates, modelDefaults, workflow, externalReview, overleaf, zotero, commitWriter, conflictWriter, refreshUsage, memory, initialPage = 'general' }: AppearanceSettingsProps & { onClose: () => void; diagnostics?: DiagnosticsSettingsProps; requirements?: { state: RequirementsState; online: boolean }; skills?: SkillLibraryOptions; activity?: LoadActivity; memory?: MemorySettingsOptions; updates?: UpdateApi; modelDefaults: ModelDefaultSettingsProps; commitWriter: CommitMessageChoice; conflictWriter: CommitMessageChoice; refreshUsage?: RefreshUsage; workflow?: CollaborationSettingsProps; externalReview?: ExternalReviewSetting; overleaf?: { api: UpdateApi; state: OverleafState | undefined }; zotero?: ZoteroApi; initialPage?: SettingsInitialPage }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const skillControls = useRef<SkillLibraryControls>(null);
   const focusConflictAgent = useRef(initialPage === 'git-conflicts');
@@ -114,7 +114,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
     { label: t('Application'), entries: [
       ...(activity ? [{ page: 'statistics' as const, label: t('Statistics'), icon: 'chart', keywords: `${t('Tokens')} ${t('Spend')} ${t('Agent runs')} ${t('Active hours')} ${t('Accept / Reject')} ${t('Annotations')} ${t('Daily breakdown')}` }] : []),
       ...(updates ? [{ page: 'updates' as const, label: t('Updates'), icon: 'refresh' }] : []),
-      ...(diagnostics?.compiler || workflow || window.papilotDesktop?.platform === 'darwin' ? [{ page: 'experiments' as const, label: t('Experiments'), icon: 'flask', keywords: `Typeless PhiTeX ${t('Compile with PhiTeX')} ${t('Enable collaboration mode')}` }] : []),
+      ...(diagnostics?.compiler || workflow || externalReview || window.papilotDesktop?.platform === 'darwin' ? [{ page: 'experiments' as const, label: t('Experiments'), icon: 'flask', keywords: `Typeless PhiTeX ${t('Compile with PhiTeX')} ${t('Enable collaboration mode')} ${t('Enable external reviews')}` }] : []),
       { page: 'about', label: t('About Papilot'), icon: 'info', keywords: t('Third-party licenses') },
     ] },
   ];
@@ -180,7 +180,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
         {page === 'shortcuts' && <ShortcutSettings/>}
         {page === 'quickNotes' && <QuickNoteSettings/>}
         {page === 'about' && <AboutSettings onLicenses={() => goTo('licenses')}/>}
-        {page === 'experiments' && <ExperimentSettings compiler={diagnostics?.compiler} workflow={workflow} online={diagnostics?.online ?? workflow?.online ?? true}/>}
+        {page === 'experiments' && <ExperimentSettings compiler={diagnostics?.compiler} workflow={workflow} externalReview={externalReview} online={diagnostics?.online ?? workflow?.online ?? true}/>}
         {page === 'licenses' && <LicenseSettings/>}
         {page === 'agents' && diagnostics && <DiagnosticsSettings {...diagnostics}/>}
         {page === 'git' && <div className="settings-page">

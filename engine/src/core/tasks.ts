@@ -120,17 +120,34 @@ export class Tasks {
     files: string[] = [],
     deferred = false,
     document?: string,
+    baseCommit?: string,
   ): Promise<Task> {
+    const repo = this.app.repo;
+    if (baseCommit && (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(baseCommit) ||
+        baseCommit !== await repo.textAsync(["--no-replace-objects", "rev-parse", "--verify", `${baseCommit}^{commit}`], { check: false }))) {
+      throw new Error("Choose a committed version to review.");
+    }
+    const tree = baseCommit ? await repo.textAsync(["--no-replace-objects", "rev-parse", "--verify", `${baseCommit}^{tree}`]) : undefined;
     const project = this.app.projectFor(document), reserved = this.reserve(project, name, title, sections, files);
-    if ("existing" in reserved) return reserved.existing;
+    if ("existing" in reserved) {
+      if (baseCommit) {
+        const [parent, existingTree] = (await repo.textAsync(["--no-replace-objects", "rev-parse", `${reserved.existing.base}^`, `${reserved.existing.base}^{tree}`])).split("\n");
+        if (parent !== baseCommit || existingTree !== tree) throw new Error("The existing task starts from a different commit.");
+      }
+      return reserved.existing;
+    }
     this.creating.add(reserved.name);
     try {
       // The manuscript is read between writes, which may be changing it; the
       // much longer checkout of the worktree is not.
-      const base = await this.app.exclusive(() => this.app.repo.snapshotAsync([project.source_dir, ...reserved.paths], GENERATED));
+      // The ordinary snapshot includes the author's uncommitted work. An
+      // external reviewer sees a published commit, which must be copied as-is.
+      const base = baseCommit && tree
+        ? await repo.commitTreeAsync(tree, baseCommit, "Papilot snapshot")
+        : await this.app.exclusive(() => repo.snapshotAsync([project.source_dir, ...reserved.paths], GENERATED));
       const scope = this.scopeOf(project, sections.length ? await revisionReaderAsync(this.app.repo, base, project.doc_dir) : null, sections, reserved.paths);
       await fs.promises.mkdir(path.dirname(reserved.worktree), { recursive: true });
-      await this.app.repo.runAsync(["worktree", "add", "--detach", reserved.worktree, base]);
+      await repo.runAsync([...(baseCommit ? ["--no-replace-objects"] : []), "worktree", "add", "--detach", reserved.worktree, base]);
       return this.record(reserved, base, scope, deferred, project.main);
     } finally {
       this.creating.delete(reserved.name);
