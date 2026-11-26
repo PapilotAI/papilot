@@ -2,6 +2,20 @@
 
 Windows support is available from Papilot 0.9.1. Download the Windows x64 installer (`Papilot-VERSION-win-x64.exe`) or portable app (`Papilot-VERSION-win-x64-portable.exe`) from [GitHub Releases](https://github.com/PapilotAI/papilot/releases/latest). The installer lets you choose an installation folder and adds Start menu and desktop shortcuts; the portable app runs without installation. Both include Node.js and npm; install Codex yourself. Windows installers are unsigned. The desktop workflow builds and tests Windows x64 alongside macOS and Linux.
 
+## Update a Windows installation from PowerShell
+
+Use **Settings → Updates** for app-only updates. When an update requires a new installer, you can use the [Windows updater script](../scripts/update-windows.ps1) from a Papilot source checkout. It works with per-user Windows x64 installations and selects the latest stable release on GitHub.
+
+```powershell
+# Show the installed version and whether an update is available.
+.\scripts\update-windows.ps1 -CheckOnly
+
+# Close Papilot, then install in the existing folder.
+.\scripts\update-windows.ps1
+```
+
+The script checks the download size and SHA-256 against GitHub's release metadata before running the installer. It verifies the installed version before reporting success. The installer keeps app data in its existing location. Update portable copies and managed deployments through their own distribution method.
+
 ## Choose an environment
 
 The Windows desktop app recommends **WSL** on first launch. The setup screen detects installed distributions and checks Node.js/npm, Git and LaTeX in the selected environment. Missing tools get links to their official installation guides; **Check again** refreshes the results after installation. An existing environment selection is preserved. You can change it in **Settings → General → Environment**, or the **Environment** app menu.
