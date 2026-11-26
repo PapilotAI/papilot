@@ -313,6 +313,14 @@ jobs:
       - name: writer-setup
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-writer-setup.mjs
+      - name: Keep Writer settings screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: writer-setup
+          path: test-results/custom-api-*.png
+          if-no-files-found: ignore
+          retention-days: 7
       - name: collaboration
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-collaboration.mjs

@@ -24,6 +24,7 @@ import { PiAgent } from './pi.ts';
 import { CodeBuddyAgent } from './codebuddy.ts';
 import { WorkBuddyAgent } from './workbuddy.ts';
 import { WriterAgent } from './writer/agent.ts';
+import { customModelUnavailable, isCustomProvider } from './writer/auth.ts';
 import type { CompiledPaper } from './writer/build-map.ts';
 import { fileEdit } from './writer/edits.ts';
 import { paperOutline } from './writer/paper-map.ts';
@@ -120,6 +121,13 @@ const signInFailure = (error: { message?: unknown; codexErrorInfo?: unknown } | 
 // by the names agents give them (GPT Luna and mini, Claude Haiku, Gemini Flash).
 const LIGHT = /\b(?:luna|mini|nano|haiku|flash|lite)\b/i;
 export const lightModel = (models: AgentModel[]) => models.find(model => LIGHT.test(model.id) || LIGHT.test(model.name));
+const usesCustomModel = (agent: AgentId | undefined, model: string | null | undefined) => agent === 'papilot' && Boolean(model && isCustomProvider(model));
+// An explicit Writer choice must never silently move a prompt to or from a custom endpoint.
+function helperModels(models: AgentModel[], agent: AgentId, model: string | null | undefined) {
+  if (!model || agent !== 'papilot') return models;
+  if (isCustomProvider(model)) return models.filter(item => item.id === model);
+  return models.filter(item => !isCustomProvider(item.id));
+}
 export const QUICK_MODEL = 'quick-model';
 export interface QuickModel { agent: AgentId; model: string | null; effort: string | null }
 // A commit message's agent sees the changes in its prompt and needs no tools.
@@ -2131,13 +2139,23 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const task = this.store.findTask(taskId);
     if (!task || this.closing || !learnable(task) || this.store.preference<boolean>(MEMORY_LEARNING) === false) return;
     const since = this.store.preference<number>(MEMORY_SINCE) ?? 0;
-    if (!this.store.runs().some(run => run.taskId === task.id && (run.finishedAt ?? 0) >= since)) return;
+    const runs = this.store.runs(), taskRuns = runs.filter(run => run.taskId === task.id);
+    if (!taskRuns.some(run => (run.finishedAt ?? 0) >= since)) return;
     // Only the task's own agent ever reads its feedback, so nothing is kept for one that cannot.
     const id = this.learner(task), runtime = this.agents[id];
     if (!runtime.ready || !this.runtimes[id].authenticated || runtime.supportsReadOnlyTasks === false) return;
+    const models = helperModels(this.runtimes[id].models, id, task.model);
+    if (id === 'papilot' && task.model && !models.length) return;
+    const model = lightModel(models) || models.find(item => item.id === task.model) || models.find(item => item.isDefault);
+    const custom = usesCustomModel(id, model?.id);
+    // A task can switch models. Use the models that actually processed its
+    // turns when deciding where its accumulated review feedback can go.
+    const crossesCustom = id === 'papilot' ? new Set(runs.filter(run => run.finishedAt != null &&
+      (custom ? run.model !== model?.id : usesCustomModel(id, run.model))).map(run => run.taskId)) : new Set<string>();
+    if (crossesCustom.has(task.id)) return;
     const project = this.store.project(task.projectId), client = await this.connectReview(project.path);
     const feedback = await client.get(`${taskRoute(task.name)}/feedback?after=0`);
-    const evidence = taskEvidence(task.id, this.store.items(task.id), this.store.runs().filter(run => run.taskId === task.id), feedback);
+    const evidence = taskEvidence(task.id, this.store.items(task.id), taskRuns, feedback);
     const hash = evidenceHash(evidence), key = MEMORY_EVIDENCE + task.id, recorded = this.store.preference<EvidenceRecord>(key);
     if (!this.store.findTask(taskId)) return;
     if (recorded?.hash !== hash) this.store.savePreference(key, { projectId: task.projectId, hash, at: Date.now(), evidence } satisfies EvidenceRecord);
@@ -2158,9 +2176,12 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       ...(chosen ? { language: `${chosen.name} (${chosen.id})` } : {}),
       // Earlier tasks of the same agent only: feedback never goes to another provider.
       earlier: this.store.memoryEvidence(task.projectId).map(record => record.evidence as MemoryEvidence)
-        .filter(other => { const earlier = other.task !== task.id && this.store.findTask(other.task); return Boolean(earlier && this.learner(earlier) === id); }),
+        .filter(other => {
+          const earlier = other.task !== task.id && this.store.findTask(other.task);
+          return Boolean(earlier && this.learner(earlier) === id && !crossesCustom.has(other.task) &&
+            (custom ? earlier.model === model?.id : !usesCustomModel(id, earlier.model)));
+        }),
     };
-    const models = this.runtimes[id].models, model = lightModel(models) || models.find(item => item.id === task.model) || models.find(item => item.isDefault);
     // A helper holds back app updates while it runs, so it cannot wait forever.
     const reply = await this.oneOff(id, { cwd: project.path, sandbox: 'read-only', instructions: memoryLearningInstructions, prompt: learningPrompt(input), model, effort: model?.efforts[0], timeout: 120000, what: 'learn writing preferences' });
     const current = this.store.findTask(taskId);
@@ -2212,9 +2233,10 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   private quick(fallback: { agent?: AgentId; model?: string }, what: string) {
     const choice = this.quickModel();
     if (choice && !this.agentOff(choice.agent) && this.agents[choice.agent].ready && this.runtimes[choice.agent].authenticated && this.agents[choice.agent].supportsReadOnlyTasks !== false) {
-      const models = this.runtimes[choice.agent].models, model = models.find(item => item.id === choice.model) || lightModel(models) || models.find(item => item.isDefault);
+      const models = this.helperChoices(choice.agent, choice.model), model = models.find(item => item.id === choice.model) || lightModel(models) || models.find(item => item.isDefault);
       return { id: choice.agent, model, effort: choice.effort && model?.efforts.includes(choice.effort) ? choice.effort : model?.efforts[0] };
     }
+    if (choice && usesCustomModel(choice.agent, choice.model)) throw customModelUnavailable();
     const { id, model } = this.helper(fallback, what, { light: true, readOnly: true });
     return { id, model, effort: model?.efforts[0] };
   }
@@ -2224,7 +2246,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (!this.agents[choice.agent].ready && !this.agentOff(choice.agent)) { await this.connecting; if (!this.agents[choice.agent].ready) await this.connectAgent(choice.agent).catch(() => undefined); }
     const runtime = this.runtimes[choice.agent];
     if (this.agentOff(choice.agent) || !this.agents[choice.agent].ready || !runtime.authenticated) throw new Error(`Connect ${AGENT_NAMES[choice.agent]} to ${what}, or choose another model.`);
-    const model = runtime.models.find(item => item.id === choice.model) || runtime.models.find(item => item.isDefault);
+    const models = this.helperChoices(choice.agent, choice.model);
+    const model = models.find(item => item.id === choice.model) || models.find(item => item.isDefault);
     return { id: choice.agent, model, effort: choice.effort && model?.efforts.includes(choice.effort) ? choice.effort : model?.efforts[0] };
   }
   /** One quick job's reply, from a read-only turn that has everything it
@@ -2239,6 +2262,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   // or the default one; light asks for the agent's small model when it has one.
   private helper(choice: { agent?: AgentId; model?: string }, task: string, options: { light?: boolean; readOnly?: boolean; strict?: 'commit-message' | 'conflict-resolution' } = {}) {
     const usable = (id: AgentId) => this.agents[id].ready && this.runtimes[id].authenticated && (!options.readOnly || this.agents[id].supportsReadOnlyTasks !== false);
+    if (usesCustomModel(choice.agent, choice.model) && !usable('papilot')) throw customModelUnavailable();
     if (options.strict && choice.agent) {
       if (!this.agents[choice.agent].ready || !this.runtimes[choice.agent].authenticated) {
         throw new Error(options.strict === 'commit-message'
@@ -2252,15 +2276,21 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       if (options.readOnly) throw new Error('Connect an agent that supports read-only tasks, such as Codex.');
       throw new Error(`Sign in to an agent, such as Codex, to ${task}.`);
     }
-    const models = this.runtimes[id].models, hidden = this.hiddenModels[id] || [], offered = models.filter(model => !hidden.includes(model.id));
+    const models = this.helperChoices(id, choice.model), hidden = this.hiddenModels[id] || [], offered = models.filter(model => !hidden.includes(model.id));
     return { id, model: (options.light ? lightModel(offered) : undefined) || models.find(item => item.id === choice.model) || offered.find(item => item.isDefault) || offered[0] || models.find(item => item.isDefault) };
   }
   async diagnoseLatexBuild(root: string, prompt: string, choice: { agent: AgentId; model?: string; projectId?: string }) {
     const id = choice.agent, runtime = this.runtimes[id];
     if (!this.agents[id].ready || !runtime.authenticated) throw new Error('Connect the selected agent before diagnosing compilation problems.');
     if (this.agents[id].supportsReadOnlyTasks === false) throw new Error('The selected agent does not support read-only compilation diagnosis. Select another agent.');
-    const model = runtime.models.find(item => item.id === choice.model) || runtime.models.find(item => item.isDefault);
+    const models = this.helperChoices(id, choice.model);
+    const model = models.find(item => item.id === choice.model) || models.find(item => item.isDefault);
     return this.oneOff(id, { cwd: root, sandbox: 'read-only', model, timeout: 120000, what: 'diagnose the LaTeX build', instructions: latexRepairInstructions, prompt, projectId: choice.projectId });
+  }
+  private helperChoices(id: AgentId, model: string | null | undefined) {
+    const runtime = this.runtimes[id], models = helperModels(runtime.models, id, model);
+    if (id === 'papilot' && model && !models.length && (isCustomProvider(model) || runtime.models.some(item => isCustomProvider(item.id)))) throw customModelUnavailable();
+    return models;
   }
   async repairImport(root: string, error: string, choice: { agent?: AgentId } = {}) {
     const { id, model } = this.helper(choice, 'repair the imported paper');

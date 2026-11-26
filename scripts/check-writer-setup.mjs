@@ -18,9 +18,10 @@ const providerList = [
   ['anthropic', 'Anthropic (Claude)', 'key', 'ANTHROPIC_API_KEY'], ['openai', 'OpenAI', 'key', 'OPENAI_API_KEY'], ['google', 'Google Gemini', 'key', 'GEMINI_API_KEY'],
   ['openrouter', 'OpenRouter', 'key', 'OPENROUTER_API_KEY'], ['deepseek', 'DeepSeek', 'key', 'DEEPSEEK_API_KEY'], ['xai', 'xAI (Grok)', 'key', 'XAI_API_KEY'],
   ['moonshotai', 'Moonshot (Kimi)', 'key', 'MOONSHOT_API_KEY'], ['zai', 'Z.ai (GLM)', 'key', 'ZAI_API_KEY'], ['mistral', 'Mistral', 'key', 'MISTRAL_API_KEY'],
+  ['custom-api', 'Custom API', 'custom'],
 ];
-async function fixture(language = 'en') {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, locale: 'en-US', colorScheme: 'light' });
+async function fixture(language = 'en', options = {}) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, locale: 'en-US', colorScheme: 'light', ...options });
   await context.addInitScript(language => { localStorage.setItem('papilot:language', language); localStorage.setItem('papilot:setup-seen', '1'); }, language);
   const auth = { providers: providerList.map(([id, name, kind, env]) => ({ id, name, kind, env, configured: id === 'deepseek', source: id === 'deepseek' ? 'environment' : null })), logins: [] };
   const calls = [];
@@ -33,6 +34,10 @@ async function fixture(language = 'en') {
         if (pathname.endsWith('/keys')) {
           if (failSave) return route.fulfill({ status: 400, json: { error: 'Invalid fixture key' } });
           Object.assign(auth.providers.find(p => p.id === body.provider), { configured: true, source: 'stored' });
+        } else if (pathname.endsWith('/custom-api')) {
+          if (failSave) return route.fulfill({ status: 400, json: { error: 'Invalid fixture URL' } });
+          auth.customApi = { baseUrl: body.baseUrl, model: body.model };
+          Object.assign(auth.providers.find(p => p.id === 'custom-api'), { configured: true, source: 'stored' });
         } else if (pathname.endsWith('/logins')) {
           auth.logins.push({ id: 'fixture-login', provider: body.provider, name: 'ChatGPT', status: 'waiting', url: 'https://example.com/fixture-login', instructions: 'Continue in your browser. Fixture code: TEST-1234', error: null, startedAt: 1 });
         } else if (pathname.endsWith('/cancel')) { auth.logins.at(-1).status = 'cancelled'; }
@@ -40,6 +45,7 @@ async function fixture(language = 'en') {
           auth.logins.at(-1).status = 'done'; Object.assign(auth.providers.find(p => p.id === auth.logins.at(-1).provider), { configured: true, source: 'stored' });
         } else if (pathname.endsWith('/remove')) {
           Object.assign(auth.providers.find(p => p.id === pathname.split('/').at(-2)), { configured: false, source: null });
+          if (pathname.endsWith('/custom-api/remove')) delete auth.customApi;
         }
       }
       return route.fulfill({ json: auth });
@@ -103,6 +109,46 @@ try {
   await expect(page.locator('.writer-key-editor').getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
   await page.locator('.writer-key-editor h6').press('Escape');
 
+  const custom = tile('Custom API');
+  await custom.press('Enter');
+  const customForm = setup.getByRole('form', { name: 'Custom API' });
+  const base = customForm.getByRole('textbox', { name: 'API base URL' });
+  const model = customForm.getByRole('textbox', { name: 'Model ID' });
+  const key = customForm.getByLabel('API key', { exact: true });
+  await expect(base).toBeFocused();
+  await base.fill('https://api.example.test/v1');
+  await base.press('Tab');
+  await expect(model).toBeFocused();
+  await model.fill('org/writer');
+  await model.press('Tab');
+  await expect(key).toBeFocused();
+  await key.fill('fixture-api-key');
+  f.failSave(true);
+  await key.press('Enter');
+  await expect(customForm.getByRole('alert')).toHaveText('Invalid fixture URL');
+  await expect(customForm.getByRole('alert')).toBeFocused();
+  await expect(key).toHaveValue('fixture-api-key');
+  await page.locator('.settings-dialog').screenshot({ animations: 'disabled', path: 'test-results/custom-api-error.png' });
+  f.failSave(false);
+  await key.press('Enter');
+  await expect(custom).toHaveAttribute('data-configured', 'true');
+  await expect(custom).toBeFocused();
+  assert.deepEqual(f.calls.at(-1).body, { baseUrl: 'https://api.example.test/v1', model: 'org/writer', key: 'fixture-api-key' });
+  await custom.click();
+  await expect(base).toHaveValue('https://api.example.test/v1');
+  await expect(model).toHaveValue('org/writer');
+  await expect(key).toHaveValue('');
+  await expect(customForm).toContainText('Leave blank to keep the saved key for this URL.');
+  await model.fill('org/edited');
+  await model.press('Enter');
+  await expect(custom).toBeFocused();
+  assert.equal(f.calls.at(-1).body.key, '');
+  await custom.click();
+  await expect(model).toHaveValue('org/edited');
+  await customForm.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(custom).toHaveAttribute('data-configured', 'false');
+  await expect(custom).toBeFocused();
+
   const subscription = setup.locator('.writer-subscription').filter({ hasText: 'ChatGPT Plus or Pro' });
   await subscription.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(subscription.getByRole('link', { name: 'Open sign-in page' })).toHaveAttribute('href', 'https://example.com/fixture-login');
@@ -121,7 +167,7 @@ try {
   await f.context.close();
 
   for (const language of ['en', 'zh-Hans', 'de']) {
-    const f = await fixture(language);
+    const f = await fixture(language, { hasTouch: true });
     for (const width of [320, 390, 768, 1280]) {
       await f.page.setViewportSize({ width, height: 1000 });
       await fits(f.page, `${language}/${width}`);
@@ -133,12 +179,22 @@ try {
         await f.page.locator('.settings-content').evaluate(root => { root.scrollTop += root.querySelector('.runtime-agent-writer').getBoundingClientRect().top - root.getBoundingClientRect().top - 12; });
         await f.page.locator('.settings-dialog').screenshot({ animations: 'disabled', path: `test-results/writer-setup-${width}.png` });
       }
+      await f.page.locator('.writer-provider').last().click();
+      await fits(f.page, `${language}/${width}/custom-api`);
+      if (language === 'zh-Hans') {
+        await f.page.locator('.writer-custom-api').screenshot({ animations: 'disabled', path: `test-results/custom-api-${width}.png` });
+      }
+      await f.page.locator('.writer-custom-api [name=baseUrl]').press('Escape');
     }
     await f.page.emulateMedia({ colorScheme: 'dark' });
     await fits(f.page, `${language}/dark`);
     if (language === 'zh-Hans') await f.page.locator('.settings-dialog').screenshot({ animations: 'disabled', path: 'test-results/writer-setup-dark.png' });
+    await f.page.setViewportSize({ width: 390, height: 1000 });
+    await f.page.locator('.writer-provider').last().click();
+    await fits(f.page, `${language}/dark/custom-api`);
+    if (language === 'zh-Hans') await f.page.locator('.writer-custom-api').screenshot({ animations: 'disabled', path: 'test-results/custom-api-dark.png' });
     await f.context.close();
   }
   assert.deepEqual(errors, []);
-  console.log('Writer setup passed: provider selection, focus, key save/failure/removal, environment credentials, login/cancel/redirect/sign-out, models, light/dark and responsive translations.');
+  console.log('Writer setup passed: provider selection, focus, key save/failure/removal, custom API, environment credentials, login/cancel/redirect/sign-out, models, light/dark and responsive translations.');
 } finally { await browser.close(); await server.close(); }

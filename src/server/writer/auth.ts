@@ -1,8 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
-import type { AuthStorage } from '@mariozechner/pi-coding-agent';
+import type { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent';
 import { DATA } from '../paths.ts';
-import type { WriterAuth, WriterLogin, WriterProvider } from '../../shared.ts';
+import type { WriterAuth, WriterCustomApi, WriterLogin, WriterProvider } from '../../shared.ts';
 
 // Papilot Writer's credentials. They live in Papilot's own data folder, never
 // in ~/.pi, so a Pi setup on the same host (its logins, extensions, settings)
@@ -32,6 +33,31 @@ const LOGIN_PROVIDERS: { id: string; name: string }[] = [
   { id: 'github-copilot', name: 'GitHub Copilot' },
 ];
 const SUBSCRIPTION_TOKEN = /^sk-ant-oat/;
+const CUSTOM_API = 'custom-api';
+type CustomApi = WriterCustomApi & { key: string };
+export const isCustomProvider = (id: string) => id.startsWith(`${CUSTOM_API}-`);
+export const customModelUnavailable = () => new Error('This custom API model is unavailable. Choose an available model to continue.');
+// A task's saved model identifies the endpoint as well as the model name.
+const customId = (baseUrl: string) => `${CUSTOM_API}-${createHash('sha256').update(baseUrl).digest('hex').slice(0, 24)}`;
+
+function customApi(input: Record<string, unknown>, previous?: CustomApi): CustomApi {
+  const base = typeof input.baseUrl === 'string' && input.baseUrl.length <= 2048 ? input.baseUrl.trim() : '';
+  const url = URL.parse(base);
+  const loopback = url && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if (url) url.pathname = url.pathname.replace(/(?:\/+chat\/completions)+\/*$/, '').replace(/\/+$/, '');
+  const baseUrl = url?.href.replace(/\/$/, '') ?? '';
+  if (!url || baseUrl.length > 2048 || (url.protocol !== 'https:' && !(loopback && url.protocol === 'http:')) || url.username || url.password || /[?#]/.test(base)) {
+    throw new Error('Enter an HTTPS API base URL, or an HTTP URL on localhost, without credentials, a query or a fragment.');
+  }
+  const model = typeof input.model === 'string' ? input.model.trim() : '';
+  if (!model || model.length > 160 || /\s|[\u0000-\u001f\u007f]/.test(model)) throw new Error('Enter a model ID without spaces and with at most 160 characters.');
+  const key = typeof input.key === 'string' ? input.key.trim() : '';
+  if (input.key !== undefined && typeof input.key !== 'string') throw new Error('Paste the API key exactly as the provider shows it.');
+  if (key && (/[^!-~]/.test(key) || key.length > 4096 || claudeSubscription(key))) throw new Error('Paste the API key exactly as the provider shows it.');
+  const saved = key || (previous?.baseUrl === baseUrl ? previous.key : '');
+  if (!saved) throw new Error('Enter an API key for this endpoint.');
+  return { baseUrl, model, key: saved };
+}
 
 /** Whether a Claude credential is a subscription token rather than an API key. */
 export const claudeSubscription = (key: string | undefined) => Boolean(key && SUBSCRIPTION_TOKEN.test(key.trim()));
@@ -41,10 +67,62 @@ interface Login extends WriterLogin { abort: AbortController; prompt?: Pending; 
 
 export class WriterCredentials {
   private logins = new Map<string, Login>();
-  constructor(private storage: AuthStorage, private env: NodeJS.ProcessEnv = process.env, private changed: () => void = () => {}) {}
+  private custom?: CustomApi;
+  constructor(
+    private storage: AuthStorage, private env: NodeJS.ProcessEnv = process.env, private changed: () => void = () => {},
+    private customStore?: { file: string; registry: ModelRegistry },
+  ) {
+    if (!customStore) return;
+    try { this.applyCustom(customApi(JSON.parse(fs.readFileSync(customStore.file, 'utf8')))); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.warn('Could not read the Papilot Writer custom API configuration.'); }
+  }
+
+  private applyCustom(next?: CustomApi) {
+    const registry = this.customStore!.registry;
+    const previousId = this.custom && customId(this.custom.baseUrl), nextId = next && customId(next.baseUrl);
+    if (previousId && previousId !== nextId) {
+      this.storage.removeRuntimeApiKey(previousId);
+      registry.unregisterProvider(previousId);
+    }
+    if (next && nextId) {
+      this.storage.setRuntimeApiKey(nextId, next.key);
+      registry.registerProvider(nextId, {
+        name: new URL(next.baseUrl).host,
+        baseUrl: next.baseUrl, api: 'openai-completions',
+        // Pi requires a configured key for registration. The literal key
+        // above takes precedence over its config-value resolver.
+        apiKey: CUSTOM_API,
+        models: [{
+          id: next.model, name: next.model, reasoning: false, input: ['text'],
+          contextWindow: 32768, maxTokens: 4096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          compat: { supportsStore: false, supportsStrictMode: false },
+        }],
+      });
+    }
+    this.custom = next;
+  }
+
+  setCustomApi(input: Record<string, unknown>) {
+    if (!this.customStore) throw new Error('Custom API setup is unavailable.');
+    const next = customApi(input, this.custom), file = this.customStore.file;
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    const temporary = `${file}.${randomUUID()}.tmp`;
+    try {
+      fs.writeFileSync(temporary, JSON.stringify(next), { flag: 'wx', mode: 0o600 });
+      fs.renameSync(temporary, file);
+    } finally { fs.rmSync(temporary, { force: true }); }
+    this.applyCustom(next);
+    this.changed();
+  }
+
+  redactCustomErrors(provider: string) {
+    const key = this.custom && customId(this.custom.baseUrl) === provider ? this.custom.key : '';
+    return (message: string) => key ? message.replaceAll(key, '[redacted]') : message;
+  }
 
   /** Whether a provider's credential may be used. */
   usable(provider: string) {
+    if (provider === CUSTOM_API) return Boolean(this.custom);
     if (provider !== 'anthropic') return this.storage.hasAuth(provider);
     const stored = this.storage.get('anthropic');
     if (stored) return stored.type === 'api_key' && !claudeSubscription(stored.key);
@@ -59,7 +137,14 @@ export class WriterCredentials {
         return { id, name, kind: 'key' as const, env, configured: stored || fromEnv, source: stored ? 'stored' as const : fromEnv ? 'environment' as const : null };
       }),
     ];
-    return { providers, logins: [...this.logins.values()].map(({ abort: _a, prompt: _p, code: _c, ...login }) => login) };
+    if (this.customStore) providers.push({
+      id: CUSTOM_API, name: 'Custom API', kind: 'custom', configured: Boolean(this.custom), source: this.custom ? 'stored' : null,
+    });
+    const custom = this.custom;
+    return {
+      providers, logins: [...this.logins.values()].map(({ abort: _a, prompt: _p, code: _c, ...login }) => login),
+      ...(custom && { customApi: { baseUrl: custom.baseUrl, model: custom.model } }),
+    };
   }
 
   setKey(provider: string, key: string) {
@@ -71,6 +156,12 @@ export class WriterCredentials {
     this.changed();
   }
   remove(provider: string) {
+    if (provider === CUSTOM_API && this.customStore) {
+      fs.rmSync(this.customStore.file, { force: true });
+      this.applyCustom();
+      this.changed();
+      return;
+    }
     if (![...KEY_PROVIDERS, ...LOGIN_PROVIDERS].some(item => item.id === provider)) throw new Error('Unknown provider.');
     this.storage.remove(provider);
     this.changed();

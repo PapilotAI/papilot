@@ -490,6 +490,11 @@ export async function buildApp(options: AppOptions) {
   };
   app.get('/api/writer/auth', async () => (await writer()).status());
   app.post('/api/writer/keys', async request => { const body = (request.body || {}) as any, credentials = await writer(); credentials.setKey(string(body.provider, 'Provider', 64), string(body.key, 'API key', 4096)); return credentials.status(); });
+  app.post('/api/writer/custom-api', async request => {
+    const credentials = await writer();
+    credentials.setCustomApi((request.body || {}) as Record<string, unknown>);
+    return credentials.status();
+  });
   app.post<{ Params: { provider: string } }>('/api/writer/providers/:provider/remove', async request => { const credentials = await writer(); credentials.remove(request.params.provider); return credentials.status(); });
   app.post('/api/writer/logins', async request => {
     const body = (request.body || {}) as any, credentials = await writer();

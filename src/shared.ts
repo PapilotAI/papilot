@@ -204,9 +204,10 @@ export function collaborationRoutes(value: unknown): CollaborationRoutes {
 }
 // Papilot Writer's providers: subscriptions it signs in to, and API keys
 // stored by Papilot or read from the environment.
-export interface WriterProvider { id: string; name: string; kind: 'login' | 'key'; env?: string; configured: boolean; source: 'stored' | 'environment' | null }
+export interface WriterProvider { id: string; name: string; kind: 'login' | 'key' | 'custom'; env?: string; configured: boolean; source: 'stored' | 'environment' | null }
+export interface WriterCustomApi { baseUrl: string; model: string }
 export interface WriterLogin { id: string; provider: string; name: string; status: 'waiting' | 'done' | 'failed' | 'cancelled'; url: string | null; instructions: string | null; error: string | null; startedAt: number }
-export interface WriterAuth { providers: WriterProvider[]; logins: WriterLogin[] }
+export interface WriterAuth { providers: WriterProvider[]; logins: WriterLogin[]; customApi?: WriterCustomApi }
 export const isAgentId = (value: unknown): value is AgentId => AGENT_IDS.includes(value as AgentId);
 /** source: where an agent with several model providers gets this model, such as a subscription. */
 export interface AgentModel { id: string; name: string; source?: string; isDefault: boolean; efforts: string[]; defaultEffort: string | null; fastMode?: { serviceTier: string; description: string } }

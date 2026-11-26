@@ -62,6 +62,11 @@ Settings → Agents → Papilot Writer:
   redirect cannot reach the Papilot host, the author pastes the redirect URL.
 - **API keys**: Anthropic, OpenAI, Google, OpenRouter, DeepSeek, xAI,
   Moonshot, Z.ai, Mistral. Keys in Papilot's environment work too.
+- **Custom API**: Save one OpenAI-compatible Chat Completions base URL, model
+  ID and API key. Writer uses the supplied ID directly and needs streaming
+  and function calling from the provider. The model supports text input with
+  a 32,768-token context and up to 4,096 output tokens. The key stays on the
+  Papilot host. The settings API returns the model ID and URL only.
 - Claude is API-key only. Anthropic does not allow subscription logins
   through third-party harnesses, so `sk-ant-oat` tokens are refused.
 

@@ -279,7 +279,7 @@ class Agent extends EventEmitter {
   }
   respond() {} reject() {} close() { this.ready = false; }
 }
-function workspace() {
+function workspace(learner: 'codex' | 'papilot' = 'codex') {
   const f = folders(), store = new Store(':memory:'), agent = new Agent();
   const feedback = new Map<string, unknown[]>();
   const review: ReviewClient = { url: 'http://unused', token: 'test', post: async () => ({}) as any, get: async (route: string) => {
@@ -288,7 +288,8 @@ function workspace() {
     if (route.includes('/feedback')) return { feedback: [] } as any;
     return { state: 'done', round: 1, counts: { accepted: 1, rejected: 1, pending: 0 } } as any;
   } };
-  const work = new Workspace(store, agent as unknown as AgentRuntime, async () => review);
+  const runtime = agent as unknown as AgentRuntime;
+  const work = new Workspace(store, learner === 'codex' ? runtime : undefined, async () => review, learner === 'papilot' ? { papilot: runtime } : {});
   work.memory = f.memory;
   work.runtime.authenticated = true;
   work.runtime.models = [{ id: 'large', name: 'Large', isDefault: true, efforts: ['high'], defaultEffort: 'high' }, { id: 'small-mini', name: 'Small mini', isDefault: false, efforts: ['low'], defaultEffort: 'low' }];
@@ -299,7 +300,7 @@ function workspace() {
   // (an older task branch, which needs no Git refs here) unless told otherwise.
   const saving: Partial<Task> = { deferred: true, delivery: { mode: 'branch', branch: 'papilot/legacy', commit: 'abc1234', accepted: 'old' } };
   const task = (id: string, projectId = 'a', extra: Partial<Task> = {}, finishedAt = Date.now()): Task => {
-    store.saveRun({ id: `${id}-run`, taskId: id, requestKey: `initial-${id}`, prompt: '', status: 'completed', createdAt: finishedAt, finishedAt } as Run);
+    store.saveRun({ id: `${id}-run`, taskId: id, requestKey: `initial-${id}`, prompt: '', status: 'completed', model: extra.model, createdAt: finishedAt, finishedAt } as Run);
     return store.saveTask({ id, projectId, name: `p-${id}`, title: id, instructions: 'Polish.', worktree: path.join(f.root, id), threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 9, error: null, review: null, ...saving, ...extra });
   };
   const learned = async (id: string) => { for (let i = 0; i < 200 && (work as any).learning.has(id); i++) await new Promise(resolve => setTimeout(resolve, 5)); };
@@ -308,6 +309,35 @@ function workspace() {
   const save = async (id: string) => { work.learnOnSave(id); await learned(id); };
   return { ...f, store, agent, work, papers, feedback, task, settle, save, learned, close() { work.close(); store.close(); f.close(); } };
 }
+
+test('Writer learning stays on the chosen custom model and excludes reviews from other endpoints', async () => {
+  const f = workspace('papilot'), current = 'custom-api-new/model', previous = 'custom-api-old/model';
+  try {
+    Object.assign(f.work.runtimes.papilot, { authenticated: true, models: [
+      { id: 'anthropic/default-mini', name: 'Built-in mini', isDefault: true, efforts: ['low'] },
+      { id: current, name: 'Custom model', isDefault: false, efforts: [] },
+    ] });
+    for (const [id, model] of [['same', current], ['other-endpoint', previous], ['switched', previous], ['built-in', 'anthropic/default-mini']]) {
+      f.task(id, 'a', { agent: 'papilot', model });
+      f.store.savePreference(`memory-evidence:${id}`, { projectId: 'a', hash: id, at: 1, evidence: evidence(id, { requests: [`Review feedback for ${id}.`] }) });
+    }
+    f.store.updateTask('switched', { model: current });
+    f.task('current', 'a', { agent: 'papilot', model: current });
+    f.feedback.set('p-current', [{ kind: 'reject', changes: [{ old: 'Related work', new: 'Related Work' }] }]);
+    await f.settle('current');
+    await f.save('current');
+    const thread = f.agent.calls.find(call => call.method === 'thread/start');
+    assert.equal(thread?.params.model, current);
+    const turn = f.agent.calls.find(call => call.method === 'turn/start');
+    assert.deepEqual(JSON.parse(turn?.params.input[0].text).earlierTasks.map((item: MemoryEvidence) => item.task), ['same']);
+    const calls = f.agent.calls.length;
+    await f.settle('switched');
+    await f.settle('other-endpoint');
+    await f.save('switched');
+    await f.save('other-endpoint');
+    assert.equal(f.agent.calls.length, calls);
+  } finally { f.close(); }
+});
 
 test('as the author saves a task, a correction repeated across tasks becomes a suggestion they keep, and later tasks in that paper follow it', async () => {
   const f = workspace();

@@ -47,6 +47,7 @@
 .writer-key-editor>header{justify-content:space-between;margin-bottom:12px}
 .writer-key-editor h6{margin:0;font-size:12px;font-weight:500;overflow-wrap:anywhere;outline:none}
 .writer-key-editor .writer-provider-mark{width:20px;height:20px;background:transparent}
+.writer-key-editor .writer-provider-mark>svg{max-width:100%;max-height:100%}
 .writer-key-editor>header>.icon-button{flex:none}
 .writer-key-editor label{display:block;margin:0 0 4px;font-size:11px;font-weight:500;color:var(--text-2);overflow-wrap:anywhere}
 .writer-key{display:flex;align-items:center;gap:8px;min-width:0}
@@ -57,6 +58,11 @@
 .writer-key-connected{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .writer-key-connected p{display:flex;align-items:flex-start;gap:6px;min-width:0;margin:0;color:var(--green);font-size:12px;overflow-wrap:anywhere}
 .writer-key-connected p>svg{flex:none}
+.writer-custom-api{display:grid;gap:12px;min-width:0}
+.settings-dialog .writer-custom-api input{width:100%;min-width:0;margin:0;border-color:var(--line-hover);background:var(--raised)}
+.settings-dialog .writer-custom-api input:focus{border-color:var(--accent);background:var(--raised)}
+.writer-custom-api p:not(.writer-error){margin:4px 0 0;font-size:12px;line-height:1.5;color:var(--text-2);overflow-wrap:anywhere}
+.writer-custom-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px}
 .writer-login{display:grid;gap:12px;padding-top:4px}
 .writer-login-instructions{margin:0;font-size:12px;line-height:1.5;color:var(--text-2);overflow-wrap:anywhere}
 .writer-redirect{font-size:12px;color:var(--text-3)}
@@ -79,4 +85,5 @@
 @media(max-width:1100px){.writer-providers{grid-template-columns:repeat(2,minmax(0,1fr))}.writer-intro{flex-wrap:wrap}.writer-connected{margin-left:48px}}
 @media(max-width:680px){.writer-intro p,.writer-connected,.writer-section-heading h5,.writer-provider-status,.writer-key-editor label,.writer-storage-note,.writer-storage-note p{font-size:13px}.writer-intro h5,.writer-subscription-heading strong,.writer-provider-copy strong,.writer-key-editor h6{font-size:14px}.writer-provider{min-height:52px}.settings-dialog .writer-key input{height:38px;font-size:16px}}
 @media(max-width:540px){.writer-subscriptions{grid-template-columns:minmax(0,1fr)}.writer-intro{display:grid;grid-template-columns:36px minmax(0,1fr)}.writer-connected{grid-column:2;justify-self:start;margin-left:0;max-width:100%;flex-wrap:wrap}.writer-provider{flex-direction:column;align-items:flex-start;gap:6px;position:relative}.writer-provider>svg{position:absolute;right:10px;top:16px}.writer-provider-copy{flex:none;width:100%}.writer-key{flex-wrap:wrap}.settings-dialog .writer-key input{flex-basis:100%;width:100%}.writer-key>.button{margin-left:auto}}
+@media(pointer:coarse){.settings-dialog .writer-custom-api input,.writer-custom-actions>.button{min-height:48px}.settings-dialog .writer-custom-api input{font-size:16px}}
 @media(prefers-reduced-motion:reduce){.writer-provider,.writer-storage-note summary>svg:last-child{transition:none}.writer-key-editor{animation:none}}

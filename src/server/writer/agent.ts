@@ -6,7 +6,7 @@ import type { Api, ImageContent, Model } from '@mariozechner/pi-ai';
 import type { TaskPermissionOption, TaskPermissions } from '../../shared.ts';
 import { Adapter, type Item, type Thread, type Turn } from '../agents.ts';
 import { imageType } from '../attachments.ts';
-import { AUTH_FILE, WRITER_DIR, WriterCredentials } from './auth.ts';
+import { AUTH_FILE, WRITER_DIR, WriterCredentials, isCustomProvider, customModelUnavailable } from './auth.ts';
 import { CHARTER, COMPACTION } from './charter.ts';
 import { contextBreakdown } from './context.ts';
 import { fromList, listModels } from './models.ts';
@@ -89,9 +89,10 @@ export class WriterAgent extends Adapter {
     if (this.registry) return;
     this.sdk = sdk; this.ai = ai;
     this.storage = this.options.auth || sdk.AuthStorage.create(this.options.dir ? path.join(this.dir, 'auth.json') : AUTH_FILE);
-    // Built-in models only: no models.json, so a Pi setup cannot add providers.
+    // Load only bundled models and the endpoint saved in Papilot settings.
     this.registry = sdk.ModelRegistry.inMemory(this.storage);
-    this.credentials = new WriterCredentials(this.storage, this.options.env || process.env, () => { this.catalog.clear(); this.emit('credentials'); });
+    this.credentials = new WriterCredentials(this.storage, this.options.env || process.env, () => { this.catalog.clear(); this.emit('credentials'); },
+      { file: path.join(this.dir, 'custom-api.json'), registry: this.registry });
     this.options.setup?.(this.registry, ai);
   }
 
@@ -127,7 +128,7 @@ export class WriterAgent extends Adapter {
     this.listing ||= (async () => {
       const registry = this.registry!, fetcher = this.options.fetch || fetch;
       registry.refresh();
-      const usable = registry.getAvailable().filter(model => this.credentials!.usable(model.provider));
+      const usable = registry.getAvailable().filter(model => !isCustomProvider(model.provider) && this.credentials!.usable(model.provider));
       await Promise.all([...new Set(usable.map(model => model.provider))].map(async provider => {
         const cached = this.catalog.get(provider);
         if (cached && Date.now() - cached.at < CATALOG_TTL) return;
@@ -154,10 +155,11 @@ export class WriterAgent extends Adapter {
   }
   protected async models() {
     await this.refreshModels();
-    const fallback = this.defaultModel();
+    const available = this.available();
+    const fallback = available[0];
     // The picker groups models by provider, under the names Papilot's settings use.
     const sources = new Map(this.credentials!.status().providers.map(provider => [provider.id, provider.name]));
-    return { data: this.available().map(model => {
+    return { data: available.map(model => {
       const listed = this.catalog.get(model.provider)?.efforts.get(model.id);
       const efforts = listed || (model.reasoning ? this.ai!.getSupportedThinkingLevels(model).filter(level => level !== 'off') : []);
       return {
@@ -236,7 +238,7 @@ export class WriterAgent extends Adapter {
     live.choreChanged = false;
   }
 
-  private async open(threadId: string, thread: Thread): Promise<Live> {
+  private async open(threadId: string, thread: Thread, model: Model<Api>): Promise<Live> {
     const known = this.live.get(threadId);
     const mode: WriterMode = thread.readOnly ? 'read-only' : thread.permissions === 'full' ? 'full' : 'paper';
     if (known && known.cwd === thread.cwd && (known.mode === 'read-only') === (mode === 'read-only')) { known.mode = mode; return known; }
@@ -267,9 +269,8 @@ export class WriterAgent extends Adapter {
     const { writerTools } = await import('./tools.ts');
     const tools: ToolDefinition[] = writerTools(this.host(live));
     live.tools = tools.map(tool => tool.name);
-    const model = await this.resolve(thread.model);
     const { session } = await sdk.createAgentSession({
-      cwd: thread.cwd, agentDir: this.dir, authStorage: this.storage, modelRegistry: this.registry, ...(model ? { model } : {}),
+      cwd: thread.cwd, agentDir: this.dir, authStorage: this.storage, modelRegistry: this.registry, model,
       tools: live.tools, customTools: tools, resourceLoader: loader, sessionManager, settingsManager,
     });
     live.session = session;
@@ -280,12 +281,15 @@ export class WriterAgent extends Adapter {
   private async resolve(id: string | null) {
     await this.refreshModels();
     const available = this.available();
-    return (id && available.find(model => modelId(model) === id)) || available[0];
+    const chosen = id && available.find(model => modelId(model) === id);
+    if (id && !chosen && (isCustomProvider(id) || (available[0] && isCustomProvider(available[0].provider)))) throw customModelUnavailable();
+    return chosen || available[0];
   }
 
   protected run(turn: Turn, thread: Thread, text: string, effort: string | null, images: string[]) { void this.execute(turn, thread, text, effort, images); }
   private async execute(turn: Turn, thread: Thread, text: string, effort: string | null, images: string[]) {
     let error: string | null = null, stopped = false, live: Live | undefined, unsubscribe = () => {};
+    let redactError = (message: string) => message;
     turn.stop = () => {
       stopped = true;
       for (const [id, wait] of this.waits) if (wait.turn === turn) this.reject(id, 'The turn was stopped.');
@@ -296,14 +300,16 @@ export class WriterAgent extends Adapter {
       await this.load();
       const model = await this.resolve(thread.model);
       if (!model) throw new Error(String(this.account().reason || 'Papilot Writer has no model available.'));
-      live = await this.open(turn.threadId, thread);
+      const redact = this.credentials!.redactCustomErrors(model.provider);
+      redactError = message => redact(this.credentials!.redactCustomErrors(model.provider)(message));
+      live = await this.open(turn.threadId, thread, model);
       if (stopped) return;
       live.turn = turn;
       const session = live.session;
       if (session.model?.provider !== model.provider || session.model?.id !== model.id) await session.setModel(model);
       const levels = model.reasoning ? this.ai!.getSupportedThinkingLevels(model) : ['off'];
       session.setThinkingLevel((effort && levels.includes(effort as never) ? effort : levels.includes('medium' as never) ? 'medium' : levels[0]) as never);
-      unsubscribe = this.translate(turn, session, value => { error = value; });
+      unsubscribe = this.translate(turn, session, value => { error = redactError(value); }, redactError);
       const pictures: ImageContent[] = [];
       for (const file of images) {
         const bytes = await fs.promises.readFile(file), mime = imageType(bytes);
@@ -326,7 +332,7 @@ export class WriterAgent extends Adapter {
       }
       if (!stopped) this.finish(turn, error ? 'failed' : 'completed', error || undefined);
     } catch (e) {
-      if (!stopped) this.finish(turn, 'failed', e instanceof Error ? e.message : String(e));
+      if (!stopped) this.finish(turn, 'failed', redactError(e instanceof Error ? e.message : String(e)));
     } finally {
       unsubscribe();
       if (live) {
@@ -338,7 +344,7 @@ export class WriterAgent extends Adapter {
   }
 
   // Pi's events as the items Papilot shows in the conversation.
-  private translate(turn: Turn, session: AgentSession, fail: (error: string) => void) {
+  private translate(turn: Turn, session: AgentSession, fail: (error: string) => void, redactError: (error: string) => string) {
     let message = 0, text = '';
     const shown = new Map<string, Item>();
     return session.subscribe((event: AgentSessionEvent) => {
@@ -390,7 +396,7 @@ export class WriterAgent extends Adapter {
         if (started.kind === 'read' && !event.isError) item = { ...item, ...(details.path ? { target: details.path } : {}), ...(details.lines ? { lines: details.lines } : {}), ...(details.place ? { place: details.place } : {}) };
         this.item(turn, item);
       } else if (event.type === 'auto_retry_start') {
-        this.item(turn, { id: `${turn.id}:retry:${event.attempt}`, type: 'toolCall', text: `Retrying after a provider error (${event.attempt}/${event.maxAttempts}): ${event.errorMessage.slice(0, 160)}`, status: 'completed' });
+        this.item(turn, { id: `${turn.id}:retry:${event.attempt}`, type: 'toolCall', text: `Retrying after a provider error (${event.attempt}/${event.maxAttempts}): ${redactError(event.errorMessage).slice(0, 160)}`, status: 'completed' });
       } else if (event.type === 'compaction_end' && event.result) {
         this.item(turn, { id: `${turn.id}:compaction:${Date.now()}`, type: 'toolCall', text: 'Summarized earlier turns to make room in the context', status: 'completed' });
       }
