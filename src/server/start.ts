@@ -21,13 +21,17 @@ const workspace = new Workspace(store);
 const manuscripts = new Manuscripts(), changes = new Changes();
 const desktop = process.env.PAPILOT_DESKTOP === '1';
 const prepareDemo = desktop ? await desktopDemo(ROOT, DATA, store, workspace, manuscripts).catch(error => console.error('Could not prepare the demo paper:', error)) : undefined;
-// A packaged desktop app downloads only Papilot's own code built for its
-// installer (see desktop/runtime.ts) and asks the app to switch to it. npm
-// updates belong to the web server.
+// Packaged desktop updates hand activation to Electron. npm updates belong
+// to the web server.
 const bundleRoot = desktop && process.send ? process.env.PAPILOT_DESKTOP_BUNDLE : undefined, fingerprint = process.env.PAPILOT_DESKTOP_FINGERPRINT || '';
 const bundle = bundleRoot && fingerprint ? { root: bundleRoot, version: readJson(path.join(bundleRoot, 'package.json'))?.version || '', fingerprint } : undefined;
 const updates = new Updates({ root: ROOT, data: DATA, version: VERSION, port: PORT, desktop, bundle,
   ...(bundle ? { restart: async (root: string, version: string) => { process.send!({ type: 'papilot:activate', root, version }); } } : {}),
+  ...(bundle && process.platform === 'win32' && process.env.PAPILOT_DESKTOP_WINDOWS_INSTALLER === '1' ? {
+    windowsInstaller: { restart: installer => new Promise<void>((resolve, reject) => {
+      process.send!({ type: 'papilot:windows-install', ...installer }, error => error ? reject(error) : resolve());
+    }) },
+  } : {}),
   busy: () => workspace.busyForUpdate || manuscripts.busyForUpdate || changes.busyForUpdate, shutdown: () => shutdown() });
 const activation = desktop ? null : readJson(path.join(DATA, 'updates/active.json'));
 const updateInstance = typeof activation?.root === 'string' && fs.existsSync(activation.root) && fs.realpathSync(activation.root) === fs.realpathSync(ROOT) ? activation.id : undefined;

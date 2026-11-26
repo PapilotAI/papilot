@@ -23,7 +23,8 @@ function fixture(overrides: Record<string, any> = {}) {
 test('package-managed desktop updates keep user-level agent installation available', async () => {
   const previous = process.env.PAPILOT_DESKTOP_PACKAGE_UPDATES;
   process.env.PAPILOT_DESKTOP_PACKAGE_UPDATES = '1';
-  const desktop = fixture({ desktop: true, latestDesktop: async () => assert.fail('A managed desktop package does not check for updates') });
+  const desktop = fixture({ desktop: true, latestDesktop: async () => assert.fail('A managed desktop package does not check for updates'),
+    windowsInstaller: { restart: async () => assert.fail('A managed desktop package does not launch installers') } });
   const web = fixture();
   try {
     assert.equal((await desktop.updates.check()).packageManager, 'managed');
@@ -184,6 +185,120 @@ test('a packaged desktop app updates in place with layers and links to installer
     assert.deepEqual(retried, [[fourth, '0.7.0', layer, bundle]]);
   } finally { k.close(); }
 });
+
+const windowsInstaller = { version: '0.7.0', size: 10, sha256: 'a'.repeat(64) };
+const windowsRelease = { version: windowsInstaller.version, downloadUrl: `${DESKTOP_RELEASES}/tag/v${windowsInstaller.version}`, installer: windowsInstaller };
+const windowsBundle = { root: '/app/server', version: '0.6.0', fingerprint };
+
+test('a registered Windows desktop stages its installer but waits for requests and tasks before restart', async () => {
+  let busy = true;
+  const staged: unknown[][] = [], restarted: unknown[] = [];
+  const f = fixture({ desktop: true, bundle: windowsBundle, latestDesktop: async () => windowsRelease,
+    busy: () => busy, windowsInstaller: { install: async (...args: unknown[]) => { staged.push(args); },
+      restart: async (installer: unknown) => { restarted.push(installer); } } });
+  try {
+    const status = await f.updates.check();
+    assert.equal(status.latestVersion, windowsInstaller.version);
+    assert.equal(status.canUpdate, true);
+    assert.equal(status.downloadUrl, undefined);
+    assert.equal(f.updates.snapshot(false).downloadUrl, windowsRelease.downloadUrl);
+    assert.throws(() => f.updates.install(windowsInstaller.version, false), /Open Papilot on the Windows computer/);
+    assert.deepEqual(staged, []);
+
+    const leave = f.updates.enter();
+    f.updates.install(windowsInstaller.version, true);
+    await tick();
+    assert.deepEqual(staged, [[f.data, windowsInstaller]]);
+    assert.equal(f.updates.snapshot().phase, 'waiting');
+    assert.deepEqual(restarted, []);
+    busy = false;
+    await f.updates.activate();
+    assert.deepEqual(restarted, [], 'Finishing the last task still waits for open requests');
+    busy = true;
+    leave();
+    await tick();
+    assert.deepEqual(restarted, [], 'Finishing the final request still waits for running tasks');
+    busy = false;
+    await f.updates.activate();
+    assert.deepEqual(restarted, [windowsInstaller]);
+    assert.equal(f.updates.snapshot().phase, 'restarting');
+  } finally { f.close(); }
+});
+
+test('a compatible desktop layer takes precedence over a Windows installer', async () => {
+  const layer = { url: `${DESKTOP_RELEASES}/download/v0.7.0/papilot-app-0.7.0.tgz`, size: 10, sha256: 'b'.repeat(64) };
+  const installed: unknown[][] = [], restarted: unknown[][] = [];
+  const f = fixture({ desktop: true, bundle: windowsBundle, latestDesktop: async () => ({ ...windowsRelease, layer }),
+    installLayer: async (...args: unknown[]) => { installed.push(args); return '/data/layer'; },
+    restart: async (...args: unknown[]) => { restarted.push(args); },
+    windowsInstaller: { install: async () => assert.fail('The compatible layer must be installed instead'),
+      restart: async () => assert.fail('The compatible layer must be activated instead') } });
+  try {
+    assert.equal((await f.updates.check()).downloadUrl, undefined);
+    f.updates.install(windowsInstaller.version, false);
+    await tick();
+    assert.deepEqual(installed, [[f.data, windowsInstaller.version, layer, windowsBundle]]);
+    assert.deepEqual(restarted, [['/data/layer', windowsInstaller.version]]);
+  } finally { f.close(); }
+});
+
+test('a remote retry can rediscover a compatible desktop layer after restart', async () => {
+  const data = temporary(), layer = { url: `${DESKTOP_RELEASES}/download/v0.7.0/papilot-app-0.7.0.tgz`, size: 10, sha256: 'b'.repeat(64) };
+  writeJson(path.join(data, 'updates/desktop/status.json'), { currentVersion: windowsBundle.version, latestVersion: windowsInstaller.version,
+    phase: 'failed', error: 'Update did not start', pid: 1 });
+  const installed: unknown[][] = [];
+  const f = fixture({ data, desktop: true, bundle: windowsBundle, latestDesktop: async () => ({ ...windowsRelease, layer }),
+    installLayer: async (...args: unknown[]) => { installed.push(args); return '/data/layer'; }, restart: async () => {},
+    windowsInstaller: { install: async () => assert.fail('The compatible layer must be installed instead'),
+      restart: async () => assert.fail('The compatible layer must be activated instead') } });
+  try {
+    assert.equal(f.updates.snapshot(false).phase, 'failed');
+    assert.equal(f.updates.snapshot(false).downloadUrl, undefined);
+    f.updates.install(windowsInstaller.version, false);
+    await tick();
+    assert.deepEqual(installed, [[data, windowsInstaller.version, layer, windowsBundle]]);
+    assert.equal(f.updates.snapshot().phase, 'restarting');
+  } finally { f.close(); }
+});
+
+test('desktop installers stay on the release page without a registered app or a safe stable candidate', async () => {
+  const native = { install: async () => assert.fail('This release must not stage a Windows installer'),
+    restart: async () => assert.fail('This release must not launch a Windows installer') };
+  const cases = [
+    { found: windowsRelease, options: {} },
+    { found: { ...windowsRelease, installer: undefined }, options: { windowsInstaller: native } },
+    { found: { ...windowsRelease, version: devVersion, downloadUrl: `${DESKTOP_RELEASES}/tag/${DESKTOP_DEV_TAG}` },
+      options: { version: `0.6.0-dev.${'b'.repeat(40)}`, windowsInstaller: native } },
+  ];
+  for (const { found, options } of cases) {
+    const f = fixture({ desktop: true, bundle: windowsBundle, latestDesktop: async () => found, ...options });
+    try {
+      assert.equal((await f.updates.check()).downloadUrl, found.downloadUrl);
+      assert.throws(() => f.updates.install(found.version, true), /GitHub Releases/);
+    } finally { f.close(); }
+  }
+  const older = { version: '0.5.0', downloadUrl: `${DESKTOP_RELEASES}/tag/v0.5.0`, installer: { ...windowsInstaller, version: '0.5.0' } };
+  const dev = fixture({ desktop: true, bundle: windowsBundle, version: devVersion, windowsInstaller: native, latestDesktop: async () => older });
+  try {
+    assert.equal((await dev.updates.setChannel('stable')).downloadUrl, older.downloadUrl);
+    assert.throws(() => dev.updates.install(older.version, true), /GitHub Releases/);
+  } finally { dev.close(); }
+});
+
+test('a failed Windows installer download releases the desktop update lock without restarting', async () => {
+  const f = fixture({ desktop: true, bundle: windowsBundle, latestDesktop: async () => windowsRelease,
+    windowsInstaller: { install: async () => { throw new Error('Windows installer checksum did not match'); },
+      restart: async () => assert.fail('A failed installer must not restart Papilot') } });
+  try {
+    await f.updates.check();
+    f.updates.install(windowsInstaller.version, true);
+    await tick();
+    assert.equal(f.updates.snapshot().phase, 'failed');
+    assert.match(f.updates.snapshot().error!, /checksum/);
+    assert.equal(fs.existsSync(path.join(f.data, 'updates/desktop/install.lock')), false);
+  } finally { f.close(); }
+});
+
 test('installing a layer verifies the download, links the installer dependencies and checks that it starts', async () => {
   const data = temporary(), source = temporary(), version = '0.7.0';
   const root = path.join(source, 'package');

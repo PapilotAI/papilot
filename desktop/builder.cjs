@@ -13,7 +13,10 @@ module.exports = {
     { from: '.desktop/runtime', to: 'runtime' },
     { from: 'desktop/assets/icon.png', to: 'desktop/assets/icon.png' },
     { from: 'desktop/assets/icon.ico', to: 'desktop/assets/icon.ico' },
-    ...(process.platform === 'win32' ? [{ from: '.desktop/wsl', to: 'wsl' }] : []),
+    ...(process.platform === 'win32' ? [
+      { from: '.desktop/wsl', to: 'wsl' },
+      { from: 'desktop/windows-update.ps1', to: 'windows-update.ps1' },
+    ] : []),
   ],
   asar: true,
   npmRebuild: false,
