@@ -120,6 +120,36 @@ try {
   await expect(page.locator('.pdf-viewer canvas, .pdfViewer canvas').first()).toBeVisible({ timeout: 30000 });
   fs.mkdirSync('test-results', { recursive: true });
   await page.screenshot({ path: `test-results/desktop-demo-${packaged ? 'packaged' : 'dev'}.png` });
+  const zoomMenu = id => application.evaluate(({ Menu }, id) => Menu.getApplicationMenu().getMenuItemById(id).click(), id);
+  const zoomFactor = () => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getZoomFactor());
+  const originalSize = await application.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0], size = window.getSize();
+    window.setSize(900, 620);
+    return size;
+  });
+  for (let step = 0; step < 5; step++) await zoomMenu('zoom-in');
+  await expect.poll(zoomFactor).toBeCloseTo(2);
+  await expect.poll(() => page.locator('.main').evaluate(main => Math.round(main.getBoundingClientRect().width) === innerWidth)).toBe(true);
+  const narrowSidebar = page.locator('.main .sidebar-toggle');
+  await expect(narrowSidebar).toBeInViewport();
+  if (process.platform !== 'win32') {
+    const dragRegion = page.locator('.desktop-window-drag');
+    await expect.poll(async () => (await narrowSidebar.boundingBox()).x >= (await dragRegion.boundingBox()).width).toBe(true);
+  }
+  await page.locator('.workspace-navigation .manuscript-view-selector').getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(page.locator('.pdf-toolbar .zoom-chip')).toBeInViewport();
+  if (process.platform === 'win32') {
+    const actions = page.locator('.workspace-nav-end');
+    const windowButtons = page.locator('.desktop-window-buttons');
+    await expect.poll(async () => {
+      const { x, width } = await actions.boundingBox();
+      return x + width <= (await windowButtons.boundingBox()).x;
+    }).toBe(true);
+  }
+  await page.screenshot({ path: `test-results/desktop-zoom-200-${packaged ? 'packaged' : 'dev'}.png` });
+  await zoomMenu('zoom-reset');
+  await expect.poll(zoomFactor).toBeCloseTo(1);
+  await application.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setSize(...size), originalSize);
   if (process.platform === 'darwin') {
     const menuSettings = await application.evaluate(({ Menu }) => {
       const settings = Menu.getApplicationMenu().items[0].submenu.getMenuItemById('open-settings');
@@ -280,10 +310,8 @@ try {
   await page.screenshot({ path: `test-results/desktop-${packaged ? 'packaged' : 'dev'}.png` });
   assert.deepEqual(errors, []);
   // View › Zoom In steps the saved interface size, which zooms the whole window.
-  const zoomMenu = id => application.evaluate(({ Menu }, id) => Menu.getApplicationMenu().getMenuItemById(id).click(), id);
-  const zoomFactor = app => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getZoomFactor());
   await zoomMenu('zoom-in'); await zoomMenu('zoom-in');
-  await expect.poll(() => zoomFactor(application)).toBe(1.25);
+  await expect.poll(zoomFactor).toBeCloseTo(1.25);
   assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('papilot:appearance'))).size, 1.25);
   await page.screenshot({ path: `test-results/desktop-zoom-${packaged ? 'packaged' : 'dev'}.png` });
   await page.evaluate(() => localStorage.setItem('papilot:desktop-smoke', 'keep draft'));
@@ -293,9 +321,9 @@ try {
   const reopened = await application.firstWindow({ timeout: 90000 });
   await reopened.waitForURL(origin + '/');
   assert.equal(await reopened.evaluate(() => localStorage.getItem('papilot:desktop-smoke')), 'keep draft', 'Local preferences survive a desktop restart');
-  await expect.poll(() => zoomFactor(application), { message: 'Interface size survives a desktop restart' }).toBe(1.25);
-  await application.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('zoom-reset').click());
-  await expect.poll(() => zoomFactor(application)).toBe(1);
+  await expect.poll(zoomFactor, { message: 'Interface size survives a desktop restart' }).toBeCloseTo(1.25);
+  await zoomMenu('zoom-reset');
+  await expect.poll(zoomFactor).toBeCloseTo(1);
   await application.close(); application = null;
   const occupied = createServer();
   await new Promise((resolve, reject) => { occupied.once('error', reject); occupied.listen(Number(new URL(origin).port), '127.0.0.1', resolve); });

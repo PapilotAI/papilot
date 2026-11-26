@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { agentsSettled, chosenAgent, noAgent, offeredAgents } from '../src/web/agent-choice.ts';
+import { agentOff, agentsSettled, chosenAgent, defaultOfferedModel, noAgent, offeredAgents, shownModels } from '../src/web/agent-choice.ts';
 import { AGENT_IDS, type RuntimeStatus } from '../src/shared.ts';
 
 const runtime = (installed?: boolean): RuntimeStatus => ({ connected: false, authenticated: false, account: null, error: null, models: [], ...(installed === undefined ? {} : { installed }) });
@@ -62,4 +62,27 @@ test('no agent is reported only after every runtime is known to be missing', () 
   assert.equal(noAgent({ ...runtimes, claude: runtime() }), false, 'an unknown installation is not absent');
   assert.equal(noAgent({ ...runtimes, claude: runtime(true) }), false);
   assert.deepEqual(offeredAgents({ ...runtimes, claude: runtime(true) }), ['claude']);
+});
+
+test('agents turned off are not offered, and hidden models leave the pickers except the current choice', () => {
+  const ready = { ...runtime(true), connected: true, authenticated: true };
+  const runtimes = { codex: { ...ready, hidden: true }, claude: ready, collaboration: { ...ready, hidden: false } };
+  assert.equal(agentOff('codex', runtimes), true);
+  assert.equal(agentOff('claude', runtimes), false);
+  assert.equal(agentOff('collaboration', {}), true, 'collaboration mode stays opt-in');
+  assert.deepEqual(offeredAgents(runtimes), ['claude', 'collaboration']);
+  assert.equal(chosenAgent('codex', offeredAgents(runtimes), runtimes), 'claude', 'a saved agent that is off falls back to one that is on');
+  const missing = Object.fromEntries(AGENT_IDS.map(id => [id, runtime(false)]));
+  assert.equal(noAgent({ ...missing, codex: { ...ready, hidden: true } }), true, 'nothing to offer when every agent is off or missing');
+  assert.equal(noAgent({ ...missing, codex: ready }), false);
+  const model = (id: string, isDefault = false) => ({ id, name: id, isDefault, efforts: [], defaultEffort: null });
+  const codex = { ...ready, models: [model('sol', true), model('luna'), model('nova')], hiddenModels: ['sol', 'luna'] };
+  assert.deepEqual(shownModels(codex).map(item => item.id), ['nova'], 'the default model can be hidden too');
+  assert.equal(defaultOfferedModel(codex)?.id, 'nova', 'a hidden default falls back to the first shown model');
+  assert.equal(defaultOfferedModel({ ...codex, hiddenModels: undefined })?.id, 'sol', 'an unhidden default is kept');
+  assert.equal(defaultOfferedModel({ ...ready, models: [model('sol'), model('luna')] }), undefined, 'an unknown host default is not guessed');
+  assert.deepEqual(shownModels(codex, 'luna').map(item => item.id), ['luna', 'nova'], 'a model already chosen stays selectable');
+  assert.deepEqual(shownModels({ ...codex, hiddenModels: ['sol', 'luna', 'nova'] }), []);
+  assert.deepEqual(shownModels({ ...codex, hiddenModels: undefined }).map(item => item.id), ['sol', 'luna', 'nova']);
+  assert.deepEqual(shownModels(undefined), []);
 });

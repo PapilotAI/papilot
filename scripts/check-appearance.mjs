@@ -37,6 +37,8 @@ const api = route => {
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
   if (url.pathname.endsWith('/git')) return json({ remote: false, branch: 'main', upstream: null, ahead: 0, behind: 0, head: null, files: [] });
+  if (url.pathname === '/api/quick-model') return json({ choice: null });
+  if (url.pathname.endsWith('/manuscript/evidence')) return json({ key: url.searchParams.get('key'), marks: [], running: false });
   throw new Error(`Unexpected appearance request: ${url.pathname}`);
 };
 await context.route('**/api/**', api);
@@ -69,8 +71,8 @@ try {
   await choose('Accent', 'graphite');
   await rootHas('--primary', '#55565a');
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-  await page.getByRole('button', { name: 'Research Tools', exact: true }).press('ArrowDown');
-  await expect(page.getByRole('menuitem', { name: 'Reference check', exact: true })).toHaveCSS('background-color', 'rgb(71, 72, 76)');
+  await page.getByRole('button', { name: 'Task list actions', exact: true }).press('ArrowDown');
+  await expect(page.getByRole('menuitem', { name: 'Archive all tasks…', exact: true })).toHaveCSS('background-color', 'rgb(71, 72, 76)');
   await page.keyboard.press('Escape');
   await open();
   const background = dialog.getByRole('textbox', { name: 'Background', exact: true });
@@ -208,13 +210,21 @@ try {
   // does not affect layout); Settings must stay usable at the largest sizes.
   // The default window (1380×900) and the minimum one (900×620) at large sizes.
   for (const [factor, width, height] of [[1.5, 1380, 900], [2, 1380, 900], [2, 900, 620]]) {
+    await selectOption(size, String(factor));
     await app.setViewportSize({ width: Math.round(width / factor), height: Math.round(height / factor) });
     await size.scrollIntoViewIfNeeded();
     await expect(size).toBeInViewport();
     assert.equal(await settings.locator('.settings-content').evaluate(el => el.scrollWidth > el.clientWidth), false, `No horizontal overflow at ${factor * 100}% of ${width}px`);
     await app.screenshot({ animations: 'disabled', path: `test-results/appearance-size-${factor * 100}-${width}.png` });
   }
+  await settings.locator('.settings-mobile-back').click();
+  await expect(settings.getByRole('button', { name: 'Keyboard shortcuts', exact: true })).toBeVisible();
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await settings.getByRole('radio', { name: 'Dark', exact: true }).check();
+  await size.scrollIntoViewIfNeeded();
+  await app.screenshot({ animations: 'disabled', path: 'test-results/appearance-size-200-900-dark.png' });
   await app.setViewportSize({ width: 1440, height: 960 });
+  await selectOption(size, '1.25');
   await app.reload();
   await app.waitForFunction(() => window.zoomCalls.at(-1) === 1.25);
   assert.equal(JSON.parse(await app.evaluate(() => localStorage.getItem('papilot:appearance'))).size, 1.25);

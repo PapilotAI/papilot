@@ -132,6 +132,22 @@ test('Kimi resumes persisted IDs after restart and ignores replayed history', { 
   } finally { f.agent.close(); }
 });
 
+test('ACP sessions start Papilot\'s MCP server for task threads, also when reloaded after a restart', { timeout: 5000 }, async () => {
+  const f = fixture(), mcp = { command: '/usr/bin/node', args: ['/papilot/bin/papilot-mcp.mjs', '/tmp/tools/task.json'] };
+  const servers = (method: string) => f.calls.filter(call => call.method === method).map(call => call.params.mcpServers);
+  try {
+    await f.agent.start();
+    assert.deepEqual(servers('session/new'), [[]], 'the configuration probe starts no tool server');
+    const { thread: { id } } = await f.agent.request('thread/start', { cwd: '/paper', developerInstructions: 'Only edit this paper.', mcp });
+    assert.deepEqual(servers('session/new').at(-1), [{ name: 'papilot', command: mcp.command, args: mcp.args, env: [] }]);
+    await run(f.agent, id);
+    f.agent.close(); await f.agent.start(); await run(f.agent, id);
+    assert.deepEqual(servers('session/load').at(-1), [{ name: 'papilot', command: mcp.command, args: mcp.args, env: [] }]);
+    await f.agent.request('thread/start', { cwd: '/scratch', sandbox: 'read-only', developerInstructions: 'Reply only.', mcp });
+    assert.deepEqual(servers('session/new').at(-1), [], 'read-only helpers get no tools');
+  } finally { f.agent.close(); }
+});
+
 test('ACP retains initial instructions when a known unprompted session reconnects', { timeout: 5000 }, async () => {
   const f = fixture();
   try {

@@ -1,5 +1,6 @@
 import { isPlayground } from './playground-mode.ts';
 import taskCommitStyles from './task-commit.css?inline';
+import memoryNudgeStyles from './memory-nudge.css?inline';
 import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import type { Task } from '../shared.ts';
@@ -226,7 +227,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     @container review-bar (max-width:340px){.bar .batch-count{display:none}.bar :is(.accept-all,.reject-all){padding:0 7px}.bar .bar-end{gap:4px}}
   `;
   syncAppearance(window.document.documentElement, doc.documentElement);
-  style.textContent += taskCommitStyles;
+  style.textContent += taskCommitStyles + memoryNudgeStyles;
   doc.head.append(style);
 }
 
@@ -316,7 +317,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   const shortcuts = useShortcuts();
   const expandedEffects = useIndirectChanges();
   useEffect(loadIndirectChanges, []);
-  const [fullPaper, setFullPaper] = useState(false);
+  const [fullPaper, setFullPaper] = useState(false), [paperPending, setPaperPending] = useState(false);
   const noteLinks = useNoteResults(), linksRef = useRef(noteLinks); linksRef.current = noteLinks;
   // Current changes open in the usual review; only older results need history.
   const linkedRound = quoteFocus?.note.round ?? (task && noteLinks?.focus?.historical ? noteLinks.focus.change.round : undefined);
@@ -328,6 +329,14 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   const findInput = useRef<HTMLInputElement>(null);
   const currentFind = useRef({ open: findOpen, query }); currentFind.current = { open: findOpen, query };
   const readingPdf = fullPaper;
+  // While the round's comparison renders again, PDF controls that were shown
+  // keep their place, disabled, so the toolbar does not change rows.
+  const [keptControls, setKeptControls] = useState(false);
+  useEffect(() => {
+    if (readingPdf) setKeptControls(true);
+    else if (!paperPending) setKeptControls(false);
+  }, [readingPdf, paperPending]);
+  const pdfControls = readingPdf || (paperPending && keptControls);
   const readerCommand = (detail: PdfReaderCommand) => document?.defaultView?.dispatchEvent(new CustomEvent(PDF_READER_COMMAND, { detail }));
   const closeFind = () => { setFindOpen(false); setQuery(''); readerCommand({ type: 'closeFind' }); };
   useEffect(() => { if (!readingPdf) { setFindOpen(false); setQuery(''); } }, [readingPdf]);
@@ -429,8 +438,8 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   }, [document, task?.status]);
   // The review marks when its round is shown in the whole paper.
   useEffect(() => {
-    if (!document) { setFullPaper(false); return; }
-    const root = document.documentElement, update = () => setFullPaper(root.dataset.fullPaper === 'available');
+    if (!document) { setFullPaper(false); setPaperPending(false); return; }
+    const root = document.documentElement, update = () => { setFullPaper(root.dataset.fullPaper === 'available'); setPaperPending(root.dataset.fullPaper === 'pending'); };
     update();
     const watcher = new MutationObserver(update);
     watcher.observe(root, { attributes: true, attributeFilter: ['data-full-paper'] });
@@ -458,12 +467,12 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     const element = toolbar.current; if (!element) return;
     const observer = new ResizeObserver(() => setReserve(Math.ceil(element.offsetWidth)));
     observer.observe(element); return () => observer.disconnect();
-  }, [Boolean(tools), readingPdf]);
+  }, [Boolean(tools), pdfControls]);
   useEffect(() => {
     const element = leading.current; if (!element) { setLeadWidth(0); return; }
     const observer = new ResizeObserver(() => setLeadWidth(Math.ceil(element.offsetWidth)));
     observer.observe(element); return () => observer.disconnect();
-  }, [Boolean(lead || readingPdf || noteLinks?.focus)]);
+  }, [Boolean(lead || pdfControls || noteLinks?.focus)]);
   useEffect(() => {
     if (!document || !frame.current || !hostBar.current) return;
     const root = document.documentElement, bar = document.querySelector<HTMLElement>('.bar');
@@ -625,7 +634,7 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   const readiness = useRef(onReadyChange); readiness.current = onReadyChange;
   useEffect(() => { onReadyChange?.(ready, displayedRound); }, [ready, displayedRound, onReadyChange]);
   useEffect(() => () => { readiness.current?.(false); }, []);
-  const dragHoles = useDragHoles(hostBar, frame, document, ready, readingPdf);
+  const dragHoles = useDragHoles(hostBar, frame, document, ready, pdfControls);
   const [slot, setSlot] = useState<Element | null>(null);
   useEffect(() => {
     if (!document || !ready) { setSlot(null); return; }
@@ -655,11 +664,11 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     <iframe ref={frame} key={`${attempt}:${shown}:${linkedRound || ''}:${focusSequence || ''}`} title={task ? t('{title} PDF change review', { title: task.title }) : t('Uncommitted changes in the PDF')} src={task ? reviewUrl(task, linkedRound, linkedChange) : changesUrl(changesOf!)} onLoad={loaded} onError={() => setPhase('error')} className="review-frame" aria-hidden={!ready} tabIndex={ready ? 0 : -1}/>
     {task && ready && <ReviewNoteConnections doc={document} round={linkedRound || task.review?.round || 0}/>}
     {task && ready && <NoteLinkError/>}
-    <div ref={hostBar} className={'review-host-bar' + (readingPdf ? ' pdf-toolbar' : '')} role={readingPdf ? 'toolbar' : undefined} aria-label={readingPdf ? t('PDF controls') : undefined}>
-      {(lead || readingPdf) && <div ref={leading} className="review-lead">{lead}{readingPdf && <PdfContents outline={reader?.outline || []} section={reader?.section ?? -1} ready={Boolean(reader)} onSelect={item => readerCommand({ type: 'outline', index: reader!.outline.indexOf(item) })}/>}</div>}
+    <div ref={hostBar} className={'review-host-bar' + (pdfControls ? ' pdf-toolbar' : '')} role={pdfControls ? 'toolbar' : undefined} aria-label={pdfControls ? t('PDF controls') : undefined}>
+      {(lead || pdfControls) && <div ref={leading} className="review-lead">{lead}{pdfControls && <PdfContents outline={readingPdf ? reader?.outline || [] : []} section={reader?.section ?? -1} ready={readingPdf && Boolean(reader)} onSelect={item => readerCommand({ type: 'outline', index: reader!.outline.indexOf(item) })}/>}</div>}
       <div ref={toolbar} className="review-tools">
-        {readingPdf && <PdfPageControls page={reader?.page || 1} pages={reader?.pages || 0} zoom={reader?.zoom || { value: 'page-width', scale: 1 }} onPage={page => readerCommand({ type: 'page', page })} onZoom={value => readerCommand({ type: 'zoom', value })} onZoomBy={factor => readerCommand({ type: 'zoomBy', factor })}/>}
-        {readingPdf && <PdfFindButton open={findOpen} onClick={() => findOpen ? closeFind() : setFindOpen(true)}/>}
+        {pdfControls && <PdfPageControls page={readingPdf ? reader?.page || 1 : 1} pages={readingPdf ? reader?.pages || 0 : 0} zoom={reader?.zoom || { value: 'page-width', scale: 1 }} preparing={reader?.preparing} onPage={page => readerCommand({ type: 'page', page })} onZoom={value => readerCommand({ type: 'zoom', value })} onZoomBy={factor => readerCommand({ type: 'zoomBy', factor })}/>}
+        {pdfControls && <PdfFindButton open={findOpen} disabled={!readingPdf} onClick={() => findOpen ? closeFind() : setFindOpen(true)}/>}
         {task && onComment && <ReviewNotes railSlot={railSlot} doc={ready && !noteLinks?.preview ? document : null} task={task} onComment={onComment}/>}
         {tools}
       </div>

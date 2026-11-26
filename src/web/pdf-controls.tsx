@@ -13,8 +13,21 @@ export function PdfContents({ outline, section, ready = true, onSelect }: { outl
   </ActionMenu>;
 }
 
-export function PdfPageControls({ page, pages, zoom, onPage, onZoom, onZoomBy }: {
+// The complete PDF still compiles while an earlier version shows.
+function PdfPreparing({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.floor((now - since) / 1000)), label = t('Preparing the full PDF…');
+  return <progress className="pdf-preparing" aria-label={label} title={`${label} ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`}/>;
+}
+
+export function PdfPageControls({ page, pages, zoom, preparing, onPage, onZoom, onZoomBy }: {
   page: number; pages: number; zoom: { value: string; scale: number };
+  /** Since when the complete PDF has compiled while an earlier one shows. */
+  preparing?: number;
   onPage: (page: number) => void; onZoom: (value: string) => void; onZoomBy: (factor: number) => void;
 }) {
   const [input, setInput] = useState(String(page));
@@ -33,6 +46,7 @@ export function PdfPageControls({ page, pages, zoom, onPage, onZoom, onZoomBy }:
         e.currentTarget.blur();
       }}/>
       <span className="pdf-pages">/ {pages || '–'}</span>
+      {preparing !== undefined && <PdfPreparing since={preparing}/>}
       <button type="button" className="icon-button" aria-label={t('Next page')} disabled={page >= pages} onClick={() => onPage(page + 1)}><Icon name="chevronDown" size={16}/></button>
     </div>
     <div className="pdf-zoom">
@@ -43,8 +57,8 @@ export function PdfPageControls({ page, pages, zoom, onPage, onZoom, onZoomBy }:
   </>;
 }
 
-export function PdfFindButton({ open, onClick, className = 'icon-button' }: { open: boolean; onClick: () => void; className?: string }) {
-  return <button type="button" className={className + (open ? ' active' : '')} aria-label={t('Find in PDF')} aria-pressed={open} title={t('Find (⌘F)')} onClick={onClick}><Icon name="search" size={16}/></button>;
+export function PdfFindButton({ open, onClick, disabled = false, className = 'icon-button' }: { open: boolean; onClick: () => void; disabled?: boolean; className?: string }) {
+  return <button type="button" className={className + (open ? ' active' : '')} aria-label={t('Find in PDF')} aria-pressed={open} title={t('Find (⌘F)')} disabled={disabled} onClick={onClick}><Icon name="search" size={16}/></button>;
 }
 
 export function PdfFind({ inputRef, query, matches, notFound, onQuery, onNext, onClose }: {

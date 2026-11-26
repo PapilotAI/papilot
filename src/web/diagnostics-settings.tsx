@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AgentId, CompilerChoice, LatexInstallation, DiagnosticReport, Project, RuntimeStatus, WriterAuth } from '../shared.ts';
+import type { AgentId, AgentSettingsChange, CompilerChoice, LatexInstallation, DiagnosticReport, Project, RuntimeStatus, WriterAuth } from '../shared.ts';
 import { RuntimeAgents } from './runtime-agents.tsx';
 
 export interface DiagnosticsSettingsProps {
@@ -13,9 +13,11 @@ export interface DiagnosticsSettingsProps {
   compiler?: (choice?: CompilerChoice['compiler']) => Promise<CompilerChoice>;
   /** Papilot Writer's providers: GET with no body, POST with one. */
   writer?: (route: string, body?: unknown) => Promise<WriterAuth>;
+  /** Saves a change to which agents and models are offered. */
+  agentSettings?: (change: AgentSettingsChange) => Promise<void>;
 }
 
-export function DiagnosticsSettings({ online, runtimes, project, check, reconnect, writer }: DiagnosticsSettingsProps) {
+export function DiagnosticsSettings({ online, runtimes, project, check, reconnect, writer, agentSettings }: DiagnosticsSettingsProps) {
   const [report, setReport] = useState<DiagnosticReport | null>(null), [busy, setBusy] = useState(true), [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -27,6 +29,6 @@ export function DiagnosticsSettings({ online, runtimes, project, check, reconnec
     return () => controller.abort();
   }, [attempt, project?.id, check]);
   return <div className="diagnostics-settings settings-page">
-    <RuntimeAgents online={online} runtimes={runtimes} report={report} busy={busy} checkFailed={failed} checkAgain={() => setAttempt(value => value + 1)} reconnect={async () => { await reconnect(); setAttempt(value => value + 1); }} writer={writer}/>
+    <RuntimeAgents online={online} runtimes={runtimes} report={report} busy={busy} checkFailed={failed} checkAgain={() => setAttempt(value => value + 1)} reconnect={async () => { await reconnect(); setAttempt(value => value + 1); }} writer={writer} save={agentSettings}/>
   </div>;
 }

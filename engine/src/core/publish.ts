@@ -5,7 +5,6 @@ import { ROOT, codeVersion } from "../runtime.ts";
 import { Builder, BuildError, auxiliaryBuildError, auxiliaryDiagnostics, buildDate, reprioritize, type BuildPriority } from "./build.ts";
 import { diffUnitsAsync, scopeViolationsAsync, withHashesAsync, withUnits } from "./changes.ts";
 import { provisional, roundFolder, writeProvisional } from "./carry.ts";
-import { acceptNoteOption, noteOptionUnits } from "./note-options.ts";
 import { isFigure, signature } from "./config.ts";
 import { REFS } from "./git.ts";
 import { now, readJson, writeJson } from "./files.ts";
@@ -617,9 +616,6 @@ export class Publisher {
   private async work(job: Job) {
     try {
       const result = await this.publish(job);
-      // A newer round replaced this one before its PDF was ready: the note
-      // option's checkmark waits for the author to review that round.
-      if (!result.superseded) await acceptNoteOption(this.app, job.task, job.id);
       const verdict = this.verdicts.get(job.id);
       this.update(job.id, { status: "done", result: verdict ? { ...result, prefetch: verdict } : result, finished: now() });
     } catch (error) {
@@ -723,7 +719,6 @@ export class Publisher {
       return { round: app.review.round(name, latest.number) };
     }
     const files = await app.repo.changedFilesAsync(before, after);
-    const optionUnits = await noteOptionUnits(app, name, job.id, before, after);
     const number = (latest?.number ?? 0) + 1,
       final = roundFolder(app, name, number);
     const insert = async (units: Unit[], summary: Round["summary"], visuals: Round["visuals"]) => {
@@ -743,7 +738,7 @@ export class Publisher {
       );
       return app.review.round(name, number);
     };
-    if (!files.length && !optionUnits) {
+    if (!files.length) {
       // A manual correction can remove the final proposal altogether. Give
       // it an empty latest round so the viewer cannot keep offering the old
       // wording for acceptance after it has disappeared from the worktree.
@@ -754,7 +749,7 @@ export class Publisher {
       }
       return { result: { outcome: "empty", round: null, changes: 0 } };
     }
-    const units = await withHashesAsync(app.repo, before, after, optionUnits ?? await diffUnitsAsync(app.repo, before, after, (f) =>
+    const units = await withHashesAsync(app.repo, before, after, await diffUnitsAsync(app.repo, before, after, (f) =>
       isFigure(project, f),
     ));
     const targets = await new Builder(project, app.repo).planAsync(before, after, files, task.base),

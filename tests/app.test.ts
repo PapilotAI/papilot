@@ -104,14 +104,22 @@ test('timeline reads redact internal alternatives from saved assistant replies',
   } finally { await f.close(); }
 });
 
-test('task restart forwards destination permissions and model settings', async () => {
+test('switching a task agent forwards destination permissions and model settings', async () => {
   const f = await fixture(), choices: any[] = [];
-  f.workspace.restartTask = async (_task, choice) => { choices.push(choice); return f.store.task('thesis-task'); };
+  f.workspace.switchTaskAgent = async (_task, choice) => { choices.push(choice); return f.store.task('thesis-task'); };
   try {
-    const choice = { id: 'replacement-task-id', agent: 'claude', model: 'opus', effort: 'high', permissions: 'full', stop: true };
-    const response = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/restart', headers: f.as, payload: choice });
+    const choice = { agent: 'claude', model: 'opus', effort: 'high', permissions: 'full', stop: true };
+    // During a merge, the author's own choice replaces the agent the task would return to.
+    f.store.updateTask('thesis-task', { mergeReturn: { agent: 'codex', model: 'codex-model' } });
+    const response = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/agent', headers: f.as, payload: choice });
     assert.equal(response.statusCode, 200, response.body);
-    assert.deepEqual(choices, [{ ...choice, serviceTier: undefined, draftAttachments: [] }]);
+    assert.deepEqual(choices, [{ ...choice, serviceTier: undefined }]);
+    assert.equal(f.store.task('thesis-task').mergeReturn, null);
+    for (const payload of [{ agent: 'unknown' }, { agent: 'claude', model: 5 }]) {
+      const rejected = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/agent', headers: f.as, payload });
+      assert.equal(rejected.statusCode, 400, rejected.body);
+    }
+    assert.equal(choices.length, 1);
   } finally { await f.close(); }
 });
 
@@ -1277,6 +1285,26 @@ test('indirect changes stay off until enabled in settings', async () => {
   } finally { await f.close(); }
 });
 
+test('agents can be turned off, their models hidden, and both reset in settings', async () => {
+  const f = await fixture();
+  try {
+    const owner = { ...LOCAL, origin: 'http://127.0.0.1:7274', 'x-papilot-token': 'local-csrf' };
+    const post = (payload: object) => f.local.inject({ method: 'POST', url: '/api/agent-settings', headers: owner, payload });
+    const runtimes = async () => (await f.local.inject({ url: '/api/state', headers: LOCAL })).json().runtimes;
+    for (const payload of [{}, { agent: 'unknown', enabled: false }, { agent: 'collaboration', enabled: true }, { agent: 'claude' }, { agent: 'claude', enabled: 'no' }, { agent: 'claude', hiddenModels: 'opus' }, { agent: 'claude', hiddenModels: [''] }, { reset: 'yes' }])
+      assert.equal((await post(payload)).statusCode, 400, JSON.stringify(payload));
+    assert.equal((await post({ agent: 'kimi', enabled: false })).statusCode, 200);
+    assert.equal((await post({ agent: 'claude', hiddenModels: ['haiku'] })).statusCode, 200);
+    let state = await runtimes();
+    assert.equal(state.kimi.hidden, true);
+    assert.deepEqual(state.claude.hiddenModels, ['haiku']);
+    assert.equal((await post({ reset: true })).statusCode, 200);
+    state = await runtimes();
+    assert.equal(state.kimi.hidden, undefined);
+    assert.equal(state.claude.hiddenModels, undefined);
+  } finally { await f.close(); }
+});
+
 test('the note alternatives default is validated and saved for future editing turns', async () => {
   const f = await fixture();
   try {
@@ -2037,9 +2065,13 @@ test('review decisions avoid manuscript refreshes until the task is applied', as
         await review(route, action);
         assert.equal(refreshed.length, 0, `${route} does not refresh the manuscript`);
       }
-      f.workspace.applyTask = async () => ({ delivery: { mode: 'workspace', accepted: 'accepted' } }) as any;
-      const applied = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/apply', headers, payload: { mode: 'workspace' } });
+      const merges: unknown[] = [];
+      f.workspace.applyTask = async (_id: string, _keep?: boolean, _commit?: unknown, mergeAgent?: unknown) => { merges.push(mergeAgent); return { delivery: { mode: 'workspace', accepted: 'accepted' } } as any; };
+      const invalid = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/apply', headers, payload: { mode: 'workspace', conflictAgent: { agent: 'unknown' } } });
+      assert.equal(invalid.statusCode, 400, 'an unsupported conflict-resolution agent is refused');
+      const applied = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/apply', headers, payload: { mode: 'workspace', conflictAgent: { agent: 'claude', model: 'opus', effort: 'high' } } });
       assert.equal(applied.statusCode, 200, applied.body);
+      assert.deepEqual(merges, [{ agent: 'claude', model: 'opus', effort: 'high', serviceTier: undefined }], 'the chosen conflict-resolution agent reaches the merge');
       await new Promise(resolve => setImmediate(resolve));
       assert.deepEqual(refreshed, [['thesis', '/unused/thesis']], 'application starts one manuscript refresh');
     } finally { engine.closeAllConnections(); await new Promise<void>(resolve => engine.close(() => resolve())); }

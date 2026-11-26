@@ -123,7 +123,7 @@
   .settings-search>svg{top:11px;left:10px;width:16px;height:16px}
   .settings-dialog .settings-search input{height:38px;padding-left:34px;font-size:16px}
   .settings-category-group h3{min-height:32px;font-size:13px}
-  .settings-category[data-settings-page="shortcuts"]{display:none}
+  html:not([data-desktop]) .settings-category[data-settings-page="shortcuts"]{display:none}
   .settings-category{min-height:44px;gap:12px;font-size:15px}
   .settings-category>svg,.settings-category>img{width:20px;height:20px}
   .settings-category>.brand-icon{width:20px!important;height:20px!important}
@@ -203,9 +203,16 @@
 .diagnostic-availability.signin,.diagnostic-availability.limited{color:var(--amber-text)}
 .diagnostic-availability.unavailable{color:var(--red)}
 .diagnostic-availability.connecting{color:var(--accent)}
-.diagnostic-agent-card:is([data-availability=missing],[data-availability=unknown]) .diagnostic-agent-button:not([aria-expanded=true]):not(:hover){background:var(--bg-subtle)}
+.diagnostic-agent-card:is([data-availability=missing],[data-availability=unknown],[data-availability=off]) .diagnostic-agent-button:not([aria-expanded=true]):not(:hover){background:var(--bg-subtle)}
+/* An agent's switch sits in its tile's corner, beside the details button. */
+.diagnostic-agent-card.has-switch{position:relative}
+.diagnostic-agent-card.has-switch .diagnostic-agent-heading{padding-right:36px}
+.settings-dialog input.switch.diagnostic-agent-switch{position:absolute;top:14px;right:12px;margin:0}
+.diagnostic-agent-card[data-availability=off] .diagnostic-agent-heading{opacity:.55}
+.runtime-agent-choices{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 12px;margin:0 0 12px;font-size:12px;color:var(--text-2)}
+.runtime-agent-save-error{margin:0 0 12px;font-size:12px;color:var(--red)}
 @media(max-width:1000px){.diagnostic-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:680px){.diagnostic-agent-heading h4{font-size:14px}.diagnostic-availability{font-size:13px}}
+@media(max-width:680px){.diagnostic-agent-heading h4{font-size:14px}.diagnostic-availability{font-size:13px}.diagnostic-agent-card.has-switch .diagnostic-agent-heading{padding-right:48px}.settings-dialog input.switch.diagnostic-agent-switch{top:12px}.runtime-agent-choices{font-size:13px}}
 .diagnostic-state{display:inline-flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap}
 .diagnostics-settings .ok{color:var(--green)}
 .diagnostics-settings .warn{color:var(--amber-text)}
@@ -248,6 +255,25 @@
 .runtime-model-list li{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:100%;min-height:20px;padding:2px 6px;border-radius:var(--r);font-size:11px;line-height:1.45;background:var(--bg-muted)}
 .runtime-model-list li>span{min-width:0;overflow-wrap:anywhere}
 .runtime-model-list li>small{flex:none;font-size:10px;color:var(--text-3)}
+.runtime-models-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px}
+.runtime-agent-models .runtime-models-head h5{margin:0}
+.runtime-models-actions{display:flex;gap:12px}
+.runtime-models-actions button{font-size:12px;color:var(--accent)}
+.runtime-models-actions button:hover{text-decoration:underline;text-underline-offset:3px}
+/* Offered models are filled with a check; hidden ones are outlined and dimmed. */
+.runtime-model-toggles>button{display:inline-flex;align-items:center;gap:4px;min-width:0;max-width:100%;min-height:24px;padding:2px 8px 2px 6px;border-radius:var(--r);font-size:11px;line-height:1.45;background:var(--bg-muted);color:var(--text);text-align:left}
+.runtime-model-toggles>button>span{min-width:0;overflow-wrap:anywhere}
+.runtime-model-toggles>button>svg{flex:none;color:var(--accent)}
+.runtime-model-toggles>button:hover{background:var(--bg-active)}
+.runtime-model-toggles>button[aria-pressed=false]{background:transparent;color:var(--text-3);box-shadow:inset 0 0 0 1px var(--line)}
+.runtime-model-toggles>button[aria-pressed=false]:hover{background:var(--bg-muted);color:var(--text-2)}
+.runtime-model-toggles>button[aria-pressed=false]>svg{color:var(--text-3)}
+.settings-dialog .runtime-model-search{max-width:280px;margin:0 0 8px}
+/* The label draws the field, so the dialog's own input box is reset inside it. */
+.settings-dialog .runtime-model-search input,.settings-dialog .runtime-model-search input:is(:hover,:focus){height:100%;margin:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none;font-size:12px}
+.runtime-model-empty{margin:0;font-size:12px;color:var(--text-3)}
+.runtime-model-toggles>button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+@media(pointer:coarse){.runtime-model-toggles>button{min-height:32px;font-size:13px}.runtime-models-actions button{min-height:32px;font-size:13px}.settings-dialog .runtime-model-search{max-width:none;height:36px}.settings-dialog .runtime-model-search input:is(*,:focus){font-size:16px}}
 .runtime-model-more{display:inline-flex;align-items:center;gap:4px;margin-top:8px;font-size:12px;color:var(--text-2)}
 .runtime-model-more:hover{color:var(--text)}
 .runtime-agent-help{margin:0 0 16px;font-size:12px;color:var(--text-2);overflow-wrap:anywhere}
@@ -285,19 +311,33 @@
 @media(max-width:760px){.runtime-agent-overview{grid-template-columns:1fr;gap:16px}}
 
 /* LaTeX: the installation as label/value rows. */
-.latex-installation-header{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.latex-installation-header>.brand-icon{width:20px!important;height:20px!important}
-.latex-installation-header h3{flex:1;min-width:0;margin:0;font-size:13px;font-weight:500}
-.latex-installation-header>.icon-button{flex:none;color:var(--text-2)}
-.latex-installation-facts{margin:8px 0 0}
-.latex-installation-facts>div{display:grid;grid-template-columns:140px minmax(0,1fr);gap:16px;padding:8px 0}
-.latex-installation-facts>div:last-child{padding-bottom:0}
-.latex-installation-facts dt{color:var(--text-2);font-size:12px}
-.latex-installation-facts dd{margin:0;overflow-wrap:anywhere}
-.latex-installation-facts code{font-size:12px}
-@media(max-width:480px){.latex-installation-facts>div{grid-template-columns:1fr;gap:4px}}
-@media(max-width:680px){.latex-installation-facts dt,.latex-installation-facts dd,.latex-installation-facts code{font-size:13px}}
+.settings-tool-header{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.settings-tool-header>.brand-icon{width:20px!important;height:20px!important}
+.settings-tool-header h3{flex:1;min-width:0;margin:0;font-size:13px;font-weight:500}
+.settings-tool-header>.icon-button{flex:none;color:var(--text-2)}
+.settings-facts{margin:8px 0 0}
+.settings-facts>div{display:grid;grid-template-columns:140px minmax(0,1fr);gap:16px;padding:8px 0}
+.settings-facts>div:last-child{padding-bottom:0}
+.settings-facts dt{color:var(--text-2);font-size:12px}
+.settings-facts dd{margin:0;overflow-wrap:anywhere}
+.settings-facts code{font-size:12px}
+@media(max-width:480px){.settings-facts>div{grid-template-columns:1fr;gap:4px}}
+@media(max-width:680px){.settings-facts dt,.settings-facts dd,.settings-facts code{font-size:13px}}
 /* Papilot Writer: built in, based on Pi; its model providers. */
 .diagnostic-agent-subtitle{display:block;margin-top:2px;font-size:11px;font-weight:400;color:var(--text-3)}
 
 .collaboration-route .settings-effort { border-top: 0; padding-top: 0; }
+.zotero-key{display:grid;gap:6px}
+.settings-dialog .zotero-key>label{margin:0;font-size:13px;font-weight:500;color:var(--text)}
+.zotero-key-row{display:flex;align-items:stretch;gap:8px}
+.settings-dialog .zotero-key-row input{flex:1;min-width:0;margin:0;height:auto}
+.zotero-key-row .button{flex:none;height:28px}
+.zotero-key .settings-warning,.zotero-key .settings-intro{margin:0}
+.zotero-key .settings-warning{color:var(--amber-text);font-size:12px}
+.zotero-account-actions{display:flex;justify-content:flex-end;margin-top:12px}
+.zotero-location-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.zotero-location{display:grid;gap:6px;margin-top:12px}
+.settings-dialog .zotero-location>label{margin:0;font-size:13px;font-weight:500;color:var(--text)}
+.zotero-location .settings-warning,.zotero-location .settings-intro{margin:0}
+.zotero-location .settings-warning{color:var(--amber-text);font-size:12px}
+.zotero-chosen{margin-left:8px;padding:1px 6px;border-radius:5px;background:var(--bg-muted);font-size:11px;color:var(--text-2);white-space:nowrap}

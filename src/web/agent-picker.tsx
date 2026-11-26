@@ -7,6 +7,7 @@ import { browserStorage } from './storage.ts';
 import { EffortSlider, effortName } from './effort-slider.tsx';
 import { permissionText } from './task-permissions.tsx';
 import { PickerUsage, type RefreshUsage } from './usage.tsx';
+import { shownModels } from './agent-choice.ts';
 
 // The picker and an existing conversation use the same compact model label.
 export function ModelLabel({ model, effort, fast }: { model: string; effort?: string | null; fast?: boolean }) {
@@ -64,7 +65,7 @@ function remember(agent: AgentId, model: string) {
   browserStorage.setItem(RECENT, JSON.stringify(next));
 }
 
-export interface AgentOption { value: AgentId; label: string; runtime?: RuntimeStatus; allowUnknownDefault?: boolean; restartsTask?: boolean }
+export interface AgentOption { value: AgentId; label: string; runtime?: RuntimeStatus; allowUnknownDefault?: boolean }
 // An agent's models in runs of the same source, in list order; models without one stay ungrouped.
 function bySource(items: Choice[]) {
   const parts: { source?: string; items: Choice[] }[] = [];
@@ -108,12 +109,12 @@ export function AgentPicker({ label, agents, agent, model, effort, fast, reconne
   const permission = runtime?.permissionOptions?.find(option => option.value === permissionMode);
   const disconnected = runtime && (!runtime.connected || !runtime.authenticated);
   const summary = noAgent ? t('No agent') : [agentName, modelName, currentEffort ? effortName(currentEffort) : '', fastMode && fast ? t('Fast') : '', permission ? permissionText(permission.label) : ''].filter((part, index, all) => part && all.indexOf(part) === index).join(' · ');
-  // Every model of every agent; an agent without a model list offers its default.
+  // Every model of every agent that the author did not hide; an agent without a model list offers its default.
   const choices = (option: AgentOption): Choice[] => {
     const list = option.runtime?.models || [];
     return [
       ...((option.allowUnknownDefault ?? allowUnknownDefault) && !list.some(item => item.isDefault) ? [{ key: `${option.value}\n`, agent: option, model: '', name: t('Default model'), isDefault: false, recent: false }] : []),
-      ...list.map(item => ({ key: `${option.value}\n${item.id}`, agent: option, model: item.id, name: item.name, source: item.source, isDefault: item.isDefault, recent: false })),
+      ...shownModels(option.runtime, option.value === agent ? model : undefined).map(item => ({ key: `${option.value}\n${item.id}`, agent: option, model: item.id, name: item.name, source: item.source, isDefault: item.isDefault, recent: false })),
     ];
   };
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
@@ -176,14 +177,11 @@ export function AgentPicker({ label, agents, agent, model, effort, fast, reconne
   }
   const renderChoice = (choice: Choice) => {
     const chosen = isSelected(choice), state = agentState(choice.agent.runtime);
-    const restart = choice.agent.restartsTask ? t('Restart task') : undefined;
     return <div key={choice.key} id={`${id}-${choice.key.replace(/\W/g, '_')}`} data-key={choice.key} role="option" aria-selected={chosen} aria-label={[choice.name, choice.source, choice.agent.label].filter(Boolean).join(' · ')}
-      aria-description={restart} title={restart}
       className={'model-option' + (choice.key === active ? ' active' : '')} onPointerMove={() => setActive(choice.key)} onClick={() => choose(choice)}>
       {choice.recent && <BrandIcon name={choice.agent.value} size={15}/>}<span className="model-option-name">{choice.name}</span>
       {choice.isDefault && !choice.recent && <small className="model-option-tag">{t('Default')}</small>}
       {(choice.recent || state) && <small className={'model-option-agent' + (state ? ' warn' : '')}>{choice.recent ? [choice.agent.label, choice.source].filter(Boolean).join(' · ') : state}</small>}
-      {restart && <span className="model-option-restart" aria-hidden="true"><Icon name="refresh" size={14}/></span>}
       {chosen && <Icon name="check" size={14}/>}
     </div>;
   };

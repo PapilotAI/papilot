@@ -19,10 +19,6 @@
 //   controls share the toolbar row: the page runs as the desktop shell and
 //   the controls are drawn where the shell places them. Compact is a
 //   430 x 600 phone, wide enough for its whole marking capsule.
-// - test-results/readme-review/review-app{,-dark}-raw{,.zh-CN}.png: the
-//   task's review in the desktop app, unframed and without the window
-//   controls, whose left 890 px scripts/capture-readme-showcase.mjs puts in
-//   the homepage's Papilot card.
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -38,7 +34,6 @@ import { annotateReviewState, rewriteReviewHtml, rewriteReviewJson } from '../sr
 
 const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
 const out = path.resolve('docs/assets/readme-showcase');
-const rawDir = path.resolve('test-results/readme-review');
 fs.mkdirSync(out, { recursive: true });
 const before = String.raw`For $c = 2$ this simplifies to $C(2, A) = A^2/(2 + A)$.`;
 const after = String.raw`For $c = 2$, the sum in~\eqref{eq:erlang} is $1 + A$. Substituting, then multiplying the numerator and the denominator by $2 - A$, gives
@@ -210,8 +205,6 @@ Starting a task every ten minutes, each taking six, gives $A = 0.6$ and $C(2, A)
       await expect.poll(() => frame.locator('img').evaluateAll(images => images.every(img => img.complete && img.naturalWidth > 0))).toBe(true);
     }
     const raw = await page.screenshot({ animations: 'disabled' });
-    // The homepage card in the README's first section reuses the unframed capture.
-    if (!phone && view === 'review') { fs.mkdirSync(rawDir, { recursive: true }); fs.writeFileSync(path.join(rawDir, `review-app${scheme === 'dark' ? '-dark' : ''}-raw${text.suffix}.png`), raw); }
     assert.deepEqual(errors, []);
     assert.deepEqual([...new Set(unexpected)], [], 'Requests this script does not answer');
     await page.close();
@@ -240,8 +233,6 @@ Starting a task every ten minutes, each taking six, gives $A = 0.6$ and $C(2, A)
   }
   // The review appears inside the README's homepage card, so it is kept unframed.
   for (const text of Object.values(copy)) {
-    await capture(text, 'light', null);
-    await capture(text, 'dark', null);
     await capture(text, 'light', `notes-app${text.suffix}.png`, false, 'notes');
     await capture(text, 'dark', `notes-app-dark${text.suffix}.png`, false, 'notes');
     await capture(text, 'light', `notes-app-compact${text.suffix}.png`, true, 'notes');

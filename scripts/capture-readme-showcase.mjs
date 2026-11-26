@@ -1,18 +1,16 @@
 // README illustrations and the social preview card, captured from the
 // homepage's own windows (Node 22):
 //
-//   node --import tsx scripts/capture-readme-review.mjs   (the real review screenshot)
 //   npm run site && node scripts/capture-readme-showcase.mjs
 //
-// npm run readme:showcase builds everything and runs both.
+// npm run readme:showcase builds everything and runs it with the other
+// README captures.
 //
 // The homepage draws Papilot in HTML and CSS (site/index.html), so the README
 // reuses those drawings instead of keeping a second copy: hero*.png is the
-// opening window and paradigm*.png the three cards of "Why", whose Papilot
-// card shows the real review from scripts/capture-readme-review.mjs. Each is
-// captured at 2x with a transparent surround, in light and dark, at desktop
-// and phone width (the phone layout draws the phone app), in English and
-// Simplified Chinese. Without motion every window shows where its demo ends.
+// opening window, captured at 2x with a transparent surround, in light and
+// dark, at desktop and phone width (the phone layout draws the phone app),
+// in English and Simplified Chinese. Without motion every window shows where its demo ends.
 // Other README languages use the English images; renderReadme picks a
 // `.<locale>` file when one exists. docs/assets/social-preview.png, the link
 // card for GitHub and the site, puts the opening window beside the headline.
@@ -43,7 +41,6 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 // The floating windows keep room for their shadow; the cards need none.
 const shots = [
   { name: 'hero', selector: '.hero .app-window', pad: 36 },
-  { name: 'paradigm', selector: '#why .eras', pad: 2 },
 ];
 const layouts = [
   { suffix: '', width: 1200 },
@@ -54,25 +51,9 @@ try {
   for (const locale of ['en', 'zh-CN']) for (const scheme of ['light', 'dark']) for (const layout of layouts) {
     const page = await browser.newPage({ viewport: { width: layout.width, height: 1000 }, deviceScaleFactor: 2, colorScheme: scheme, reducedMotion: 'reduce' });
     await page.goto(`${origin}/${locale === 'en' ? '' : `${locale}/`}`, { waitUntil: 'networkidle' });
-    // Under reduced motion the site greys out the two older ways at once; the
-    // README keeps their red marks, the "don't" beside Papilot's "do".
-    await page.addStyleTag({ content: 'html,body,main,section{background:transparent!important}.topbar,.scroll-cue{display:none!important}.era.old{--old:0!important}'
+    await page.addStyleTag({ content: 'html,body,main,section{background:transparent!important}.topbar,.scroll-cue{display:none!important}'
       // Text beside a window would show in its shadow margin on a phone.
       + '.hero-copy>:not(.app-window),.feature-text,.section-head{visibility:hidden!important}' });
-    // Papilot's card in "Why" shows the real review instead of the homepage's
-    // abstract drawing: the review pane of scripts/capture-readme-review.mjs.
-    const raw = path.join(root, 'test-results/readme-review', `review-app${scheme === 'dark' ? '-dark' : ''}-raw${locale === 'en' ? '' : `.${locale}`}.png`);
-    if (!fs.existsSync(raw)) throw new Error('Run node --import tsx scripts/capture-readme-review.mjs first.');
-    await page.evaluate(src => {
-      // The screenshot is the desktop app, whose window controls share its
-      // toolbar row, so the drawn title bar goes and the controls are drawn
-      // on the screenshot where the app leaves room for them.
-      document.querySelector('.era.ours .mini-bar').remove();
-      const body = document.querySelector('.era.ours .mini-body');
-      body.style.display = 'block';
-      body.innerHTML = `<div style="position:relative;width:1280px;transform-origin:0 0;transform:scale(${body.clientWidth / 890})"><img src="${src}" alt="" style="display:block;width:1280px;max-width:none"><span class="lights" style="position:absolute;left:18px;top:16px;gap:8px"><i style="width:12px;height:12px"></i><i style="width:12px;height:12px"></i><i style="width:12px;height:12px"></i></span></div>`;
-      return body.querySelector('img').decode();
-    }, `data:image/png;base64,${fs.readFileSync(raw).toString('base64')}`);
     await page.evaluate(() => document.fonts.ready);
     for (const shot of shots) {
       const element = page.locator(shot.selector);

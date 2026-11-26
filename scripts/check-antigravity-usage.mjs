@@ -47,6 +47,7 @@ try {
         refreshes++;
         return failure ? route.fulfill({ status: 503, json: { error: 'Fixture quota failure' } }) : json({ usage: nextUsage });
       }
+      if (url.pathname === '/api/quick-model') return route.fulfill({ json: { choice: null } });
       throw new Error(`Unexpected quota request: ${url.pathname}`);
     });
     await page.goto(`http://127.0.0.1:${server.server.address().port}`);

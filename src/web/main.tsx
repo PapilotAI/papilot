@@ -1,7 +1,7 @@
 import '../../engine/src/web/legacy-storage.ts';
 import { TaskDocument } from './task-document.tsx';
 import { requestApi, requestState } from './api.ts';
-import { agentLabel, agentsSettled, chosenAgent, noAgent, offeredAgents } from './agent-choice.ts';
+import { agentLabel, agentsSettled, chosenAgent, defaultOfferedModel, noAgent, offeredAgents } from './agent-choice.ts';
 import { isPlayground, pdfAsset, wordAsset, requestPlaygroundDownload } from './playground-mode.ts';
 import { annotationGroupState, canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
 import { NOTE_SORT_MODES, groupNoteEntries, isNoteSortMode, sortNoteEntries, type NoteSortMode } from '../note-sort.ts';
@@ -19,13 +19,13 @@ import { readNotesInstructions, type NoteSummary } from '../notes.ts';
 import { aiReviewSummary, isFeedbackPrompt } from '../conversation.ts';
 import { ignorePattern } from '../commit.ts';
 import { AGENT_IDS, isAgentId, isTaskReviewNote, taskFinished } from '../shared.ts';
-import type { TaskCommitReview, CompilerChoice, LatexInstallation, AgentId, Annotation, AnnotationGroupEdit, AnnotationGroupState, AnnotationBatch, AnnotationBatchResult, NoteSection, PageReadingLayout, BuildRepairResult, MarkKind, Author, FeedbackSummary, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
+import type { TaskCommitReview, CompilerChoice, LatexInstallation, ZoteroStatus, AgentId, Annotation, AnnotationGroupEdit, AnnotationGroupState, AnnotationBatch, AnnotationBatchResult, NoteSection, PageReadingLayout, BuildRepairResult, MarkKind, Author, FeedbackSummary, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
 import { SkillChip, SkillMenu, SkillPicker, matchSkills, skillName, skillQuery } from './skills.tsx';
 import { reviewDraft, useReviewDraft, reviewNoteSummary, reviewSubmission } from './review-draft.ts';
 import { ReviewDraftCards } from './review-draft-cards.tsx';
 import { ComposerDraft, sendsMessage, taskTitle, pendingReviewFeedback } from './composer.ts';
 import { DraftAttachments, MessageAttachments, useAttachmentDraft } from './attachments.tsx';
-import { AttachmentDraft, attachmentDrafts, type UploadAttachment } from './attachment-draft.ts';
+import { AttachmentDraft, type UploadAttachment } from './attachment-draft.ts';
 import type { Attachment, CollaborationSettings as CollaborationSettingsState, NoteResult, NoteReturnReceipt, NoteReturnState, RemovedNoteReturn } from '../shared.ts';
 import { noteLocation } from './note-location.ts';
 import { ReadRequest, canStreamUpdates, mergeTimeline, visibleTimeline } from './refresh.ts';
@@ -38,7 +38,6 @@ import { AiReviewView } from './ai-review.tsx';
 import { keepDialogFocus } from './focus.ts';
 import { DeleteTaskDialog } from './task-dialog.tsx';
 import { BulkTaskDialog, type BulkTaskAction } from './bulk-task-dialog.tsx';
-import { restartDraftText } from './restart-draft.ts';
 import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
 import { BrandIcon } from './brand-icon.tsx';
@@ -56,13 +55,18 @@ import { SourceTab, useSourceEdit } from './source-panel.tsx';
 import type { OpenSource, ReviewChanges } from '../../engine/src/web/review-events.ts';
 import { useTheme } from './theme.tsx';
 import { SettingsDialog, type SettingsInitialPage } from './settings.tsx';
+import { MemoryNudge, OPEN_MEMORY, shownSuggestions } from './memory-card.tsx';
+import type { ZoteroApi } from './zotero-settings.tsx';
+import type { QuickModel, QuickModelApi } from './model-default-settings.tsx';
+import { EVIDENCE_CHANGED, PaperEvidence, useEvidenceMarks, type EvidenceActions } from './evidence-marks.tsx';
+import { CitationCheckView, type ModelChoice } from './citation-check.tsx';
 import { WorkspaceSwitcher } from './workspace-switcher.tsx';
 import { workspaceModifier, workspaceShortcutLabel } from './workspace-switch.ts';
 import { useSystemRequirements, missingTools, RequirementsBanner } from './system-requirements.tsx';
 import { connectStamps } from './stamps.ts';
 import { connectIndirectChanges } from './effect-preferences.ts';
 import { connectNoteAlternatives } from './note-option-preferences.ts';
-import type { DiagnosticReport, SystemRequirements } from '../shared.ts';
+import type { DiagnosticReport, SystemRequirements, ActivityReport } from '../shared.ts';
 import { CommitDialog } from './commit-dialog.tsx';
 import { TaskConflict } from './task-conflict.tsx';
 import { TaskApply } from './task-apply.tsx';
@@ -75,7 +79,7 @@ import { commitConversation, rememberCommitConversation, useCommitMessageAgent, 
 import { GitDiffView } from './git-diff-view.tsx';
 import { VersionHistory, type HistorySelection } from './git-history.tsx';
 import type { GitHistory, GitVersionDetail } from '../shared.ts';
-import { problemCount, ReferencesPanel, useBibliography } from './references-panel.tsx';
+import { citeRequest, LibraryPanel, problemCount, useLibrary, type LibraryFocus } from './library-panel.tsx';
 import { errorText, locale, t, tn, useLanguage } from './i18n.ts';
 import { notificationState, notify, notifying, subscribeNotifications, taskAlerts } from './notifications.ts';
 import { Markdown } from './markdown.tsx';
@@ -116,9 +120,25 @@ connectIndirectChanges(api);
 connectNoteAlternatives(api);
 const uploadAttachment = (projectId: string, file: File, signal: AbortSignal) => api<Attachment>(`/projects/${projectId}/attachments`, file, signal);
 const detectLatexInstallation = (signal: AbortSignal) => api<LatexInstallation | null>('/runtime/latex', undefined, signal);
+const quickModelApi: QuickModelApi = {
+  load: () => api<{ choice: QuickModel | null }>('/quick-model'),
+  save: choice => api<{ choice: QuickModel | null }>('/quick-model', choice ?? { agent: null }),
+};
+const zoteroApi: ZoteroApi = {
+  load: (sync, signal) => api<ZoteroStatus>(`/library/zotero${sync ? '?sync=1' : ''}`, undefined, signal),
+  connect: key => api<ZoteroStatus>('/library/zotero/account', { key }),
+  disconnect: () => api<ZoteroStatus>('/library/zotero/account/remove', {}),
+  use: use => api<ZoteroStatus>('/library/zotero/use', { use }),
+  locate: dataDir => api<ZoteroStatus>('/library/zotero/location', { dataDir }),
+  folders: api,
+};
 const chooseCompiler = (compiler?: CompilerChoice['compiler']) => api<CompilerChoice>('/runtime/compiler', compiler ? { compiler } : undefined);
 const loadRequirements = (signal: AbortSignal) => api<SystemRequirements>('/runtime/requirements', undefined, signal);
 const checkDiagnostics = (projectId: string | undefined, signal: AbortSignal) => api<DiagnosticReport>('/diagnostics', { projectId }, signal);
+const loadActivity = (params: { tz: string; range: string; projectId?: string }, signal: AbortSignal) => {
+  const query = new URLSearchParams({ tz: params.tz, range: params.range, ...(params.projectId ? { projectId: params.projectId } : {}) });
+  return api<ActivityReport>(`/activity?${query.toString()}`, undefined, signal);
+};
 const agentName = (task: Task) => agentLabel(task.agent || 'codex') || 'Codex';
 // A finished publication with no round is a valid answer-only result. Keep
 // earlier comparisons available when a follow-up answer makes no new edits.
@@ -364,7 +384,7 @@ function timelineEntries(items: TimelineItem[]) {
   return entries;
 }
 
-function Activity({ runtimes, relatedTasks, onOpenTask, onRestarted, source, onRevealQuote, task, runtime, reconnecting, onReconnect, skills, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, onTaskSaved, reportError, pause, pausing, openReview, feedback, connection, tools, lead, errorActions }: { runtimes: Partial<Record<AgentId, RuntimeStatus>>; relatedTasks: Task[]; onOpenTask: (id: string) => void; onRestarted: (task: Task, draft: { text: string; skill?: string }) => void; source?: { tabs: React.ReactNode; panel: React.ReactNode; selected: boolean }; errorActions?: React.ReactNode; tools?: React.ReactNode; lead?: React.ReactNode; onRevealQuote: () => void; task: Task; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void; skills: Skill[]; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; onTaskSaved: (task: Task) => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void; feedback?: React.ReactNode; connection?: React.ReactNode }) {
+function Activity({ runtimes, relatedTasks, onOpenTask, source, onRevealQuote, task, runtime, reconnecting, onReconnect, skills, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, onTaskSaved, reportError, pause, pausing, openReview, feedback, connection, tools, lead, errorActions }: { runtimes: Partial<Record<AgentId, RuntimeStatus>>; relatedTasks: Task[]; onOpenTask: (id: string) => void; source?: { tabs: React.ReactNode; panel: React.ReactNode; selected: boolean }; errorActions?: React.ReactNode; tools?: React.ReactNode; lead?: React.ReactNode; onRevealQuote: () => void; task: Task; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void; skills: Skill[]; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; onTaskSaved: (task: Task) => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void; feedback?: React.ReactNode; connection?: React.ReactNode }) {
   const input = useRef<HTMLTextAreaElement>(null);
   const reviewNotes = reviewDraft(task.id), notes = useReviewDraft(task.id);
   const [savingModel, setSavingModel] = useState(false);
@@ -465,11 +485,9 @@ function Activity({ runtimes, relatedTasks, onOpenTask, onRestarted, source, onR
         footer={attach => <div className="composer-options">
           {task.mode !== 'review' && <SkillPicker onAttach={attach} skills={skills.filter(skill => skill.output !== 'annotations')} selected={skill} disabled={sending || blocked || savingModel} onPick={value => { setSkill(value); input.current?.focus(); }}/>}
           <TaskModelPicker refreshUsage={refreshUsage} task={task} runtime={runtime} runtimes={runtimes} disabled={sending || blocked || savingPermissions || files.blocked || notes.busy} reconnecting={reconnecting} onReconnect={onReconnect} save={settings => api<Task>(`/tasks/${task.id}/model`, settings)} onSaving={setSavingModel} refresh={refresh} reportError={reportError}
-            restart={async settings => {
+            switchAgent={async settings => {
               if (isPlayground) { requestPlaygroundDownload(); return; }
-              const replacement = await api<Task>(`/tasks/${task.id}/restart`, { ...settings, draftAttachments: files.draft.getSnapshot().files.map(file => file.id) });
-              const pending = reviewNotes.getSnapshot();
-              onRestarted(replacement, { text: restartDraftText(composer.text, pending.instructions, pending.notes.map(reviewNoteSummary)), skill: browserStorage.getItem('papilot:draft-skill:' + task.id) || undefined });
+              onTaskSaved(await api<Task>(`/tasks/${task.id}/agent`, settings));
             }}
             permissions={<TaskPermissionOptions task={task} runtime={runtime} disabled={sending || blocked || savingModel} save={permissions => api<Task>(`/tasks/${task.id}/permissions`, { permissions })} onSaved={onTaskSaved} onSaving={setSavingPermissions} refresh={refresh} reportError={reportError}/>}/>
         </div>}
@@ -1171,8 +1189,22 @@ function PreparingTask({ task }: { task: Task }) {
 }
 
 type ManuscriptPanel = 'pdf' | 'task' | 'source';
-function ManuscriptView({ onOpenTask, returnedPlace, onPlaceShown, notesRequest, taskCards, navigationGuard, collapsed, setCollapsed, project, data, error, view, setView, region, setRegion, active, setActive, actions, newTask, tools, share, navigation, onGit, writer, reportError, onFixProblems, diagnoseBuild, openFile, onOpened, onEditing }: { returnedPlace?: string; onPlaceShown: (id: string) => void; notesRequest?: number; openFile?: { file: string; line?: number } | null; onOpened?: () => void; onEditing?: (file: string | null) => void; navigationGuard: React.Ref<NotesHandle>; collapsed: boolean; setCollapsed: React.Dispatch<React.SetStateAction<boolean>>; taskCards: ReturnType<typeof useNoteCards>; onFixProblems?: (request: string) => void; diagnoseBuild?: (failureId: string) => Promise<BuildRepairResult>; navigation?: React.ReactNode; newTask: (notes: React.ReactNode) => React.ReactNode; tools?: React.ReactNode; share?: React.ReactNode; onGit: (status: GitStatus) => void; writer: CommitWriter; reportError: (error: unknown) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions; onOpenTask: (id: string) => void }) {
+function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, showsChecks = false, onOpenTask, returnedPlace, onPlaceShown, notesRequest, taskCards, navigationGuard, collapsed, setCollapsed, project, data, error, view, setView, region, setRegion, active, setActive, actions, newTask, tools, share, navigation, onGit, writer, reportError, onFixProblems, diagnoseBuild, openFile, onOpened, onEditing }: { returnedPlace?: string; onPlaceShown: (id: string) => void; notesRequest?: number; openFile?: { file: string; line?: number } | null; onOpened?: () => void; onEditing?: (file: string | null) => void; navigationGuard: React.Ref<NotesHandle>; collapsed: boolean; setCollapsed: React.Dispatch<React.SetStateAction<boolean>>; taskCards: ReturnType<typeof useNoteCards>; onFixProblems?: (request: string) => void; diagnoseBuild?: (failureId: string) => Promise<BuildRepairResult>; navigation?: React.ReactNode; newTask: (notes: React.ReactNode) => React.ReactNode; tools?: React.ReactNode; share?: React.ReactNode; onGit: (status: GitStatus) => void; writer: CommitWriter; reportError: (error: unknown) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions; onOpenTask: (id: string) => void; evidenceActions?: EvidenceActions; evidenceFocus?: { id: string; at: number } | null; onEvidenceShown?: () => void; showsChecks?: boolean }) {
   const build = data?.build, notes = data?.annotations || [], git = data?.git;
+  // Marks are read only while a citation check of this paper is shown in it.
+  const evidence = useEvidenceMarks(project.id, build?.key, api, !isPlayground && showsChecks);
+  // A sentence shown from a cited work's PDF, once per request as soon as
+  // its mark is known: the PDF on screen at its place, and its card open.
+  const [shownEvidence, setShownEvidence] = useState<{ id: string; at: number } | undefined>(undefined);
+  useEffect(() => {
+    const mark = evidenceFocus && evidence.find(item => item.id === evidenceFocus.id);
+    if (!evidenceFocus || !mark) return;
+    setMode('pdf');
+    if (window.matchMedia('(max-width: 680px)').matches) setView('pdf');
+    setShownEvidence(evidenceFocus);
+    onEvidenceShown?.();
+    requestAnimationFrame(() => pdf.current?.showPlace(mark.page, [Math.min(...mark.rects.map(r => r[0])), Math.min(...mark.rects.map(r => r[1])), Math.max(...mark.rects.map(r => r[2])), Math.max(...mark.rects.map(r => r[3]))], { keep: true }));
+  }, [evidenceFocus, evidence]);
   const pdf = useRef<PdfHandle>(null);
   // Each root document keeps its reading place, named with the build it
   // arrives with; the place saved before documents had their own goes to the
@@ -1283,7 +1315,7 @@ function ManuscriptView({ onOpenTask, returnedPlace, onPlaceShown, notesRequest,
         ? <div className="manuscript-note error brief" role="alert"><span>{t('The latest changes did not compile. This is the last PDF that did.')}</span><button type="button" className="note-link" onClick={() => problems.current?.open()}>{t('Show problems')}</button></div>
         : <div className="manuscript-note error" role="alert"><strong>{t('The manuscript did not compile.')}</strong><pre>{build.error}</pre></div>)}
       {build?.key ? <Suspense fallback={<div className="review-loading"><p role="status">{t('Opening the PDF…')}</p></div>}><PdfView key={place} ref={pdf} place={place} pdfKey={build.key} url={pdfAsset(`/api/projects/${project.id}/manuscript.pdf?key=${build.key}`)} words={wordAsset(`/api/projects/${project.id}/manuscript/words?key=${build.key}`)} keyedNotes revealNote={returnedPlace} onNoteShown={onPlaceShown} notes={numbered} active={active} region={region} setRegion={setRegion} group={actions.group} onGroupChange={actions.setGroup} markingDisabled={actions.sending}
-          inFlightMarks={data?.inFlightMarks} onOpenTask={onOpenTask}
+          inFlightMarks={data?.inFlightMarks} onOpenTask={onOpenTask} margin={evidence.length && evidenceActions ? page => <PaperEvidence marks={evidence.filter(mark => mark.page === page)} actions={evidenceActions} focus={shownEvidence}/> : undefined}
           anchorApi={(action, body) => api(`/projects/${project.id}/manuscript/anchors${action === 'resolve' ? '/resolve' : ''}`, body)}
           history={actions.history} noteActions={{ has: actions.selection.has, toggle: note => actions.selection.set([note.id], !actions.selection.has(note.id)), remove: actions.remove, restore: actions.restore, edit: actions.edit, regroup: actions.regroup, onEditing: actions.onEditing, onBusy: actions.onReviewBusy, disabled: actions.sending }} onDeselect={() => setActive('')}
           onCreate={actions.add} onSelect={async note => { if (await closeReadingNotes()) setActive(note.id); }} outline={outline} section={section} onOutline={setOutline} onSection={setSection} lead={switcher} tools={pdfTools}
@@ -1329,7 +1361,6 @@ function App() {
   // A tag (or untagged JSON); empty while the app shows a locally changed snapshot.
   const snapshotText = useRef('');
   const composers = useRef(new Map<string, ComposerDraft>());
-  const [restartDraftVersion, setRestartDraftVersion] = useState(0);
   const answerDrafts = useRef(new Map<string, Record<string, string>>());
   const [snapshotRequest] = useState(() => new ReadRequest<{ value: (Snapshot & { csrf: string }) | null; tag: string }>());
   const [timelineRequest] = useState(() => new ReadRequest<{ items: TimelineItem[]; revision?: string; partial?: boolean }>());
@@ -1344,6 +1375,8 @@ function App() {
   const folderRequest = useRef(false);
   // Commit drafts survive switching tasks or moving between review and chat.
   const applyStates = useRef(new Map<string, { key: string; draft: TaskApplyState }>());
+  // Suggestions the author answered in this session, per task, so a remembered one keeps its Undo.
+  const memoryAnswers = useRef(new Map<string, Set<string>>());
   const newTaskInput = useRef<HTMLTextAreaElement>(null);
   const [newDraft, setNewDraft] = useState(() => browserStorage.getItem('papilot:new-task') || '');
   const [newSkill, setNewSkill] = useState<Skill | null>(null);
@@ -1390,10 +1423,24 @@ function App() {
   const [manuscriptView, setManuscriptView] = useState<ManuscriptPanel>(() => window.matchMedia('(max-width: 680px)').matches ? 'pdf' : 'task');
   const manuscriptNavigationGuard = useRef<NotesHandle>(null);
   const [libraryRequest, setLibraryRequest] = useState(0);
+  // A citation check's quote, opened from the paper's PDF: the Library shows the cited work's PDF there.
+  const [libraryFocus, setLibraryFocus] = useState<LibraryFocus | null>(null);
+  // A paper's sentence shown from a cited work's PDF, back in the paper.
+  const [evidenceFocus, setEvidenceFocus] = useState<{ id: string; at: number } | null>(null);
+  // A citation check starts at once, with the quick model from Settings or
+  // else the default model; its page offers another model to check again.
+  const startCheck = async () => {
+    if (!project) return;
+    const id = crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+    const quick = await api<{ choice: ModelChoice | null }>('/quick-model').then(result => result.choice, () => null);
+    const choice = quick ?? { agent: agentChoice, model: chosenModel || null, effort: null };
+    await api('/citation-checks', { id, projectId: project.id, agent: choice.agent, model: choice.model, effort: choice.effort, title: t('Check citations') });
+    await refresh(true); setSelected(id); setSidebar(false);
+  };
   const [manuscriptCollapsed, setManuscriptCollapsed] = useState(() => browserStorage.getItem('papilot:manuscript-panel') === 'hidden');
   // Without a task, the main area shows the manuscript or a tool from the
   // sidebar's Tools menu, such as the reference check.
-  const [page, setPage] = useState<'manuscript' | 'references' | 'git'>(() => browserStorage.getItem('papilot:page') === 'git' ? 'git' : 'manuscript');
+  const [page, setPage] = useState<'manuscript' | 'library' | 'git'>(() => browserStorage.getItem('papilot:page') === 'git' ? 'git' : 'manuscript');
   useEffect(() => { browserStorage.setItem('papilot:page', page); }, [page]);
   const [region, setRegion] = useState(false);
   const [activeNote, setActiveNote] = useState('');
@@ -1451,9 +1498,9 @@ function App() {
   }, []);
   useEffect(() => window.papilotDesktop?.onOpenSettings?.(openSettings), [openSettings]);
   useEffect(() => {
-    const shortcuts = () => setSettings('shortcuts'), quickNotes = () => setSettings('quickNotes');
-    window.addEventListener('papilot:open-shortcuts', shortcuts); window.addEventListener('papilot:open-quick-notes', quickNotes);
-    return () => { window.removeEventListener('papilot:open-shortcuts', shortcuts); window.removeEventListener('papilot:open-quick-notes', quickNotes); };
+    const shortcuts = () => setSettings('shortcuts'), quickNotes = () => setSettings('quickNotes'), memory = () => setSettings('memory');
+    window.addEventListener('papilot:open-shortcuts', shortcuts); window.addEventListener('papilot:open-quick-notes', quickNotes); window.addEventListener(OPEN_MEMORY, memory);
+    return () => { window.removeEventListener('papilot:open-shortcuts', shortcuts); window.removeEventListener('papilot:open-quick-notes', quickNotes); window.removeEventListener(OPEN_MEMORY, memory); };
   }, []);
   const selectedRef = useRef(selected); selectedRef.current = selected;
   const loaded = useRef(false);
@@ -1635,23 +1682,6 @@ function App() {
     const tool = missingTools(requirements)[0];
     if (firstSetupVisit.current && tool && !document.querySelector('dialog[open]')) setSettings(tool);
   }, [requirements.report]);
-  function finishRestart(replacement: Task, draft: { text: string; skill?: string }) {
-    const key = 'papilot:draft:' + replacement.id;
-    const composer = composers.current.get(replacement.id) || new ComposerDraft(key, browserStorage, uuid);
-    composers.current.set(replacement.id, composer);
-    // The replacement may already be open after a delayed or lost response.
-    // Notify its live draft, keeping anything the author has since written.
-    if (!composer.text.includes(draft.text)) composer.edit([composer.text, draft.text].filter(Boolean).join('\n\n'));
-    const skillKey = 'papilot:draft-skill:' + replacement.id;
-    if (draft.skill && !browserStorage.getItem(skillKey)) browserStorage.setItem(skillKey, draft.skill);
-    const filesKey = 'papilot:files:task:' + replacement.id;
-    const files = attachmentDrafts.get(filesKey) || new AttachmentDraft(filesKey, browserStorage);
-    attachmentDrafts.set(filesKey, files);
-    files.restore(replacement.restart?.draftAttachments || []);
-    // Re-read the selected skill even if this replacement is already mounted.
-    setRestartDraftVersion(version => version + 1);
-    acceptSavedTask(replacement); setSelected(replacement.id); void refresh(true);
-  }
   const newFiles = useAttachmentDraft(`papilot:files:new:${project?.id || projectId}`);
   const tasks = state?.tasks.filter(t => !project || t.projectId === project.id) || [];
   const listedTasks = tasks.filter(task => Boolean(task.archivedAt) === showArchived);
@@ -1725,7 +1755,7 @@ function App() {
   const effectivePermissions = readPermissionPreference(agentChoice, runtimes[agentChoice]);
   const models = runtimes[agentChoice]?.models || [], preferredModel = agentModels[agentChoice];
   const chosenModel = models.length && !models.some(m => m.id === preferredModel) ? '' : preferredModel;
-  const modelInfo = models.find(m => m.id === chosenModel) || models.find(m => m.isDefault);
+  const modelInfo = models.find(m => m.id === chosenModel) || defaultOfferedModel(runtimes[agentChoice]);
   const pref = readModelPreferences(agentChoice, chosenModel, modelInfo) || { effort: isPlayground && agentChoice === 'codex' ? 'xhigh' : null, fast: false };
   const agent = { agent: agentChoice, model: modelInfo?.id || chosenModel, effort: taskEffort(pref.effort, modelInfo), serviceTier: agentChoice === 'codex' ? (pref.fast && modelInfo?.fastMode ? modelInfo.fastMode.serviceTier : 'default') : undefined };
   const conversationHelper: CommitMessageChoice = commitContext ? {
@@ -1915,7 +1945,7 @@ function App() {
   useEffect(() => { if (state?.gitAvailable === false) setPage(current => current === 'git' ? 'manuscript' : current); }, [state?.gitAvailable]);
   const manuscriptOpen = !task && Boolean(project) && (page === 'manuscript' || page === 'git' && !gitAvailable);
   useEffect(() => { if (!manuscriptOpen) setLibraryRequest(0); }, [manuscriptOpen]);
-  const referencesOpen = !task && Boolean(project) && page === 'references';
+  const libraryOpen = !task && Boolean(project) && page === 'library';
   const gitOpen = !task && Boolean(project) && page === 'git' && gitAvailable;
   const switchContext = useRef({ project: project?.id, path: project?.path, task: task?.id, page });
   if (switchContext.current.project !== project?.id || switchContext.current.path !== project?.path || switchContext.current.task !== task?.id || switchContext.current.page !== page) {
@@ -2055,14 +2085,21 @@ function App() {
       window.dispatchEvent(new Event('papilot:manuscript'));
     } catch (error) { reportError(error); }
   }
-  // The reference check reads the bibliography while it is open, again when
+  // The library reads the bibliography while it is open, again when
   // the working tree changes; the sidebar keeps its last count.
-  const bibliography = useBibliography(project?.id || '', JSON.stringify(projectGit?.files?.map(file => [file.path, file.lines]) || []), api, referencesOpen);
-  const problems = problemCount(bibliography.report);
+  const library = useLibrary(project?.id || '', JSON.stringify(projectGit?.files?.map(file => [file.path, file.lines]) || []), api, libraryOpen);
+  const problems = problemCount(library.report);
   // An agent looks into the problems as a new task the author can edit first.
   const draftInvestigation = (text: string) => {
     setNewDraft(current => current.trim() ? current.trimEnd() + '\n\n' + text : text);
     setSelected(''); setPage('manuscript'); setManuscriptView('task'); setRegion(false);
+  };
+  // What the paper's checked citations and suggestions do: a quote opens the
+  // cited work in the Library, a suggestion becomes a task draft or goes.
+  const evidenceActions: EvidenceActions = {
+    open: (target, evidence) => { setLibraryFocus({ entry: target.entry, hash: target.hash, evidence, at: Date.now() }); setSelected(''); setPage('library'); },
+    cite: suggestion => draftInvestigation(citeRequest(suggestion)),
+    dismiss: suggestion => { void library.dismissSuggestion(suggestion.id).then(() => window.dispatchEvent(new Event(EVIDENCE_CHANGED))); },
   };
   // A note being saved shows its new text everywhere at once, over the saved
   // notes, so the same note opened in another list starts from it. A failed
@@ -2393,7 +2430,9 @@ function App() {
   }
   const saveTask = async (mode: 'workspace' | 'commit', message?: string, confirmation?: string) => {
     if (!task) return;
-    const result = await api<{ git?: GitStatus; commitReview?: TaskCommitReview }>(`/tasks/${task.id}/apply`, { mode, message, confirmation, keepCurrent: mergeWaiting && merging?.ready });
+    // An overlap with the manuscript is merged by the chosen conflict-resolution agent.
+    const result = await api<{ git?: GitStatus; commitReview?: TaskCommitReview }>(`/tasks/${task.id}/apply`, { mode, message, confirmation, keepCurrent: mergeWaiting && merging?.ready,
+      ...(conflictPreference === 'conversation' ? {} : { conflictAgent: conflictPreference }) });
     if (result.git) updateGit(task.projectId, result.git);
     await refresh(true);
     return result;
@@ -2407,6 +2446,10 @@ function App() {
     : merging ? <TaskConflict status={task.status} waiting={mergeWaiting} onChat={() => selectLayout('conversation')}/>
     : saved === 'committed' && task.delivery ? savedResult(t('Committed {hash} to {branch}', { hash: task.delivery.commit?.slice(0, 7) || '', branch: task.delivery.branch || '' }))
     : saved === 'applied' ? savedResult(t('Applied to manuscript')) : null);
+  // What Papilot noticed in the author's reviews comes up beside saving, below the save step.
+  const answered = task ? memoryAnswers.current.get(task.id) || memoryAnswers.current.set(task.id, new Set()).get(task.id)! : undefined;
+  const memoryNudge = task && answered && shownSuggestions(task, answered).length ? <MemoryNudge key={task.id} task={task} answered={answered} api={api} onChange={() => void refresh(true)}/> : null;
+  const completion = applicationStep || memoryNudge ? <>{applicationStep}{memoryNudge}</> : null;
   const reviewFeedback = (card: boolean) => task?.mode === 'review' ? (card && task.aiReview?.notes ? <button type="button" className="ai-review-link" onClick={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }}><Icon name="notes" size={14}/>{tn(task.aiReview.notes, 'View {n} review suggestion', 'View {n} review suggestions')}<Icon name="arrowRight" size={13}/></button> : null) : null;
   const sidebarToggle = (narrow || !sidebarVisible) && <button className="icon-button sidebar-toggle" aria-label={t('Show task list')} title={t('Show task list')} aria-expanded={sidebarShown} aria-controls="task-sidebar" onClick={() => narrow ? setSidebar(true) : setSidebarVisible(true)}><Icon name={narrow ? 'menu' : 'sidebar'} size={20}/>{addedTask && !sidebarShown && <span key={addedTask.id} className="task-added-dot" aria-hidden="true"/>}</button>;
   function selectLayout(next: typeof layout) {
@@ -2610,9 +2653,7 @@ function App() {
           <button className={'nav-link git-link' + (gitOpen ? ' active' : '')} disabled={!gitAvailable} aria-describedby={!gitAvailable ? 'git-install-hint' : undefined} aria-label={gitAvailable && projectGit?.files?.length ? t('Version Management, {n} changed', { n: projectGit.files.length }) : t('Version Management')} aria-current={gitOpen ? 'page' : undefined} title={gitAvailable ? t('Version management of the manuscript') + '\n' + gitSummary(projectGit) : t('Install Git in this environment to use version management.')} onClick={openGit}><Icon name="restore" size={16}/><span className="nav-label">{t('Version Management')}</span><span className="nav-meta">{gitAvailable && projectGit?.files?.length ? <span className="count">{projectGit.files.length}</span> : null}</span></button>
           {overleafSync && <OverleafRow sync={overleafSync} onOpen={() => { setOverleafOpen(true); setSidebar(false); }}/>}
           {!gitAvailable && <p className="git-install-hint" id="git-install-hint"><a href="https://git-scm.com/install/" target="_blank" rel="noreferrer">{t('Install Git in this environment to use version management.')}</a></p>}
-          <ActionMenu label={t('Research Tools')} className="nav-link paper-tools" menuClassName="paper-tools-menu" align="side" actions={[
-            { id: 'references', label: t('Reference check'), icon: 'checklist', detail: t('Citations, entries and their records'), hint: problems ? String(problems) : undefined, checked: referencesOpen || undefined, select: () => { if (isPlayground) { requestPlaygroundDownload(); return; } setSelected(''); setPage('references'); setSidebar(false); } },
-          ]}><Icon name="book" size={16}/><span className="nav-label">{t('Research Tools')}</span><Icon name="more" size={16}/></ActionMenu>
+          <button className={'nav-link library-link' + (libraryOpen ? ' active' : '')} aria-current={libraryOpen ? 'page' : undefined} title={t('The PDFs of the works you cite')} onClick={() => { if (isPlayground) { requestPlaygroundDownload(); return; } setSelected(''); setPage('library'); setSidebar(false); }}><Icon name="library" size={16}/><span className="nav-label">{t('Library')}</span><span className="nav-meta">{problems ? <span className="count">{problems}</span> : null}</span></button>
         </>}
       </div>
       <div className="task-list-tools" role="group" aria-label={showArchived ? t('Archived tasks') : t('Tasks')}>
@@ -2668,7 +2709,7 @@ function App() {
     </aside>
     {sidebar && narrow && <button tabIndex={-1} className="sidebar-scrim" aria-label={t('Close task list')} onClick={() => setSidebar(false)}/>}
     <main className="main" inert={narrow && sidebar}>
-      <h1 className="sr-only">{task ? task.title : manuscriptOpen ? t('Manuscript') : referencesOpen ? t('Reference check') : gitOpen ? t('Version Management') : 'Papilot'}</h1>
+      <h1 className="sr-only">{task ? task.title : manuscriptOpen ? t('Manuscript') : libraryOpen ? t('Library') : gitOpen ? t('Version Management') : 'Papilot'}</h1>
       {flyingTask && <TaskFlight task={flyingTask} sidebarShown={sidebarShown} onArrive={taskArrived}/>}
       <span className="sr-only" role="status" aria-atomic="true">{addedTask ? t('Task added: {title}', { title: addedTask.title }) : ''}</span>
       {!gitOpen && (mobile || (!task && !manuscriptOpen)) && (sidebarToggle || task || manuscriptOpen) && <div className="workspace-navigation">
@@ -2676,33 +2717,34 @@ function App() {
       </div>}
       {state && <RequirementsBanner state={requirements} onOpen={setSettings}/>}
       {state && !online && <div className="connection-banner" role="status"><Icon name="alert" size={15}/><span>{t('Connection lost. Showing the last update; your draft is kept.')}</span><button onClick={() => void refresh(true)}>{t('Retry connection')}</button></div>}
-      {task ? <div className={`task-grid layout-${taskLayout} show-${taskTab}`} style={chatWidth ? { '--chat-width': `${chatWidth}px` } as React.CSSProperties : undefined}>
+      {task?.mode === 'citations' ? <CitationCheckView key={task.id} task={task} load={api} agents={offered.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] }))} reconnect={async () => { await api('/reconnect', {}); await refresh(true); }} lead={!mobile ? sidebarToggle : null} onOpen={(target, evidence) => evidenceActions.open?.(target, evidence)} onCite={suggestion => draftInvestigation(citeRequest(suggestion))}/>
+      : task ? <div className={`task-grid layout-${taskLayout} show-${taskTab}`} style={chatWidth ? { '--chat-width': `${chatWidth}px` } as React.CSSProperties : undefined}>
           {!mobile && taskLayout === 'split' && <div className="panel-resizer" role="separator" aria-orientation="vertical" aria-label={t('Resize chat panel')} aria-valuenow={chatWidth || undefined} aria-valuemin={300} tabIndex={0} title={t('Drag to resize · Double-click to reset')} onPointerDown={resizeChat} onDoubleClick={() => setChatWidth(0)} onKeyDown={nudgeChat}/>}
           <section id="review-panel" className="review-panel" aria-label={t('PDF review')}>
           {!mobile && !chatOnly && task.status === 'deleting' && (sidebarToggle || !conversationVisible) && <div className="review-placeholder-toolbar">{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}<div className="panel-tools">{!conversationVisible && taskStateActions}</div></div>}
           {(task.review?.state === 'build_failed' || task.status === 'failed' && task.review?.job?.status === 'failed') && <div className="review-build-error" role="status"><Icon name="alert" size={15}/><span>{t('Could not generate the PDF comparison.')}</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Retry build')}</button></div>}
-          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : !task.preparation && task.mode === 'review' ? <AiReviewView key={task.id} task={task} api={api} onCopied={() => void loadManuscript(task.projectId)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}</> : null} tools={!mobile && !conversationVisible ? taskStateActions : null}/> : <TaskDocument key={task.id} projectId={task.projectId} manuscript={manuscriptData.data} placeholder={task.preparation ? <PreparingTask task={task}/> : <PendingComparison task={task} busy={taskActionBusy} onBuild={() => void action('/tasks/' + task.id + '/publish')}/>} task={task} sources={taskReview} onOpenSource={openTaskSource} onRetryComparison={isPlayground ? undefined : () => void action('/tasks/' + task.id + '/publish')} retryBusy={comparisonRetryBusy} onChanges={next => setTaskChanges(current => JSON.stringify(current) === JSON.stringify(next) ? current : next)} onCurrentChange={change => { if (taskSource.editing && taskSide === 'source') void taskSource.follow(change, () => undefined); }} onDecided={() => void refresh(true)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}</> : null} tools={<>{reviewTools}{!mobile && !conversationVisible && taskStateActions}</>} completion={chatOnly ? null : applicationStep} onComment={() => { setMobileTab('conversation'); setTaskSide('chat'); setLayout(current => current === 'review' ? 'split' : current); }}/>}
-        </section><Activity key={`${task.id}:${restartDraftVersion}`} runtimes={runtimes} relatedTasks={state?.tasks.filter(other => other.id === task.restart?.taskId || other.restart?.taskId === task.id) || []} onOpenTask={id => { setSelected(id); setSidebar(false); }} onRestarted={finishRestart} source={taskSourceSide} onRevealQuote={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} task={task} lead={!mobile && chatOnly ? sidebarToggle : null} tools={!mobile && conversationVisible ? taskControls : null} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={taskRequests} refresh={() => void refresh(true)} errorActions={task.preparation && task.status === 'failed' ? <div className="task-error-actions">
+          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : !task.preparation && task.mode === 'review' ? <AiReviewView key={task.id} task={task} api={api} onCopied={() => void loadManuscript(task.projectId)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}</> : null} tools={!mobile && !conversationVisible ? taskStateActions : null}/> : <TaskDocument key={task.id} projectId={task.projectId} manuscript={manuscriptData.data} placeholder={task.preparation ? <PreparingTask task={task}/> : <PendingComparison task={task} busy={taskActionBusy} onBuild={() => void action('/tasks/' + task.id + '/publish')}/>} task={task} sources={taskReview} onOpenSource={openTaskSource} onRetryComparison={isPlayground ? undefined : () => void action('/tasks/' + task.id + '/publish')} retryBusy={comparisonRetryBusy} onChanges={next => setTaskChanges(current => JSON.stringify(current) === JSON.stringify(next) ? current : next)} onCurrentChange={change => { if (taskSource.editing && taskSide === 'source') void taskSource.follow(change, () => undefined); }} onDecided={() => void refresh(true)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}</> : null} tools={<>{reviewTools}{!mobile && !conversationVisible && taskStateActions}</>} completion={chatOnly ? null : completion} onComment={() => { setMobileTab('conversation'); setTaskSide('chat'); setLayout(current => current === 'review' ? 'split' : current); }}/>}
+        </section><Activity key={task.id} runtimes={runtimes} relatedTasks={state?.tasks.filter(other => other.id === task.restart?.taskId || other.restart?.taskId === task.id) || []} onOpenTask={id => { setSelected(id); setSidebar(false); }} source={taskSourceSide} onRevealQuote={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} task={task} lead={!mobile && chatOnly ? sidebarToggle : null} tools={!mobile && conversationVisible ? taskControls : null} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={taskRequests} refresh={() => void refresh(true)} errorActions={task.preparation && task.status === 'failed' ? <div className="task-error-actions">
             <button type="button" className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/prepare')}><Icon name="refresh" size={14}/>{t('Retry')}</button>
             <button type="button" className="button secondary compact" onClick={() => setDeleteTarget(task)}><Icon name="trash" size={14}/>{t('Delete task…')}</button>
           </div> : chatOnly && task.mode !== 'review' && ['failed', 'interrupted'].includes(task.status) ? <div className="task-error-actions">
             <button type="button" className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}><Icon name="diff" size={14}/>{task.review?.round ? t('Regenerate PDF comparison') : t('Generate PDF comparison')}</button>
-          </div> : null} onTaskSaved={acceptSavedTask} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={chatOnly ? <>{reviewFeedback(true)}{applicationStep && <div className="review-feedback card commit-card task-delivery">{applicationStep}</div>}</> : null} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
-      : manuscriptOpen && project ? <ManuscriptView onOpenTask={id => void switchWorkspace(id, true)} returnedPlace={returnedPlace} onPlaceShown={id => setReturnedPlace(current => id === current ? '' : current)} notesRequest={libraryRequest} taskCards={taskCards} key={project.id + project.path} navigationGuard={manuscriptNavigationGuard} collapsed={manuscriptCollapsed} setCollapsed={setManuscriptCollapsed} navigation={!mobile ? sidebarToggle : null} project={project} data={shownManuscript} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} newTask={newTaskPanel} tools={!mobile ? manuscriptTools : null} share={!mobile ? manuscriptShare : null} onFixProblems={fixProblems} diagnoseBuild={isPlayground ? undefined : failureId => api<BuildRepairResult>(`/projects/${project.id}/manuscript/repair`, { failureId, agent: agent.agent, model: agent.model })} onGit={status => updateGit(project.id, status)} writer={commitWriter} reportError={reportError} openFile={openFile} onOpened={() => setOpenFile(null)} onEditing={setEditingFile}/>
+          </div> : null} onTaskSaved={acceptSavedTask} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={chatOnly ? <>{reviewFeedback(true)}{completion && <div className="review-feedback card commit-card task-delivery">{completion}</div>}</> : null} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
+      : manuscriptOpen && project ? <ManuscriptView evidenceActions={evidenceActions} evidenceFocus={evidenceFocus} onEvidenceShown={() => setEvidenceFocus(null)} showsChecks={Boolean(state?.tasks.some(item => item.projectId === project.id && item.mode === 'citations' && item.citationCheck?.show))} onOpenTask={id => void switchWorkspace(id, true)} returnedPlace={returnedPlace} onPlaceShown={id => setReturnedPlace(current => id === current ? '' : current)} notesRequest={libraryRequest} taskCards={taskCards} key={project.id + project.path} navigationGuard={manuscriptNavigationGuard} collapsed={manuscriptCollapsed} setCollapsed={setManuscriptCollapsed} navigation={!mobile ? sidebarToggle : null} project={project} data={shownManuscript} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} newTask={newTaskPanel} tools={!mobile ? manuscriptTools : null} share={!mobile ? manuscriptShare : null} onFixProblems={fixProblems} diagnoseBuild={isPlayground ? undefined : failureId => api<BuildRepairResult>(`/projects/${project.id}/manuscript/repair`, { failureId, agent: agent.agent, model: agent.model })} onGit={status => updateGit(project.id, status)} writer={commitWriter} reportError={reportError} openFile={openFile} onOpened={() => setOpenFile(null)} onEditing={setEditingFile}/>
       : gitOpen && project ? <GitWorkspace key={project.id + project.path} projectId={project.id} navigation={sidebarToggle} git={projectGit} onStatus={status => updateGit(project.id, status)} resolver={conflictWriter} resolution={resolution?.busy || resolution?.merge === mergeId ? resolution : undefined} setResolution={value => setGitResolutions(resolutions => {
         if (value) return { ...resolutions, [commitContextKey]: value };
         const { [commitContextKey]: _, ...others } = resolutions;
         return others;
       })} onChangeResolver={() => setSettings('git-conflicts')} messageWriter={commitWriter} tasks={state?.tasks.filter(task => task.projectId === project.id) || []} onOpenTask={id => { setSelected(id); setSidebar(false); }}/>
-      : referencesOpen && project ? <section className="references-page" aria-label={t('Reference check')}>
-          <header className="references-page-head"><h2>{t('Reference check')}</h2><span>{project.name}</span></header>
-          <ReferencesPanel key={project.id} place={'references:' + project.id} data={bibliography} onInvestigate={draftInvestigation}/>
+      : libraryOpen && project ? <section className="library-page" aria-label={t('Library')}>
+          <header className="library-page-head"><h2>{t('Library')}</h2><span>{project.name}</span></header>
+          <LibraryPanel key={project.id} projectId={project.id} place={'library:' + project.id} data={library} onInvestigate={draftInvestigation} onCheck={isPlayground ? undefined : () => void startCheck().catch(reportError)} focus={libraryFocus} onFocused={() => setLibraryFocus(null)} onShowInPaper={use => { setEvidenceFocus({ id: use.sentenceId, at: Date.now() }); setSelected(''); setPage('manuscript'); }}/>
         </section>
       : !state ? <div className="home"><div className="home-inner"><div className="home-mark"><span className="spinner"/></div><h1>{t('Opening your workspace')}</h1><p className="home-copy" role="status">{connectionError || t('Connecting to your papers and tasks…')}</p>{connectionError && <button className="button secondary" onClick={() => void refresh(true)}>{t('Retry connection')}</button>}</div></div>
       : <div className="home"><div className="home-inner"><PapilotMark size={52} className="home-logo"/><h1>{t('Add your first paper')}</h1><div className="home-paper-actions"><button className="button primary" onClick={createProject}><Icon name="plus" size={16}/>{t('New paper')}</button><button className="button secondary" onClick={importProject}><Icon name="download" size={16}/>{t('Import or open')}</button></div>{overleafEntry && <div className="home-integrations">{overleafEntry}</div>}</div></div>}
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
-    {settings && <SettingsDialog refreshUsage={refreshUsage} commitWriter={commitWriter} conflictWriter={conflictWriter} workflow={isPlayground ? undefined : { enabled: runtimes.collaboration?.hidden === false, online, runtimes, load: () => api<CollaborationSettingsState>('/collaboration'), save: async change => { const result = await api<CollaborationSettingsState>('/collaboration', change); await refresh(true); return result; } }} requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: offered.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] })), agent: agentChoice, model: chosenModel, effort: agent.effort, onSelect: chooseModel, onEffort: effort => remember({ effort }) }} updates={!isPlayground ? api : undefined} overleaf={!isPlayground ? { api, state: state?.overleaf } : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, compiler: chooseCompiler, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body) } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
+    {settings && <SettingsDialog refreshUsage={refreshUsage} commitWriter={commitWriter} conflictWriter={conflictWriter} activity={loadActivity} memory={!isPlayground ? { project, api } : undefined} workflow={isPlayground ? undefined : { enabled: runtimes.collaboration?.hidden === false, online, runtimes, load: () => api<CollaborationSettingsState>('/collaboration'), save: async change => { const result = await api<CollaborationSettingsState>('/collaboration', change); await refresh(true); return result; } }} requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: offered.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] })), agent: agentChoice, model: chosenModel, effort: agent.effort, onSelect: chooseModel, onEffort: effort => remember({ effort }), ...(!isPlayground ? { quick: quickModelApi } : {}) }} updates={!isPlayground ? api : undefined} overleaf={!isPlayground ? { api, state: state?.overleaf } : undefined} zotero={!isPlayground ? zoteroApi : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, compiler: chooseCompiler, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body), agentSettings: async change => { await api('/agent-settings', change); await refresh(true); } } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}
     {bulkTarget && <BulkTaskDialog target={bulkTarget}
       submit={target => api('/tasks/' + target.id + '/' + bulkTarget.action, bulkTarget.action === 'archive' ? { archived: true } : { confirm: true })}

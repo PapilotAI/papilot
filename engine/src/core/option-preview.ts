@@ -8,7 +8,8 @@ import { splitLines } from "./changes.ts";
 import { Builder, buildDate, reprioritize, type BuildPriority } from "./build.ts";
 import { readJson, writeJson } from "./files.ts";
 import { render, reprioritizeRenders, sourceComparison } from "./publish.ts";
-import type { OptionInput } from "./note-options.ts";
+/** A note option: replacement wording for some of the latest round's changes. */
+export interface OptionInput { id: string; round: number; edits: { unit: string; text: string }[] }
 
 /** Keep annotation IDs and old ranges stable while adjusting candidate ranges.
  * This only constructs buffers: neither checkout nor review decisions change. */
@@ -79,11 +80,13 @@ export async function previewNoteOption(app: App, name: string, input: OptionInp
   if (app.publisher.busy(name)) throw new Error("Wait for the PDF build to finish.");
   const merge = app.reconciliation.get(name);
   if (merge && (!merge.ready || round.number <= merge.round)) throw new Error("Finish reviewing the merge suggestion first.");
-  const decisions = app.review.decisions(name, round), ids = new Set<string>();
+  const decisions = app.review.decisions(name, round), variants = app.review.variants(name, round.number), ids = new Set<string>();
   for (const edit of input.edits) {
     const unit = round.units.find(unit => unit.id === edit.unit);
     if (!unit || unit.kind !== "text" || unit.truncated || unit.whole_file || unit.text_ops?.length !== 1 || ids.has(unit.id)) throw new Error("This change cannot be previewed independently.");
-    if (decisions[unit.id] !== "pending") throw new Error("This option overlaps a reviewed change. Undo that decision before replacing it.");
+    // An accepted option keeps showing its own PDF.
+    if (decisions[unit.id] !== "pending" && !(decisions[unit.id] === "accepted" && variants[unit.id] === edit.text))
+      throw new Error("This option overlaps a reviewed change. Undo that decision before replacing it.");
     ids.add(unit.id);
   }
   const project = app.projectOf(name);

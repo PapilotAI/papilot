@@ -36,5 +36,7 @@ export interface PdfReaderState {
   pages: number; page: number; zoom: { value: string; scale: number };
   outline: OutlineItem[]; section: number;
   find?: { current: number; total: number; notFound: boolean };
+  /** An earlier version is shown while the complete PDF compiles, since this time (ms). */
+  preparing?: number;
 }
 export type PdfReaderCommand = { type: 'state' } | { type: 'page'; page: number } | { type: 'outline'; index: number } | { type: 'zoom'; value: string } | { type: 'zoomBy'; factor: number } | { type: 'find'; query: string; again: boolean; previous: boolean } | { type: 'closeFind' };

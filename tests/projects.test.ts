@@ -104,6 +104,18 @@ test('existing task worktrees must belong to the selected repository', async () 
   } finally { f.close(); }
 });
 
+test('a task whose worktree moved with its repository gives the next session its conversation', async () => {
+  const f = fixture();
+  try {
+    const moved = path.join(f.dir, 'moved-task'); fs.mkdirSync(moved);
+    f.store.saveTask({ ...f.task, worktree: moved, threadId: 'old-session' });
+    const checkout = path.join(f.dir, 'new-main'); f.git(f.root, 'worktree', 'add', '-b', 'new-main', checkout);
+    await f.workspace.changeProjectPath('paper', checkout);
+    const task = f.store.task('task');
+    assert.equal(task.worktree, f.worktree); assert.equal(task.threadId, null); assert.equal(task.handoff, true);
+  } finally { f.close(); }
+});
+
 test('paper changes wait for active tasks and requests, and release reservations after failure', async () => {
   const f = fixture();
   try {

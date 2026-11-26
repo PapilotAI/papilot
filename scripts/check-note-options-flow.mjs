@@ -33,7 +33,7 @@ try {
       const src = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="36"><rect width="600" height="36" fill="white"/><text x="12" y="24" font-size="18">${text}</text></svg>`);
       return { src, clean: src, width: 600, height: 36, page: 1, label: '1', text: [{ text, chars: Array.from(text, (ch, index) => ({ text: ch, rect: [12 + index * 9, 8, 21 + index * 9, 28] })) }], marks: [{ unit, kind: 'added', rect: [12, 8, 220, 28] }] };
     };
-    let version = 1, failPreview = false, latePreview = null, saveFails = false, pendingBuild = null;
+    let version = 1, failPreview = false, latePreview = null, saveFails = false, holdB = null;
     let releaseAlternative, releaseLate = () => {};
     const alternativeGate = new Promise(resolve => { releaseAlternative = resolve; });
     const changed = () => { task.updatedAt++; task.review.counts.pending = Object.values(decisions).filter(state => state === 'pending').length; };
@@ -54,6 +54,7 @@ try {
       const key = url.searchParams.get('key'), unit = noteUnits[Number(key.split(':')[1])], option = url.searchParams.get('option');
       const result = detail(unit, option); previews.push({ key, unit, option, version, background: url.searchParams.get('background') === '1' });
       if (version === 1 && unit === 'a' && option === 'alternative') await alternativeGate;
+      if (unit === 'b' && option === 'alternative' && holdB) await holdB;
       if (unit === 'a' && option === 'alternative') {
         if (latePreview) { const wait = latePreview; latePreview = null; await wait; return reply.code(503).send({ error: 'Late preview failure' }); }
         if (failPreview && url.searchParams.get('retry') !== '1') return reply.code(503).send({ error: 'fetch failed' });
@@ -86,7 +87,7 @@ try {
         const body = route.request().postDataJSON(), unit = noteUnits[Number(body.key.split(':')[1])]; writes.push(body);
         if (undone.has(body.id)) return route.fulfill({ status: 400, json: { error: 'That decision was undone or failed. Make it again.' } });
         if (saveFails) return route.fulfill({ status: 400, json: { error: 'The source changed. Try again.' } });
-        if (body.accept && body.option !== selected[unit]) { pendingBuild = { unit, option: body.option }; task.status = 'building'; changed(); return json({ building: true }); }
+        if (body.accept) selected[unit] = body.option;
         decisions[unit] = body.accept ? 'accepted' : 'rejected'; changed();
         if (body.reject) returned.add(Number(body.key.split(':')[1]));
         return json({ ...options(body.key), ...(body.reject ? { noteReturn: { returned: true, undoReturnAt: 1 } } : {}) });
@@ -135,7 +136,7 @@ try {
               delete article.dataset.previewRevision;
             }
             const acceptBtn = article.querySelector('button.accept');
-            if (acceptBtn) acceptBtn.disabled = Boolean(matches && (preview.busy || !preview.detail));
+            if (acceptBtn) acceptBtn.disabled = Boolean(matches && preview.busy);
           });
         });
         fetch('/api/tasks/flow/rounds/${task.review.round}').then(() => {
@@ -180,11 +181,11 @@ try {
         await page.screenshot({ path: `test-results/note-options-selected-${colorScheme}-${width}.png` });
       }
 
-      // Select Alternative a: spinner shows while pending, Accept stays gated until preview resolves.
+      // Select Alternative a: spinner shows while pending; Accept does not wait for the preview.
       await tab(0, 'run:0', 'Alternative a').click();
       await expect.poll(() => previews.filter(request => request.unit === 'a' && request.option === 'alternative' && !request.background).length).toBeGreaterThanOrEqual(1);
       await expect(noteBar(0, 'run:0').locator('.papilot-inline-tab[aria-selected="true"] .papilot-inline-spinner')).toBeVisible();
-      await expect(card(0).locator('button.accept')).toBeDisabled();
+      await expect(card(0).locator('button.accept')).toBeEnabled();
       releaseAlternative();
       await expect(card(0)).toHaveAttribute('data-preview-revision', 'a-alternative-v1');
       await expect(card(0).locator('.fixture-after')).toHaveText('alternative a');
@@ -217,7 +218,7 @@ try {
       failPreview = true; version++; changed(); await sync();
       await tab(0, 'run:0', 'Alternative a').click();
       await expect(noteBar(0, 'run:0').getByRole('alert')).toBeVisible();
-      await expect(card(0).locator('button.accept')).toBeDisabled();
+      await expect(card(0).locator('button.accept')).toBeEnabled();
       await noteBar(0, 'run:0').getByRole('button', { name: 'Retry', exact: true }).click();
       await expect(card(0)).toHaveAttribute('data-preview-revision', 'a-alternative-v2');
       await expect(noteBar(0, 'run:0').getByRole('alert')).toHaveCount(0);
@@ -233,21 +234,27 @@ try {
       await page.waitForTimeout(150);
       await expect(noteBar(0, 'run:0').getByRole('alert')).toHaveCount(0);
 
-      // Accepting Alternative b via card header Accept triggers async build and advances round.
+      // Accepting Alternative b via card header Accept decides it at once in
+      // this round: no preview to wait for, no build, and the next note stays
+      // open with its prepared previews.
+      let releaseB; holdB = new Promise(resolve => { releaseB = resolve; });
       await card(1).locator('.change-number').click();
       await expect(noteBar(1, 'run:2')).toBeVisible();
       await tab(1, 'run:2', 'Alternative b').click();
-      await expect(card(1)).toHaveAttribute('data-preview-revision', 'b-alternative-v3');
+      await expect.poll(() => previews.some(preview => preview.unit === 'b' && preview.option === 'alternative')).toBe(true);
+      await expect(card(1).locator('button.accept')).toBeEnabled();
       await card(1).locator('button.accept').click();
-      await expect.poll(() => pendingBuild?.unit).toBe('b');
-      selected.b = pendingBuild.option; decisions.b = 'accepted'; pendingBuild = null;
-      task.status = 'reviewing'; task.review.round++; version++; changed(); await sync();
+      await expect.poll(() => decisions.b).toBe('accepted');
+      assert.equal(selected.b, 'alternative');
+      assert.equal(task.status, 'reviewing');
+      holdB = null; releaseB();
+      await sync();
 
       // Failed rejection on Alternative c keeps its retry ID; retry succeeds and returns note.
       await card(2).locator('.change-number').click();
       await expect(noteBar(2, 'run:3')).toBeVisible();
       await tab(2, 'run:3', 'Alternative c').click();
-      await expect(card(2)).toHaveAttribute('data-preview-revision', 'c-alternative-v4');
+      await expect(card(2)).toHaveAttribute('data-preview-revision', 'c-alternative-v3');
       saveFails = true;
       await card(2).locator('button.reject').click();
       await expect(noteBar(2, 'run:3').getByRole('alert')).toContainText('The source changed');

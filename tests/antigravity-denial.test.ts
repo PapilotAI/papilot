@@ -84,7 +84,8 @@ for (const scenario of ['empty-reply', 'progress-only', 'unfinished-reply', 'bla
         if (['empty-reply', 'progress-only', 'partial-edits'].includes(scenario)) assert.ok(items.some(item => item.type === 'tool' && item.status === 'declined' && item.text.includes(target)), 'Keep the denied operation and its target in the timeline');
       }
       if (scenario === 'empty-reply') assert.equal(items.filter(item => item.type === 'assistant').length, 0);
-      assert.equal(fake.runs.length, 1, 'Never retry automatically after a permission denial');
+      // A finished task may get one read-only learning turn (--mode plan); the editing turn itself is never retried.
+      assert.equal(fake.runs.filter(entry => entry.args[entry.args.indexOf('--mode') + 1] !== 'plan').length, 1, 'Never retry automatically after a permission denial');
       assert.equal(saved.permissions, 'workspace', 'A denial must not silently broaden permissions');
     } finally { workspace.close(); store.close(); fs.rmSync(dir, { recursive: true, force: true }); }
   });

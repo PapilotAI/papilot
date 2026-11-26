@@ -42,14 +42,29 @@ export interface TaskReconciliation {
 // Adapter-owned IDs; workspace is the backwards-compatible default.
 export type TaskPermissions = string;
 export interface TaskPermissionOption { value: TaskPermissions; label: string; detail: string }
+/** An agent chosen for a helper step, such as resolving conflicts. */
+export interface HelperChoice { agent: AgentId; model?: string; effort?: string; serviceTier?: string }
 export interface Task {
-  // A fresh session replaying another task's original request. Provider sessions are never reused.
+  // Papilot 0.13 and earlier switched agents by replaying a task's original
+  // request in a new task; such a task links to the one it replaced.
   restart?: { taskId: string; draftAttachments?: Attachment[] };
+  // The agent's session has not seen the task's earlier conversation, as
+  // after switching agents; its next turn is given it.
+  handoff?: boolean;
   permissions?: TaskPermissions;
-  mode?: 'edit' | 'review';
+  mode?: 'edit' | 'review' | 'citations';
+  // A citation check: its progress, and whether the paper's PDF shows its findings.
+  citationCheck?: { show: boolean; state?: CitationCheckState | null };
   aiReview?: { key: string; notes?: number; revision?: number };
   // Accepted changes remain isolated until the author applies them.
   reconciliation?: TaskReconciliation | null;
+  /** The conflict-resolution agent the author chose when applying: it
+   *  prepares the merge suggestion if the manuscript changed in overlapping
+   *  passages. Absent, the task's own agent does. */
+  mergeAgent?: HelperChoice | null;
+  /** The agent the task goes back to once the merge suggestion that the
+   *  conflict-resolution agent prepared is resolved. */
+  mergeReturn?: { agent: AgentId; model: string | null; effort?: string | null; serviceTier?: string; permissions?: TaskPermissions } | null;
   deferred?: boolean;
   delivery?: { mode: 'workspace' | 'commit' | 'branch'; accepted: string; branch?: string; commit?: string; pending?: boolean } | null;
   id: string; projectId: string; name: string; title: string; instructions: string;
@@ -59,6 +74,10 @@ export interface Task {
   worktree: string; /** The root document the task compiles, as the review engine recorded it. */ document?: string; threadId: string | null; turnId: string | null; agent?: AgentId; model: string | null; effort?: string | null; serviceTier?: string;
   // The agent's thread was started with Papilot's view_pdf tool.
   viewPdf?: boolean;
+  /** The writing memory the agent's conversation last received (memoryDigest), '' or absent for none. */
+  memoryDigest?: string;
+  /** Preferences Papilot noticed after this task's review, offered beside its save step. */
+  memory?: MemorySuggestion[];
   status: TaskStatus; createdAt: number; updatedAt: number; feedbackCursor: number;
   archivedAt?: number | null;
   error: string | null; review: ReviewSummary | null;
@@ -82,8 +101,10 @@ export function taskFinished(task: Task) {
   return review.state === 'done' && review.files?.length === 0 && task.delivery?.mode !== 'branch';
 }
 // reviewRound is 0 while awaiting a result, null when no changes were produced,
-// or the published round. Older runs omit it.
-export interface Run { workflowAudit?: { fingerprint: string; report: string; files: string[] }; id: string; taskId: string; requestKey: string; prompt: string; attachments?: Attachment[]; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; finishedAt: number | null; reviewRound?: number | null; noteRounds?: Record<number, number>; noteOptionsRequested?: boolean; noteOptions?: PreparedNoteOptions[] }
+// or the published round. Older runs omit it. model is the one the turn started
+// with; usage records keep it when the task's model changes during the turn.
+// startedAt: when Papilot sent the run to its agent; a run cancelled while queued has none.
+export interface Run { workflowAudit?: { fingerprint: string; report: string; files: string[] }; id: string; taskId: string; requestKey: string; prompt: string; model?: string | null; attachments?: Attachment[]; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; startedAt?: number; finishedAt: number | null; reviewRound?: number | null; noteRounds?: Record<number, number>; noteOptionsRequested?: boolean; noteOptions?: PreparedNoteOptions[] }
 /** One part of what fills the context window; ids are named in the web app. */
 export interface ContextPart { id: string; tokens: number }
 /** breakdown: the parts, when the agent can tell them apart, adding up to the window. */
@@ -94,6 +115,21 @@ export interface ToolCallInfo { kind: string; target?: string; lines?: string; p
 export interface ToolPlace { sections: { number: string; title: string }[]; more?: number; partial?: boolean; pages?: number[] }
 // parent: in Collaboration mode, the delegation whose worker took this step.
 export interface TimelineItem { id: string; taskId: string; type: string; text: string; rawText?: string; detail?: string; status?: string; createdAt: number; meta?: MessageMeta; tool?: ToolCallInfo; pages?: PageView[]; changes?: FileEdit[]; parent?: string }
+// Writing memory: lasting preferences agents follow in later tasks. personal
+// is ~/.papilot/memory.md, paper the checkout-only .papilot/memory.local.md,
+// shared the repository's .papilot/memory.md that coauthors receive with Git.
+export type MemoryScope = 'personal' | 'paper' | 'shared';
+export interface MemoryFile { scope: MemoryScope; rules: string[]; revision: string; path: string }
+/** language: the language suggested preferences are written in, a language ID or 'auto'. */
+export interface MemoryCatalog { files: MemoryFile[]; shareable: boolean; learning: boolean; language: string }
+// A preference Papilot noticed in the author's reviews, with the examples
+// it is based on. replaces names a rule the suggestion refines; scope starts
+// where that rule is. saved records what Remember did, so Undo reverses
+// exactly that: existing when the rule was already there, replaced and its
+// scope when one went away.
+/** What prompted a suggestion, copied from a task's evidence: the author's words, or a change they rejected (the agent's text and the text they kept). */
+export interface MemoryExample { task: string; title?: string; said?: string; rejected?: string; kept?: string }
+export interface MemorySuggestion { id: string; text: string; scope: MemoryScope; examples: MemoryExample[]; replaces?: string; status: 'pending' | 'saved' | 'dismissed'; saved?: { scope: MemoryScope; text: string; existing?: true; replaced?: string; replacedScope?: MemoryScope } }
 /** A file an agent changed: its diff, and where in the paper the changes are. */
 export interface FileEdit { path: string; diff?: string; added: number; removed: number; places?: EditPlace[] }
 /** Changes within one part of the paper: its sections (innermost last), the page it starts on, and the lines changed. */
@@ -179,7 +215,12 @@ export interface UsageWindow { usedPercent: number; minutes: number | null; rese
 export interface Usage { plan: string | null; windows: UsageWindow[]; credits: { unlimited: boolean; balance: number | null } | null; reached: boolean }
 // installed is false when the agent was not found on the host (no CLI, SDK
 // credentials or key); such agents are not offered. Older servers omit it.
-export interface RuntimeStatus { hidden?: boolean; permissionOptions?: TaskPermissionOption[]; connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null; installed?: boolean }
+// hidden: collaboration mode is not enabled, or the author turned the agent
+// off in Settings → Agents. hiddenModels: models left out of the pickers.
+export interface RuntimeStatus { hidden?: boolean; hiddenModels?: string[]; permissionOptions?: TaskPermissionOption[]; connected: boolean; authenticated: boolean; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null; installed?: boolean }
+// A change in Settings → Agents: turn an agent on or off, choose which of its
+// models the pickers offer, or turn every agent on and show every model.
+export type AgentSettingsChange = { agent: AgentId; enabled?: boolean; hiddenModels?: string[] } | { reset: true };
 export interface DiagnosticCheck { id: string; ok: boolean; severity: 'error' | 'warn' | 'info'; detail: string; fix: string | null }
 // A compact summary of the host tools required to work on papers.
 export interface SystemRequirements {
@@ -319,7 +360,7 @@ export interface Manuscript { git: GitStatus; build: ManuscriptBuild; document?:
 // review round that shows it, which a save continues; `reviewed` says that
 // round shows this very text, but for the rejected changes in `reverted`
 // whose text came back; its changes replaced parts of `before`.
-export interface SourceFile { file: string; revision: string; text: string; base: string | null; passage: [number, number]; focus: [number, number]; drifted: boolean; round?: number; before?: string | null; reviewed?: boolean; reverted?: string[]; authors?: SourceAuthor[] }
+export interface SourceFile { file: string; revision: string; text: string; base: string | null; passage: [number, number]; focus: [number, number]; drifted: boolean; round?: number; before?: string | null; reviewed?: boolean; reverted?: string[]; worded?: Record<string, string>; authors?: SourceAuthor[] }
 // A task's saved file, and the review after the save.
 export interface TaskSourceSave { source: SourceFile; state: unknown }
 // A saved file, the lines that changed, the working tree whose build shows
@@ -357,3 +398,162 @@ export interface BibliographyReport {
   missing: (ReferenceCitation & { key: string })[]; duplicates: string[][]; similar: { ids: string[]; by: 'doi' | 'title' }[]; all_cited: boolean;
   checks: Record<string, ReferenceCheck>; pending: number; confirmed: Record<string, number>;
 }
+
+export type ActivityRange = '7d' | '30d' | '90d' | 'all';
+export const ACTIVITY_RANGES: ActivityRange[] = ['7d', '30d', '90d', 'all'];
+export type ActivityTurnRole = 'edit' | 'review' | 'worker' | 'helper';
+export type ActivityCostSource = 'reported' | 'estimated' | 'mixed' | 'unknown';
+
+export interface ActivityTokenTotals {
+  input: number;
+  cached: number;
+  cacheWrite: number;
+  output: number;
+  reasoning: number;
+  total: number;
+}
+
+export interface ActivityMetrics {
+  tokens: ActivityTokenTotals;
+  costUsd: number | null;
+  reportedCostUsd: number;
+  estimatedCostUsd: number;
+  pricedTokens: number;
+  unpricedTokens: number;
+  tasksStarted: number;
+  editTasksStarted: number;
+  reviewTasksStarted: number;
+  turns: number;
+  completedTurns: number;
+  failedTurns: number;
+  interruptedTurns: number;
+  turnsByRole: Record<ActivityTurnRole, number>;
+  /** Wall time of finished agent turns, from start to finish. */
+  agentMs: number;
+  accepted: number;
+  rejected: number;
+  commented: number;
+  undone: number;
+  tasksApplied: number;
+  tasksCommitted: number;
+  gitCommits: number;
+  annotationsCreated: number;
+  authorAnnotations: number;
+  agentAnnotations: number;
+  aiReviewAnnotations: number;
+  annotationsSent: number;
+}
+
+export interface ActivityTotals extends ActivityMetrics {
+  activeDays: number;
+}
+
+export interface ActivityDay extends ActivityMetrics {
+  date: string;
+  hours: number[];
+  turnHours: number[];
+  tokenHours: number[];
+}
+
+// An active day of the activity calendar, which covers every day whatever the
+// selected range. actions counts what the active hours count: agent runs,
+// review decisions, your annotations, saved tasks and commits.
+export interface ActivityCalendarDay extends Pick<ActivityMetrics, 'costUsd' | 'reportedCostUsd' | 'estimatedCostUsd' | 'turns' | 'accepted' | 'rejected' | 'commented' | 'annotationsCreated'> {
+  date: string;
+  actions: number;
+  tokens: number;
+}
+
+export interface ActivityAgentSummary {
+  agent: AgentId;
+  tasksStarted: number;
+  turns: number;
+  tokens: ActivityTokenTotals;
+  costUsd: number | null;
+  reportedCostUsd: number;
+  estimatedCostUsd: number;
+  unpricedTokens: number;
+}
+
+export interface ActivityModelSummary {
+  agent: AgentId;
+  model: string;
+  turns: number;
+  tokens: ActivityTokenTotals;
+  costUsd: number | null;
+  costSource: ActivityCostSource;
+}
+
+export interface ActivityProjectSummary {
+  id: string;
+  name: string;
+  removed?: true;
+  tasksStarted: number;
+  turns: number;
+  tokens: number;
+  costUsd: number | null;
+  accepted: number;
+  rejected: number;
+  annotationsCreated: number;
+}
+
+export interface ActivityReport {
+  timezone: string;
+  today: string;
+  range: ActivityRange;
+  generatedAt: number;
+  projectId: string | null;
+  projects: ActivityProjectSummary[];
+  totals: ActivityTotals;
+  hours: number[];
+  turnHours: number[];
+  tokenHours: number[];
+  days: ActivityDay[];
+  calendar: ActivityCalendarDay[];
+  agents: ActivityAgentSummary[];
+  models: ActivityModelSummary[];
+}
+// Where an entry's PDF came from, and why an entry has none yet: Papilot is
+// still looking, the work has no open copy (the landing page is where the
+// author can get one), no DOI or arXiv identifier says which work it is, a
+// source could not be reached, the author took a wrong PDF away, or online
+// lookups are off.
+export type LibrarySource = 'zotero' | 'arxiv' | 'open-access' | 'author' | 'agent';
+export interface LibraryPdf { hash: string; source: LibrarySource; pages: number | null; text: 'pending' | 'ready' | 'none'; url?: string }
+export interface LibraryEntry { pdf: LibraryPdf | null; find: 'waiting' | 'searching' | 'paywalled' | 'unidentified' | 'unreachable' | 'removed' | 'off' | null; landing: string | null }
+// What a cited work says about a sentence that cites it, as an agent found
+// it in the work's PDF: a verdict, a note, and the PDF's own lines as
+// evidence, cut out by Papilot from the anchors the agent gave. A finding
+// made on another PDF of the work than the library now has is stale.
+export type CitationVerdict = 'supported' | 'partial' | 'unsupported' | 'unclear';
+export interface CitationEvidence { quote: string; page: number; marks: { page: number; rect: [number, number, number, number] }[] }
+// by: the quick model that checked it; an agent's finding has none.
+export interface CitationFinding { verdict: CitationVerdict; note: string; evidence: CitationEvidence[]; pdf: string; checkedAt: number; by?: string; task?: string; stale?: boolean }
+// A checked citing sentence where it prints in the paper's PDF: its lines,
+// and the findings for the works it cites, with each work's library PDF.
+export interface EvidenceMark { id: string; page: number; rects: [number, number, number, number][]; sentence: string; file: string; line: number;
+  findings: (CitationFinding & { key: string; entry: string; title: string; hash: string })[];
+  // A sentence citing nothing: the library work it could cite.
+  suggestion?: CitationSuggestion & { entry: string; title: string } }
+// A sentence that cites nothing and a library work the quick model found to
+// say what it claims, with that work's lines.
+export interface CitationSuggestion { id: string; file: string; line: number; section: string | null; sentence: string; key: string; verdict: 'supported' | 'partial'; note: string; evidence: CitationEvidence[]; pdf: string; checkedAt: number; by?: string; task?: string }
+// A paper's quick citation check: how far it got, the model doing it, and why it stopped early.
+export interface CitationCheckState { phase?: 'citations' | 'sources'; output?: string; running: boolean; stopping?: boolean; done: number; total: number; failed: number; model: string | null; error: string | null; finishedAt: number | null }
+/** A sentence of the paper that cites works, with what was found for each. */
+export interface CitingSentence { id: string; keys: string[]; file: string; line: number; section: string | null; sentence: string; findings: Record<string, CitationFinding> }
+export interface LibraryReport extends BibliographyReport {
+  library: { entries: Record<string, LibraryEntry>; pending: number };
+  citations: CitingSentence[];
+  // Sentences citing nothing that a library work supports, and how many cite nothing.
+  suggestions: CitationSuggestion[]; uncited: number;
+}
+// The Zotero libraries the Library takes PDFs from. On this host: none, one
+// whose database cannot be read, or one with its counts. The account: its
+// libraries (the user's own has no name) as last synced, and why the last
+// sync did not finish. Whether works take PDFs from Zotero at all is the
+// server's setting, for every paper and browser.
+// chosen: the data directory the author chose, or null when Papilot finds it.
+export type ZoteroLocal = ({ state: 'missing' } | { state: 'unreadable'; dataDir: string } | { state: 'ready'; dataDir: string; items: number; withPdf: number; citationKeys: number }) & { chosen: string | null };
+export interface ZoteroAccountStatus { username: string; libraries: { name: string | null; items: number; withPdf: number; citationKeys: number }[]; syncing: boolean; synced: number | null; problem: 'revoked' | 'unreachable' | null }
+export interface ZoteroStatus { local: ZoteroLocal; account: ZoteroAccountStatus | null; use: boolean }

@@ -17,9 +17,13 @@ test('restart preserves queued instructions and marks in-flight work interrupted
     const task: Task = { id: 'task', projectId: 'paper', name: 'task', title: 'Example', instructions: 'Edit', worktree: '/tmp/example', threadId: 'thread', turnId: 'turn', model: null, status: 'running', createdAt: 1, updatedAt: 1, feedbackCursor: 42, error: null, review: null };
     store.saveTask(task);
     const run: Run = { id: 'run', taskId: task.id, requestKey: 'request', prompt: 'Keep this feedback', status: 'running', createdAt: 1, finishedAt: null };
-    store.saveRun(run); store.saveRun({ ...run, id: 'next', requestKey: 'next-request', status: 'queued' }); store.close();
+    store.saveRun(run); store.saveRun({ ...run, id: 'next', requestKey: 'next-request', status: 'queued' });
+    store.saveItem({ id: 'search', taskId: task.id, type: 'tool', text: 'grep', status: 'inProgress', createdAt: 2 });
+    store.saveItem({ id: 'read', taskId: task.id, type: 'tool', text: 'read', status: 'completed', createdAt: 3 });
+    store.close();
     const restarted = new Store(path.join(folder, 'state.sqlite')); restarted.recover();
     assert.equal(restarted.task('task').status, 'interrupted');
+    assert.deepEqual(restarted.items('task').map(item => item.status), ['interrupted', 'completed'], 'no step of the interrupted turn keeps running');
     assert.equal(restarted.task('task').threadId, 'thread');
     assert.equal(restarted.task('task').feedbackCursor, 42);
     assert.equal(restarted.runByKey('next-request')?.status, 'queued');
@@ -80,6 +84,9 @@ test('review proxy only exposes review routes and keeps assets on the remote ori
   assert.equal(allowedReviewRoute('/api/tasks/p-test/rounds/1/references/confirm', 'GET'), false);
   assert.ok(allowedReviewRoute('/api/tasks/p-test/rounds/1/mixed', 'POST'));
   assert.equal(allowedReviewRoute('/api/tasks/p-test/rounds/1/mixed', 'GET'), false);
+  // The page reads an accepted note option's comparison; options are chosen through Papilot.
+  assert.ok(allowedReviewRoute('/api/tasks/p-test/source/options/preview', 'POST'));
+  assert.equal(allowedReviewRoute('/api/tasks/p-test/source/options', 'POST'), false);
   const mixedKey = 'a'.repeat(64);
   assert.ok(allowedReviewRoute(`/mixed-files/p-test/1/${mixedKey}/strip.svg`, 'GET'));
   assert.equal(allowedReviewRoute(`/mixed-files/p-test/1/${mixedKey}/strip.svg`, 'POST'), false);

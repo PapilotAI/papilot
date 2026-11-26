@@ -46,23 +46,41 @@ export class AgentToolBridge {
     });
   }
 
+  // The folder holds the tool schemas, which need no session, and one
+  // private session file per task, rewritten with a new token every turn.
+  private place() {
+    if (!this.folder) {
+      this.folder = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-tools-'));
+      fs.writeFileSync(path.join(this.folder, 'tools.json'), JSON.stringify(this.definitions), { mode: 0o600 });
+    }
+    return this.folder;
+  }
+  private files = new Map<string, string>();
+  /** The task's session file. It keeps its path across turns, so an agent
+   * that starts a tool server once per session (MCP) reaches every later
+   * turn; between turns its calls are refused. */
+  file(id: string) {
+    if (this.closed) throw agentToolError('Agent tools are closed.');
+    let file = this.files.get(id);
+    if (!file) this.files.set(id, file = path.join(this.place(), randomBytes(16).toString('hex') + '.json'));
+    return file;
+  }
+
   async open(id: string, current: () => boolean, call: Session['call']) {
     if (this.closed) throw agentToolError('Agent tools are closed.');
     const port = await this.listen();
     if (this.closed || !current()) throw agentToolError('This agent turn has ended.');
-    this.folder ??= fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-tools-'));
-    const file = path.join(this.folder, randomBytes(16).toString('hex') + '.json');
-    const token = randomBytes(32).toString('hex');
-    const previous = this.sessions.get(id);
-    if (previous) fs.rmSync(previous.file, { force: true });
-    fs.writeFileSync(file, JSON.stringify({ url: `http://127.0.0.1:${port}/tools`, token }), { mode: 0o600 });
+    const file = this.file(id), token = randomBytes(32).toString('hex');
+    const temporary = `${file}.${randomBytes(4).toString('hex')}.tmp`;
+    fs.writeFileSync(temporary, JSON.stringify({ url: `http://127.0.0.1:${port}/tools`, token }), { mode: 0o600 });
+    fs.renameSync(temporary, file);
     this.sessions.set(id, { token, file, current, call });
     return file;
   }
 
   close() {
     this.closed = true;
-    this.sessions.clear();
+    this.sessions.clear(); this.files.clear();
     this.server?.close(); this.server?.closeAllConnections();
     if (this.folder) fs.rmSync(this.folder, { recursive: true, force: true });
   }

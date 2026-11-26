@@ -38,6 +38,35 @@ it("rejects empty, full, or unknown subsets", async () => {
   await expect(previewMixedBlock(app, task.name, 99, { units: all, accepted: [all[0]] })).rejects.toThrow(/round/i);
 });
 
+it("compiles a mixed block with an edit accepted in a note option's wording", async () => {
+  const all = units();
+  const first = all.find((u) => u.new_text === "Approach")!;
+  const second = all.find((u) => u.new_text === "two")!;
+  const roundDir = roundFolder(app, task.name, 1);
+  fs.mkdirSync(roundDir, { recursive: true });
+  const strip = { src: "s.svg", clean: "s-clean.svg", width: 400, height: 36, page: 1, label: "1", top: 100 };
+  fs.writeFileSync(path.join(roundDir, "round.json"), JSON.stringify({
+    units: {}, loose: [],
+    sections: [{ node: "method", number: "1", title: "Method", blocks: [{ kind: "change", units: [first.id, second.id], identical: false, before: [strip], after: [strip] }] }],
+  }));
+  const payload = { units: [first.id, second.id], accepted: [first.id] };
+  await app.review.decide(task.name, { round: 1, changes: [second.id], action: "reject" });
+  await app.review.decide(task.name, { round: 1, changes: [first.id], action: "accept", edits: [{ unit: first.id, text: "Procedure" }] });
+  const pdf = path.join(app.state, "worded-test.pdf");
+  fs.writeFileSync(pdf, "test PDF");
+  vi.spyOn(Builder.prototype, "build").mockImplementation(async (rev) => ({ key: rev, tree: rev, targets: ["full"], root: task.worktree, cwd: task.worktree, pdf, seconds: 0, warnings: [] }));
+  const compiled: string[] = [];
+  vi.spyOn(publisher, "renderMixed").mockImplementation(async (out, request) => {
+    compiled.push(app.repo.blob(request.new.tree, METHOD)?.toString() ?? "");
+    fs.writeFileSync(path.join(out, "mixed.json"), JSON.stringify({ strips: [strip] }));
+  });
+  const result = await previewMixedBlock(app, task.name, 1, payload);
+  expect(result.unavailable).toBeUndefined();
+  expect(compiled).toHaveLength(1);
+  expect(compiled[0]).toContain("Procedure sentence 2.");
+  expect(compiled[0]).not.toContain("Approach");
+});
+
 it("compiles an isolated mixed subset, deduplicates concurrent calls and errors, caches clean strips, and supports closed tasks", async () => {
   const all = units();
   const first = all.find((u) => u.new_text === "Approach")!;
@@ -180,6 +209,37 @@ it.skipIf(!tex)(
       expect(text).toContain("Method sentence 3.");
       expect(text).toContain("Method sentence 4.");
       expect(text).not.toContain("Procedure sentence 4.");
+    } finally {
+      await f2.close();
+    }
+  },
+  60000,
+);
+
+it.skipIf(!tex)(
+  "compiles a real LaTeX mixed block with an edit accepted in a note option's wording",
+  async () => {
+    const f2 = new Fixture();
+    const app2 = f2.app();
+    await app2.ready;
+    try {
+      const t2 = app2.tasks.create("real-option", "Real option TeX", [], ["paper"], true);
+      f2.edit(t2, METHOD, "Method sentence 2.", "Approach sentence 2.");
+      f2.edit(t2, METHOD, "Method sentence 4.", "Procedure sentence 4.");
+      const job = app2.publisher.submit(t2.name);
+      await app2.publisher.join();
+      expect(app2.publisher.job(job.id)?.status).toBe("done");
+      const round = app2.review.latestRound(t2.name)!;
+      const word = round.units.find((u) => u.new_text === "Approach")!;
+      const other = round.units.find((u) => u.new_text === "Procedure")!;
+      await app2.review.decide(t2.name, { round: round.number, changes: [other.id], action: "reject" });
+      await app2.review.decide(t2.name, { round: round.number, changes: [word.id], action: "accept", edits: [{ unit: word.id, text: "Technique" }] });
+      const preview = await previewMixedBlock(app2, t2.name, round.number, { units: [word.id, other.id], accepted: [word.id] });
+      expect(preview.unavailable).toBeUndefined();
+      const text = preview.strips.flatMap((s) => s.text ?? []).map((l) => l.text).join(" ");
+      expect(text).toContain("Technique sentence 2.");
+      expect(text).toContain("Method sentence 4.");
+      expect(text).not.toContain("Approach");
     } finally {
       await f2.close();
     }

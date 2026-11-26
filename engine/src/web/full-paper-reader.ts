@@ -10,14 +10,14 @@ function read(key: string): Place | undefined {
 
 // The review opens PDF pages to insert before/after rows. Keep its rendering,
 // but adapt those pages to the same navigation contract as the manuscript.
-export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: PDFDocumentProxy, key: string, restore: boolean) {
+export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: PDFDocumentProxy, key: string, restore: boolean, preparing?: number) {
   const document = container.ownerDocument, view = document.defaultView!;
   const documentBox = container.closest<HTMLElement>('.document')!;
   let alive = true, initialized = false, tick = 0, timer: ReturnType<typeof setTimeout> | undefined;
   let saved = read(key), position: Place | undefined, globalZoom: string | null = null;
   try { globalZoom = localStorage.getItem(PDF_ZOOM_STORAGE); } catch { /* Optional storage. */ }
   const savedPage = restore && saved ? Number(saved.anchor.split(':')[0]) + 1 : 1;
-  let state: PdfReaderState = { pages: pdf.numPages, page: Number.isInteger(savedPage) ? Math.max(1, Math.min(pdf.numPages, savedPage)) : 1, zoom: { value: pdfZoom(saved?.zoom || globalZoom), scale: 1 }, outline: [], section: -1 };
+  let state: PdfReaderState = { pages: pdf.numPages, page: Number.isInteger(savedPage) ? Math.max(1, Math.min(pdf.numPages, savedPage)) : 1, zoom: { value: pdfZoom(saved?.zoom || globalZoom), scale: 1 }, outline: [], section: -1, ...(preparing ? { preparing } : {}) };
   const pages = () => [...container.querySelectorAll<HTMLElement>('.paper-page')];
   const anchors = () => [...container.querySelectorAll<HTMLElement>('[data-reading-anchor]')];
   const top = (element: HTMLElement) => element.getBoundingClientRect().top - root.getBoundingClientRect().top;

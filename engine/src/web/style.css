@@ -1139,7 +1139,76 @@ kbd {
 }
 .paper-slice {
   position: absolute;
+  /* A slice shows part of its page, and so does the page's text layer. */
+  overflow: clip;
 }
+/* The page's words over each slice, selectable as in the manuscript's PDF:
+   pdf.js's text layer, positioned by FullPaper over the slice's part. */
+.paper-slice .textLayer {
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+  position: absolute;
+  z-index: 0;
+  overflow: clip;
+  color-scheme: only light;
+  text-align: initial;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+}
+.paper-slice .textLayer :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.paper-slice .textLayer > :not(.markedContent),
+.paper-slice .textLayer .markedContent span:not(.markedContent) {
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  z-index: 1;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.paper-slice .textLayer .markedContent {
+  display: contents;
+}
+.paper-slice .textLayer ::selection {
+  background: rgb(0 0 255 / 0.25);
+  background: color-mix(in srgb, AccentColor, transparent 50%);
+  color: transparent;
+}
+.paper-slice .textLayer br::selection {
+  background: transparent;
+}
+.paper-slice .textLayer .endOfContent {
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  display: block;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.paper-slice .textLayer.selecting .endOfContent {
+  top: 0;
+}
+/* A rotated page's words turn with it, as in pdf.js's viewer. */
+.paper-slice .textLayer[data-main-rotation="90"] { transform: rotate(90deg) translateY(-100%); }
+.paper-slice .textLayer[data-main-rotation="180"] { transform: rotate(180deg) translate(-100%, -100%); }
+.paper-slice .textLayer[data-main-rotation="270"] { transform: rotate(270deg) translateX(-100%); }
 .paper-find-mark{position:absolute;z-index:1;background:rgb(255 210 0 / .35);pointer-events:none}
 .paper-find-mark.selected{background:rgb(255 150 0 / .55);outline:1px solid #b76b00}
 .paper-slice canvas {
@@ -1168,32 +1237,6 @@ kbd {
 }
 .paper-clock {
   font-variant-numeric: tabular-nums;
-}
-/* Earlier pages are on screen while the complete PDF compiles; the notice
-   floats over the page's right margin rather than its text. */
-.paper-updating {
-  position: sticky;
-  top: 8px;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  width: fit-content;
-  max-width: calc(100% - 16px);
-  min-height: 32px;
-  margin: 0 8px 8px auto;
-  padding: 2px 4px 2px 12px;
-  border-radius: 12px;
-  background: var(--raised);
-  box-shadow: var(--float);
-  color: var(--text-2);
-  font-size: 12px;
-}
-.paper-updating .pulse {
-  width: 6px;
-  height: 6px;
-  margin: 0;
 }
 .waiting p {
   margin: 6px 0;

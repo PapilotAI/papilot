@@ -51,7 +51,7 @@ import { npmCli } from '../../bin/npm-cli.mjs';
 import { agentSdkFolder, managedInstall } from '../../bin/installation.mjs';
 export { agentDirs, findExecutable };
 
-export interface Thread { permissions?: TaskPermissions; readOnly?: boolean; ephemeral?: boolean; webSearch?: boolean; cwd: string; instructions: string; model: string | null; started: boolean }
+export interface Thread { permissions?: TaskPermissions; readOnly?: boolean; ephemeral?: boolean; webSearch?: boolean; mcp?: { command: string; args: string[] }; cwd: string; instructions: string; model: string | null; started: boolean }
 export interface Turn { id: string; threadId: string; clientId?: string; status: 'inProgress' | 'completed' | 'interrupted' | 'failed'; stop: () => void }
 export interface Item { id: string; type: string; [key: string]: unknown }
 
@@ -78,7 +78,7 @@ export abstract class Adapter extends EventEmitter implements AgentRuntime {
       const id = method === 'thread/start' ? randomUUID() : String(params.threadId);
       const known = this.threads.get(id);
       const model = params.model || known?.model || null;
-      this.threads.set(id, { permissions: params.taskPermissions, readOnly: params.sandbox === 'read-only', ephemeral: Boolean(params.ephemeral || known?.ephemeral), webSearch: params.sandbox !== 'read-only' && params.config?.web_search === 'live', cwd: params.cwd, instructions: params.developerInstructions || '', model, started: method === 'thread/resume' || Boolean(known?.started) });
+      this.threads.set(id, { permissions: params.taskPermissions, readOnly: params.sandbox === 'read-only', ephemeral: Boolean(params.ephemeral || known?.ephemeral), webSearch: params.sandbox !== 'read-only' && params.config?.web_search === 'live', ...(params.sandbox !== 'read-only' && params.mcp ? { mcp: params.mcp } : {}), cwd: params.cwd, instructions: params.developerInstructions || '', model, started: method === 'thread/resume' || Boolean(known?.started) });
       return { thread: { id }, model };
     }
     if (method === 'turn/start') {
@@ -195,6 +195,9 @@ export const CLAUDE_CLI_MODELS = [
 interface ClaudeLogin { loggedIn?: boolean; authMethod?: string; apiProvider?: string; email?: string; subscriptionType?: string }
 type Launch = (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => ChildProcess;
 
+// Tools Claude may use without asking: web search when the task allows it,
+// and Papilot's own tools, which only reach this paper's PDF, library and memory.
+const allowed = (thread: Thread) => [...(thread.webSearch ? ['WebSearch', 'WebFetch'] : []), ...(thread.mcp ? ['mcp__papilot'] : [])];
 export class ClaudeAgent extends Adapter {
   permissionOptions(): TaskPermissionOption[] {
     return [
@@ -225,6 +228,7 @@ export class ClaudeAgent extends Adapter {
   protected info: { account: AccountInfo | null; models: ModelInfo[]; model: string | null } = { account: null, models: [], model: null };
   private rateLimits = new Map<string, SDKRateLimitInfo>();
   private defaults = new Map<string, string>();
+  private sessionUsage = new Map<string, { models: Record<string, { input: number; cached: number; cacheWrite: number; output: number; reasoning: number; costUsd: number | null }>; totalCostUsd: number | null }>();
   private approvals = new Map<string, { resolve: (result: PermissionResult) => void; input: Record<string, unknown>; kind: 'tool' | 'question'; questions: string[] }>();
   private cli: string | null = null;
   private login: ClaudeLogin | null = null;
@@ -330,6 +334,13 @@ export class ClaudeAgent extends Adapter {
     const rejected = [...this.rateLimits.values()].some(info => info.status === 'rejected');
     return { ordinaryUsageAllowed: !rejected, rateLimits: { planType: (this.login?.subscriptionType || this.info.account?.subscriptionType)?.replace(/^Claude\s+/i, '').toLowerCase() || null, primary: windows[0], secondary: windows[1] || null, credits: null, rateLimitReachedType: rejected ? 'rate_limit_reached' : null } };
   }
+  async request(method: string, params: any = {}): Promise<any> {
+    const result = await super.request(method, params);
+    if (method === 'thread/start' && result?.thread?.id) {
+      this.sessionUsage.set(result.thread.id, { models: {}, totalCostUsd: 0 });
+    }
+    return result;
+  }
   respond(id: string | number, result: any) {
     const wait = this.approvals.get(String(id));
     if (!wait) throw new Error('This request has ended.');
@@ -367,7 +378,8 @@ export class ClaudeAgent extends Adapter {
       const permissions = this.nativePermissions(thread);
       const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
         ...(thread.readOnly ? ['--tools', ''] : []),
-        ...(thread.webSearch ? ['--allowedTools', 'WebSearch,WebFetch'] : []),
+        ...(allowed(thread).length ? ['--allowedTools', allowed(thread).join(',')] : []),
+        ...(thread.mcp ? ['--mcp-config', JSON.stringify({ mcpServers: { papilot: { type: 'stdio', ...thread.mcp } } })] : []),
         '--permission-mode', permissions.permissionMode, ...(permissions.allowDangerouslySkipPermissions ? ['--dangerously-skip-permissions'] : []), '--permission-prompts', 'none', '--setting-sources', thread.readOnly ? '' : 'project',
         '--settings', JSON.stringify({ sandbox: permissions.sandbox }),
         // A question cannot be answered in -p; Claude asks in its reply instead.
@@ -413,7 +425,8 @@ export class ClaudeAgent extends Adapter {
         ...(thread.started ? { resume: turn.threadId } : { sessionId: turn.threadId }),
         systemPrompt: { type: 'preset', preset: 'claude_code', append: thread.instructions },
         settingSources: thread.readOnly ? [] : ['project'], ...this.nativePermissions(thread), ...(thread.readOnly ? { tools: [] } : {}),
-        ...(thread.webSearch ? { allowedTools: ['WebSearch', 'WebFetch'] } : {}),
+        ...(allowed(thread).length ? { allowedTools: allowed(thread) } : {}),
+        ...(thread.mcp ? { mcpServers: { papilot: { type: 'stdio' as const, ...thread.mcp } } } : {}),
         canUseTool: (name, input, { signal, title, decisionReason }) => new Promise<PermissionResult>(resolve => {
           // Native permissionMode/allowedTools handle automatic approvals.
           // Calls still reaching this callback require a decision, including
@@ -470,8 +483,91 @@ export class ClaudeAgent extends Adapter {
     } else if (message.type === 'rate_limit_event') {
       if (message.rate_limit_info.rateLimitType) this.rateLimits.set(message.rate_limit_info.rateLimitType, message.rate_limit_info);
       this.notify('account/rateLimits/updated', {});
-    } else if (message.type === 'result' && message.subtype !== 'success') fail(message.errors?.join(' ') || `${this.name} stopped with an error.`);
-    else if (message.type === 'result' && message.is_error) fail(message.result || `${this.name} stopped with an error.`);
+    } else if (message.type === 'result') {
+      this.reportResultUsage(turn, thread, message);
+      if (message.subtype !== 'success') fail(message.errors?.join(' ') || `${this.name} stopped with an error.`);
+      else if (message.is_error) fail(message.result || `${this.name} stopped with an error.`);
+    }
+  }
+  private reportResultUsage(turn: Turn, thread: Thread, message: any) {
+    const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.round(value) : 0);
+    const trustCost = this.name !== 'GLM';
+    const previous = this.sessionUsage.get(turn.threadId);
+    const modelEntries = message.modelUsage && typeof message.modelUsage === 'object' ? Object.entries(message.modelUsage as Record<string, any>) : [];
+    if (modelEntries.length) {
+      const snapshot: Record<string, { input: number; cached: number; cacheWrite: number; output: number; reasoning: number; costUsd: number | null }> = {};
+      for (const [key, usage] of modelEntries) {
+        if (!usage || typeof usage !== 'object') continue;
+        const knownCost = trustCost && usage.costBasis !== 'unknown' && typeof usage.costUSD === 'number' && Number.isFinite(usage.costUSD) && usage.costUSD >= 0;
+        snapshot[key] = {
+          input: num(usage.inputTokens),
+          cached: num(usage.cacheReadInputTokens),
+          cacheWrite: num(usage.cacheCreationInputTokens),
+          output: num(usage.outputTokens),
+          reasoning: num(usage.thinkingTokens),
+          costUsd: knownCost ? usage.costUSD : null,
+        };
+      }
+      const totalCost = trustCost && Object.values(snapshot).some(entry => entry.costUsd !== null) && typeof message.total_cost_usd === 'number' && Number.isFinite(message.total_cost_usd) ? message.total_cost_usd : null;
+      const mergedModels: Record<string, { input: number; cached: number; cacheWrite: number; output: number; reasoning: number; costUsd: number | null }> = { ...previous?.models };
+      for (const [modelName, cur] of Object.entries(snapshot)) {
+        const prev = previous?.models[modelName];
+        mergedModels[modelName] = prev ? {
+          input: Math.max(prev.input, cur.input),
+          cached: Math.max(prev.cached, cur.cached),
+          cacheWrite: Math.max(prev.cacheWrite, cur.cacheWrite),
+          output: Math.max(prev.output, cur.output),
+          reasoning: Math.max(prev.reasoning, cur.reasoning),
+          costUsd: cur.costUsd !== null && prev.costUsd !== null ? Math.max(prev.costUsd, cur.costUsd) : cur.costUsd ?? prev.costUsd,
+        } : cur;
+      }
+      const mergedCost = totalCost !== null && previous?.totalCostUsd !== null && previous?.totalCostUsd !== undefined
+        ? Math.max(previous.totalCostUsd, totalCost)
+        : totalCost ?? previous?.totalCostUsd ?? null;
+      this.sessionUsage.set(turn.threadId, { models: mergedModels, totalCostUsd: mergedCost });
+      if (previous) {
+        for (const [modelName, cur] of Object.entries(snapshot)) {
+          const prev = previous.models[modelName] || { input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: 0, costUsd: 0 };
+          const input = Math.max(0, cur.input - prev.input);
+          const cached = Math.max(0, cur.cached - prev.cached);
+          const cacheWrite = Math.max(0, cur.cacheWrite - prev.cacheWrite);
+          const output = Math.max(0, cur.output - prev.output);
+          const reasoning = Math.max(0, cur.reasoning - prev.reasoning);
+          const total = input + cached + cacheWrite + output;
+          if (total <= 0) continue;
+          const costUsd = cur.costUsd !== null ? Math.max(0, cur.costUsd - (prev.costUsd ?? 0)) : undefined;
+          this.notify('turn/usage', {
+            threadId: turn.threadId,
+            turnId: turn.id,
+            model: modelName,
+            usage: { input, cached, cacheWrite, output, reasoning, total, ...(costUsd !== undefined ? { costUsd, costSource: 'reported' } : {}) },
+          });
+        }
+        return;
+      }
+      // First resumed turn after a server restart: snapshot seeds future deltas,
+      // while message.usage gives just this turn without re-counting older turns.
+    }
+    const turnUsage = message.usage;
+    if (!turnUsage || typeof turnUsage !== 'object') return;
+    const input = num(turnUsage.input_tokens ?? turnUsage.inputTokens);
+    const cached = num(turnUsage.cache_read_input_tokens ?? turnUsage.cacheReadInputTokens);
+    const cacheWrite = num(turnUsage.cache_creation_input_tokens ?? turnUsage.cacheCreationInputTokens);
+    const output = num(turnUsage.output_tokens ?? turnUsage.outputTokens);
+    const total = input + cached + cacheWrite + output;
+    if (total <= 0) return;
+    const resolvedModel = modelEntries.length === 1 ? modelEntries[0][0] : thread.model || modelEntries[0]?.[0] || null;
+    let costUsd: number | undefined;
+    if (trustCost && !modelEntries.length && typeof message.total_cost_usd === 'number' && Number.isFinite(message.total_cost_usd) && message.total_cost_usd >= 0) {
+      if (previous) costUsd = Math.max(0, message.total_cost_usd - (previous.totalCostUsd ?? 0));
+      this.sessionUsage.set(turn.threadId, { models: previous?.models || {}, totalCostUsd: message.total_cost_usd });
+    }
+    this.notify('turn/usage', {
+      threadId: turn.threadId,
+      turnId: turn.id,
+      model: resolvedModel,
+      usage: { input, cached, cacheWrite, output, total, ...(costUsd !== undefined ? { costUsd, costSource: 'reported' } : {}) },
+    });
   }
 }
 
@@ -644,7 +740,13 @@ export class AntigravityAgent extends Adapter {
         if (step.state === 'ACTIVE') this.item(turn, item, false);
         else this.item(turn, { ...item, status: step.state === 'ERROR' ? 'failed' : 'completed', ...(item.type === 'commandExecution' && step.tool_info?.error?.message ? { aggregatedOutput: step.tool_info.error.message } : {}) });
       }
-      if (event.event === 'result') result = event.result;
+      if (event.event === 'result') {
+        result = event.result;
+        const usage = event.result?.usage || event.usage;
+        if (usage && typeof usage === 'object') {
+          this.notify('turn/usage', { threadId: turn.threadId, turnId: turn.id, model: model || thread.model, usage });
+        }
+      }
     });
     child.stderr?.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-4000); });
     child.on('error', error => this.finish(turn, 'failed', error.message));

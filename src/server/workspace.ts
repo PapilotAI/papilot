@@ -1,6 +1,7 @@
 import { AgentToolBridge, agentToolError } from './agent-tool-bridge.ts';
 import { PAPER_TOOLS, isPaperTool, paperToolInstructions, type PaperToolCall } from './paper-tools.ts';
-import { WORKFLOW_TOOLS, WORKER_STOPPED, workflowInstructions, workflowItem, workflowNotes, workflowRequests, delegateWorkflow, auditWorkflow, workflowSnapshot, runWorkflowHelper, workerName, type WorkflowGenerate, type WorkflowStep, type WorkflowWorker } from './collaboration.ts';
+import { WORKFLOW_TOOLS, WORKER_STOPPED, workflowInstructions, workflowItem, workflowNotes, workflowRequests, delegateWorkflow, auditWorkflow, workflowSnapshot, runWorkflowHelper, workerName, type WorkflowActivityEvent, type WorkflowGenerate, type WorkflowStep, type WorkflowWorker } from './collaboration.ts';
+import { CodexUsageTracker, normalizeCodexUsage, normalizeTurnUsage } from './activity.ts';
 import type { WorkflowChange } from './collaboration-edits.ts';
 import { aiReviewInstructions, parseAiReview, reviewPrompt, saveReviewText, type ReviewSnapshot } from './ai-review.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -42,14 +43,16 @@ import { noteOptionsSummary, preparedNoteOptionsInstructions, readPreparedNoteOp
 import { notesInstructions, reviewNotesInstructions, summarizeNotes } from '../notes.ts';
 import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type GroupInstructions } from '../note-groups.ts';
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress, recentCommitSubjects } from './manuscript.ts';
-import { AGENT_IDS, usesCodex, isTaskReviewNote, collaborationRoutes, type CollaborationRole, type CollaborationRoutes, type CollaborationSettings } from '../shared.ts';
-import type { Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, PendingBuild, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview, PageView, ToolPlace } from '../shared.ts';
+import { Memory, memoryDigest, memoryUpdate } from './memory.ts';
+import { MEMORY_EVIDENCE, MEMORY_LANGUAGE, MEMORY_LEARNING, MEMORY_SINCE, acceptedSuggestions, dismissedKey, evidenceHash, hasEvidence, learningPrompt, memoryLearningInstructions, taskEvidence, type EvidenceRecord, type MemoryEvidence } from './memory-learning.ts';
+import { AGENT_IDS, isAgentId, usesCodex, isTaskReviewNote, collaborationRoutes, type CollaborationRole, type CollaborationRoutes, type CollaborationSettings } from '../shared.ts';
+import type { HelperChoice, Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, PendingBuild, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview, PageView, ToolPlace } from '../shared.ts';
 
 const execute = promisify(execFile);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 // Source saves start a build in the review engine, and so does undoing an
 // accept of an earlier round, which inserts the next round.
-const startsBuild = (route: string, value: unknown) => /\/source(?:\/options|\/file)?$/.test(route) || (route.endsWith('/undo') && (value as { republished?: unknown } | null)?.republished === true);
+const startsBuild = (route: string, value: unknown) => /\/source(?:\/file)?$/.test(route) || (route.endsWith('/undo') && (value as { republished?: unknown } | null)?.republished === true);
 const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 // A Codex model/list entry with the reasoning efforts it supports.
 export const agentModel = (m: any): AgentModel => {
@@ -117,6 +120,8 @@ const signInFailure = (error: { message?: unknown; codexErrorInfo?: unknown } | 
 // by the names agents give them (GPT Luna and mini, Claude Haiku, Gemini Flash).
 const LIGHT = /\b(?:luna|mini|nano|haiku|flash|lite)\b/i;
 export const lightModel = (models: AgentModel[]) => models.find(model => LIGHT.test(model.id) || LIGHT.test(model.name));
+export const QUICK_MODEL = 'quick-model';
+export interface QuickModel { agent: AgentId; model: string | null; effort: string | null }
 // A commit message's agent sees the changes in its prompt and needs no tools.
 function commitInstructions(language: CommitMessageLanguage = 'auto') {
   const languageRule = language === 'auto'
@@ -126,9 +131,14 @@ function commitInstructions(language: CommitMessageLanguage = 'auto') {
 }
 // A merge's agent edits the conflicted files in the manuscript checkout and nothing else.
 const mergeInstructions = 'You resolve Git merge conflicts in the repository of a LaTeX paper. Edit only the files listed as conflicted, and in each one remove every conflict marker (<<<<<<<, ||||||| , =======, >>>>>>>) so that the text reads as one coherent version. Keep the changes from both sides wherever they are compatible; where both sides rewrote the same passage, combine their intent, and where they truly contradict each other, prefer the version that is more complete and correct and say so. Keep the LaTeX valid: balanced environments and braces, labels, references and citations. You may read any file to understand the context. Do not edit other files, and do not run Git commands that change the repository, such as add, commit, merge, checkout, reset, restore or stash: the author reviews the result and commits the merge.';
+// The model a task's turn runs on: the one it started with, while the task's
+// own model may already be the user's choice for the next turn.
+const turnModel = (run: Run | undefined, task: Task) => run && run.model !== undefined ? run.model : task.model;
 const blankRuntime = (): RuntimeStatus => ({ connected: false, authenticated: false, account: null, error: null, models: [] });
 
 export interface TaskNoteContext { note: Annotation; context: string[] }
+// The agent and model settings a task switches to; stop confirms stopping a turn in progress.
+export interface AgentSwitch { agent: AgentId; model?: string; effort?: string; serviceTier?: string; permissions?: unknown; stop?: boolean }
 const noteLocation = (note: Annotation) => JSON.stringify([note.key, note.page, note.rect, note.rects, note.source]);
 
 export class Workspace extends EventEmitter {
@@ -138,7 +148,8 @@ export class Workspace extends EventEmitter {
   agents: Record<AgentId, AgentRuntime>;
   requests = new Map<string, PendingRequest & { rpcId: string | number; agent: AgentId }>();
   private active = new Map<string, Run>();
-  workflowGenerate: WorkflowGenerate = runWorkflowHelper;
+  private codexUsage = new CodexUsageTracker();
+  workflowGenerate: WorkflowGenerate = (worker, prompt, signal, edit, step, activity) => runWorkflowHelper(worker, prompt, signal, edit, step, undefined, activity);
   private workflowAudits = new Map<string, string>();
   private workflowDelegations = new Map<string, { count: number }>();
   private workflowStops = new Map<string, AbortController>();
@@ -152,6 +163,78 @@ export class Workspace extends EventEmitter {
     if (enabled) void this.refreshAgent('collaboration').then(() => this.schedule(), error => {
       this.runtimes.collaboration.error = errorText(error); this.runtimes.collaboration.connected = false; this.emit('change');
     });
+  }
+  // Agents the author turned off in Settings → Agents are neither started nor
+  // offered, and their hidden models are left out of the pickers. A task that
+  // already uses an agent that is off starts it when the task continues.
+  get agentsOff(): AgentId[] {
+    const saved = this.store.preference<unknown>('agents-off');
+    return Array.isArray(saved) ? AGENTS.filter(id => id !== 'collaboration' && saved.includes(id)) : [];
+  }
+  get hiddenModels(): Partial<Record<AgentId, string[]>> {
+    const saved = this.store.preference<Record<string, unknown>>('hidden-models');
+    return Object.fromEntries(AGENTS.flatMap(id => {
+      const models = saved?.[id];
+      return Array.isArray(models) && models.length ? [[id, models.filter((model): model is string => typeof model === 'string')]] : [];
+    }));
+  }
+  agentOff(id: AgentId) { return this.agentsOff.includes(id); }
+  setAgentEnabled(id: AgentId, enabled: boolean) {
+    const others = this.agentsOff.filter(item => item !== id);
+    const known = this.runtimes[id].models, currentHidden = this.hiddenModels[id] || [];
+    const clearHidden = enabled && known.length > 0 && known.every(model => currentHidden.includes(model.id));
+    this.store.transaction(() => {
+      this.store.savePreference('agents-off', enabled ? others.length ? others : undefined : [...others, id]);
+      if (clearHidden) {
+        const hidden = { ...this.hiddenModels };
+        delete hidden[id];
+        this.store.savePreference('hidden-models', Object.keys(hidden).length ? hidden : undefined);
+      }
+    });
+    this.woken.delete(id);
+    this.emit('change');
+    if (enabled) this.startTurnedOn([id]);
+  }
+  setHiddenModels(id: AgentId, models: string[]) {
+    const unique = [...new Set(models)], known = this.runtimes[id].models;
+    // Hiding every model of an agent turns the agent off and clears its hidden list
+    // so turning it back on later restores its models instead of leaving 0 selected.
+    if (known.length > 0 && known.every(model => unique.includes(model.id))) {
+      const hidden = { ...this.hiddenModels };
+      delete hidden[id];
+      const others = this.agentsOff.filter(item => item !== id);
+      this.store.transaction(() => {
+        this.store.savePreference('hidden-models', Object.keys(hidden).length ? hidden : undefined);
+        this.store.savePreference('agents-off', [...others, id]);
+      });
+      this.woken.delete(id);
+      this.emit('change');
+      return;
+    }
+    const hidden = { ...this.hiddenModels, [id]: unique };
+    if (!unique.length) delete hidden[id];
+    this.store.savePreference('hidden-models', Object.keys(hidden).length ? hidden : undefined);
+    this.emit('change');
+  }
+  // Turns every agent back on and shows every model.
+  resetAgentSettings() {
+    const off = this.agentsOff;
+    this.store.transaction(() => { this.store.savePreference('agents-off', undefined); this.store.savePreference('hidden-models', undefined); });
+    this.woken.clear();
+    this.emit('change');
+    this.startTurnedOn(off);
+  }
+  private startTurnedOn(ids: AgentId[]) {
+    for (const id of ids) if (!this.agents[id].ready) void this.refreshAgent(id).then(() => this.schedule(), error => {
+      this.runtimes[id].error = errorText(error); this.runtimes[id].connected = false; this.emit('change');
+    });
+  }
+  // Agents that are off but started for a task that continued, until they disconnect.
+  private woken = new Set<AgentId>();
+  private wake(id: AgentId) {
+    if (this.woken.has(id)) return;
+    this.woken.add(id);
+    void this.connectAgent(id, true).catch(error => { this.runtimes[id].error = errorText(error); }).finally(() => { this.emit('change'); this.schedule(); });
   }
   get collaborationRoutes(): CollaborationRoutes { return collaborationRoutes(this.store.preference('collaboration-routes')); }
   collaborationSettings(): CollaborationSettings { return { enabled: this.collaborationEnabled, routes: this.collaborationRoutes }; }
@@ -209,7 +292,8 @@ export class Workspace extends EventEmitter {
   indirectChanges: () => boolean = () => false;
   // Preparations in progress, by task (see createTask).
   private preparing = new Map<string, Promise<Task>>();
-  private restarting = new Map<string, { id: string; promise: Promise<Task> }>();
+  // Agent switches in progress, by task, with the request they answer.
+  private switching = new Map<string, { key: string; promise: Promise<Task> }>();
   // Each AI review created here compiles its copy with the function its
   // request passed; one resumed after a restart uses prepareReview.
   private reviewCopies = new Map<string, (worktree: string, document?: string) => Promise<ReviewSnapshot>>();
@@ -252,6 +336,13 @@ export class Workspace extends EventEmitter {
   private messages = new Map<string, Promise<{ message: string; agent: AgentId }>>();
   private titles = new Map<string, Promise<Task | null>>();
   private helperStops = new Set<() => void>();
+  /** The author's writing memory; tests point it at a temporary home. */
+  memory = new Memory();
+  // Tasks whose finished review is being learned from (true: look again
+  // afterwards), and the queue that runs one learning helper at a time.
+  // A task being learned from, and what to do once it is done: null for nothing more.
+  private learning = new Map<string, { suggest: boolean } | null>();
+  private learningQueue: Promise<void> = Promise.resolve();
   // Set when Codex refuses the view_pdf tool, so later threads start without it.
   private noViewPdf = false;
   private projectChanges = new Set<string>();
@@ -265,6 +356,7 @@ export class Workspace extends EventEmitter {
   constructor(public store: Store, public codex: AgentRuntime = new Codex(), private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
     super();
     this.attachments = new Attachments(store);
+    if (store.preference<number>(MEMORY_SINCE) === undefined) store.savePreference(MEMORY_SINCE, Date.now());
     this.agents = { papilot: others.papilot || new WriterAgent(), pi: others.pi || new PiAgent(), codex, claude: others.claude || new ClaudeAgent(), cursor: others.cursor || new CursorAgent(), copilot: others.copilot || new AcpAgent(ACP_PROFILES.copilot), grok: others.grok || new GrokAgent(), antigravity: others.antigravity || new AntigravityAgent(),
       kimi: others.kimi || new AcpAgent(ACP_PROFILES.kimi), glm: others.glm || new GlmAgent(), deepseek: others.deepseek || new AcpAgent(ACP_PROFILES.deepseek),
       qwen: others.qwen || new AcpAgent(ACP_PROFILES.qwen), opencode: others.opencode || new AcpAgent(ACP_PROFILES.opencode),
@@ -282,24 +374,87 @@ export class Workspace extends EventEmitter {
     this.agents.papilot.on('credentials', () => void this.refreshAgent('papilot'));
   }
   private agentOf(task: Task): AgentId { return task.agent && AGENTS.includes(task.agent) ? task.agent : 'codex'; }
+  /** The agent that learns from a task's reviews: its own, or Codex for Collaboration mode. */
+  private learner(task: Task): AgentId { const agent = this.agentOf(task); return agent === 'collaboration' ? 'codex' : agent; }
+  private projectName(projectId?: string | null) { return projectId ? this.store.findProject(projectId)?.name : undefined; }
+  private recordWorkflowActivity(task: Task, event: WorkflowActivityEvent) {
+    const projectName = this.projectName(task.projectId);
+    if (event.kind === 'turn_started') {
+      this.store.recordActivity({
+        key: `turn:worker:${event.id}`,
+        at: event.at,
+        kind: 'agent_turn',
+        projectId: task.projectId,
+        taskId: task.id,
+        agent: event.agent,
+        model: event.model,
+        data: { role: 'worker', status: 'running', ...(projectName ? { projectName } : {}) },
+      }, true);
+    } else if (event.kind === 'turn_finished') {
+      this.store.recordActivity({
+        key: `turn:worker:${event.id}`,
+        at: event.at,
+        kind: 'agent_turn',
+        projectId: task.projectId,
+        taskId: task.id,
+        agent: event.agent,
+        model: event.model,
+        data: { role: 'worker', status: event.status, finishedAt: event.at, ...(projectName ? { projectName } : {}) },
+      }, true);
+    } else if (event.kind === 'token_usage') {
+      const normalized = event.tokens
+        ? normalizeCodexUsage(event.agent, event.model, event.tokens)
+        : normalizeTurnUsage(event.agent, event.model, event.rawUsage, event.model);
+      if (!normalized) return;
+      this.store.recordActivity({
+        key: `usage:${randomUUID()}`,
+        at: event.at,
+        kind: 'token_usage',
+        projectId: task.projectId,
+        taskId: task.id,
+        agent: event.agent,
+        model: normalized.model,
+        data: { role: 'worker', tokens: normalized.tokens, costUsd: normalized.costUsd, costSource: normalized.costSource, ...(projectName ? { projectName } : {}) },
+      });
+    }
+  }
   private disconnected(id: AgentId, e: unknown) {
     if (this.closing) return;
     this.connectionEpochs.set(id, (this.connectionEpochs.get(id) || 0) + 1);
+    this.woken.delete(id);
     this.runtimes[id].connected = false; this.runtimes[id].error = errorText(e);
     for (const [key, request] of this.requests) if (request.agent === id) this.requests.delete(key);
     for (const [taskId, run] of this.active) {
       const task = this.store.task(taskId);
       if (this.agentOf(task) !== id) continue;
       this.stopWorkflow(taskId);
-      if (task.threadId) this.loaded.delete(task.threadId);
+      if (task.threadId) { this.loaded.delete(task.threadId); this.codexUsage.forgetThread(task.threadId); }
       this.earlyCompletions.delete(taskId); this.earlyRequests.delete(taskId); this.active.delete(taskId);
-      this.store.saveRun({ ...run, status: 'interrupted', finishedAt: Date.now() });
+      const finishedAt = Date.now();
+      this.store.saveRun({ ...run, status: 'interrupted', finishedAt });
+      this.store.recordActivity({
+        key: `turn:${run.id}`,
+        at: run.createdAt,
+        kind: 'agent_turn',
+        projectId: task.projectId,
+        taskId: task.id,
+        agent: id,
+        model: turnModel(run, task),
+        data: { role: task.mode === 'review' ? 'review' : 'edit', status: 'interrupted', finishedAt, ...(this.projectName(task.projectId) ? { projectName: this.projectName(task.projectId) } : {}) },
+      }, true);
+      this.settleHandoff(task, task.turnId, false);
+      this.store.settleSteps(taskId);
       this.holdForReview(taskId, { status: 'interrupted', turnId: null, error: `${AGENT_NAMES[id]} disconnected. You can resume the same task.` });
     }
-    if (usesCodex(id)) this.loaded.clear();
+    if (usesCodex(id)) { this.loaded.clear(); this.codexUsage.clear(); }
     this.emit('change');
   }
-  snapshot(): Snapshot { return { version: VERSION, projects: this.store.projects(), manuscriptNoteCounts: this.store.manuscriptNoteCounts(), tasks: this.store.tasks(), pinnedTaskIds: this.store.pinnedTaskIds(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimes }; }
+  snapshot(): Snapshot { return { version: VERSION, projects: this.store.projects(), manuscriptNoteCounts: this.store.manuscriptNoteCounts(), tasks: this.store.tasks(), pinnedTaskIds: this.store.pinnedTaskIds(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimeStatus() }; }
+  // Each agent's status with the author's choices in Settings → Agents.
+  private runtimeStatus() {
+    const off = this.agentsOff, hidden = this.hiddenModels;
+    return Object.fromEntries(AGENTS.map(id => [id, { ...this.runtimes[id], ...(off.includes(id) ? { hidden: true } : {}), ...(hidden[id] ? { hiddenModels: hidden[id] } : {}) }])) as Record<AgentId, RuntimeStatus>;
+  }
   /** Loads the SDKs of the agents this host has before the server answers
    *  requests. Evaluating one blocks for up to a few hundred milliseconds,
    *  which would otherwise hold up whatever the app asked for while the
@@ -307,11 +462,13 @@ export class Workspace extends EventEmitter {
   async preload() {
     await Promise.all(AGENTS.map(async id => {
       const agent = this.agents[id];
+      if (this.agentOff(id)) return;
       try { if (agent.preload && (!agent.detect || await agent.detect()) && !this.closing) await agent.preload(); } catch { /* Connecting reports it. */ }
     }));
   }
   async connect() {
     if (this.connecting) return this.connecting;
+    this.woken.clear();
     this.connecting = Promise.all(AGENTS.map(id => this.connectAgent(id))).then(() => { this.emit('change'); this.schedule(); }).finally(() => { this.connecting = null; });
     return this.connecting;
   }
@@ -320,9 +477,10 @@ export class Workspace extends EventEmitter {
     await this.connectAgent(id);
     this.emit('change');
   }
-  private async connectAgent(id: AgentId) {
+  private async connectAgent(id: AgentId, wake = false) {
     if (this.closing) return;
     if (id === 'collaboration' && !this.collaborationEnabled && !this.store.tasks().some(task => task.agent === 'collaboration')) return;
+    if (!wake && this.agentOff(id)) return;
     const agent = this.agents[id], runtime = this.runtimes[id], name = AGENT_NAMES[id];
     // An agent that is not on this host is neither started nor offered;
     // Reconnect looks again. A running agent stays connected.
@@ -417,7 +575,7 @@ export class Workspace extends EventEmitter {
     // The first message of a task whose preparation failed waits for Retry.
     const ids = new Set(tasks.filter(task => !task.preparation).map(task => task.id));
     if (this.projectChanges.has(id) || this.projectRequests.has(id) || this.committing.has(id) || this.preparing.size
-      || tasks.some(task => BUSY.has(task.status) || task.status === 'queued' || task.pendingReview || this.restarting.has(task.id) || this.active.has(task.id) || this.publishing.has(task.id) || this.reviewWrites.has(task.id) || this.commentWrites.has(task.id) || this.deletions.has(task.id) || this.titles.has(task.id))
+      || tasks.some(task => BUSY.has(task.status) || task.status === 'queued' || task.pendingReview || this.switching.has(task.id) || this.active.has(task.id) || this.publishing.has(task.id) || this.reviewWrites.has(task.id) || this.commentWrites.has(task.id) || this.deletions.has(task.id) || this.titles.has(task.id))
       || this.store.runs().some(run => ids.has(run.taskId) && ['queued', 'running', 'uncertain'].includes(run.status))) {
       throw Object.assign(new Error('Pause this paper’s active tasks and wait for current work to finish before changing its path or removing it. Resolve any uncertain action first.'), { statusCode: 409 });
     }
@@ -434,7 +592,7 @@ export class Workspace extends EventEmitter {
       const client = await this.connectReview(root);
       await client.get('/api/tasks');
       // A task that was never prepared has no copy yet; Retry makes one at the new path.
-      const tasks = this.store.tasks().filter(task => task.projectId === id && !task.preparation), worktrees = new Map<string, string>();
+      const tasks = this.store.tasks().filter(task => task.projectId === id && !task.preparation && task.mode !== 'citations'), worktrees = new Map<string, string>();
       // A new path must still contain this paper's existing review tasks.
       // Taking paths from the engine also handles a relocated repository.
       const common = async (folder: string) => realPath(path.resolve(folder, (await execute('git', ['-C', folder, 'rev-parse', '--git-common-dir'])).stdout.trim()));
@@ -449,8 +607,9 @@ export class Workspace extends EventEmitter {
         for (const task of tasks) {
           const worktree = worktrees.get(task.id)!;
           if (worktree !== pathIdentity(task.worktree)) {
-            if (task.threadId) this.loaded.delete(task.threadId);
-            this.store.updateTask(task.id, { worktree, threadId: null, turnId: null });
+            if (task.threadId) { this.loaded.delete(task.threadId); this.codexUsage.forgetThread(task.threadId); }
+            // A session in the old folder cannot continue; the next one is given its conversation.
+            this.store.updateTask(task.id, { worktree, threadId: null, turnId: null, ...(task.threadId ? { handoff: true } : {}) });
           }
         }
         this.store.saveProject(project);
@@ -466,7 +625,7 @@ export class Workspace extends EventEmitter {
       const tasks = this.store.tasks().filter(task => task.projectId === id), ids = new Set(tasks.map(task => task.id));
       for (const [key, item] of this.liveItems) if (ids.has(item.taskId)) this.liveItems.delete(key);
       for (const [key, request] of this.requests) if (ids.has(request.taskId)) this.requests.delete(key);
-      for (const task of tasks) { if (task.threadId) this.loaded.delete(task.threadId); this.earlyCompletions.delete(task.id); this.earlyRequests.delete(task.id); }
+      for (const task of tasks) { if (task.threadId) { this.loaded.delete(task.threadId); this.codexUsage.forgetThread(task.threadId); } this.earlyCompletions.delete(task.id); this.earlyRequests.delete(task.id); }
       this.store.removeProject(id);
       return { ok: true };
     } finally { release(); }
@@ -480,6 +639,37 @@ export class Workspace extends EventEmitter {
   // and attachments claimed, and is then prepared in the background (see
   // prepareTask). An AI review passes prepareReview, which reads the PDF of
   // the new task's manuscript copy.
+  /** Runs a citation check task with its model; app.ts connects the library. */
+  runCitationCheck?: (task: Task) => void;
+  forgetCitationCheck?: (task: Task) => void;
+  /** A citation check is a task of its own: no worktree or conversation,
+   * only the run of the model the author chose over the paper's citations
+   * and its uncited sentences. */
+  createCitationCheck(input: { id: string; projectId: string; agent?: AgentId; model?: string | null; effort?: string | null }) {
+    if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
+    const existing = this.store.findTask(input.id);
+    if (existing) { if (existing.projectId !== input.projectId || existing.mode !== 'citations') throw new Error('Invalid task ID.'); return existing; }
+    if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
+    this.store.project(input.projectId);
+    const now = Date.now(), task: Task = {
+      id: input.id, projectId: input.projectId, name: `c-${input.id}`, title: 'Check citations', titleSource: 'prompt', instructions: '',
+      mode: 'citations', citationCheck: { show: false, state: null }, worktree: '', threadId: null, turnId: null,
+      ...(input.agent ? { agent: input.agent } : {}), model: input.model ?? null, ...(input.effort ? { effort: input.effort } : {}),
+      status: 'running', createdAt: now, updatedAt: now, feedbackCursor: 0, error: null, review: null,
+    };
+    this.store.saveTask(task);
+    this.runCitationCheck?.(task);
+    return this.store.task(task.id);
+  }
+  /** Checks again, with another model when one is given. */
+  rerunCitationCheck(taskId: string, choice?: { agent: AgentId; model?: string | null; effort?: string | null }) {
+    const task = this.store.task(taskId);
+    if (task.mode !== 'citations') throw new Error('This task does not check citations.');
+    if (task.status === 'running') return task;
+    this.store.updateTask(task.id, { status: 'running', error: null, ...(choice ? { agent: choice.agent, model: choice.model ?? null, effort: choice.effort ?? null } : {}) });
+    this.runCitationCheck?.(this.store.task(task.id));
+    return this.store.task(task.id);
+  }
   async createTask(input: { permissions?: TaskPermissions; prepareReview?: (worktree: string, document?: string) => Promise<ReviewSnapshot>; projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; noteContexts?: Record<string, TaskNoteContext>; groupInstructions?: GroupInstructions; attachments?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
@@ -492,12 +682,16 @@ export class Workspace extends EventEmitter {
       return this.retryTask(existing.id);
     }
     if (input.agent === 'collaboration' && !this.collaborationEnabled) throw new Error('Enable collaboration mode in Settings → Experiments first.');
+    if (this.agentOff(input.agent || 'codex')) throw new Error('Turn this agent on in Settings → Agents first.');
     if (input.agent === 'collaboration' && input.prepareReview) throw new Error('Choose Codex for an AI review. Collaboration mode edits annotations.');
     if (input.prepareReview) this.requireReviewAgent(input.agent || 'codex');
     this.validateTaskPermissions(input.permissions ?? 'workspace', input.agent || 'codex', Boolean(input.prepareReview));
     if (input.prepareReview && (input.annotations?.length || input.attachments?.length)) throw new Error('AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.');
     // Pin the model shown to the author, including for clients using the default.
-    input = { ...input, model: input.model || this.runtimes[input.agent || 'codex'].models.find(model => model.isDefault)?.id };
+    const taskAgent = input.agent || 'codex', agentModels = this.runtimes[taskAgent].models, hidden = this.hiddenModels[taskAgent] || [];
+    const defaultModel = agentModels.find(model => model.isDefault);
+    const fallbackModel = defaultModel && (hidden.includes(defaultModel.id) ? agentModels.find(model => !hidden.includes(model.id)) || defaultModel : defaultModel);
+    input = { ...input, model: input.model || fallbackModel?.id };
     if (input.serviceTier !== undefined) {
       if (input.agent && input.agent !== 'codex') throw new Error('Service tiers are only available for Codex.');
       const models = this.runtimes.codex.models;
@@ -540,101 +734,118 @@ export class Workspace extends EventEmitter {
     void this.prepareTask(task.id);
       return this.store.task(task.id);
   }
-  restartTask(taskId: string, input: { id: string; agent: AgentId; model?: string; effort?: string; serviceTier?: string; permissions?: unknown; stop?: boolean; draftAttachments?: string[] }): Promise<Task> {
-    const pending = this.restarting.get(taskId);
-    if (pending) return pending.id === input.id ? pending.promise : Promise.reject(new Error('This task is already being restarted.'));
-    const promise = this.restart(taskId, input).finally(() => { this.restarting.delete(taskId); this.schedule(); });
-    this.restarting.set(taskId, { id: input.id, promise });
+  // Moves a task to another agent. The task keeps its conversation, worktree,
+  // notes and review; the next turn starts a session of the destination agent,
+  // which is given the conversation so far (see handoffPrompt), because one
+  // agent cannot resume another's session. A turn in progress stops first.
+  switchTaskAgent(taskId: string, input: AgentSwitch): Promise<Task> {
+    const key = JSON.stringify([input.agent, input.model, input.effort, input.serviceTier, input.permissions]);
+    const pending = this.switching.get(taskId);
+    if (pending) return pending.key === key ? pending.promise : Promise.reject(new Error('This task is already switching agents.'));
+    const promise = this.switchAgent(taskId, input).finally(() => { this.switching.delete(taskId); this.schedule(); });
+    this.switching.set(taskId, { key, promise });
     return promise;
   }
-  private async restart(taskId: string, input: { id: string; agent: AgentId; model?: string; effort?: string; serviceTier?: string; permissions?: unknown; stop?: boolean; draftAttachments?: string[] }): Promise<Task> {
-    if (!/^[\w-]{16,64}$/.test(input.id) || input.id === taskId || this.store.taskDeleted(input.id)) throw new Error('Invalid replacement task ID.');
-    const original = this.store.task(taskId), existing = this.store.findTask(input.id);
-    if (existing) {
-      if (existing.restart?.taskId !== taskId || existing.projectId !== original.projectId) throw new Error('Invalid replacement task ID.');
-      return this.retryTask(existing.id);
-    }
-    if (input.agent === 'collaboration' && !this.collaborationEnabled) throw new Error('Enable collaboration mode before selecting it.');
-    if (input.agent === 'collaboration' && original.mode === 'review') throw new Error('Choose Codex for an AI review. Collaboration mode edits annotations.');
-    if (original.mode === 'review') this.requireReviewAgent(input.agent);
-    const runtime = this.runtimes[input.agent];
-    if (!runtime?.connected || !runtime.authenticated) throw new Error('Connect and sign in to the destination agent before restarting.');
-    const model = runtime.models.find(model => input.model ? model.id === input.model : model.isDefault);
-    if (!model) throw new Error('Choose an available model for the destination agent.');
-    if (input.effort && !model.efforts.includes(input.effort)) throw new Error('This model does not support that reasoning effort.');
-    if (input.serviceTier && input.serviceTier !== 'default' && (input.agent !== 'codex' || input.serviceTier !== model.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
+  private async switchAgent(taskId: string, input: AgentSwitch): Promise<Task> {
+    const task = this.store.task(taskId), from = this.agentOf(task);
     const permissions = input.permissions ?? 'workspace';
-    this.validateTaskPermissions(permissions, input.agent, original.mode === 'review');
-    const initial = this.store.runByKey('initial-' + taskId), message = initial && this.store.item(taskId, initial.id);
-    if (!initial || !message) throw new Error('The original request is unavailable. Open the original conversation to create a new task.');
-    const blocked = () => {
+    // A request retried after its switch was made, or sent from a tab that
+    // missed it, applies its settings as a choice from the same agent does.
+    if (input.agent === from) {
+      const saved = this.updateTaskModel(taskId, { model: input.model ?? '', effort: input.effort ?? '', ...(from === 'codex' ? { serviceTier: input.serviceTier || 'default' } : {}) });
+      return (saved.permissions || 'workspace') === permissions ? saved : this.updateTaskPermissions(taskId, permissions);
+    }
+    const destination = () => {
+      if (input.agent === 'collaboration' && !this.collaborationEnabled) throw new Error('Enable collaboration mode before selecting it.');
+      if (this.agentOff(input.agent)) throw new Error('Turn this agent on in Settings → Agents first.');
+      if (input.agent === 'collaboration' && task.mode === 'review') throw new Error('Choose Codex for an AI review. Collaboration mode edits annotations.');
+      if (task.mode === 'review') this.requireReviewAgent(input.agent);
+      const runtime = this.runtimes[input.agent];
+      if (!runtime?.connected || !runtime.authenticated) throw new Error('Connect and sign in to the destination agent before switching.');
+      const model = runtime.models.find(model => input.model ? model.id === input.model : model.isDefault);
+      if (!model) throw new Error('Choose an available model for the destination agent.');
+      if (input.effort && !model.efforts.includes(input.effort)) throw new Error('This model does not support that reasoning effort.');
+      if (input.serviceTier && input.serviceTier !== 'default' && (input.agent !== 'codex' || input.serviceTier !== model.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
+      this.validateTaskPermissions(permissions, input.agent, task.mode === 'review');
+      return model;
+    };
+    const current = () => {
       const current = this.store.task(taskId);
-      if (['uncertain', 'deleting'].includes(current.status) || current.pendingReview || current.delivery?.pending) throw new Error('Resolve the pending task action before restarting.');
+      if (['uncertain', 'deleting'].includes(current.status) || current.pendingReview || current.delivery?.pending) throw new Error('Resolve the pending task action before switching agents.');
       return current;
     };
-    const busy = () => {
-      const current = blocked();
-      return Boolean(current.preparation && current.status !== 'failed') || this.preparing.has(taskId) || this.active.has(taskId) || this.publishing.has(taskId) || this.reviewWrites.has(taskId) || this.commentWrites.has(taskId)
-        || ['running', 'waiting_input', 'queued', 'building'].includes(current.status) || this.store.runs().some(run => run.taskId === taskId && run.status === 'queued');
-    };
-    if (busy()) {
-      if (!input.stop) throw new Error('Confirm stopping the original task before restarting.');
+    // Only a turn uses the agent's session; preparing, building and saving do not.
+    const working = () => this.active.has(taskId) || ['running', 'waiting_input'].includes(current().status);
+    destination();
+    if (working()) {
+      if (!input.stop) throw new Error('Confirm stopping the current turn before switching agents.');
       const deadline = Date.now() + 20_000;
       let interrupted = false;
-      while (busy()) {
-        const current = blocked();
-        if (current.preparation && current.status === 'failed' && !this.preparing.has(taskId)) {
-          for (const run of this.store.runs().filter(run => run.taskId === taskId && run.status === 'queued')) this.store.saveRun({ ...run, status: 'interrupted', finishedAt: Date.now() });
+      while (working()) {
+        // An agent still starting its turn can only be stopped once it has one,
+        // and a review's turn only once its PDF has built. Unlike pausing,
+        // this keeps instructions queued behind the turn for the new agent.
+        const stopping = current();
+        if (!interrupted && stopping.status !== 'building' && (!this.active.has(taskId) || stopping.turnId)) {
+          if (!this.active.has(taskId)) this.store.updateTask(taskId, { status: 'interrupted' });
+          else { this.stopWorkflow(taskId); await this.agents[from].request('turn/interrupt', { threadId: stopping.threadId, turnId: stopping.turnId }); }
+          interrupted = true;
         }
-        if (!interrupted && !current.preparation && current.status !== 'building' && (!this.active.has(taskId) || current.turnId)) {
-          await this.interrupt(taskId); interrupted = true;
-        }
-        if (!busy()) break;
-        if (Date.now() >= deadline) throw new Error('The original task is still stopping or preparing. Wait for it to finish, then retry.');
+        if (!working()) break;
+        if (Date.now() >= deadline) throw new Error('The current turn is still stopping. Wait for it to finish, then retry.');
         await delay(100);
       }
     }
-    // A failed preparation has no agent session to stop; cancel its saved queue.
-    for (const run of this.store.runs().filter(run => run.taskId === taskId && run.status === 'queued')) this.store.saveRun({ ...run, status: 'interrupted', finishedAt: Date.now() });
-    const copies: import('../shared.ts').Attachment[] = [];
-    let admitted = false;
-    try {
-      const originalFiles = message.meta?.attachments || initial.attachments || [];
-      const files = await this.attachments.copy(original.projectId, originalFiles.map(file => file.id), taskId); copies.push(...files);
-      const drafts = await this.attachments.copy(original.projectId, input.draftAttachments || [], taskId); copies.push(...drafts);
-      blocked();
-      if (busy()) throw new Error('The original task is still working. Wait for it to finish, then retry.');
-      const currentRuntime = this.runtimes[input.agent], currentModel = currentRuntime.models.find(item => item.id === model.id);
-      if (!currentRuntime.connected || !currentRuntime.authenticated) throw new Error('The destination agent disconnected. Reconnect and retry.');
-      if (!currentModel || (input.effort && !currentModel.efforts.includes(input.effort)) || (input.serviceTier && input.serviceTier !== 'default' && input.serviceTier !== currentModel.fastMode?.serviceTier)) throw new Error('The destination model settings changed. Choose an available model and retry.');
-      this.validateTaskPermissions(permissions, input.agent, original.mode === 'review');
-      if (this.store.findTask(input.id) || this.store.taskDeleted(input.id)) throw new Error('Invalid replacement task ID.');
-      let prompt = original.mode === 'review' ? original.instructions : initial.prompt;
-      for (let i = 0; i < originalFiles.length; i++) {
-        prompt = prompt.replaceAll(JSON.stringify(this.attachments.path(originalFiles[i])), JSON.stringify(this.attachments.path(files[i])))
-          .replaceAll(this.attachments.path(originalFiles[i]), this.attachments.path(files[i]));
-      }
-      const now = Date.now(), id = input.id;
-      const replacement: Task = { id, projectId: original.projectId, name: 'p-' + id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48), title: original.title, titleSource: 'prompt',
-        instructions: original.instructions, ...(original.mode === 'review' ? { mode: 'review' } : {}), restart: { taskId, ...(drafts.length ? { draftAttachments: drafts } : {}) },
-        permissions: permissions as string, worktree: '', deferred: true, threadId: null, turnId: null, agent: input.agent, model: model.id, effort: input.effort || null,
-        ...(input.agent === 'codex' ? { serviceTier: input.serviceTier || 'default' } : {}), status: 'preparing', preparation: {}, createdAt: now, updatedAt: now, feedbackCursor: 0, error: null, review: null };
-      const run: Run = { id: randomUUID(), taskId: id, requestKey: 'initial-' + id, prompt, ...(files.length ? { attachments: files } : {}),
-        ...(initial.noteOptionsRequested ? { noteOptionsRequested: true } : {}), status: 'queued', createdAt: now, finishedAt: null, reviewRound: 0 };
-      this.store.transaction(() => {
-        this.store.saveTask(replacement);
-        // Each message has its own attachment limit; draft and request may each contain ten.
-        this.attachments.claim(original.projectId, files.map(file => file.id), id);
-        this.attachments.claim(original.projectId, drafts.map(file => file.id), id);
-        this.store.saveRun(run);
-        this.store.saveItem({ ...message, id: run.id, taskId: id, createdAt: now, meta: { ...message.meta, ...(files.length ? { attachments: files } : {}) } });
-      });
-      admitted = true;
-      void this.prepareTask(id);
-      return this.store.task(id);
-    } finally {
-      if (!admitted) for (const file of copies) this.attachments.discard(original.projectId, file.id);
+    // Settings may have changed while the turn stopped.
+    const model = destination();
+    return this.handOver(current(), from, { agent: input.agent, model: model.id, effort: input.effort || null, serviceTier: input.agent === 'codex' ? input.serviceTier || 'default' : undefined, permissions: permissions as string });
+  }
+  // The task continues on another agent, whose next turn starts a session of
+  // its own and is given the conversation so far.
+  private handOver(task: Task, from: AgentId, settings: Pick<Task, 'agent' | 'model' | 'effort' | 'serviceTier' | 'permissions'> & Partial<Task>) {
+    const conversation = task.handoff || this.store.runs().some(run => run.taskId === task.id && run.status !== 'queued');
+    // The old session is no longer used; let its agent release it and the worktree.
+    if (task.threadId) { this.loaded.delete(task.threadId); void this.agents[from].closeThread?.(task.threadId).catch(() => {}); }
+    if (task.worktree) void this.agents[from].closeWorktree?.(task.worktree).catch(() => {});
+    return this.store.updateTask(task.id, { ...settings, threadId: null, turnId: null, viewPdf: undefined, context: null, ...(conversation ? { handoff: true } : {}) });
+  }
+  // The earlier conversation, for the first turn of a session that did not
+  // take part in it: each request an agent received, with the replies it
+  // gave, oldest first. Tool activity is left out; its edits are in the
+  // worktree. Runs take turns, so a reply belongs to the first run that had
+  // not finished when it appeared.
+  private handoffPrompt(task: Task, current: Run) {
+    const runs = this.store.runs().filter(run => run.taskId === task.id && run.id !== current.id && run.status !== 'queued').sort((a, b) => a.createdAt - b.createdAt);
+    const replies = new Map<string, string[]>(runs.filter(run => run.startedAt).map(run => [run.id, []]));
+    for (const item of this.store.items(task.id)) {
+      if (item.type === 'user') continue;
+      const run = runs.find(run => item.createdAt <= (run.finishedAt ?? Infinity));
+      if (!run) continue;
+      const texts = replies.get(run.id) || [];
+      if ((item.type === 'assistant' || item.type === 'reviewOutput') && !item.parent && item.text.trim()) texts.push(item.text.trim());
+      replies.set(run.id, texts);
     }
+    // A message cancelled while queued never started, and its agent never saw
+    // it. Runs saved before startedAt existed count once something followed them.
+    const turns = runs.filter(run => replies.has(run.id)).map((run, index) => {
+      const reply = replies.get(run.id)!;
+      return `Earlier turn ${index + 1}, request:\n${run.prompt}\n\nEarlier turn ${index + 1}, ${reply.length ? 'reply:\n' + reply.join('\n\n') : 'no reply.'}`;
+    });
+    if (!turns.length) return '';
+    return 'Papilot handoff: earlier turns of this task ran in another agent session, which you cannot see. Its conversation follows, oldest first. '
+      + 'Your worktree already contains the files as that session left them; read them rather than relying on this record. The author\'s new message comes after it.\n\n'
+      + turns.join('\n\n') + '\n\nNew message from the author:\n';
+  }
+  // Whether the turn that carried the earlier conversation reached the agent.
+  // A turn/start acknowledgement does not show it: most adapters answer before
+  // their agent starts. A completed turn, or anything the agent produced, does.
+  // Otherwise the next turn starts another session and is given it again.
+  private settleHandoff(task: Task, turnId: string | null | undefined, completed: boolean) {
+    const current = this.store.task(task.id);
+    if (!current.handoff) return;
+    if (completed || (turnId && this.store.items(task.id).some(item => item.id.startsWith(`${task.id}:${turnId}:`)))) { this.store.updateTask(task.id, { handoff: undefined }); return; }
+    if (current.threadId) { this.loaded.delete(current.threadId); void this.agents[this.agentOf(current)].closeThread?.(current.threadId).catch(() => {}); }
+    this.store.updateTask(task.id, { threadId: null });
   }
   // Retry after a failed preparation; any other task is returned as it is.
   retryTask(taskId: string) {
@@ -714,7 +925,7 @@ export class Workspace extends EventEmitter {
   // the agent gets the prompt.
   // admit is a new task, saved with its first message (see createTask).
   async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { attachments?: string[]; skill?: SkillFile; notes?: Annotation[]; groupInstructions?: GroupInstructions; reviewNotes?: NoteSummary[]; returnedNotes?: Map<string, number>; feedback?: boolean; build?: BuildFailure; merge?: TaskReconciliation; admit?: Task } = {}) {
-    if (this.restarting.has(taskId)) throw new Error('Wait for this task to restart before sending more instructions.');
+    if (this.switching.has(taskId)) throw new Error('Wait for this task to switch agents before sending more instructions.');
     const task = options.admit ?? this.store.task(taskId);
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     if (task.mode === 'review' && ((options.skill && options.skill.output !== 'annotations') || options.notes?.length || options.reviewNotes?.length || options.attachments?.length || options.feedback || options.build)) throw new Error('AI review accepts review instructions only. Start an editing task to send notes, skills or attachments.');
@@ -764,7 +975,7 @@ export class Workspace extends EventEmitter {
       }
       if (this.store.runs().some(r => r.taskId === taskId && r.status === 'queued')) throw new Error('This task already has queued instructions. Wait or pause it first.');
       const current = options.admit ? this.store.saveTask(options.admit) : this.store.task(taskId);
-      if (this.restarting.has(taskId)) throw new Error('Wait for this task to restart before sending more instructions.');
+      if (this.switching.has(taskId)) throw new Error('Wait for this task to switch agents before sending more instructions.');
       if (this.committing.has(current.projectId) || current.delivery?.pending) throw new Error('Wait for the current delivery before sending more instructions.');
       if (current.status === 'deleting') throw new Error('This task is being deleted. Your instructions were not queued.');
       if ((current.pauseVersion || 0) !== pauseVersion) throw new Error('The task was paused before these instructions were queued. Your draft has been kept.');
@@ -792,6 +1003,31 @@ export class Workspace extends EventEmitter {
       // Writing to an archived task brings it back to the task list.
       if (current.archivedAt && !options.build) this.store.updateTask(taskId, { archivedAt: null });
       this.store.saveItem({ id: run.id, taskId, type: 'user', text: options.feedback || options.build ? '' : text.trim(), createdAt: run.createdAt, ...(Object.keys(meta).length ? { meta } : {}) });
+      const projectName = this.projectName(current.projectId);
+      if (options.admit) {
+        this.store.recordActivity({
+          key: `task:${current.id}`,
+          at: current.createdAt,
+          kind: 'task_started',
+          projectId: current.projectId,
+          taskId: current.id,
+          agent: this.agentOf(current),
+          model: current.model,
+          data: { mode: current.mode === 'review' ? 'review' : 'edit', title: current.title, ...(projectName ? { projectName } : {}) },
+        });
+      }
+      if (meta.notes?.length) {
+        this.store.recordActivity({
+          key: `notes-sent:${run.id}`,
+          at: run.createdAt,
+          kind: 'annotations_sent',
+          projectId: current.projectId,
+          taskId: current.id,
+          agent: this.agentOf(current),
+          model: current.model,
+          data: { count: meta.notes.length, ...(projectName ? { projectName } : {}) },
+        });
+      }
       return run;
     });
     this.schedule();
@@ -806,11 +1042,24 @@ export class Workspace extends EventEmitter {
   private async drain() {
     if (this.closing) return;
     for (const run of this.store.runs().filter(r => r.status === 'queued')) {
-      const agent = this.agentOf(this.store.task(run.taskId));
-      if (!this.agents[agent].ready || !this.runtimes[agent].authenticated) continue;
-      if (this.restarting.has(run.taskId) || this.active.has(run.taskId) || this.reviewWrites.has(run.taskId) || this.publishing.has(run.taskId) || this.store.task(run.taskId).delivery?.pending || BUSY.has(this.store.task(run.taskId).status) || this.store.task(run.taskId).preparation) continue;
-      this.active.set(run.taskId, run);
-      void this.startRun(run).catch(e => this.failRun(run, e));
+      const task = this.store.task(run.taskId), handover = this.mergeHandover(task, run), agent = handover?.agent ?? this.agentOf(task);
+      if (!this.agents[agent].ready || !this.runtimes[agent].authenticated) { if (this.agentOff(agent)) this.wake(agent); continue; }
+      if (this.switching.has(run.taskId) || this.active.has(run.taskId) || this.reviewWrites.has(run.taskId) || this.publishing.has(run.taskId) || this.store.task(run.taskId).delivery?.pending || BUSY.has(this.store.task(run.taskId).status) || this.store.task(run.taskId).preparation) continue;
+      if (handover) {
+        // The merge waits for the chosen agent; one that cannot take the task
+        // fails the run, as the task's own agent failing would, never another.
+        const back = { agent: this.agentOf(task), model: task.model, effort: task.effort ?? null, ...(task.serviceTier ? { serviceTier: task.serviceTier } : {}), ...(task.permissions ? { permissions: task.permissions } : {}) };
+        void this.switchTaskAgent(task.id, { agent: handover.agent, model: handover.model, effort: handover.effort, serviceTier: handover.serviceTier })
+          .then(() => { this.store.updateTask(task.id, { mergeReturn: back }); }, () => {
+            const failed = { ...run, startedAt: Date.now() };
+            this.active.set(run.taskId, failed);
+            this.failRun(failed, new Error('The selected conflict-resolution agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.'));
+          });
+        continue;
+      }
+      const started = { ...run, startedAt: Date.now() };
+      this.active.set(run.taskId, started);
+      void this.startRun(started).catch(e => this.failRun(started, e));
     }
   }
   // The paths a task's review covers, or none when it covers the whole worktree.
@@ -821,8 +1070,15 @@ export class Workspace extends EventEmitter {
       return files.some(file => file === '' || file === '.') ? [] : files;
     } catch { return []; }
   }
-  private instructions(task: Task, scope: string[] = [], viewPdf = false) {
-    if (task.mode === 'review') return aiReviewInstructions + `\nYour task worktree is ${task.worktree}. Use it for any temporary analysis files. Never edit the manuscript checkout, other task worktrees, or Papilot's state.\n\nOriginal review skill and request:\n` + task.instructions;
+  // The author's saved preferences for this task's paper, read from the
+  // manuscript checkout: the local file is never in a task's worktree.
+  private memoryPrompt(task: Task) {
+    try { return this.memory.prompt(this.store.project(task.projectId).path); }
+    catch (error) { console.warn('Could not read writing memory:', errorText(error)); return ''; }
+  }
+  private instructions(task: Task, scope: string[] = [], viewPdf = false, memory = '') {
+    const remembered = memory ? '\n\n' + memory : '';
+    if (task.mode === 'review') return aiReviewInstructions + `\nYour task worktree is ${task.worktree}. Use it for any temporary analysis files. Never edit the manuscript checkout, other task worktrees, or Papilot's state.\n\nOriginal review skill and request:\n` + task.instructions + remembered;
     // Keep authorization instructions stable; the runtime enforces access per turn.
     const permissionScope = taskAccessInstructions;
     return `You are ${usesCodex(this.agentOf(task)) ? 'the official Codex agent' : AGENT_NAMES[this.agentOf(task)]} running inside Papilot, a paper editing and review workspace.
@@ -835,7 +1091,7 @@ ${permissionScope} Never edit other task worktrees or Papilot's own source/state
 ${scope.length ? `The review covers only ${scope.join(', ')} in this worktree, and an edit to any other file stops the PDF build. Leave other files unchanged even when project instructions ask for a matching update; mention that update in your summary instead.\n` : ''}Papilot owns the LaTeX review lifecycle: it compiles and publishes automatically AFTER your turn finishes, and delivers review feedback in a new turn. Do not create another review task, invoke publish, or wait on feedback --wait. This workflow replaces the publish-and-wait loop of any review skill you have. End your turn with a direct answer or, when you made edits, a concise summary of what changed and why; do not describe Papilot's review workflow.
 Preserve meaning and mathematical correctness. Read relevant project instructions. Treat reviewer comments as instructions tied to their round, file and changes. Rejected edits must not be reintroduced unless explicitly requested. If there is a conflict with accepted text, explain it and propose a revision for a new review round; do not overwrite accepted manuscript content unless the user explicitly requests that replacement.
 Never invent a bibliography entry or any of its details. Add a .bib entry only for a work you can identify, take its authors, title, year and venue from the published record, and include its doi or arXiv eprint when it has one. Papilot looks up every added or changed entry in Crossref, DBLP and arXiv and shows the author any it cannot confirm. Name the entries you added or changed in your summary.
-${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. Shell commands follow the current native permission policy; requests needing interactive approval are refused in this headless session.' : this.agentOf(task) === 'papilot' ? 'Use your paper tools to inspect and validate your changes, and view_pages when the look of the pages matters.' : 'You may run tools in the task worktree to inspect and validate your changes.'} ${viewPdf ? `When the look of the pages matters, such as line breaks, spacing, figures, tables or displayed formulas, use the ${VIEW_PDF} tool and open the pages it draws with your image viewer to see them as the author does. It compiles the paper, so do not call it for wording alone. ` : ''}If a decision requires the user, ask through the available user-input tool or explain it in your final response. Use English for your progress updates, questions, and final summaries unless the user explicitly requests another language. Preserve the manuscript language unless asked to translate it.`;
+${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. Shell commands follow the current native permission policy; requests needing interactive approval are refused in this headless session.' : this.agentOf(task) === 'papilot' ? 'Use your paper tools to inspect and validate your changes, and view_pages when the look of the pages matters.' : 'You may run tools in the task worktree to inspect and validate your changes.'} ${viewPdf ? `When the look of the pages matters, such as line breaks, spacing, figures, tables or displayed formulas, use the ${VIEW_PDF} tool and open the pages it draws with your image viewer to see them as the author does. It compiles the paper, so do not call it for wording alone. ` : ''}If a decision requires the user, ask through the available user-input tool or explain it in your final response. Use English for your progress updates, questions, and final summaries unless the user explicitly requests another language. Preserve the manuscript language unless asked to translate it.` + remembered;
   }
   private async approvalReviewer(task: Task): Promise<{ approvalsReviewer?: 'user' | 'auto_review' | 'guardian_subagent' }> {
     if (!usesCodex(this.agentOf(task))) return {};
@@ -860,17 +1116,36 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     }
     if (this.agentOf(task) === 'collaboration') { this.stopWorkflow(task.id); this.workflowStops.set(task.id, new AbortController()); }
     const agent = this.agents[this.agentOf(task)], name = AGENT_NAMES[this.agentOf(task)];
+    const projectName = this.projectName(task.projectId);
     this.earlyCompletions.delete(task.id); this.earlyRequests.delete(task.id);
     this.store.saveRun({ ...run, status: 'running' });
+    this.store.recordActivity({
+      key: `turn:${run.id}`,
+      at: Date.now(),
+      kind: 'agent_turn',
+      projectId: task.projectId,
+      taskId: task.id,
+      agent: this.agentOf(task),
+      model: task.model,
+      data: { role: task.mode === 'review' ? 'review' : 'edit', status: 'running', ...(projectName ? { projectName } : {}) },
+    }, true);
     this.store.updateTask(task.id, { status: 'running', turnId: null, error: null });
     const reviewer = await this.approvalReviewer(task);
     const permissions = task.mode !== 'review' ? await agent.taskPermissionConfig?.(task.permissions || 'workspace', task.worktree) : undefined;
     if (this.active.get(task.id)?.id !== run.id) return;
+    // A new thread hears the author's memory in its instructions. Resumed
+    // threads keep their first instructions under most agents, so a change
+    // since then reaches them at the start of the next turn instead.
+    const memory = this.memoryPrompt(task);
     if (!task.threadId || !this.loaded.has(task.threadId)) {
       // Codex threads get the view_pdf tool when they start, and keep it when resumed.
       const scope = task.mode === 'review' ? [] : await this.reviewScope(task), codex = usesCodex(this.agentOf(task));
+      const freshThread = !task.threadId;
       let viewPdf = task.mode !== 'review' && codex && (task.threadId ? Boolean(task.viewPdf) : !this.noViewPdf);
-      const options = (tool: boolean) => ({ cwd: task.worktree, approvalPolicy: 'on-request', sandbox: 'workspace-write', ...permissions?.thread, ...reviewer, config: { web_search: 'live', 'sandbox_workspace_write.network_access': true }, developerInstructions: this.instructions(task, scope, tool) + (this.agentOf(task) === 'collaboration' ? '\n\n' + workflowInstructions(this.collaborationRoutes) : ''), ...(task.model ? { model: task.model } : {}) });
+      // Agents that start MCP servers get Papilot's tools natively; the
+      // others use the JSON client named in each turn's instructions.
+      const mcp = this.paperTools && task.mode !== 'review' && !codex && this.agentOf(task) !== 'papilot' ? { command: process.execPath, args: [path.join(ROOT, 'bin/papilot-mcp.mjs'), this.toolBridge.file(task.id)] } : undefined;
+      const options = (tool: boolean) => ({ cwd: task.worktree, approvalPolicy: 'on-request', sandbox: 'workspace-write', ...permissions?.thread, ...reviewer, ...(mcp ? { mcp } : {}), config: { web_search: 'live', 'sandbox_workspace_write.network_access': true }, developerInstructions: this.instructions(task, scope, tool, memory) + (this.agentOf(task) === 'collaboration' ? '\n\n' + workflowInstructions(this.collaborationRoutes) : ''), ...(task.model ? { model: task.model } : {}) });
       let result;
       if (task.threadId) result = await agent.request('thread/resume', { ...options(viewPdf), threadId: task.threadId, excludeTurns: true });
       else {
@@ -882,12 +1157,26 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
           result = await agent.request('thread/start', options(false));
         }
       }
+      if (freshThread && codex && result?.thread?.id) this.codexUsage.seedThread(result.thread.id);
       if (this.active.get(task.id)?.id !== run.id) return;
       // Settings can change while the agent loads. Keep this turn's snapshot,
       // and never overwrite a newer choice with the thread's resolved model.
       const current = this.store.task(task.id);
-      this.store.updateTask(task.id, { threadId: result.thread.id, ...(current.model === task.model ? { model: result.model || task.model } : {}), ...(task.threadId ? {} : { viewPdf }) });
-      task = { ...task, threadId: result.thread.id, model: result.model || task.model };
+      const started = task.threadId ? {} : { viewPdf, memoryDigest: memoryDigest(memory) };
+      this.store.updateTask(task.id, { threadId: result.thread.id, ...(current.model === task.model ? { model: result.model || task.model } : {}), ...started });
+      task = { ...task, threadId: result.thread.id, model: result.model || task.model, ...started };
+      if (task.model) {
+        this.store.recordActivity({
+          key: `turn:${run.id}`,
+          at: Date.now(),
+          kind: 'agent_turn',
+          projectId: task.projectId,
+          taskId: task.id,
+          agent: this.agentOf(task),
+          model: task.model,
+          data: { role: task.mode === 'review' ? 'review' : 'edit', status: 'running', ...(projectName ? { projectName } : {}) },
+        }, true);
+      }
       this.loaded.add(result.thread.id);
     }
     this.store.updateTask(task.id, { pendingRunId: run.id });
@@ -896,9 +1185,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     // "file tools only" conversation can use newly selected permissions.
     const permissionMode = task.mode !== 'review' && !['codex', 'collaboration', 'claude', 'glm', 'papilot'].includes(this.agentOf(task))
       ? agent.permissionOptions?.().find(option => option.value === (task.permissions || 'workspace')) : undefined;
-    const prompt = permissionMode
-      ? `Papilot settings update: current permissions are ${permissionMode.label}. This supersedes earlier Papilot messages fixing the access mode, including claims that shell commands are unavailable. ${taskAccessInstructions}\n\n${run.prompt}`
-      : run.prompt;
+    const remembered = (task.memoryDigest ?? '') === memoryDigest(memory) ? '' : memoryUpdate(memory) + '\n\n';
+    const message = (task.handoff ? this.handoffPrompt(task, run) : '') + run.prompt;
+    const prompt = remembered + (permissionMode
+      ? `Papilot settings update: current permissions are ${permissionMode.label}. This supersedes earlier Papilot messages fixing the access mode, including claims that shell commands are unavailable. ${taskAccessInstructions}\n\n${message}`
+      : message);
     let paperInstructions = '';
     if (this.paperTools && task.mode !== 'review' && !(this.agentOf(task) === 'cursor' && task.permissions !== 'full')) {
       const epoch = this.connectionEpochs.get(this.agentOf(task));
@@ -907,13 +1198,15 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       if (this.agentOf(task) !== 'papilot') {
         const file = await this.toolBridge.open(task.id, current, (tool, args) => this.paperTools!(this.store.task(task.id), tool, args, current));
         // JSON quoting is for the model to see arguments, never executed as shell code here.
-        paperInstructions += `\nUse native paper tools when available. Otherwise run the local JSON client: ${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(ROOT, 'bin/paper-tools.mjs'))} ${JSON.stringify(file)} TOOL JSON. Use help for schemas; pass @FILE or - (stdin) to avoid shell quoting of comments. The session file is private; do not print it. It works only during this turn.`;
+        paperInstructions += `\nUse native paper tools when available (the papilot MCP server's tools). Otherwise run the local JSON client: ${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(ROOT, 'bin/paper-tools.mjs'))} ${JSON.stringify(file)} TOOL JSON. Use help for schemas; pass @FILE or - (stdin) to avoid shell quoting of comments. The session file is private; do not print it. It works only during this turn.`;
       }
       if (!current()) return;
     }
     if (this.paperTools && task.mode !== 'review' && this.agentOf(task) === 'cursor' && task.permissions !== 'full') paperInstructions = '\n\nThe current Cursor sandbox blocks local network tools, so annotation operations are unavailable in this turn. Explain this limitation if asked to save annotations; never claim to have saved them.';
     const input = [{ type: 'text', text: prompt + paperInstructions + (this.agentOf(task) === 'collaboration' ? '\n\nWorkflow annotation ledger (use these IDs in delegation and audit):\n' + JSON.stringify(this.workflowNotesFor(task, run)) : '') }, ...(run.attachments || []).filter(file => file.mime.startsWith('image/')).map(file => ({ type: 'localImage', path: this.attachments.path(file) }))];
     let result: any;
+    run = { ...run, model: task.model };
+    this.active.set(task.id, run);
     const models = this.runtimes[this.agentOf(task)].models;
     const model = task.model ? models.find(model => model.id === task.model) : models.find(model => model.isDefault);
     // Explicit defaults replace a previous turn's reasoning override.
@@ -932,7 +1225,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     // A cancelled queued message has not delivered its comments. Advance only
     // after Codex acknowledges starting the turn that contains that feedback.
     if (run.feedbackCursor !== undefined) this.store.updateTask(task.id, { feedbackCursor: Math.max(this.store.task(task.id).feedbackCursor, run.feedbackCursor) });
-    this.store.updateTask(task.id, { turnId: result.turn.id, pendingRunId: null });
+    this.store.updateTask(task.id, { turnId: result.turn.id, pendingRunId: null, memoryDigest: memoryDigest(memory) });
     const requests = this.earlyRequests.get(task.id) || [];
     const completion = this.earlyCompletions.get(task.id)?.get(result.turn.id);
     this.earlyRequests.delete(task.id); this.earlyCompletions.delete(task.id);
@@ -940,13 +1233,25 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (completion) await this.notification(completion, this.agentOf(task));
   }
   private failRun(run: Run, error: unknown) {
-    if (this.active.get(run.taskId)?.id !== run.id) return;
+    const active = this.active.get(run.taskId);
+    if (active?.id !== run.id) return;
     this.stopWorkflow(run.taskId);
     this.active.delete(run.taskId);
     this.earlyCompletions.delete(run.taskId); this.earlyRequests.delete(run.taskId);
-    this.store.saveRun({ ...run, status: 'failed', finishedAt: Date.now() });
+    this.store.settleSteps(run.taskId);
+    const finishedAt = Date.now(), task = this.store.task(run.taskId), id = this.agentOf(task);
+    this.store.saveRun({ ...run, status: 'failed', finishedAt });
+    this.store.recordActivity({
+      key: `turn:${run.id}`,
+      at: run.createdAt,
+      kind: 'agent_turn',
+      projectId: task.projectId,
+      taskId: task.id,
+      agent: id,
+      model: turnModel(active, task),
+      data: { role: task.mode === 'review' ? 'review' : 'edit', status: 'failed', finishedAt, ...(this.projectName(task.projectId) ? { projectName: this.projectName(task.projectId) } : {}) },
+    }, true);
     this.holdForReview(run.taskId, { status: 'failed', turnId: null, pendingRunId: null, error: errorText(error) });
-    const id = this.agentOf(this.store.task(run.taskId));
     if (usesCodex(id) && signInFailure({ message: errorText(error) })) this.signedOut(id);
     this.schedule();
   }
@@ -1048,9 +1353,47 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     }
     const task = this.store.taskByThread(p.threadId);
     if (!task || task.status === 'deleting') return;
+    if (method === 'turn/usage') {
+      const normalized = normalizeTurnUsage(agent, turnModel(this.active.get(task.id), task), p.usage, p.model);
+      if (normalized) {
+        const projectName = this.projectName(task.projectId);
+        this.store.recordActivity({
+          key: `usage:${randomUUID()}`,
+          at: Date.now(),
+          kind: 'token_usage',
+          projectId: task.projectId,
+          taskId: task.id,
+          agent,
+          model: normalized.model,
+          data: { role: task.mode === 'review' ? 'review' : 'edit', tokens: normalized.tokens, costUsd: normalized.costUsd, costSource: normalized.costSource, ...(projectName ? { projectName } : {}) },
+        });
+      }
+      return;
+    }
     const eventTurn = p.turnId || p.turn?.id;
     if (eventTurn && task.turnId && eventTurn !== task.turnId) return;
     if (method === 'thread/tokenUsage/updated') {
+      if (usesCodex(agent)) {
+        if (!task.turnId && !task.pendingRunId) {
+          this.codexUsage.seedBaseline(String(p.threadId || ''), p.tokenUsage);
+        } else {
+          const delta = this.codexUsage.consume(String(p.threadId || ''), p.tokenUsage);
+          const normalized = delta ? normalizeCodexUsage(agent, turnModel(this.active.get(task.id), task), delta) : null;
+          if (normalized) {
+            const projectName = this.projectName(task.projectId);
+            this.store.recordActivity({
+              key: `usage:${randomUUID()}`,
+              at: Date.now(),
+              kind: 'token_usage',
+              projectId: task.projectId,
+              taskId: task.id,
+              agent,
+              model: normalized.model,
+              data: { role: task.mode === 'review' ? 'review' : 'edit', tokens: normalized.tokens, costUsd: normalized.costUsd, costSource: normalized.costSource, ...(projectName ? { projectName } : {}) },
+            });
+          }
+        }
+      }
       // The latest request's tokens are what the context holds now.
       const usage = p.tokenUsage || {}, tokens = Number(usage.last?.totalTokens ?? usage.last?.total_tokens), window = Number(usage.modelContextWindow ?? usage.model_context_window);
       if (tokens > 0 && window > 0) {
@@ -1114,7 +1457,20 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       this.active.delete(task.id);
       for (const [key, r] of this.requests) if (r.taskId === task.id) this.requests.delete(key);
       const status = p.turn.status === 'completed' ? 'completed' : p.turn.status === 'interrupted' ? 'interrupted' : 'failed';
-      this.store.saveRun({ ...run, ...(agent === 'collaboration' ? { workflowAudit: this.store.runByKey(run.requestKey)?.workflowAudit } : {}), status, finishedAt: Date.now() });
+      const finishedAt = Date.now(), latestTask = this.store.findTask(task.id) || task;
+      this.store.saveRun({ ...run, ...(agent === 'collaboration' ? { workflowAudit: this.store.runByKey(run.requestKey)?.workflowAudit } : {}), status, finishedAt });
+      this.store.recordActivity({
+        key: `turn:${run.id}`,
+        at: run.createdAt,
+        kind: 'agent_turn',
+        projectId: latestTask.projectId,
+        taskId: latestTask.id,
+        agent,
+        model: turnModel(run, latestTask),
+        data: { role: latestTask.mode === 'review' ? 'review' : 'edit', status, finishedAt, ...(this.projectName(latestTask.projectId) ? { projectName: this.projectName(latestTask.projectId) } : {}) },
+      }, true);
+      this.settleHandoff(task, eventTurn, status === 'completed');
+      if (status !== 'completed') this.store.settleSteps(task.id);
       const ended = { turnId: null, pendingRunId: null, error: p.turn.error?.message || null };
       // A completed turn builds; publish() holds that build for the action.
       if (status === 'completed') this.store.updateTask(task.id, { ...ended, status: 'building' });
@@ -1197,10 +1553,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         const notes = this.workflowNotesFor(task, run);
         this.store.saveRun({ ...this.store.runByKey(run.requestKey)!, workflowAudit: undefined });
         const signal = AbortSignal.any([controller.signal, own.signal]), live = () => Boolean(current()) && !signal.aborted;
-        const progress = parent ? { step: (step: WorkflowStep) => { if (live()) this.workerStep(task, parent, step); }, changes: (changes: WorkflowChange[]) => { if (live()) this.workerChanges(task, parent, changes); }, integrated: finished } : {};
+        const activity = (event: WorkflowActivityEvent) => this.recordWorkflowActivity(task, event);
+        const progress = parent ? { step: (step: WorkflowStep) => { if (live()) this.workerStep(task, parent, step); }, changes: (changes: WorkflowChange[]) => { if (live()) this.workerChanges(task, parent, changes); }, integrated: finished, activity } : { activity };
         const result = tool === 'workflow_delegate'
-          ? await delegateWorkflow(task.worktree, notes, args, this.workflowGenerate, signal, () => Boolean(current()), role => this.workflowWorker(task, role), progress)
-          : await auditWorkflow(task.worktree, notes, args, this.workflowGenerate, controller.signal, this.coordinator(task), this.workflowRequestsFor(task, run));
+          ? await delegateWorkflow(task.worktree, notes, args, this.workflowGenerate, signal, () => Boolean(current()), role => this.workflowWorker(task, role), progress, this.memoryPrompt(task))
+          : await auditWorkflow(task.worktree, notes, args, this.workflowGenerate, controller.signal, this.coordinator(task), this.workflowRequestsFor(task, run), this.memoryPrompt(task), activity);
         if (!current() || controller.signal.aborted) return;
         if ('fingerprint' in result && result.verified && result.fingerprint) {
           const saved = this.store.runByKey(run.requestKey)!;
@@ -1355,6 +1712,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   }
   private settleReviewNotes(task: Task, pending: Pick<PendingReview, 'returnNotes' | 'returnNote' | 'body' | 'route'>) {
     if (pending.route.endsWith('/undo')) {
+      this.store.undoActivity(`decision:${task.id}:${String(pending.body.id)}`);
       for (const note of this.store.reviewReturns(task.projectId, task.id, String(pending.body.id))) {
         if (!note.returnAction || note.returnAction.undone) continue;
         // Remember the undo even if the author already hid this copy. A lost
@@ -1364,6 +1722,20 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       return;
     }
     const action = String(pending.body.id);
+    if (pending.route.endsWith('/decide') && (pending.body.action === 'accept' || pending.body.action === 'reject')) {
+      const count = Array.isArray(pending.body.changes) ? Math.max(1, pending.body.changes.length) : 1;
+      const projectName = this.projectName(task.projectId);
+      this.store.recordActivity({
+        key: `decision:${task.id}:${action}`,
+        at: Date.now(),
+        kind: 'review_decision',
+        projectId: task.projectId,
+        taskId: task.id,
+        agent: this.agentOf(task),
+        model: task.model,
+        data: { action: pending.body.action, count, source: 'task', ...(projectName ? { projectName } : {}) },
+      });
+    }
     if (pending.returnNotes) {
       for (const note of pending.returnNotes) this.store.returnAnnotation(note, action);
     } else if (pending.returnNote) {
@@ -1398,7 +1770,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         const status = going ? current.status : this.store.runs().some(r => r.taskId === task.id && r.status === 'queued') ? 'queued' : reached.previousStatus;
         this.store.updateTask(task.id, { pendingReview: null, status, error: !response.ok ? value.error || 'Check the review result before continuing.' : going ? null : reached.previousError ?? null });
         if (response.ok) this.settleReviewNotes(task, pending);
-        if (sourceBuild) this.rememberSourceBuild(task.id, value, pending);
+        if (sourceBuild) this.rememberSourceBuild(task.id, value);
       });
       // So does the build held after the agent's turn for this action, and a
       // build whose connection was lost meanwhile.
@@ -1443,7 +1815,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       this.store.transaction(() => {
         if (pending && confirmedReviewResponse(200, result, task.name)) this.settleReviewNotes(task, pending);
         if (pending) this.store.updateTask(taskId, { pendingReview: null });
-        if (sourceBuild) this.rememberSourceBuild(taskId, result, pending);
+        if (sourceBuild) this.rememberSourceBuild(taskId, result);
       });
       if (sourceBuild) void this.resumeBuild(taskId);
       return result;
@@ -1479,12 +1851,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   // A save during the build after the agent's turn replaces that build's job,
   // which includes the turn's edits: the newer job keeps the turn's result
   // links and its repair of a build the turn broke.
-  private rememberSourceBuild(taskId: string, value: unknown, pending?: { route: string; body: Record<string, unknown> }) {
+  private rememberSourceBuild(taskId: string, value: unknown) {
     const job = (value as { job?: { id?: string } } | null)?.job;
     if (!job?.id) throw new Error('The review engine could not confirm this action. Select Check status before continuing.');
-    const runs = pending?.route.endsWith('/source/options') ? this.store.runs().filter(run => run.taskId === taskId && run.status === 'completed' && run.reviewRound === pending.body.round).map(run => run.id) : [];
     const building = this.store.task(taskId).pendingBuild;
-    this.store.updateTask(taskId, { status: 'building', error: null, pendingBuild: { requestId: randomUUID(), job: job.id, runs: [...new Set([...building?.runs ?? [], ...runs])], sendBack: building?.sendBack ?? false, restarts: 0 } });
+    this.store.updateTask(taskId, { status: 'building', error: null, pendingBuild: { requestId: randomUUID(), job: job.id, runs: building?.runs ?? [], sendBack: building?.sendBack ?? false, restarts: 0 } });
   }
   // A build is automatic after the agent's run `after` completes. When its
   // edits break the build, the agent gets the error in a new turn, once.
@@ -1655,11 +2026,22 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       const reply = this.store.items(task.id).filter(item => item.type === 'reviewOutput' && item.id.startsWith(`${task.id}:${turnId}:`)).at(-1);
       const result = parseAiReview(reply?.text || '', snapshot);
       this.store.transaction(() => {
+        const projectName = this.projectName(task.projectId);
         result.notes.forEach((note, index) => {
           const id = `${run.id}-${index}`;
           // Deterministic IDs make completion replay safe, including deleted/sent notes.
           try { this.store.annotation(task.projectId, id); return; } catch { /* New finding. */ }
-          this.store.saveAnnotation({ ...note, id, projectId: task.projectId, key: snapshot.key, source: null, createdAt: Date.now(), aiReview: { taskId: task.id, agent: this.agentOf(task) } });
+          const saved = this.store.saveAnnotation({ ...note, id, projectId: task.projectId, key: snapshot.key, source: null, createdAt: Date.now(), aiReview: { taskId: task.id, agent: this.agentOf(task) } });
+          this.store.recordActivity({
+            key: `note:${id}`,
+            at: saved.createdAt,
+            kind: 'annotation_created',
+            projectId: task.projectId,
+            taskId: task.id,
+            agent: this.agentOf(task),
+            model: task.model,
+            data: { source: 'ai-review', ...(projectName ? { projectName } : {}) },
+          });
         });
         this.store.saveRun({ ...run, status: 'completed', finishedAt: Date.now(), reviewRound: null });
         if (reply) this.store.saveItem({ ...reply, type: 'assistant', text: result.summary });
@@ -1704,7 +2086,11 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       if (current.status === 'deleting') return;
       const review = { state: summary.state, round: summary.round, counts: summary.counts, ready: summary.ready, job: current.review?.job, unsent, comments, files };
       this.store.updateTask(taskId, { deferred, delivery, reconciliation, review });
+      if (!reconciliation && current.mergeReturn) this.returnFromMerge(taskId);
       this.announceSelection(current, review);
+      // A task with nothing to save learns as its review finishes; one with a save step, as it is saved.
+      const reviewed = this.store.task(taskId);
+      if (learnable(reviewed)) this.learnFrom(taskId, !savable(reviewed));
       // Recover an application interrupted after the engine prepared its
       // proposal but before Papilot persisted the agent run.
       if (reconciliation?.ready && (summary.round ?? 0) <= reconciliation.round && current.status === 'reviewing' && !this.committing.has(task.projectId) && !this.reviewWrites.has(taskId)
@@ -1713,6 +2099,76 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         await this.queueMergeSuggestion(taskId, reconciliation);
     } catch { /* The task remains visible even if its project is temporarily unavailable. */ }
     finally { release?.(); }
+  }
+  // A finished review records what the author wrote and decided there,
+  // without asking any model. When the author goes on to save the task, as
+  // its commit message is written or it is applied, or as the review of a
+  // task with nothing to save finishes, the task's own agent reads its
+  // recorded feedback from this paper in one read-only turn of its light
+  // model, beside the commit message rather than before it, and offers any
+  // lasting preference next to the save step. The author's feedback never
+  // goes to another provider, and without a read-only helper nothing is
+  // kept or suggested. Learning is background work: helpers run one after another,
+  // and a review that changes while its task is being learned from is looked
+  // at again.
+  learnOnSave(taskId: string) {
+    const task = this.store.findTask(taskId);
+    if (task && learnable(task)) this.learnFrom(taskId, true);
+  }
+  private learnFrom(taskId: string, suggest: boolean) {
+    if (this.closing) return;
+    if (this.learning.has(taskId)) { this.learning.set(taskId, { suggest: suggest || Boolean(this.learning.get(taskId)?.suggest) }); return; }
+    this.learning.set(taskId, null);
+    const run = this.learningQueue.then(() => this.learnMemory(taskId, suggest)).catch(error => { if (!this.closing) console.warn('Could not learn writing preferences:', errorText(error)); })
+      .finally(() => {
+        const again = this.learning.get(taskId);
+        this.learning.delete(taskId);
+        if (again && !this.closing) { const task = this.store.findTask(taskId); if (task && learnable(task)) this.learnFrom(taskId, again.suggest); }
+      });
+    this.learningQueue = run;
+  }
+  private async learnMemory(taskId: string, suggest: boolean) {
+    const task = this.store.findTask(taskId);
+    if (!task || this.closing || !learnable(task) || this.store.preference<boolean>(MEMORY_LEARNING) === false) return;
+    const since = this.store.preference<number>(MEMORY_SINCE) ?? 0;
+    if (!this.store.runs().some(run => run.taskId === task.id && (run.finishedAt ?? 0) >= since)) return;
+    // Only the task's own agent ever reads its feedback, so nothing is kept for one that cannot.
+    const id = this.learner(task), runtime = this.agents[id];
+    if (!runtime.ready || !this.runtimes[id].authenticated || runtime.supportsReadOnlyTasks === false) return;
+    const project = this.store.project(task.projectId), client = await this.connectReview(project.path);
+    const feedback = await client.get(`${taskRoute(task.name)}/feedback?after=0`);
+    const evidence = taskEvidence(task.id, this.store.items(task.id), this.store.runs().filter(run => run.taskId === task.id), feedback);
+    const hash = evidenceHash(evidence), key = MEMORY_EVIDENCE + task.id, recorded = this.store.preference<EvidenceRecord>(key);
+    if (!this.store.findTask(taskId)) return;
+    if (recorded?.hash !== hash) this.store.savePreference(key, { projectId: task.projectId, hash, at: Date.now(), evidence } satisfies EvidenceRecord);
+    if (!suggest || (recorded?.hash === hash && recorded.learned)) return;
+    // Marked before the helper runs, so the same review is not sent again
+    // even if the helper fails or the commit message is written again.
+    this.store.savePreference(key, { projectId: task.projectId, hash, at: Date.now(), evidence, learned: true } satisfies EvidenceRecord);
+    if (!hasEvidence(evidence)) return;
+    const catalog = await this.memory.catalog(project.path, true);
+    const chosen = LANGUAGES.find(item => item.id === this.store.preference<string>(MEMORY_LANGUAGE));
+    // What this paper's open tasks already offer is not offered again; an
+    // archived task's unanswered suggestion may come back with a later review.
+    const offered = this.store.tasks().filter(other => other.projectId === task.projectId && !other.archivedAt).flatMap(other => other.memory || []).filter(suggestion => suggestion.status === 'pending');
+    const input = {
+      memory: catalog.files.map(({ scope, rules }) => ({ scope, rules })),
+      dismissed: [...this.store.preference<string[]>(dismissedKey(task.projectId)) || [], ...this.store.preference<string[]>(dismissedKey()) || []],
+      pending: offered.map(suggestion => suggestion.text), current: evidence,
+      ...(chosen ? { language: `${chosen.name} (${chosen.id})` } : {}),
+      // Earlier tasks of the same agent only: feedback never goes to another provider.
+      earlier: this.store.memoryEvidence(task.projectId).map(record => record.evidence as MemoryEvidence)
+        .filter(other => { const earlier = other.task !== task.id && this.store.findTask(other.task); return Boolean(earlier && this.learner(earlier) === id); }),
+    };
+    const models = this.runtimes[id].models, model = lightModel(models) || models.find(item => item.id === task.model) || models.find(item => item.isDefault);
+    // A helper holds back app updates while it runs, so it cannot wait forever.
+    const reply = await this.oneOff(id, { cwd: project.path, sandbox: 'read-only', instructions: memoryLearningInstructions, prompt: learningPrompt(input), model, effort: model?.efforts[0], timeout: 120000, what: 'learn writing preferences' });
+    const current = this.store.findTask(taskId);
+    if (this.closing || !current || current.status === 'deleting') return;
+    // Each example names its task, so the card can say where the author made it.
+    const suggestions = acceptedSuggestions(reply, input, () => randomUUID())
+      .map(suggestion => suggestion.examples ? { ...suggestion, examples: suggestion.examples.map(example => ({ ...example, title: this.store.findTask(example.task)?.title })) } : suggestion);
+    if (suggestions.length) this.store.updateTask(task.id, { memory: [...current.memory || [], ...suggestions] });
   }
   // Announces a task's final selection once: its last pending change was
   // just decided, or the decisions changed with none pending. What applying
@@ -1743,6 +2199,41 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const items = feedback.feedback || [];
     return { unsent: items.length, comments: items.filter(item => item.kind === 'comment' || item.kind === 'note').length };
   }
+  /** The model for quick background jobs, such as checking citations and
+   * naming tasks: the author's choice in Settings, or null to let each job
+   * use the small model of the agent it would use anyway. */
+  quickModel(): QuickModel | null {
+    const choice = this.store.preference<QuickModel | null>(QUICK_MODEL);
+    return choice && isAgentId(choice.agent) ? choice : null;
+  }
+  setQuickModel(choice: QuickModel | null) { this.store.savePreference(QUICK_MODEL, choice); }
+  // The agent, model and effort for a quick job. The author's choice wins
+  // while it is signed in; otherwise the fallback agent's small model does it.
+  private quick(fallback: { agent?: AgentId; model?: string }, what: string) {
+    const choice = this.quickModel();
+    if (choice && !this.agentOff(choice.agent) && this.agents[choice.agent].ready && this.runtimes[choice.agent].authenticated && this.agents[choice.agent].supportsReadOnlyTasks !== false) {
+      const models = this.runtimes[choice.agent].models, model = models.find(item => item.id === choice.model) || lightModel(models) || models.find(item => item.isDefault);
+      return { id: choice.agent, model, effort: choice.effort && model?.efforts.includes(choice.effort) ? choice.effort : model?.efforts[0] };
+    }
+    const { id, model } = this.helper(fallback, what, { light: true, readOnly: true });
+    return { id, model, effort: model?.efforts[0] };
+  }
+  // The agent and model a task chose for its quick job; one signed out or off says so.
+  // An agent still connecting, as just after Papilot starts, is waited for.
+  private async chosen(choice: { agent: AgentId; model?: string | null; effort?: string | null }, what: string) {
+    if (!this.agents[choice.agent].ready && !this.agentOff(choice.agent)) { await this.connecting; if (!this.agents[choice.agent].ready) await this.connectAgent(choice.agent).catch(() => undefined); }
+    const runtime = this.runtimes[choice.agent];
+    if (this.agentOff(choice.agent) || !this.agents[choice.agent].ready || !runtime.authenticated) throw new Error(`Connect ${AGENT_NAMES[choice.agent]} to ${what}, or choose another model.`);
+    const model = runtime.models.find(item => item.id === choice.model) || runtime.models.find(item => item.isDefault);
+    return { id: choice.agent, model, effort: choice.effort && model?.efforts.includes(choice.effort) ? choice.effort : model?.efforts[0] };
+  }
+  /** One quick job's reply, from a read-only turn that has everything it
+   * needs in its prompt, and the agent and model that wrote it. */
+  async quickReply(options: { instructions: string; prompt: string; what: string; projectId?: string; signal?: AbortSignal; onText?: (text: string) => void; choice?: { agent?: AgentId; model?: string | null; effort?: string | null } }) {
+    const { id, model, effort } = options.choice?.agent ? await this.chosen(options.choice as { agent: AgentId; model?: string | null; effort?: string | null }, options.what) : this.quick({}, options.what);
+    const reply = await this.oneOff(id, { cwd: os.tmpdir(), sandbox: 'read-only', instructions: options.instructions, prompt: options.prompt, model, effort, what: options.what, projectId: options.projectId, signal: options.signal, onText: options.onText });
+    return { reply, agent: id, model: model?.name || model?.id || null };
+  }
   // The agent that writes a commit message or resolves a merge: the one the
   // author chose, or else the first that is signed in, with the chosen model
   // or the default one; light asks for the agent's small model when it has one.
@@ -1756,20 +2247,20 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       }
       if (options.readOnly && this.agents[choice.agent].supportsReadOnlyTasks === false) throw new Error('The selected commit-message agent does not support read-only tasks. Choose another in Settings → Git.');
     }
-    const id = choice.agent && usable(choice.agent) ? choice.agent : AGENTS.find(usable);
+    const id = choice.agent && usable(choice.agent) ? choice.agent : AGENTS.find(id => !this.agentOff(id) && usable(id));
     if (!id) {
       if (options.readOnly) throw new Error('Connect an agent that supports read-only tasks, such as Codex.');
       throw new Error(`Sign in to an agent, such as Codex, to ${task}.`);
     }
-    const models = this.runtimes[id].models;
-    return { id, model: (options.light ? lightModel(models) : undefined) || models.find(item => item.id === choice.model) || models.find(item => item.isDefault) };
+    const models = this.runtimes[id].models, hidden = this.hiddenModels[id] || [], offered = models.filter(model => !hidden.includes(model.id));
+    return { id, model: (options.light ? lightModel(offered) : undefined) || models.find(item => item.id === choice.model) || offered.find(item => item.isDefault) || offered[0] || models.find(item => item.isDefault) };
   }
-  async diagnoseLatexBuild(root: string, prompt: string, choice: { agent: AgentId; model?: string }) {
+  async diagnoseLatexBuild(root: string, prompt: string, choice: { agent: AgentId; model?: string; projectId?: string }) {
     const id = choice.agent, runtime = this.runtimes[id];
     if (!this.agents[id].ready || !runtime.authenticated) throw new Error('Connect the selected agent before diagnosing compilation problems.');
     if (this.agents[id].supportsReadOnlyTasks === false) throw new Error('The selected agent does not support read-only compilation diagnosis. Select another agent.');
     const model = runtime.models.find(item => item.id === choice.model) || runtime.models.find(item => item.isDefault);
-    return this.oneOff(id, { cwd: root, sandbox: 'read-only', model, timeout: 120000, what: 'diagnose the LaTeX build', instructions: latexRepairInstructions, prompt });
+    return this.oneOff(id, { cwd: root, sandbox: 'read-only', model, timeout: 120000, what: 'diagnose the LaTeX build', instructions: latexRepairInstructions, prompt, projectId: choice.projectId });
   }
   async repairImport(root: string, error: string, choice: { agent?: AgentId } = {}) {
     const { id, model } = this.helper(choice, 'repair the imported paper');
@@ -1779,7 +2270,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   }
   // One turn on a thread the agent does not keep, outside any task: its
   // reply is returned and no chat shows it.
-  private async oneOff(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout: number; what: string }) {
+  private async oneOff(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout?: number; signal?: AbortSignal; onText?: (text: string) => void; what: string; projectId?: string; taskId?: string }) {
     if (this.closing) throw new Error('The server is shutting down.');
     // A read-only helper (a title, a commit message) has everything in its
     // prompt. It runs in an empty folder, so an agent that does not enforce a
@@ -1789,32 +2280,98 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     // An empty folder left behind must not discard the reply.
     finally { if (scratch) await fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 5 }).catch(() => {}); }
   }
-  private async helperTurn(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout: number; what: string }) {
-    const agent = this.agents[id], name = AGENT_NAMES[id];
+  private async helperTurn(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout?: number; signal?: AbortSignal; onText?: (text: string) => void; what: string; projectId?: string; taskId?: string }) {
+    const agent = this.agents[id], name = AGENT_NAMES[id], codex = usesCodex(id);
     // Codex unloads the thread as soon as it is released, not a minute later.
     const thread = await agent.request('thread/start', { cwd: options.cwd, approvalPolicy: 'never', sandbox: options.sandbox, ephemeral: true, config: { thread_unload_delay_secs: 0 }, developerInstructions: options.instructions, ...(options.model ? { model: options.model.id } : {}) }, options.timeout);
     const threadId = thread.thread.id;
+    const resolvedModel: string | null = thread.model || options.model?.id || null;
+    if (codex) this.codexUsage.seedThread(threadId);
     try {
       if (this.closing) throw new Error('The server is shutting down.');
-      return await this.helperReply(agent, name, threadId, options);
-    } finally { await releaseThread(agent, threadId); }
+      return await this.helperReply(id, agent, name, threadId, resolvedModel, options);
+    } finally {
+      this.codexUsage.forgetThread(threadId);
+      await releaseThread(agent, threadId);
+    }
   }
-  private helperReply(agent: AgentRuntime, name: string, threadId: string, options: { cwd: string; prompt: string; effort?: string | null; serviceTier?: string; timeout: number; what: string }) {
+  private helperReply(id: AgentId, agent: AgentRuntime, name: string, threadId: string, resolvedModel: string | null, options: { cwd: string; prompt: string; effort?: string | null; serviceTier?: string; timeout?: number; signal?: AbortSignal; onText?: (text: string) => void; what: string; projectId?: string; taskId?: string }) {
+    const helperId = randomUUID(), startedAt = Date.now(), codex = usesCodex(id);
+    const projectName = this.projectName(options.projectId);
+    this.store.recordActivity({
+      key: `turn:helper:${helperId}`,
+      at: startedAt,
+      kind: 'agent_turn',
+      projectId: options.projectId,
+      taskId: options.taskId,
+      agent: id,
+      model: resolvedModel,
+      data: { role: 'helper', what: options.what, status: 'running', ...(projectName ? { projectName } : {}) },
+    }, true);
     return new Promise<string>((resolve, reject) => {
       let text = '', turnId = '', settled = false;
+      // What the agent has written so far, for a caller that shows it as it comes.
+      let streamed = '';
       const listen = (message: any) => {
         const p = message.params || {};
         if (p.threadId !== threadId) return;
-        if (message.method === 'item/completed' && p.item?.type === 'agentMessage') text = p.item.text || text;
+        if (codex && message.method === 'thread/tokenUsage/updated') {
+          const delta = this.codexUsage.consume(threadId, p.tokenUsage);
+          const normalized = delta ? normalizeCodexUsage(id, resolvedModel, delta) : null;
+          if (normalized) {
+            this.store.recordActivity({
+              key: `usage:${randomUUID()}`,
+              at: Date.now(),
+              kind: 'token_usage',
+              projectId: options.projectId,
+              taskId: options.taskId,
+              agent: id,
+              model: normalized.model,
+              data: { role: 'helper', what: options.what, tokens: normalized.tokens, costUsd: normalized.costUsd, costSource: normalized.costSource, ...(projectName ? { projectName } : {}) },
+            });
+          }
+        } else if (message.method === 'turn/usage') {
+          const normalized = normalizeTurnUsage(id, resolvedModel, p.usage, p.model);
+          if (normalized) {
+            this.store.recordActivity({
+              key: `usage:${randomUUID()}`,
+              at: Date.now(),
+              kind: 'token_usage',
+              projectId: options.projectId,
+              taskId: options.taskId,
+              agent: id,
+              model: normalized.model,
+              data: { role: 'helper', what: options.what, tokens: normalized.tokens, costUsd: normalized.costUsd, costSource: normalized.costSource, ...(projectName ? { projectName } : {}) },
+            });
+          }
+        } else if (message.method === 'item/agentMessage/delta' && options.onText) { streamed += p.delta || ''; options.onText(streamed); }
+        else if (message.method === 'item/completed' && p.item?.type === 'agentMessage') text = p.item.text || text;
         else if (message.method === 'turn/completed') finish(p.turn?.status === 'completed' ? null : new Error(p.turn?.error?.message || `${name} stopped before it could ${options.what}.`));
       };
-      const timer = setTimeout(() => {
+      // A helper without a timeout runs until it answers or is stopped.
+      const timer = options.timeout === undefined ? undefined : setTimeout(() => {
         if (turnId) agent.request('turn/interrupt', { threadId, turnId }).catch(() => undefined);
         finish(new Error(`${name} did not ${options.what} in time. Try again.`));
       }, options.timeout);
+      const aborted = () => {
+        if (turnId) agent.request('turn/interrupt', { threadId, turnId }).catch(() => undefined);
+        finish(new Error(`Stopped before ${name} could ${options.what}.`));
+      };
+      options.signal?.addEventListener('abort', aborted, { once: true });
       const finish = (error: Error | null) => {
         if (settled) return; settled = true;
-        clearTimeout(timer); agent.off('notification', listen); agent.off('disconnected', disconnected); this.helperStops.delete(stop);
+        clearTimeout(timer); options.signal?.removeEventListener('abort', aborted); agent.off('notification', listen); agent.off('disconnected', disconnected); this.helperStops.delete(stop);
+        const finishedAt = Date.now();
+        this.store.recordActivity({
+          key: `turn:helper:${helperId}`,
+          at: startedAt,
+          kind: 'agent_turn',
+          projectId: options.projectId,
+          taskId: options.taskId,
+          agent: id,
+          model: resolvedModel,
+          data: { role: 'helper', what: options.what, status: error ? 'failed' : 'completed', finishedAt, ...(projectName ? { projectName } : {}) },
+        }, true);
         if (error) reject(error); else resolve(text);
       };
       const disconnected = () => finish(new Error(`${name} disconnected before it could ${options.what}.`));
@@ -1838,13 +2395,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     const pending = this.titles.get(taskId);
     if (pending) return pending;
-    const { id, model } = this.helper({ agent: this.agentOf(task), model: task.model || undefined }, 'generate a task title', { light: true, readOnly: true });
+    const { id, model, effort } = this.quick({ agent: this.agentOf(task), model: task.model || undefined }, 'generate a task title');
     const items = this.store.items(taskId), first = items.find(item => item.type === 'user');
     const outcome = items.findLast(item => item.type === 'assistant' && item.text);
     const prompt = JSON.stringify({ request: first?.text || '', taskContext: task.instructions, existingOutcome: outcome?.text || '' });
     const revision = task.titleRevision || 0;
     this.store.updateTask(taskId, { titleGeneration: 'pending' });
-    const written = this.oneOff(id, { cwd: this.store.project(task.projectId).path, sandbox: 'read-only', instructions: taskCaptionInstructions, prompt, model, effort: model?.efforts[0], timeout: 45000, what: 'generate a task title' }).then(reply => {
+    const written = this.oneOff(id, { cwd: this.store.project(task.projectId).path, sandbox: 'read-only', instructions: taskCaptionInstructions, prompt, model, effort, timeout: 45000, what: 'generate a task title', projectId: task.projectId, taskId }).then(reply => {
       if (this.closing) return null;
       const current = this.store.findTask(taskId);
       if (!current || current.status === 'deleting' || (current.titleRevision || 0) !== revision) return current || null;
@@ -1871,6 +2428,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const effort = choice.effort || model?.defaultEffort, serviceTier = id === 'codex' ? choice.serviceTier : undefined;
     const task = choice.taskId ? this.store.task(choice.taskId) : undefined;
     if (task && task.projectId !== projectId) throw new Error('Invalid task ID.');
+    // Saving a task is when Papilot offers what it noticed in the author's reviews.
+    if (task) this.learnOnSave(task.id);
     const { files, patch, recent } = task ? await this.taskCommitChanges(task) : await commitChanges(project.path, paths, choice.staged);
     const tasks = this.store.tasks().filter(task => task.projectId === projectId && task.review?.files?.some(file => paths.includes(file))).map(task => task.title);
     const prompt = [
@@ -1882,7 +2441,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const instructions = commitInstructions(choice.language);
     const key = createHash('sha256').update(`${id}\0${model?.id ?? ''}\0${effort ?? ''}\0${serviceTier ?? ''}\0${instructions}\0${prompt}`).digest('hex'), kept = this.messages.get(key);
     if (kept && !choice.fresh) return kept;
-    const written = this.oneOff(id, { cwd: project.path, sandbox: 'read-only', instructions, prompt, model, effort, serviceTier, timeout: 120000, what: 'write a commit message' }).then(reply => {
+    const written = this.oneOff(id, { cwd: project.path, sandbox: 'read-only', instructions, prompt, model, effort, serviceTier, timeout: 120000, what: 'write a commit message', projectId, taskId: choice.taskId }).then(reply => {
       const message = commitMessageFrom(reply);
       if (!message) throw new Error(`${AGENT_NAMES[id]} did not return a commit message. Try again.`);
       return { message, agent: id };
@@ -1906,13 +2465,15 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     ]);
     return { files: paths.map(path => ({ path, status: 'M', from: undefined })), patch, recent };
   }
-  async applyTask(taskId: string, keepCurrent = false, commit?: { message?: string; confirmation?: string }) {
+  async applyTask(taskId: string, keepCurrent = false, commit?: { message?: string; confirmation?: string }, mergeAgent?: HelperChoice) {
     const task = this.store.task(taskId), project = this.store.project(task.projectId);
     if (task.mode === 'review') throw new Error('AI review has no manuscript changes to apply.');
     if (!task.deferred) throw new Error('Accepted changes are already in the manuscript.');
     const pausedMerge = task.status === 'interrupted' && task.reconciliation && (!task.reconciliation.ready || (task.review?.round ?? 0) <= task.reconciliation.round);
     if (!['reviewing', 'interrupted'].includes(task.status) || pausedMerge || this.active.has(taskId) || this.publishing.has(taskId) || task.pendingReview || this.store.runs().some(run => run.taskId === taskId && run.status === 'queued'))
       throw new Error('Wait for the task and review actions to finish before applying changes.');
+    // Kept with the task, so a merge suggestion prepared after a restart uses it too.
+    this.store.updateTask(taskId, { mergeAgent: mergeAgent ?? null });
     const result = await this.exclusiveCommit(project.id, async () => {
       const retry = Boolean(commit && commit.message === undefined);
       this.reviewWrites.add(taskId);
@@ -1935,14 +2496,46 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     });
     // Saving the reviewed result completes a paused review without resuming
     // its interrupted agent turn. Only a confirmed delivery clears the pause.
-    if (result.delivery && !result.delivery.pending && this.store.task(taskId).status === 'interrupted')
-      this.store.updateTask(taskId, { status: 'reviewing', error: null });
+    if (result.delivery && !result.delivery.pending && result.delivery.mode !== 'branch') {
+      if (this.store.task(taskId).status === 'interrupted') this.store.updateTask(taskId, { status: 'reviewing', error: null });
+      this.store.recordActivity({
+        key: `delivery:${taskId}:${result.delivery.accepted || result.delivery.commit || result.delivery.mode}`,
+        at: Date.now(),
+        kind: 'task_delivered',
+        projectId: project.id,
+        taskId,
+        agent: this.agentOf(task),
+        model: task.model,
+        data: { mode: result.delivery.mode === 'commit' ? 'commit' : 'workspace', projectName: project.name },
+      });
+    }
     if (result.reconciliation?.ready) await this.queueMergeSuggestion(taskId, result.reconciliation);
     this.schedule();
     return result;
   }
   private queueMergeSuggestion(taskId: string, merge: TaskReconciliation) {
     return this.enqueue(taskId, 'The manuscript has changed in overlapping passages. Prepare a merge suggestion for me to review; keep the manuscript unchanged.', 'merge-review-' + merge.id, false, { merge });
+  }
+  // The conflict-resolution agent the author chose prepares a merge
+  // suggestion in the task's conversation, where it can ask the author: the
+  // agent to take over before that run starts, or none.
+  private mergeHandover(task: Task, run: Run): HelperChoice | null {
+    const choice = task.mergeAgent;
+    if (!run.requestKey.startsWith('merge-review-') || !choice || task.mergeReturn) return null;
+    const differs = choice.agent !== this.agentOf(task) || Boolean(choice.model && choice.model !== task.model)
+      || Boolean(choice.effort && choice.effort !== task.effort) || Boolean(choice.serviceTier && choice.serviceTier !== task.serviceTier);
+    return differs ? choice : null;
+  }
+  // Once no merge is left to resolve, the task's own agent takes over again
+  // with its own settings, even if it is now off or offline: its next turn
+  // waits for it, as any task's does.
+  private returnFromMerge(taskId: string) {
+    const task = this.store.task(taskId), back = task.mergeReturn;
+    if (!back || task.reconciliation || this.active.has(taskId) || this.switching.has(taskId) || BUSY.has(task.status) || task.pendingReview
+      || this.store.runs().some(run => run.taskId === taskId && run.status === 'queued')) return;
+    const settings = { model: back.model, effort: back.effort ?? null, serviceTier: back.serviceTier, permissions: back.permissions, mergeReturn: null, mergeAgent: null };
+    if (back.agent === this.agentOf(task)) this.store.updateTask(taskId, settings);
+    else this.handOver(task, this.agentOf(task), { agent: back.agent, ...settings });
   }
   // Resolves a merge's conflicts in the manuscript checkout itself: the agent
   // edits only the conflicted files and leaves committing the merge to the
@@ -1962,7 +2555,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       `Commits from ${upstream} being merged in:\n${list(theirs)}`,
       'Resolve every conflict in those files, then reply with a short summary for the author: how you resolved each conflict, and any place where you had to choose one side.',
     ].join('\n\n');
-    const summary = await this.oneOff(id, { cwd: project.path, sandbox: 'workspace-write', instructions: mergeInstructions, prompt, model, effort, serviceTier, timeout: 600000, what: 'resolve the conflicts' });
+    const summary = await this.oneOff(id, { cwd: project.path, sandbox: 'workspace-write', instructions: mergeInstructions, prompt, model, effort, serviceTier, timeout: 600000, what: 'resolve the conflicts', projectId });
     return { summary: summary.trim(), remaining: files.filter(file => conflictMarkers(project.path, file)), agent: id, git: await gitStatus(project.path) };
   }
   // A commit reads the working tree that accepting, rejecting and undoing
@@ -2024,11 +2617,18 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     return this.store.updateTask(taskId, { archivedAt: archived ? Date.now() : null });
   }
   async deleteTask(taskId: string): Promise<{ ok: true }> {
-    if (this.restarting.has(taskId)) throw new Error('Wait for this task to restart before deleting it.');
+    if (this.switching.has(taskId)) throw new Error('Wait for this task to switch agents before deleting it.');
     if (this.preparing.has(taskId)) throw new Error('Wait for task creation to finish before deleting it.');
     if (this.deletions.has(taskId)) throw new Error('Deletion is already in progress. Wait for it to finish.');
     const task = this.store.findTask(taskId);
     if (!task) return { ok: true };
+    // A citation check has no worktree: stopping it and forgetting its findings is all.
+    if (task.mode === 'citations') {
+      if (task.status === 'running') throw new Error('Stop the check before deleting it.');
+      this.forgetCitationCheck?.(task);
+      this.store.deleteTask(task.id);
+      return { ok: true };
+    }
     // A task that was never prepared has only its first message, which never ran.
     const unprepared = Boolean(task.preparation);
     if (!['idle', 'interrupted', 'reviewing', 'failed', 'deleting', ...(unprepared ? ['preparing'] : [])].includes(task.status)
@@ -2071,7 +2671,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       for (const [id, item] of this.liveItems) if (item.taskId === taskId) this.liveItems.delete(id);
       for (const [id, request] of this.requests) if (request.taskId === taskId) this.requests.delete(id);
       this.earlyCompletions.delete(taskId); this.earlyRequests.delete(taskId);
-      if (task.threadId) this.loaded.delete(task.threadId);
+      if (task.threadId) { this.loaded.delete(task.threadId); this.codexUsage.forgetThread(task.threadId); }
       // Notes the agent never received go back to the manuscript.
       if (unprepared) for (const { taskId: _, ...note } of this.store.annotations(task.projectId).filter(note => note.taskId === taskId)) this.store.saveAnnotation(note);
       this.reviewCopies.delete(taskId); this.announced.delete(taskId);
@@ -2109,6 +2709,18 @@ async function releaseThread(agent: AgentRuntime, threadId: string) {
 // one it started from; their difference is what the task put in the
 // manuscript, and the difference from the accepted text at the task's last
 // commit is what it has added since. A rename counts as both of its paths.
+// A result the author has finished deciding: nothing pending, no comment
+// waiting to go back, and no build or review action in flight. An answer
+// without manuscript changes qualifies too.
+// Whether the task offers a save step (Commit or Apply), as its review shows it.
+function savable(task: Task) {
+  return Boolean(task.deferred && (task.review?.files?.length || task.delivery?.mode === 'branch' || task.delivery?.pending));
+}
+function learnable(task: Task) {
+  const review = task.review;
+  return task.mode !== 'review' && task.status === 'reviewing' && Boolean(review) && !review!.counts?.pending && !review!.comments
+    && review!.state !== 'build_failed' && !task.pendingReview && !task.pendingBuild && !task.reconciliation && !task.delivery?.pending;
+}
 /** A summary's final selection, when none of its changes is pending. */
 function finalSelection(review?: Task['review'] | null) {
   return review?.counts?.pending === 0 && Object.values(review.counts).some(n => Number(n) > 0)

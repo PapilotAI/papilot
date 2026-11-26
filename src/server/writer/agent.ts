@@ -351,6 +351,25 @@ export class WriterAgent extends Adapter {
         const final = event.message.content.filter(part => part.type === 'text').map(part => (part as { text: string }).text).join('') || text;
         if (final.trim()) this.item(turn, { id: `${turn.id}:text:${message}`, type: 'agentMessage', text: final });
         if (event.message.stopReason === 'error') fail(event.message.errorMessage || 'The model provider returned an error.');
+        const stepUsage = event.message.usage;
+        if (stepUsage) {
+          const activeModel = session.model;
+          const priced = Boolean(activeModel && (activeModel.cost.input > 0 || activeModel.cost.output > 0 || activeModel.cost.cacheRead > 0 || activeModel.cost.cacheWrite > 0)) || Number(stepUsage.cost?.total) > 0;
+          const resolvedModel = activeModel ? modelId(activeModel) : event.message.provider && event.message.model ? `${event.message.provider}/${event.message.model}` : event.message.model || null;
+          this.notify('turn/usage', {
+            threadId: turn.threadId,
+            turnId: turn.id,
+            model: resolvedModel,
+            usage: {
+              input: stepUsage.input,
+              cached: stepUsage.cacheRead,
+              cacheWrite: stepUsage.cacheWrite,
+              output: stepUsage.output,
+              total: stepUsage.totalTokens,
+              ...(priced && typeof stepUsage.cost?.total === 'number' ? { costUsd: stepUsage.cost.total, costSource: 'estimated' } : {}),
+            },
+          });
+        }
         const usage = session.getContextUsage();
         if (usage?.tokens) this.notify('thread/tokenUsage/updated', { threadId: turn.threadId, turnId: turn.id, tokenUsage: { last: { totalTokens: usage.tokens }, modelContextWindow: usage.contextWindow },
           breakdown: contextBreakdown(session, usage.tokens, usage.contextWindow) });

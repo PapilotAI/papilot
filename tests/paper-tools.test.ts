@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
 import { PaperTools, PAPER_TOOLS, readPaper, searchPaper, annotationRevision } from '../src/server/paper-tools.ts';
 import { AgentToolBridge } from '../src/server/agent-tool-bridge.ts';
 import { Store } from '../src/server/store.ts';
+import { Memory } from '../src/server/memory.ts';
 import type { Manuscripts } from '../src/server/manuscript.ts';
 import type { ReviewSnapshot } from '../src/server/ai-review.ts';
 import type { Task } from '../src/shared.ts';
@@ -422,4 +424,70 @@ test('annotation_create and annotation_update support optional color groups and 
     assert.equal(restored.group, 'purple');
     assert.equal(restored.stamp, 'Polish');
   } finally { f.store.close(); }
+});
+
+test('agents read and change the author\'s writing memory through paper tools', async () => {
+  const paper = fs.mkdtempSync(path.join(os.tmpdir(), 'paper-memory-')), home = fs.mkdtempSync(path.join(os.tmpdir(), 'memory-home-'));
+  const store = new Store(':memory:'), changed: string[] = [];
+  const task: Task = { id: 'task', projectId: 'paper', name: 'p-task', title: 'Remember', instructions: '', document: 'main.tex', worktree: paper, threadId: null, turnId: null, model: null, status: 'running', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: null };
+  store.saveProject({ id: 'paper', name: 'Paper', path: paper, createdAt: 1 }); store.saveTask(task);
+  const memory = new Memory({ user: home });
+  const tools = new PaperTools(store, {} as Manuscripts, () => false, undefined, { memory: () => memory, changed: id => changed.push(id) });
+  const call = (tool: string, args: object) => tools.call(task, tool, args, () => true) as Promise<any>;
+  try {
+    const empty = await call('memory_list', {});
+    assert.deepEqual(empty.memory.map((file: { scope: string }) => file.scope), ['paper', 'shared', 'personal']);
+    const added = await call('memory_add', { scope: 'personal', text: 'Write "we" rather than "the authors".' });
+    assert.equal(added.added, true);
+    assert.deepEqual(added.memory.find((file: { scope: string }) => file.scope === 'personal').rules, ['Write "we" rather than "the authors".']);
+    assert.equal((await call('memory_add', { scope: 'personal', text: 'write "we" rather than "the authors"' })).added, false, 'the same preference is not saved twice');
+    await call('memory_add', { scope: 'paper', text: 'Call the system Loom.' });
+    const listed = await call('memory_list', {}), personal = listed.memory.find((file: { scope: string }) => file.scope === 'personal');
+    await assert.rejects(call('memory_update', { scope: 'personal', previous: 'Write "we" rather than "the authors".', text: 'Use "we".', revision: 'stale' }), /changed on disk/);
+    const updated = await call('memory_update', { scope: 'personal', previous: 'Write "we" rather than "the authors".', text: 'Use "we".', revision: personal.revision });
+    const after = updated.memory.find((file: { scope: string }) => file.scope === 'personal');
+    assert.deepEqual(after.rules, ['Use "we".']);
+    await assert.rejects(call('memory_remove', { scope: 'personal', text: 'Never existed.', revision: after.revision }), /No saved preference/);
+    const removed = await call('memory_remove', { scope: 'personal', text: 'Use "we".', revision: after.revision });
+    assert.deepEqual(removed.memory.find((file: { scope: string }) => file.scope === 'personal').rules, []);
+    assert.match(fs.readFileSync(path.join(paper, '.papilot', 'memory.local.md'), 'utf8'), /- Call the system Loom\./);
+    await assert.rejects(call('memory_add', { scope: 'everywhere', text: 'x' }), /where to keep/);
+    assert.ok((await call('memory_add', { scope: 'paper', text: 'two\nlines' })).memory.find((file: { scope: string }) => file.scope === 'paper').rules.includes('two lines'), 'a preference is always one line');
+    assert.ok(changed.length >= 4 && changed.every(id => id === 'paper'));
+  } finally { store.close(); fs.rmSync(paper, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('the MCP server lists Papilot\'s tools and forwards calls only during a turn', async () => {
+  const bridge = new AgentToolBridge(PAPER_TOOLS);
+  let active = true; const calls: unknown[] = [];
+  const file = bridge.file('task');
+  const server = spawn(process.execPath, ['bin/papilot-mcp.mjs', file], { cwd: process.cwd(), stdio: ['pipe', 'pipe', 'inherit'] });
+  const replies = new Map<number, (value: any) => void>();
+  createInterface({ input: server.stdout! }).on('line', line => { const message = JSON.parse(line); replies.get(message.id)?.(message); });
+  let next = 0;
+  const rpc = (method: string, params?: object) => new Promise<any>(resolve => { const id = ++next; replies.set(id, resolve); server.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'); });
+  try {
+    // The agent starts the server with its session, before Papilot opens the first turn.
+    const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
+    assert.equal(init.result.serverInfo.name, 'papilot');
+    server.stdin!.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+    const listed = await rpc('tools/list');
+    assert.deepEqual(listed.result.tools.map((tool: { name: string }) => tool.name).sort(), PAPER_TOOLS.map(tool => tool.name).sort());
+    assert.ok(listed.result.tools.every((tool: { inputSchema: { type: string } }) => tool.inputSchema.type === 'object'));
+    const early = await rpc('tools/call', { name: 'memory_list', arguments: {} });
+    assert.equal(early.result.isError, true);
+    assert.equal(await bridge.open('task', () => active, async (tool, args) => { calls.push([tool, args]); return { memory: [] }; }), file, 'every turn reuses the session file');
+    const called = await rpc('tools/call', { name: 'memory_list', arguments: {} });
+    assert.equal(called.result.isError, false);
+    assert.deepEqual(JSON.parse(called.result.content[0].text), { memory: [] });
+    assert.deepEqual(calls, [['memory_list', {}]]);
+    active = false;
+    const ended = await rpc('tools/call', { name: 'memory_list', arguments: {} });
+    assert.equal(ended.result.isError, true);
+    assert.match(ended.result.content[0].text, /session has ended/);
+    active = true;
+    await bridge.open('task', () => active, async () => ({ again: true }));
+    assert.deepEqual(JSON.parse((await rpc('tools/call', { name: 'memory_list', arguments: {} })).result.content[0].text), { again: true }, 'the same server reaches the next turn');
+    assert.equal((await rpc('resources/list')).error.code, -32601);
+  } finally { server.kill(); bridge.close(); }
 });

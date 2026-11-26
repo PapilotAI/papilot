@@ -3,6 +3,7 @@ import {
   nextPending,
   pendingUnits,
   progress,
+  mixedKey,
   resolvedSide,
   stopState,
   visibleStop,
@@ -51,6 +52,19 @@ it("navigates in document order with unique stops and wraps pending edits", () =
   expect(nextPending(stops, decisions, 1)).toBe(3);
   expect(nextPending(stops, decisions, 3)).toBe(1);
   expect(pendingUnits(stops[1], decisions)).toEqual(["c001"]);
+});
+it("a block decided with accepted and rejected edits builds with each accepted option's wording", () => {
+  const decisions: Record<string, Decision> = { a: "accepted", b: "rejected", c: "accepted", d: "pending" };
+  expect(mixedKey(3, 0, ["a"], decisions)).toBeNull();
+  expect(mixedKey(3, 0, ["b"], decisions)).toBeNull();
+  expect(mixedKey(3, 0, ["a", "c"], decisions, { c: "Procedure" })).toBeNull();
+  expect(mixedKey(3, 0, ["a", "d"], decisions)).toBeNull();
+  expect(mixedKey(3, 0, ["b", "a"], decisions)).toBe("3:0:a");
+  // Choosing another option asks for another build.
+  const worded = mixedKey(3, 1, ["a", "b"], decisions, { a: "Procedure" });
+  expect(worded).toBe('3:1:a:[["a","Procedure"]]');
+  expect(mixedKey(3, 1, ["a", "b"], decisions, { a: "Technique" })).not.toBe(worded);
+  expect(mixedKey(3, 1, ["a", "b"], decisions, { b: "unused" })).toBe("3:1:a");
 });
 it("resolved blocks show chosen versions and counts remain source-unit based", () => {
   const decisions: Record<string, Decision> = {

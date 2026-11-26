@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from 'electron';
 
+// The sandboxed preload cannot import the workspace's appearance module.
+// Keep these in step with INTERFACE_SIZES in src/web/appearance.ts.
+const interfaceSizes = [1, 1.1, 1.25, 1.5, 1.75, 2];
+const setZoom = (factor: unknown) => {
+  if (typeof factor === 'number' && interfaceSizes.includes(factor)) webFrame.setZoomFactor(factor);
+};
+
 // Expose specific window and user-selected folder actions, not generic IPC or
 // filesystem access. Papers open in place; their files stay on disk.
 contextBridge.exposeInMainWorld('papilotDesktop', {
@@ -36,7 +43,7 @@ contextBridge.exposeInMainWorld('papilotDesktop', {
   },
   // Settings › Appearance › Interface size zooms this window; the View menu's
   // zoom items ask the page to step that saved size.
-  setZoom: (factor: unknown) => { if (typeof factor === 'number' && factor >= 1 && factor <= 2) webFrame.setZoomFactor(factor); },
+  setZoom,
   onZoom: (listener: (direction: 'in' | 'out' | 'reset') => void) => {
     const receive = (_event: IpcRendererEvent, direction: unknown) => { if (direction === 'in' || direction === 'out' || direction === 'reset') listener(direction); };
     ipcRenderer.on('papilot:zoom', receive);
@@ -53,8 +60,7 @@ contextBridge.exposeInMainWorld('papilotDesktop', {
 // Apply the saved interface size before the page first paints, so the window
 // does not open at 100% and then jump. The page keeps it in sync afterwards.
 try {
-  const size = JSON.parse(localStorage.getItem('papilot:appearance') || '{}')?.size;
-  if (typeof size === 'number' && size >= 1 && size <= 2) webFrame.setZoomFactor(size);
+  setZoom(JSON.parse(localStorage.getItem('papilot:appearance') || '{}')?.size);
 } catch { /* storage unavailable or malformed: the page applies its default */ }
 
 // Every handler validates the local chooser window separately from app pages.

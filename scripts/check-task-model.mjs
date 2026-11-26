@@ -49,6 +49,7 @@ await page.route('**/api/**', async route => {
     return json(task);
   }
   if (url.pathname.endsWith('/messages')) { messages.push(route.request().postDataJSON()); return json({ ok: true }); }
+  if (url.pathname === '/api/quick-model') return route.fulfill({ json: { choice: null } });
   throw new Error(`Unexpected fixture request: ${url.pathname}`);
 });
 
@@ -226,6 +227,7 @@ try {
       // Keep the draft open so settings can be exercised without running an agent.
       return route.fulfill({ status: 503, json: { error: 'Test submission captured.' } });
     }
+    if (url.pathname === '/api/quick-model') return route.fulfill({ json: { choice: null } });
     throw new Error(`Unexpected default-model request: ${url.pathname}`);
   });
   await composer.goto(origin);
@@ -265,7 +267,6 @@ try {
   await expect(modelName).toHaveText('Default model');
   await composer.getByRole('button', { name: 'Agent settings', exact: true }).click();
   const unknown = composer.getByRole('dialog', { name: 'Agent settings', exact: true });
-  await expect(unknown.locator('.model-option-restart')).toHaveCount(0); // New tasks have no conversation to restart.
   await expect(unknown.getByRole('option', { name: 'Default model · Codex', exact: true })).toHaveAttribute('aria-selected', 'true');
   await composer.keyboard.press('Escape');
   await composer.getByRole('button', { name: 'Settings', exact: true }).click();

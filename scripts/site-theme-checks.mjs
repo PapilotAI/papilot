@@ -12,12 +12,14 @@ export async function checkSiteTheme(browser, origin, watch = () => {}) {
     const scheme = dark ? 'dark' : 'light';
     const surfaces = [
       ['body', dark ? 'rgb(17, 18, 20)' : 'rgb(255, 255, 255)'],
-      ['.app-window, .mini, .app-chat, .app-git, .demo-note, .mini-comment', dark ? 'rgb(44, 44, 44)' : 'rgb(255, 255, 255)'],
-      ['.review-page, .mini-page', dark ? 'rgb(41, 41, 41)' : 'rgb(255, 255, 255)'],
+      ['.app-window, .app-chat, .app-git, .demo-note', dark ? 'rgb(44, 44, 44)' : 'rgb(255, 255, 255)'],
+      ['.review-page', dark ? 'rgb(41, 41, 41)' : 'rgb(255, 255, 255)'],
       ['.app-pdf', dark ? 'rgb(30, 30, 30)' : 'rgb(245, 245, 245)'],
-      // Each drawn change is the current one, its header in the selection colour.
-      ['.review-head', dark ? 'rgb(28, 58, 87)' : 'rgb(229, 243, 255)'],
-      ['.mini-head, .draft-note', dark ? 'rgb(48, 48, 48)' : 'rgb(250, 250, 250)'],
+      // The current change's header is in the selection colour; another
+      // change still to decide keeps the window's.
+      ['.review-change.current .review-head', dark ? 'rgb(28, 58, 87)' : 'rgb(229, 243, 255)'],
+      ['.review-change:not(.current) .review-head', dark ? 'rgb(44, 44, 44)' : 'rgb(255, 255, 255)'],
+      ['.draft-note', dark ? 'rgb(48, 48, 48)' : 'rgb(250, 250, 250)'],
       ['.chat-bubble', dark ? 'rgb(56, 56, 56)' : 'rgb(245, 245, 245)'],
     ];
     for (const [selector, background] of surfaces) {
@@ -28,7 +30,7 @@ export async function checkSiteTheme(browser, origin, watch = () => {}) {
       assert.ok(styles.length, `${selector} is covered`);
       for (const style of styles) assert.deepEqual(style, { background, scheme }, `${scheme}: ${selector}`);
     }
-    for (const selector of ['.review-page', '.mini-page', '.chat-bubble', '.demo-note', '.git-typed']) {
+    for (const selector of ['.review-page', '.chat-bubble', '.demo-note', '.git-typed']) {
       const colors = await page.locator(selector).evaluateAll(nodes => nodes.map(el => getComputedStyle(el).color));
       for (const color of colors) {
         const channels = color.match(/\d+/g).slice(0, 3).map(Number);
@@ -63,7 +65,7 @@ export async function checkSiteTheme(browser, origin, watch = () => {}) {
   await nightPage.screenshot({ path: 'test-results/site/dark.png' });
   await nightPage.locator(`${change} .review-accept`).click();
   await nightPage.waitForFunction(selector => getComputedStyle(document.querySelector(selector)).backgroundColor === 'rgb(41, 41, 41)', `${change} .after`);
-  for (const selector of ['#why', '[data-scene=notes]', '[data-scene=revise]', '[data-scene=record]']) {
+  for (const selector of ['#overleaf', '[data-scene=notes]', '[data-scene=revise]', '[data-scene=models]', '[data-scene=record]', '[data-scene=phone]', '[data-scene=template]']) {
     await nightPage.locator(selector).screenshot({ animations: 'disabled', style: '.topbar{visibility:hidden!important}', path: `test-results/site/dark-${selector.replace(/[^a-z]/g, '')}.png` });
   }
   await nightPage.setViewportSize({ width: 390, height: 844 });

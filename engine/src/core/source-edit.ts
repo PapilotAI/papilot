@@ -3,6 +3,7 @@ import { revertUnits, splitLines, textOf } from "./changes.ts";
 import { opcodesWithin } from "./diff.ts";
 import { readBytes, same, writeOrDelete } from "./files.ts";
 import { safePath } from "./review.ts";
+import { optionCandidate } from "./option-preview.ts";
 import type { App } from "../server.ts";
 import type { PageState, SourceExcerpt, SourceEditRequest, SourceFileRead, SourceFileSave } from "../types.ts";
 
@@ -114,6 +115,18 @@ export class SourceEdits {
     let reviewed = Boolean(after) && same(current, after), reverted: string[] = [];
     if (!reviewed && after && before && rejected.length && !rejected.some(unit => unit.whole_file) && same(current, revertUnits(before, after, rejected))) {
       reviewed = true; reverted = rejected.map(unit => unit.id);
+    }
+    // An accepted note option puts its wording in the worktree as well.
+    const variants = this.app.review.variants(name, round.number), worded = round.units.filter(unit => unit.file === file && Object.hasOwn(variants, unit.id));
+    if (!reviewed && after && worded.length) {
+      let expected: Buffer | null | undefined;
+      try {
+        expected = optionCandidate(round.units, worded.map(unit => ({ unit: unit.id, text: variants[unit.id] })), () => after.toString("utf8"),
+          { ids: new Set(rejected.map(unit => unit.id)), source: () => before }).files[file];
+      } catch { expected = undefined; }
+      if (expected && same(current, expected))
+        return { round: round.number, file, revision: revision(current), text, base: base ? textOf(base) : null, before: before ? textOf(before) : null, reviewed: true,
+          reverted: rejected.map(unit => unit.id), worded: Object.fromEntries(worded.map(unit => [unit.id, variants[unit.id]])) };
     }
     return { round: round.number, file, revision: revision(current), text, base: base ? textOf(base) : null, before: before ? textOf(before) : null, reviewed, reverted };
   }

@@ -261,6 +261,7 @@ await page.route('**/api/**', async route => {
     pending.status = 'preparing'; pending.error = null;
     return json(pending);
   }
+  if (url.pathname === '/api/quick-model') return route.fulfill({ json: { choice: null } });
   throw new Error(`Unexpected fixture request: ${url.pathname}`);
 });
 await page.route('**/review/**', route => reviewFailure ? route.fulfill({ status: 503, json: { error: 'Review server unavailable.' } }) : reviewStarting ? route.fulfill({ contentType: 'text/html', body: '<html><head></head><body><div id="root"></div></body></html>' }) : route.fulfill({ contentType: 'text/html', body: '<html lang="en"><head></head><body><div class="bar">Review round 1</div><main id="paper"><h2>Introduction</h2><p>PDF review fixture</p></main></body></html>' }));
@@ -390,7 +391,7 @@ try {
   await settingsDialog.getByRole('searchbox', { name: 'Search settings' }).fill('');
   await page.screenshot({ path: 'test-results/settings-review-desktop.png' });
   const runtimeGroup = settingsDialog.locator('.settings-category-group').filter({ has: page.getByRole('heading', { name: 'Runtime', exact: true }) });
-  assert.deepEqual(await runtimeGroup.getByRole('button').allTextContents(), ['Git', 'Agents', 'LaTeX']);
+  assert.deepEqual(await runtimeGroup.getByRole('button').allTextContents(), ['Git', 'Agents', 'LaTeX', 'Overleaf', 'Zotero']);
   await runtimeGroup.getByRole('button', { name: 'Agents', exact: true }).click();
   const diagnostics = settingsDialog;
   assert.equal(await diagnostics.getByRole('button', { name: 'Copy diagnostic summary' }).count(), 0);
@@ -433,11 +434,11 @@ try {
   await codexCard.click();
   await agentDetail.getByRole('button', { name: 'Show 2 more models', exact: true }).waitFor();
   assert.equal(await codexCard.evaluate(element => element === document.activeElement), true, 'Opening the drawer keeps focus on its trigger');
-  assert.equal(await agentDetail.locator('.runtime-model-list li').count(), 6);
-  assert.deepEqual((await agentDetail.locator('.runtime-model-list li>span').allTextContents()).slice(0, 2), ['Fast model', 'Deep model']);
-  assert.equal(await agentDetail.locator('.runtime-model-list li').first().getAttribute('title'), 'fast-model');
+  assert.equal(await agentDetail.locator('.runtime-model-list button').count(), 6);
+  assert.deepEqual((await agentDetail.locator('.runtime-model-list button>span').allTextContents()).slice(0, 2), ['Fast model', 'Deep model']);
+  assert.equal(await agentDetail.locator('.runtime-model-list button').first().getAttribute('title'), 'fast-model');
   await agentDetail.getByRole('button', { name: 'Show 2 more models', exact: true }).click();
-  assert.equal(await agentDetail.locator('.runtime-model-list li').count(), 8);
+  assert.equal(await agentDetail.locator('.runtime-model-list button').count(), 8);
   assert.equal(await codexCard.getAttribute('aria-expanded'), 'true');
   assert.equal(await agentDetail.getByRole('meter').getAttribute('aria-valuenow'), '83');
   await agentDetail.getByText('12,418 credits', { exact: true }).waitFor();
@@ -449,7 +450,7 @@ try {
   await diagnostics.locator('.settings-content').evaluate(element => { element.scrollTop = 0; });
   await page.screenshot({ path: 'test-results/settings-agent-details-desktop.png', animations: 'disabled' });
   await agentDetail.getByRole('button', { name: 'Show fewer models', exact: true }).click();
-  assert.equal(await agentDetail.locator('.runtime-model-list li').count(), 6);
+  assert.equal(await agentDetail.locator('.runtime-model-list button').count(), 6);
   snapshot.runtime.models = originalCatalog;
   snapshot.runtime.usage.reached = true;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));

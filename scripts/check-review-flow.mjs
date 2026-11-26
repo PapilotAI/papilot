@@ -101,6 +101,7 @@ const appRoutes = async route => {
   }
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/messages')) { task.status = 'running'; task.review.unsent = 0; return route.fulfill({ json: { ok: true } }); }
+  if (url.pathname === '/api/quick-model') return route.fulfill({ json: { choice: null } });
   throw Error(`Unexpected app request ${url.pathname}`);
 };
 const reviewRoutes = async route => {
@@ -583,6 +584,22 @@ try {
   await viewer().locator('.document').evaluate(el => { el.style.minHeight = ''; });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.screenshot({ path: 'test-results/task-apply-desktop.png', fullPage: true, animations: 'disabled' });
+  // What Papilot noticed in the reviews comes up below the save step, styled
+  // inside the viewer and never in the way of saving.
+  task.memory = [{ id: 'noticed', text: 'Don\'t strengthen claims: write "show", not "prove".', scope: 'personal', examples: [{ task: task.id, rejected: 'We prove that', kept: 'We show that' }], status: 'pending' }];
+  await sync();
+  const nudge = card.getByRole('region', { name: 'Writing memory' });
+  await expect(nudge).toContainText('Don\'t strengthen claims');
+  await expect(nudge.getByRole('list')).toBeHidden();
+  await nudge.getByText('What prompted it', { exact: true }).click();
+  await expect(nudge.locator('del')).toHaveText('Rejected: We prove that');
+  assert.equal(await nudge.getByRole('button', { name: 'Remember', exact: true }).evaluate(el => getComputedStyle(el).color), 'rgb(255, 255, 255)', 'the viewer has the nudge styles');
+  assert.equal(await nudge.locator('.memory-nudge-hidden').first().evaluate(el => el.getBoundingClientRect().width), 1);
+  await expect(applyButton()).toBeEnabled();
+  await expect(commitButton()).toBeEnabled();
+  await page.screenshot({ path: 'test-results/review-memory-nudge.png', animations: 'disabled' });
+  task.memory = undefined; await sync();
+  await expect(nudge).toHaveCount(0);
   await applyButton().click();
   await expect(card.getByText('Applied to manuscript', { exact: true })).toBeVisible();
   await expect(taskStatus).toHaveText('Applied to manuscript');

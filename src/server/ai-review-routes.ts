@@ -58,17 +58,49 @@ export function registerAiReviewRoutes(app: FastifyInstance, store: Store, manus
       const { document: _, ...unplaced } = placed, document = manuscripts.documentOf(original.projectId, placed.key);
       const copy = store.saveAnnotation({ ...unplaced, ...(document ? { document } : {}), id: copyId, createdAt: Date.now(), aiReview: { taskId: id, agent: current.aiReview!.agent, sourceId: noteId } });
       const note = store.saveAnnotation({ ...current, aiReview: { ...current.aiReview!, copiedTo: copyId } });
+      const task = review(id);
+      store.recordActivity({
+        key: `decision:ai-review:${id}:${noteId}:copy`,
+        at: copy.createdAt,
+        kind: 'review_decision',
+        projectId: original.projectId,
+        taskId: id,
+        agent: current.aiReview!.agent,
+        model: task.model,
+        data: { action: 'accept', count: 1, source: 'ai-review', projectName: store.findProject(original.projectId)?.name },
+      }, true);
       changed(id);
       return { note, copy };
     });
   });
   app.post<{ Params: { id: string; note: string } }>('/api/tasks/:id/ai-review/:note/delete', access, request => {
-    const note = finding(request.params.id, request.params.note);
-    store.transaction(() => { store.deleteAnnotation(note.projectId, note.id); changed(request.params.id); });
+    const note = finding(request.params.id, request.params.note), task = review(request.params.id);
+    store.transaction(() => {
+      const wasActive = note.deletedAt === undefined;
+      store.deleteAnnotation(note.projectId, note.id);
+      if (wasActive && !note.aiReview?.copiedTo) {
+        store.recordActivity({
+          key: `decision:ai-review:${request.params.id}:${note.id}`,
+          at: Date.now(),
+          kind: 'review_decision',
+          projectId: note.projectId,
+          taskId: request.params.id,
+          agent: note.aiReview!.agent,
+          model: task.model,
+          data: { action: 'reject', count: 1, source: 'ai-review', projectName: store.findProject(note.projectId)?.name },
+        }, true);
+      }
+      changed(request.params.id);
+    });
     return { ok: true };
   });
   app.post<{ Params: { id: string; note: string } }>('/api/tasks/:id/ai-review/:note/restore', access, request => {
     const { deletedAt: _, ...note } = finding(request.params.id, request.params.note);
-    return store.transaction(() => { const saved = store.saveAnnotation(note); changed(request.params.id); return saved; });
+    return store.transaction(() => {
+      const saved = store.saveAnnotation(note);
+      if (!note.aiReview?.copiedTo) store.undoActivity(`decision:ai-review:${request.params.id}:${note.id}`);
+      changed(request.params.id);
+      return saved;
+    });
   });
 }

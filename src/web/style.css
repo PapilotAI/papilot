@@ -585,9 +585,6 @@ body.resizing iframe{pointer-events:none}
 .model-option-agent{margin-left:auto}
 .model-option-agent+svg{margin-left:0}
 .model-option-agent.warn{color:var(--amber-text)}
-.model-option-restart{display:flex;flex:none;margin-left:auto;color:var(--text-3)}
-.model-option-restart svg{stroke-width:1.5}
-.model-option-agent+.model-option-restart{margin-left:0}
 .model-empty{padding:14px 8px;font-size:12px;color:var(--text-3)}
 .agent-picker-panel>.agent-connection{margin:8px 2px 2px}
 .agent-picker-panel>.agent-effort,.agent-picker-panel>.agent-fast{margin-left:0;margin-right:0;padding-left:6px;padding-right:6px}
@@ -778,12 +775,18 @@ body.resizing iframe{pointer-events:none}
 .pdf-pager input{width:40px;height:24px;padding:0 4px;text-align:center;border:1px solid transparent;border-radius:var(--r);font-size:12px;font-variant-numeric:tabular-nums;outline:none;background:var(--bg-muted)}
 .pdf-pager input:focus{border-color:var(--accent);box-shadow:none;background:var(--bg)}
 .pdf-pager input:hover:not(:focus){border-color:var(--line)}
+/* The complete PDF still compiles while an earlier version shows: an indeterminate progress. */
+progress.pdf-preparing{appearance:none;flex:none;width:12px;height:12px;margin:0 4px;border:2px solid var(--line-strong);border-top-color:var(--text-2);border-radius:50%;background:none;animation:spin .8s linear infinite}
+progress.pdf-preparing::-webkit-progress-bar,progress.pdf-preparing::-webkit-progress-value{background:none}
+progress.pdf-preparing::-moz-progress-bar{background:none}
 .pdf-pages{min-width:34px;padding-left:4px;color:var(--text-3);font-variant-numeric:tabular-nums}
 .pdf-zoom{padding:0 2px}
 .pdf-toolbar .icon-button{width:28px;height:28px}
 .pdf-toolbar .icon-button.active,.pdf-find .icon-button.active{background:var(--bg-active);color:var(--text)}
 @container (max-width:1120px){.review-host-bar.pdf-toolbar .pdf-zoom>.icon-button{display:none}}
-@container (max-width:760px){.pdf-toolbar .pdf-zoom,.review-host-bar.pdf-toolbar .pdf-pager>.icon-button{display:none}}
+@container (max-width:760px){
+  html:not([data-desktop]) .pdf-toolbar .pdf-zoom,.pdf-toolbar .pdf-zoom>.icon-button,.review-host-bar.pdf-toolbar .pdf-pager>.icon-button{display:none}
+}
 @container (max-width:620px){.pdf-pager>.icon-button{display:none}}
 @container (max-width:400px){.pdf-toolbar .pdf-modes>button{padding:0 6px}.pdf-pages{min-width:24px;padding-left:2px}}
 .pdf-find{display:flex;align-items:center;gap:6px;height:40px;padding:0 8px 0 14px;border-bottom:1px solid var(--line);background:var(--bg);flex-shrink:0}
@@ -1025,11 +1028,11 @@ body.resizing iframe{pointer-events:none}
 .settings-text p{margin:2px 0 0;font-size:11px;line-height:1.45;color:var(--text-2)}
 .message-author{align-self:flex-end;margin:0 6px 3px;font-size:12px;font-weight:500;color:var(--text-3)}
 .message.user:has(>.message-author){display:flex;flex-direction:column;align-items:flex-end}
-.settings-dialog input.switch,.import-sync input.switch{appearance:none;flex:none;position:relative;width:28px;height:16px;margin:2px 0 0;padding:0;border:0;border-radius:8px;background:var(--bg-active);box-shadow:none;cursor:pointer;transition:background-color .15s}
-.settings-dialog input.switch::before,.import-sync input.switch::before{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.25);transition:transform .15s var(--ease)}
-.settings-dialog input.switch:checked,.import-sync input.switch:checked{background:var(--accent)}
-.settings-dialog input.switch:checked::before,.import-sync input.switch:checked::before{transform:translateX(12px)}
-.settings-dialog input.switch:focus-visible,.import-sync input.switch:focus-visible{box-shadow:0 0 0 1px var(--raised),0 0 0 3px var(--accent)}
+.settings-dialog input.switch,.citation-check-show input.switch,.import-sync input.switch{appearance:none;flex:none;position:relative;width:28px;height:16px;margin:2px 0 0;padding:0;border:0;border-radius:8px;background:var(--bg-active);box-shadow:none;cursor:pointer;transition:background-color .15s}
+.settings-dialog input.switch::before,.citation-check-show input.switch::before,.import-sync input.switch::before{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.25);transition:transform .15s var(--ease)}
+.settings-dialog input.switch:checked,.citation-check-show input.switch:checked,.import-sync input.switch:checked{background:var(--accent)}
+.settings-dialog input.switch:checked::before,.citation-check-show input.switch:checked::before,.import-sync input.switch:checked::before{transform:translateX(12px)}
+.settings-dialog input.switch:focus-visible,.citation-check-show input.switch:focus-visible,.import-sync input.switch:focus-visible{box-shadow:0 0 0 1px var(--raised),0 0 0 3px var(--accent)}
 .settings-dialog input.switch:disabled,.import-sync input.switch:disabled{opacity:.45;cursor:not-allowed}
 .settings-test{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:12px;color:var(--text-2)}
 .settings-test .button{display:inline-flex;align-items:center;gap:6px}
@@ -1041,9 +1044,9 @@ body.resizing iframe{pointer-events:none}
   .settings-row.settings-note-options{flex-direction:column;align-items:stretch;gap:8px}
   .settings-note-count{width:100%}
   .segmented label{height:32px;font-size:13px}
-  .settings-dialog input.switch,.import-sync input.switch{width:40px;height:24px;margin-top:0;border-radius:12px}
-  .settings-dialog input.switch::before,.import-sync input.switch::before{width:20px;height:20px}
-  .settings-dialog input.switch:checked::before,.import-sync input.switch:checked::before{transform:translateX(16px)}
+  .settings-dialog input.switch,.citation-check-show input.switch,.import-sync input.switch{width:40px;height:24px;margin-top:0;border-radius:12px}
+  .settings-dialog input.switch::before,.citation-check-show input.switch::before,.import-sync input.switch::before{width:20px;height:20px}
+  .settings-dialog input.switch:checked::before,.citation-check-show input.switch:checked::before,.import-sync input.switch:checked::before{transform:translateX(16px)}
   .settings-dialog input.switch::after,.import-sync input.switch::after{content:"";position:absolute;inset:-6px -2px}
 }
 @media(max-width:480px){.settings-row:not(.settings-notifications):not(.settings-toggle){flex-direction:column;align-items:stretch;gap:8px}.segmented{display:flex}.segmented label{flex:1;justify-content:center}.settings-dialog select{width:100%}}
@@ -1174,7 +1177,7 @@ body.resizing iframe{pointer-events:none}
   .review-host-bar.pdf-toolbar{height:auto;min-height:42px;gap:0;padding:0;background:transparent;border-bottom:0;pointer-events:none}
   .review-host-bar.pdf-toolbar .review-lead{min-height:42px;padding-left:6px}
   .review-host-bar.pdf-toolbar .review-tools{min-height:42px;padding-left:8px}
-  .pdf-zoom{display:none}
+  html:not([data-desktop]) .pdf-zoom{display:none}
   .pdf-modes{border:0;padding:2px;border-radius:8px;background:var(--bg-muted)}
   .pdf-modes>button{width:30px;height:28px;padding:0;border-radius:6px}
   .pdf-modes>button>span{display:none}

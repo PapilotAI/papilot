@@ -37,7 +37,7 @@ export async function checkSiteBehavior(context) {
 
     await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
     await page.locator('.scroll-cue').click();
-    assert.deepEqual((await events('navigation')).at(-1).data, { locale: 'en', target: 'agents', placement: 'hero' });
+    assert.deepEqual((await events('navigation')).at(-1).data, { locale: 'en', target: 'features', placement: 'hero' });
     await page.locator('#download-button').focus();
     await page.keyboard.press('ArrowDown');
     assert.deepEqual((await events('menu_open')).at(-1).data, { locale: 'en', menu: 'download', placement: 'hero' });

@@ -10,7 +10,7 @@ import { browserStorage } from './storage.ts';
 import { NotePreviewCache } from './note-preview-cache.ts';
 
 export interface NoteFocus { key: string; change: NoteChange; sequence: number; historical: boolean }
-type OptionsRequest = (id: string, key: string, body?: { round: number; option?: string; id?: string; accept?: boolean; reject?: boolean }) => Promise<NoteOptions | { building: true }>;
+type OptionsRequest = (id: string, key: string, body?: { round: number; option?: string; id?: string; accept?: boolean; reject?: boolean }) => Promise<NoteOptions>;
 type Preview = { key: string; round: number; option: string; version?: string; detail?: RoundDetail; busy?: boolean } | null;
 type Advance = { key: string; round: number; units: string[] };
 type PreviewRequest = (id: string, key: string, round: number, option: string, retry?: boolean, version?: string, background?: boolean) => Promise<RoundDetail>;
@@ -354,13 +354,12 @@ export function InlineNoteBar({ note }: { note: NoteResult }) {
     browserStorage.setItem(storageKey, JSON.stringify({ round: data.round, option }));
   };
   const decide = async (option: NoteOption, action: 'accept' | 'reject') => {
-    if (!request || !task || !data || applying || locked || !links.previewRequest) return;
+    if (!request || !task || !data || applying || locked) return;
     if (selected !== option.id) choose(option.id);
     setApplying(true); setError('');
     try {
       if (requestId.current?.option !== option.id || requestId.current.action !== action)
         requestId.current = { option: option.id, action, id: crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(20)), byte => byte.toString(16).padStart(2, '0')).join('') };
-      if (action === 'accept') await links.previewRequest(task.id, note.key, data.round, option.id, false, data.comparisonKey);
       const actionId = requestId.current.id;
       const result = await request(task.id, note.key, { round: data.round, option: option.id, id: actionId, ...(action === 'accept' ? { accept: true } : { reject: true }) });
       requestId.current = null;

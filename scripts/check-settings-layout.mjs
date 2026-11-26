@@ -41,12 +41,61 @@ try {
       if (pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
       if (pathname === '/api/runtime/requirements') return route.fulfill({ json: { platform: 'win32', checks: ['git', 'latexmk', 'synctex', 'tex-engine'].map(id => ({ id, ok: false })) } });
       if (pathname === '/api/runtime/latex') return route.fulfill({ json: { distribution: 'MiKTeX', version: '26.10', path: 'C:\\Users\\Researcher.with.a.very.long.university.username\\AppData\\Local\\Programs\\MiKTeX\\miktex\\bin\\x64' } });
+      if (pathname === '/api/library/zotero') return route.fulfill({ json: { local: { chosen: 'C:\\Users\\Researcher.with.a.very.long.university.username\\OneDrive - Example University\\Zotero', state: 'ready', dataDir: 'C:\\Users\\Researcher.with.a.very.long.university.username\\OneDrive - Example University\\Zotero', items: 12408, withPdf: 9876, citationKeys: 12408 },
+        account: { username: 'researcher.with.a.long.zotero.username', libraries: [{ name: null, items: 12408, withPdf: 9876, citationKeys: 12408 }, { name: 'Programming Languages and Formal Methods Reading Group', items: 2210, withPdf: 1980, citationKeys: 0 }], syncing: false, synced: 1, problem: 'unreachable' }, use: true } });
       if (pathname === '/api/diagnostics') return route.fulfill({ json: { version: '0.9.4', checkedAt: 1, platform: 'win32', arch: 'x64', node: '24.22.2', ok: true, checks: [] } });
       if (pathname.startsWith('/api/updates')) return route.fulfill({ json: update });
       if (pathname === '/api/quick-notes') return route.fulfill({ json: { quickNotes: [
         { id: 'custom-reference', label: 'Literaturverzeichnis', instruction: 'Check the bibliography against the cited source.', icon: 'book' }, { id: 'polish' },
       ] } });
+      if (pathname === '/api/activity') {
+        const hours = Array.from({ length: 24 }, (_, h) => (h >= 9 && h <= 22 ? (h % 5) + 1 : 0));
+        const days = Array.from({ length: 30 }, (_, idx) => {
+          const date = new Date(Date.UTC(2026, 10, idx + 1)).toISOString().slice(0, 10);
+          return {
+            date,
+            tokens: { input: 42000, cached: 128000, cacheWrite: 4000, output: 11500, reasoning: 3200, total: 185500 },
+            costUsd: 0.482, reportedCostUsd: 0.21, estimatedCostUsd: 0.272, pricedTokens: 175500, unpricedTokens: 10000,
+            tasksStarted: 2, editTasksStarted: 1, reviewTasksStarted: 1,
+            turns: 5, completedTurns: 5, failedTurns: 0, interruptedTurns: 0,
+            turnsByRole: { edit: 3, review: 1, worker: 1, helper: 0 },
+            accepted: 8, rejected: 2, commented: 1, undone: 1,
+            tasksApplied: 1, tasksCommitted: 1, gitCommits: 1,
+            annotationsCreated: 6, authorAnnotations: 4, agentAnnotations: 1, aiReviewAnnotations: 1, annotationsSent: 4,
+            hours, turnHours: hours, tokenHours: hours.map(v => v * 12000),
+          };
+        });
+        return route.fulfill({ json: {
+          timezone: 'America/Indiana/Indianapolis',
+          today: '2026-11-30',
+          range: '30d',
+          generatedAt: Date.UTC(2026, 10, 30, 18),
+          projectId: null,
+          projects: [
+            { id: 'p1', name: 'Asymptotic Stability of High-Dimensional Stochastic Differential Equations with Long Paper Title', tasksStarted: 14, turns: 42, tokens: 1855000, costUsd: 4.82, accepted: 64, rejected: 12, annotationsCreated: 38 },
+            { id: 'p2', name: 'Archived Supplementary Material Paper', removed: true, tasksStarted: 4, turns: 8, tokens: 220000, costUsd: 0.65, accepted: 10, rejected: 3, annotationsCreated: 9 },
+          ],
+          totals: { ...days[0], tokens: { input: 420000, cached: 1280000, cacheWrite: 40000, output: 115000, reasoning: 32000, total: 1855000 }, costUsd: 4.82, reportedCostUsd: 2.1, estimatedCostUsd: 2.72, activeDays: 30 },
+          hours, turnHours: hours, tokenHours: hours.map(v => v * 120000),
+          days,
+          calendar: Array.from({ length: 371 }, (_, idx) => {
+            const date = new Date(Date.UTC(2026, 10, 30 - idx)).toISOString().slice(0, 10);
+            return { date, actions: idx % 7, tokens: (idx % 9) * 61000, costUsd: idx % 4 ? 0.37 : null, reportedCostUsd: 0, estimatedCostUsd: idx % 4 ? 0.37 : 0, turns: idx % 7, accepted: idx % 5, rejected: idx % 3, commented: 0, annotationsCreated: idx % 6 };
+          }).filter(day => day.turns > 0).reverse(),
+          agents: [
+            { agent: 'codex', tasksStarted: 10, turns: 30, tokens: { input: 300000, cached: 1000000, cacheWrite: 0, output: 80000, reasoning: 25000, total: 1380000 }, costUsd: 2.72, reportedCostUsd: 0, estimatedCostUsd: 2.72, unpricedTokens: 0 },
+            { agent: 'claude', tasksStarted: 8, turns: 20, tokens: { input: 120000, cached: 280000, cacheWrite: 40000, output: 35000, reasoning: 7000, total: 475000 }, costUsd: 2.1, reportedCostUsd: 2.1, estimatedCostUsd: 0, unpricedTokens: 10000 },
+          ],
+          models: [
+            { agent: 'codex', model: 'openai-codex/gpt-5.5-research-preview-with-extended-reasoning-window', turns: 30, tokens: { input: 300000, cached: 1000000, cacheWrite: 0, output: 80000, reasoning: 25000, total: 1380000 }, costUsd: 2.72, costSource: 'estimated' },
+            { agent: 'claude', model: 'claude-opus-4-7-20261001', turns: 20, tokens: { input: 120000, cached: 280000, cacheWrite: 40000, output: 35000, reasoning: 7000, total: 475000 }, costUsd: 2.1, costSource: 'reported' },
+          ],
+        } });
+      }
       if (pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
+      if (pathname === '/api/memory') return route.fulfill({ json: { shareable: true, learning: true, language: 'auto', files: [
+        { scope: 'personal', revision: 'r', path: '~/.papilot/memory.md', rules: ['Prefer British spelling, except in quotations and in the names of American institutions, journals and conferences.', 'Avoid "utilize", "leverage" and "delve".'] },
+      ] } });
       return route.fulfill({ json: {} });
     });
     const page = await context.newPage();
@@ -77,10 +126,14 @@ try {
           await page.screenshot({ animations: 'disabled', path: `test-results/settings-navigation-${width}.png` });
         }
         await category.click();
-        if (name === 'latex') await page.locator('.latex-installation-facts').waitFor();
+        if (name === 'latex' || name === 'zotero') await page.locator('.settings-facts').last().waitFor();
         if (name === 'experiments') await expect(page.locator('.phitex-experiment').getByRole('switch')).toBeChecked();
         if (name === 'updates') await page.locator('.settings-content-updates [role=alert]').waitFor();
         if (name === 'skills') await expect(page.locator('.skill-library-new')).toBeEnabled();
+        if (name === 'statistics') {
+          await page.locator('.activity-insights').waitFor();
+          await expect(page.locator('.activity-heatmap .activity-heat-cell:not([data-level="0"])').first()).toBeVisible();
+        }
         if (name === 'quickNotes') await page.locator('.quick-note-text strong').getByText('Literaturverzeichnis', { exact: true }).waitFor();
         await page.evaluate(() => document.fonts.ready);
         if (width > 760) {

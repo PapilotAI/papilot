@@ -147,7 +147,7 @@ export function CreatePaperPanel({ api, onDone, preset, tab, active, onBusyChang
           <button type="button" className="button ghost compact" disabled={busy} onClick={() => setStep('template')}>{t('Change…')}</button>
         </div>}
       <form onSubmit={event => { event.preventDefault(); void submit(); }}>
-        <label htmlFor={id + '-name'}>{t('Paper name')}</label><input id={id + '-name'} name="name" value={form.name} required maxLength={120} autoComplete="off" disabled={busy} onChange={event => setForm({ ...form, name: event.target.value })}/>
+        <label htmlFor={id + '-name'}>{t('Paper name')}</label><input id={id + '-name'} name="name" value={form.name} required maxLength={120} autoComplete="off" disabled={busy} onChange={event => setForm(current => ({ ...current, name: event.target.value }))}/>
         {nativeFolders ? <>
           <div className="create-paper-save-label" id={id + '-location'}>{t('Save in')}</div>
           <div className="create-paper-location"><Icon name="folder" size={16}/><div className="create-paper-location-copy" role="group" aria-labelledby={id + '-location'}><strong>{form.parent.split(/[\\/]/).filter(Boolean).at(-1) || form.parent}</strong><span>{form.parent}</span></div><button type="button" className="button secondary compact" disabled={busy} onClick={() => void browse()}>{t('Change…')}</button></div>

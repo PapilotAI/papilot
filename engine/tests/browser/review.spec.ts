@@ -41,11 +41,16 @@ test("full-paper diagnostics follow the pinned PDF through chapter, raw pass and
   });
   const summary = page.locator('summary').filter({ hasText: 'This PDF has compilation errors.' });
   const diagnostics = page.getByRole('region', { name: 'This PDF has compilation errors.' });
+  // An earlier version is announced to the host's PDF toolbar, not drawn over the pages.
+  await page.addInitScript(() => window.addEventListener('papilot:review:pdf-reader-state', event => {
+    (window as unknown as { readerState: unknown }).readerState = (event as CustomEvent).detail;
+  }));
+  const preparing = () => page.evaluate(() => typeof (window as unknown as { readerState?: { preparing?: number } }).readerState?.preparing === 'number');
   await page.reload();
   await expect(summary).toBeVisible();
   await summary.focus(); await page.keyboard.press('Enter');
   await expect(diagnostics).toHaveText(chapter);
-  await expect(page.locator('.paper-updating')).toBeVisible();
+  await expect.poll(preparing).toBe(true);
   expect(requests).toContain('?build=chapter');
   // A raw TeX pass has no completed build diagnostics of its own.
   releaseRaw();
@@ -54,10 +59,10 @@ test("full-paper diagnostics follow the pinned PDF through chapter, raw pass and
   releaseFinal();
   await expect.poll(() => requests.includes('?build=full')).toBe(true);
   await expect(summary).toHaveCount(0); // Metadata cannot label the old pages.
-  await expect(page.locator('.paper-updating')).toBeVisible();
+  expect(await preparing()).toBe(true);
   releasePdf();
   await expect(summary).toBeVisible();
-  await expect(page.locator('.paper-updating')).toHaveCount(0);
+  await expect.poll(preparing).toBe(false);
   await summary.focus(); await page.keyboard.press('Enter');
   await expect(diagnostics).toHaveText(full);
   for (const width of [1440, 390]) {
@@ -71,9 +76,15 @@ test("full-paper diagnostics follow the pinned PDF through chapter, raw pass and
   repaired = true;
   await page.reload();
   await expect(page.locator('.paper-page')).toHaveCount(2);
-  await expect(page.locator('.paper-updating')).toHaveCount(0);
+  await expect.poll(preparing).toBe(false);
   await expect(summary).toHaveCount(0);
   expect(requests).toContain('?build=repaired');
+  // The pages' words outside the changes are selectable too.
+  const word = page.locator('.paper-slice .textLayer span').filter({ hasText: /\w{3,}/ }).first();
+  await expect(word).toBeAttached();
+  await word.scrollIntoViewIfNeeded();
+  await word.dblclick();
+  expect((await page.evaluate(() => window.getSelection()?.toString() ?? '')).trim()).toMatch(/\w{3,}/);
 });
 test("full-paper load failure does not attach completed diagnostics to a partial PDF", async ({ page }) => {
   const pdf = readFileSync(new URL('../../../tests/fixtures/outline.pdf', import.meta.url));

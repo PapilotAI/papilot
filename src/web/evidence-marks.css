@@ -1,0 +1,51 @@
+/* Checked citations in a PDF's margin: a thin bar beside each paragraph,
+   one segment per citation, worst first, and a raised card beside it. */
+.evidence-tag{position:absolute;z-index:3;display:flex;flex-direction:column;gap:2px;width:13px;min-height:8px;padding:0 5px;border:0;background:none;cursor:pointer;pointer-events:auto}
+.evidence-tag>span{flex:1;min-height:3px;border-radius:2px;background:var(--text-3);transition:transform .12s var(--ease)}
+.evidence-tag>[data-verdict=supported],.evidence-verdict[data-verdict=supported]{--tone:var(--green)}
+.evidence-tag>[data-verdict=partial],.evidence-verdict[data-verdict=partial]{--tone:var(--amber)}
+.evidence-tag>[data-verdict=unsupported],.evidence-verdict[data-verdict=unsupported]{--tone:var(--red)}
+.evidence-tag>[data-verdict=unclear],.evidence-verdict[data-verdict=unclear]{--tone:var(--text-3)}
+.evidence-tag>[data-verdict=suggested],.evidence-verdict[data-verdict=suggested]{--tone:var(--accent)}
+.evidence-tag>span{background:var(--tone)}
+/* A sentence that could cite a work is a suggestion, not a verdict: dashed. */
+.evidence-tag>[data-verdict=suggested]{background:repeating-linear-gradient(to bottom,var(--tone) 0 3px,transparent 3px 5px)}
+.evidence-tag:hover>span,.evidence-tag[aria-expanded=true]>span{transform:scaleX(1.6)}
+.evidence-tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:3px}
+@media(pointer:coarse){.evidence-tag{width:24px;padding:0 10px;margin-left:-6px}}
+@media(prefers-reduced-motion:reduce){.evidence-tag>span{transition:none}}
+@media(forced-colors:active){.evidence-tag>span{forced-color-adjust:none;background:CanvasText}}
+
+/* The sentences a card is about, softly lit. */
+.evidence-sentence{position:absolute;z-index:2;border-radius:2px;background:color-mix(in srgb,var(--accent) 14%,transparent);pointer-events:none}
+
+.evidence-card{position:absolute;z-index:6;display:grid;gap:10px;width:min(360px,94%);max-height:min(60%,520px);padding:10px 12px 12px;overflow:auto;border-radius:14px;background:var(--raised);box-shadow:var(--float);pointer-events:auto;font:12px/1.5 var(--sans);color:var(--text);text-align:left;cursor:auto;user-select:text;overscroll-behavior:contain}
+.evidence-card:focus{outline:none}
+.evidence-card:focus-visible{outline:2px solid var(--accent)}
+.evidence-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.evidence-tally{display:flex;flex-wrap:wrap;gap:4px 10px;margin:0;font-size:11px;font-weight:600;color:var(--text-2)}
+.evidence-tally>span{display:inline-flex;align-items:center;gap:5px}
+.evidence-tally i{width:7px;height:7px;border-radius:50%;background:var(--text-3)}
+.evidence-tally>[data-verdict=supported] i{background:var(--green)}
+.evidence-tally>[data-verdict=partial] i{background:var(--amber)}
+.evidence-tally>[data-verdict=unsupported] i{background:var(--red)}
+.evidence-tally>[data-verdict=suggested] i{background:var(--accent)}
+.evidence-list{display:grid;gap:12px;margin:0;padding:0;list-style:none}
+.evidence-list>li{display:grid;gap:8px}
+.evidence-list>li+li{padding-top:12px;box-shadow:0 -1px 0 var(--line)}
+.evidence-sentence-text{margin:0;color:var(--text);font-size:12.5px}
+.evidence-cite{margin:0 1px;padding:0 4px;border-radius:4px;background:var(--bg-muted);font-size:11px;color:var(--text-2);white-space:nowrap}
+.evidence-row{display:grid;gap:5px}
+.evidence-row-head{display:flex;align-items:center;gap:8px;min-width:0;margin:0}
+.evidence-verdict{display:inline-flex;flex-shrink:0;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--text-2);white-space:nowrap}
+.evidence-verdict>svg{display:none}
+.evidence-verdict::before{content:"";width:7px;height:7px;flex-shrink:0;border-radius:50%;background:var(--tone)}
+.evidence-work{min-width:0;overflow:hidden;font-weight:500;color:var(--text);text-overflow:ellipsis;white-space:nowrap}
+.evidence-where{margin-left:auto;font-size:11px;color:var(--text-3)}
+.evidence-note{margin:0;color:var(--text-2)}
+.evidence-quote{display:flex;align-items:flex-start;gap:8px;width:100%;padding:2px 0 2px 10px;border:0;background:none;box-shadow:inset 2px 0 0 var(--line-strong);font:inherit;color:var(--text-2);text-align:left;cursor:pointer}
+.evidence-quote:hover{color:var(--text);box-shadow:inset 2px 0 0 var(--accent)}
+.evidence-quote q{flex:1;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;font-style:italic}
+.evidence-quote span{flex-shrink:0;font-size:11px;color:var(--accent)}
+.evidence-actions{display:flex;flex-wrap:wrap;gap:6px}
+.evidence-by{margin:0;font-size:11px;color:var(--text-3)}

@@ -1,4 +1,5 @@
-import { PaperTools } from './paper-tools.ts';
+import { PaperTools, searchPaper } from './paper-tools.ts';
+import { buildActivityReport, type ActivityEventRow } from './activity.ts';
 import { canonicalGroup, isNoteGroup, regroupAnnotation, sameAnnotationGroup } from '../note-groups.ts';
 import { isCommitMessageLanguage, type CommitMessageLanguage } from '../commit.ts';
 import { noteAlternativeRange, NOTE_ALTERNATIVE_RANGES, validRoutes, taskFinished, type InFlightMark } from '../shared.ts';
@@ -21,7 +22,12 @@ import { AGENT_TURN, reviewClient, retryReviewRead, allowedReviewRoute, rewriteR
 import { fullPaperPdf, nextPaperPass, paperBuildPdf, paperPassPdf, retainedPaperBuild, retainedPaperPdf } from './pdf.ts';
 import { withNotePages } from './note-pages.ts';
 import { type ChangeAction, Changes } from './changes.ts';
-import { bibliography, confirmEntry } from './references.ts';
+import { citationChecks, citationSuggestions, citations, currentSuggestions, confirmEntry, forgetFinding, library, libraryInputs, libraryReport, recordFinding, stopLibrary } from './references.ts';
+import { QuickCitationChecks } from './citation-check.ts';
+import { evidenceMarks, pdfText, suggestionMarks } from './evidence-marks.ts';
+import type { ReviewSnapshot } from './ai-review.ts';
+import type { Library } from './library.ts';
+import { plain } from '../../engine/src/core/verify.ts';
 import { type Manuscripts, gitAbortMerge, gitCommit, gitDiff, gitDiscard, gitFinishMerge, gitIgnore, gitRemote, gitStage, gitStatus, gitSync } from './manuscript.ts';
 import { gitHistory, gitVersion, gitVersionDiff, gitRestoreVersion } from './git-history.ts';
 import { locateSource, placeSource, readFile, saveSource } from './manuscript-source.ts';
@@ -29,11 +35,12 @@ import { captureAnchor, resolveAnchors, isSourceAnchor } from './manuscript-anch
 import { gitOverview } from './git-overview.ts';
 import { findSkill, listedSkill, loadSkills } from './skills.ts';
 import { registerSkillRoutes } from './skill-routes.ts';
+import { registerMemoryRoutes } from './memory-routes.ts';
 import { type Listener, equals, guard } from './access.ts';
-import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type Annotation, type AnnotationBatch, type AnnotationBatchResult, type NoteReturnState, type NoteSummary, type QuickNote, type SourceFile, type Task } from '../shared.ts';
+import { isTaskReviewNote, isAgentId, isMarkKind, PRESET_QUICK_NOTES, QUICK_NOTE_LIMIT, type AgentId, type Annotation, type EvidenceMark, type LibraryReport, type AnnotationBatch, type AnnotationBatchResult, type NoteReturnState, type NoteSummary, type QuickNote, type SourceFile, type Task } from '../shared.ts';
 import type { SourceFileRead } from '../../engine/src/types.ts';
 import { parseGroupInstructions } from '../note-groups.ts';
-import { noteOptionContext, noteOptionsKey } from './note-options.ts';
+import { noteOptionContext, noteOptionsKey, replacesProposal } from './note-options.ts';
 import { notesForRejection, taskNoteResults } from './note-results.ts';
 import { noteOptionsSummary } from './prepared-note-options.ts';
 import type { Updates } from './updates.ts';
@@ -146,6 +153,7 @@ export interface AppOptions {
   phitexVersion?: typeof detectPhitex;
   systemRequirements?: typeof systemRequirements;
   overleaf?: OverleafService;
+  library?: Library;
 }
 
 // Serve the local workspace, including authenticated personal Tailscale access.
@@ -184,13 +192,37 @@ export async function buildApp(options: AppOptions) {
   workspace.prepareReview = (task, worktree) => manuscripts.captureReview(store.project(task.projectId).path, worktree, task.id, task.document);
   workspace.sourcePages = (task, file, lines) => manuscripts.sourcePages(task.projectId, file, lines, taskDocument(task));
   workspace.paperBuild = task => manuscripts.paperBuild(task.projectId, taskDocument(task));
-  const paperTools = new PaperTools(store, manuscripts, id => workspace.annotationSending(id));
+  // One literature library serves every paper; agents read the PDFs of the
+  // works their paper cites.
+  const papers = () => options.library ?? library();
+  const paperTools = new PaperTools(store, manuscripts, id => workspace.annotationSending(id), {
+    works: async projectId => {
+      const { entries } = await libraryInputs(store.project(projectId).path, false), shelf = papers();
+      return entries.map(input => {
+        const found = shelf.pdfOf(input), field = (name: string) => plain(input.fields[name] ?? '');
+        const names = field('author').split(/\s+and\s+/).filter(Boolean);
+        return { key: input.key, title: field('title'), authors: names.length > 3 ? `${names.slice(0, 3).join('; ')} et al.` : names.join('; '), year: field('year') || field('date').slice(0, 4),
+          pdf: Boolean(found), pages: found?.pdf.pages ?? null, lines: () => found ? shelf.text(found.hash) : Promise.resolve(null) };
+      });
+    },
+    // A PDF an agent found goes to the entry, checked like any copy found by DOI or title.
+    add: async (projectId, key, url) => {
+      const { entries } = await libraryInputs(store.project(projectId).path, false);
+      const input = entries.find(entry => entry.key === key);
+      if (!input) throw new Error(`No bibliography entry has the key ${key}. Use library_list.`);
+      const { pages } = await papers().addFrom(url, input);
+      return { pages };
+    },
+    citations: async projectId => (await citations(store.project(projectId).path, papers())).sentences,
+    record: (projectId, record, taskId) => recordFinding(store.project(projectId).path, record, papers(), taskId),
+  }, { memory: () => workspace.memory, changed: projectId => refreshManuscript(projectId) });
   workspace.paperTools = async (...args) => {
     const result = await paperTools.call(...args);
     if (['annotation_create', 'annotation_update', 'annotation_delete', 'annotation_restore'].includes(args[1])) manuscripts.emit('change');
     return result;
   };
   const app = Fastify({ logger: false, bodyLimit: Number.MAX_SAFE_INTEGER });
+  if (!options.library) app.addHook('onClose', async () => { await stopLibrary(); });
   if (ownsOverleaf) app.addHook('onClose', async () => { await overleaf.stop(); });
   const buildSettingsChanged = (projectId: string) => changes.buildSettingsChanged(projectId);
   manuscripts.on('build-settings', buildSettingsChanged);
@@ -233,6 +265,7 @@ export async function buildApp(options: AppOptions) {
   await app.register(compress);
   app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
   registerSkillRoutes(app, store);
+  registerMemoryRoutes(app, store, () => workspace.memory, refreshManuscript);
   registerAiReviewRoutes(app, store, manuscripts);
   const project = (param = 'id') => ({ config: { resource: { project: param } } }), task = { config: { resource: { task: 'id' } } };
   registerOverleafRoutes(app, overleaf, () => project(), request => isLocalRequest(request.headers, listener.port));
@@ -338,6 +371,11 @@ export async function buildApp(options: AppOptions) {
     const repo = projectId ? store.project(projectId).path : undefined;
     return diagnostics.check(repo, listener.port);
   });
+  app.get<{ Querystring: { tz?: string; projectId?: string; range?: string } }>('/api/activity', request => {
+    const { tz, projectId, range } = request.query || {};
+    if (projectId !== undefined && (typeof projectId !== 'string' || projectId.length > 64)) throw new Error('Select a valid paper to check.');
+    return buildActivityReport(store, { tz, projectId, range });
+  });
   if (options.updates) {
     app.get('/api/updates', () => options.updates!.snapshot());
     app.post('/api/updates/check', () => options.updates!.check());
@@ -373,6 +411,30 @@ export async function buildApp(options: AppOptions) {
     if (routes !== undefined) workspace.setCollaborationRoutes(routes);
     if (enabled !== undefined) workspace.setCollaborationEnabled(enabled);
     return workspace.collaborationSettings();
+  });
+  // Turns an agent on or off, hides some of its models, or resets both.
+  // The model quick background jobs use: null lets each job pick the small
+  // model of the agent it would use anyway.
+  const quickModelState = () => ({ choice: workspace.quickModel() });
+  app.get('/api/quick-model', quickModelState);
+  app.post('/api/quick-model', (request, reply) => {
+    const { agent, model, effort } = (request.body as any) || {};
+    if (agent === null) { workspace.setQuickModel(null); return quickModelState(); }
+    if (!isAgentId(agent) || agent === 'collaboration') return reply.code(400).send({ error: 'Unknown agent.' });
+    if ((model !== undefined && model !== null && typeof model !== 'string') || (effort !== undefined && effort !== null && typeof effort !== 'string')) return reply.code(400).send({ error: 'Choose a model and reasoning effort.' });
+    workspace.setQuickModel({ agent, model: model || null, effort: effort || null });
+    return quickModelState();
+  });
+  app.post('/api/agent-settings', (request, reply) => {
+    const { agent, enabled, hiddenModels, reset } = (request.body as any) || {};
+    if (reset === true) { workspace.resetAgentSettings(); return { ok: true }; }
+    if (!isAgentId(agent) || agent === 'collaboration') return reply.code(400).send({ error: 'Unknown agent.' });
+    if (enabled === undefined && hiddenModels === undefined) return reply.code(400).send({ error: 'Send enabled or hiddenModels.' });
+    if (enabled !== undefined && typeof enabled !== 'boolean') return reply.code(400).send({ error: 'Send enabled as true or false.' });
+    if (hiddenModels !== undefined && !(Array.isArray(hiddenModels) && hiddenModels.every(model => typeof model === 'string' && model))) return reply.code(400).send({ error: 'Send hiddenModels as a list of model IDs.' });
+    if (hiddenModels !== undefined) workspace.setHiddenModels(agent, hiddenModels);
+    if (enabled !== undefined) workspace.setAgentEnabled(agent, enabled);
+    return { ok: true };
   });
   app.get('/api/indirect-changes', () => ({ indirectChanges: indirectChanges() }));
   const alternativePreferences = () => ({ noteAlternatives: store.preference<boolean>('note-alternatives') === true, noteAlternativeRange: noteAlternativeRange(store.preference('note-alternative-range')) });
@@ -528,13 +590,13 @@ export async function buildApp(options: AppOptions) {
   });
   // Retry for a task whose preparation failed; it answers at once as well.
   app.post<{ Params: { id: string } }>('/api/tasks/:id/prepare', task, request => workspace.retryTask(request.params.id));
-  app.post<{ Params: { id: string } }>('/api/tasks/:id/restart', task, request => {
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/agent', task, request => {
     const body = (request.body || {}) as any;
     if (!isAgentId(body.agent)) throw new Error('Choose a valid destination agent.');
     for (const key of ['model', 'effort', 'serviceTier']) if (body[key] !== undefined && typeof body[key] !== 'string') throw new Error('Choose valid destination model settings.');
-    return workspace.restartTask(request.params.id, { id: string(body.id, 'Task ID', 64), agent: body.agent,
-      model: typeof body.model === 'string' ? body.model : undefined, effort: typeof body.effort === 'string' ? body.effort : undefined,
-      serviceTier: typeof body.serviceTier === 'string' ? body.serviceTier : undefined, permissions: body.permissions, stop: body.stop === true, draftAttachments: attachmentIds(body.draftAttachments) });
+    return workspace.switchTaskAgent(request.params.id, { agent: body.agent, model: body.model, effort: body.effort, serviceTier: body.serviceTier, permissions: body.permissions, stop: body.stop === true })
+      // The author's own choice stands after a merge, too.
+      .then(task => task.mergeReturn ? store.updateTask(task.id, { mergeReturn: null }) : task);
   });
   app.get<{ Params: { id: string }; Querystring: { since?: string } }>('/api/tasks/:id/items', task, request => {
     store.task(request.params.id);
@@ -624,7 +686,7 @@ export async function buildApp(options: AppOptions) {
   // it from the task's worktree and reviews a save in a new round; a save
   // waits like any review action that writes the task's files. The editor
   // works on \n line breaks, so a CRLF file shows no changes in its text.
-  const taskSource = (read: SourceFileRead): SourceFile => ({ file: read.file, revision: read.revision, text: read.text, base: read.base, round: read.round, before: read.before, reviewed: read.reviewed && !read.text.includes('\r'), reverted: read.reverted, passage: [0, 0], focus: [0, 0], drifted: false });
+  const taskSource = (read: SourceFileRead): SourceFile => ({ file: read.file, revision: read.revision, text: read.text, base: read.base, round: read.round, before: read.before, reviewed: read.reviewed && !read.text.includes('\r'), reverted: read.reverted, ...(read.worded ? { worded: read.worded } : {}), passage: [0, 0], focus: [0, 0], drifted: false });
   app.get<{ Params: { id: string }; Querystring: { file?: string } }>('/api/tasks/:id/source', task, async request => {
     const current = store.task(request.params.id), file = string(request.query.file, 'Source file', 1024);
     return retryReviewRead(connectReview, store.project(current.projectId).path, async client =>
@@ -659,9 +721,11 @@ export async function buildApp(options: AppOptions) {
       const context = await noteOptionContext(store, current, string(request.query.key, 'Note key', 200), client);
       if (context.options.round !== Number(request.query.round)) throw new Error('The review changed. Reload the options.');
       if (request.query.comparison && request.query.comparison !== context.options.comparisonKey) throw new Error('The review changed. Reload the options.');
-      if (request.query.option === context.options.selected && (!context.rejected.length || context.options.locked)) return rewriteReviewJson(context.detail, `/review/${current.projectId}`);
-      if (context.options.locked) throw new Error(context.options.locked);
       const option = context.options.options.find(option => option.id === request.query.option);
+      // An accepted alternative keeps its own comparison; the round shows the proposal.
+      const accepted = Boolean(option && option.id === context.options.selected && replacesProposal(option, context.units));
+      if (request.query.option === context.options.selected && !accepted && (!context.rejected.length || context.options.locked)) return rewriteReviewJson(context.detail, `/review/${current.projectId}`);
+      if (context.options.locked && !accepted) throw new Error(context.options.locked);
       if (!option) throw new Error('This option is no longer available.');
       if (option.previewError && request.query.retry !== '1') throw new Error(option.previewError);
       const detail = await client.post(`${taskRoute(current.name)}/source/options/preview`, { id: option.id, round: context.options.round, edits: option.edits, rejected: context.rejected, background: request.query.background === '1' }, 1850000);
@@ -685,40 +749,26 @@ export async function buildApp(options: AppOptions) {
     if (body.option) {
       const option = context.options.options.find(option => option.id === body.option);
       if (!option) throw new Error('This option is no longer available.');
-      // Reject the note's published edits directly, even if an uncommitted
-      // alternative is being previewed. No candidate build or feedback draft.
-      if (body.reject || option.id === context.options.selected) {
-        if (!body.accept && !body.reject) return context.options;
-        const route = `${taskRoute(current.name)}/decide`, input = { id: string(body.id, 'Review action ID', 80), round: body.round, changes: option.edits.map(edit => edit.unit), action: body.reject ? 'reject' : 'accept', ...(body.reject ? { noteKey: body.key } : {}) };
-        const copy = body.reject && context.note.note.id && !context.note.note.anchor?.round ? returnCopy(current, context.note.note.id, { id: input.id, key: body.key }) : undefined;
-        const readReturn = copy && observeReturn(copy);
-        const result = await workspace.reviewWrite(current.id, true, async () => {
-          const response = await fetch(client.url + route, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': client.token }, body: JSON.stringify(input), signal: AbortSignal.timeout(120000) });
-          const value = await response.json() as { error?: string };
-          if (!confirmedReviewResponse(response.status, value, current.name)) throw new Error('The review action could not be confirmed. Check task status before retrying.');
-          return value;
-        }, { route, body: input, ...(copy ? { returnNote: copy } : {}) });
-        if (result.error) throw new Error(result.error);
-        const noteReturn = readReturn?.();
-        await workspace.refresh(current.id);
-        const options = (await noteOptionContext(store, store.task(current.id), body.key, client)).options;
-        return noteReturn ? { ...options, noteReturn } : options;
-      }
-      const route = `${taskRoute(current.name)}/source/options`, input = { id: string(body.id, 'Option request ID', 80), round: body.round, edits: option.edits, ...(body.accept ? { accept: true } : {}) };
-      // Keep the annotation's original association before the engine starts
-      // its build, including when the save response is interrupted.
-      for (const run of store.runs().filter(run => run.taskId === current.id && run.reviewRound === body.round)) {
-        const origins = context.notes.filter(note => note.itemId === run.id && note.changes.length && !run.noteRounds?.[note.index]);
-        if (origins.length) store.saveRun({ ...run, noteRounds: { ...run.noteRounds, ...Object.fromEntries(origins.map(note => [note.index, body.round])) } });
-      }
-      const value = await workspace.reviewWrite(current.id, true, async () => {
+      if (!body.accept && !body.reject) return context.options;
+      // Reject the note's published edits directly, even if an alternative is
+      // being previewed. Accepting an alternative is a decision in this round
+      // with the alternative's wording: no new round or build, so the other
+      // notes stay open and keep their prepared PDFs. No feedback draft.
+      const wording = body.accept && replacesProposal(option, context.units) ? { edits: option.edits } : {};
+      const route = `${taskRoute(current.name)}/decide`, input = { id: string(body.id, 'Review action ID', 80), round: body.round, changes: option.edits.map(edit => edit.unit), action: body.reject ? 'reject' : 'accept', ...(body.reject ? { noteKey: body.key } : {}), ...wording };
+      const copy = body.reject && context.note.note.id && !context.note.note.anchor?.round ? returnCopy(current, context.note.note.id, { id: input.id, key: body.key }) : undefined;
+      const readReturn = copy && observeReturn(copy);
+      const result = await workspace.reviewWrite(current.id, true, async () => {
         const response = await fetch(client.url + route, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': client.token }, body: JSON.stringify(input), signal: AbortSignal.timeout(120000) });
         const value = await response.json() as { error?: string };
-        if (!confirmedReviewResponse(response.status, value, current.name)) throw new Error('The option save could not be confirmed. Check task status before retrying.');
+        if (!confirmedReviewResponse(response.status, value, current.name)) throw new Error('The review action could not be confirmed. Check task status before retrying.');
         return value;
-      }, { route, body: input });
-      if (value.error) throw new Error(value.error);
-      return { building: true };
+      }, { route, body: input, ...(copy ? { returnNote: copy } : {}) });
+      if (result.error) throw new Error(result.error);
+      const noteReturn = readReturn?.();
+      await workspace.refresh(current.id);
+      const options = (await noteOptionContext(store, store.task(current.id), body.key, client)).options;
+      return noteReturn ? { ...options, noteReturn } : options;
     }
     throw new Error('Select an existing option.');
   });
@@ -824,8 +874,14 @@ export async function buildApp(options: AppOptions) {
     const task = store.task(request.params.id), b = (request.body || {}) as any;
     if (b.mode !== undefined && b.mode !== 'workspace' && b.mode !== 'commit') throw new Error('Invalid save action.');
     const retryCommit = b.message === undefined && task.delivery?.mode === 'commit' && task.delivery.pending;
-    const result = await serialGit(task.projectId, () => workspace.applyTask(task.id, b.keepCurrent === true, b.mode === 'commit' ? { message: retryCommit ? undefined : string(b.message, 'Commit message', 5000), ...(b.confirmation ? { confirmation: string(b.confirmation, 'Commit confirmation', 100) } : {}) } : undefined));
+    // The conflict-resolution agent chosen in Settings → Git, for a merge suggestion.
+    const conflict = b.conflictAgent;
+    if (conflict !== undefined && (!conflict || typeof conflict !== 'object' || !isAgentId(conflict.agent))) throw new Error('Choose a supported agent.');
+    const mergeAgent = conflict ? { agent: agent(conflict.agent), ...helperModelSettings(conflict) } : undefined;
+    const result = await serialGit(task.projectId, () => workspace.applyTask(task.id, b.keepCurrent === true, b.mode === 'commit' ? { message: retryCommit ? undefined : string(b.message, 'Commit message', 5000), ...(b.confirmation ? { confirmation: string(b.confirmation, 'Commit confirmation', 100) } : {}) } : undefined, mergeAgent));
     if (delivered(result.delivery)) refreshManuscript(task.projectId);
+    // Applied without a commit message, the task still offers what Papilot noticed.
+    workspace.learnOnSave(task.id);
     return result;
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/commit-message', task, request => {
@@ -880,13 +936,179 @@ export async function buildApp(options: AppOptions) {
   // The manuscript preview compiles each paper's working tree and reports its Git status.
   app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript', project(), request => manuscript(request.params.id));
   app.get<{ Params: { id: string } }>('/api/projects/:id/git', project(), request => gitStatus(store.project(request.params.id).path));
-  // The paper's bibliography: every entry, its problems and its online check.
-  app.get<{ Params: { id: string }; Querystring: { check?: string; retry?: string } }>('/api/projects/:id/references', project(), request =>
-    bibliography(store.project(request.params.id).path, request.query.check === '1', request.query.retry === '1'));
-  app.post<{ Params: { id: string } }>('/api/projects/:id/references/confirm', project(), request => {
+  // The paper's library: every bibliography entry, its problems, its online
+  // check and its PDF. Online, missing PDFs are looked for; Zotero's are
+  // used unless the author turned that off in Settings.
+  type LibraryQuery = { online?: string; retry?: string; poll?: string };
+  const libraryOptions = (query: LibraryQuery) => ({ online: query.online === '1', zotero: papers().useZotero(), retry: query.retry === '1', poll: query.poll === '1' });
+  // The Zotero libraries PDFs come from, for every paper: the one on this
+  // host and the author's account, whose API key never leaves the server.
+  app.get<{ Querystring: { sync?: string } }>('/api/library/zotero', request => papers().zoteroStatus(request.query.sync === '1'));
+  app.post('/api/library/zotero/account', async request => {
+    const key = (request.body as { key?: unknown } | null)?.key;
+    if (typeof key !== 'string') throw Object.assign(new Error('Zotero does not accept this key. Check it and try again.'), { statusCode: 400 });
+    await papers().connectZotero(key);
+    return papers().zoteroStatus();
+  });
+  app.post('/api/library/zotero/account/remove', () => { papers().disconnectZotero(); return papers().zoteroStatus(); });
+  app.post('/api/library/zotero/location', request => {
+    const dataDir = (request.body as { dataDir?: unknown } | null)?.dataDir;
+    if (dataDir !== null && (typeof dataDir !== 'string' || !dataDir.trim())) throw Object.assign(new Error('Choose Zotero\'s data directory, the folder with zotero.sqlite and storage.'), { statusCode: 400 });
+    papers().setZoteroDir(dataDir);
+    return papers().zoteroStatus();
+  });
+  app.post('/api/library/zotero/use', request => {
+    const use = (request.body as { use?: unknown } | null)?.use;
+    if (typeof use !== 'boolean') throw Object.assign(new Error('Choose whether to use PDFs from Zotero.'), { statusCode: 400 });
+    papers().setUseZotero(use);
+    return papers().zoteroStatus();
+  });
+  // Citation checks are tasks of their own (Workspace.createCitationCheck):
+  // each runs the model the author chose over the paper's citations, or its
+  // uncited sentences, records what it finds as its own, and shows it in the
+  // paper's PDF only when the author turns that on.
+  const quickChecks = new QuickCitationChecks(papers, request => workspace.quickReply(request));
+  app.addHook('onClose', async () => quickChecks.stopAll());
+  workspace.runCitationCheck = task => {
+    const root = store.project(task.projectId).path;
+    quickChecks.start(task.id, {
+      projectId: task.projectId, task: task.id, choice: task.agent ? { agent: task.agent, model: task.model, effort: task.effort } : undefined,
+      citations: () => citations(root, papers()), checks: () => citationChecks(root), suggestions: () => citationSuggestions(root),
+      onState: state => {
+        const current = store.findTask(task.id);
+        if (!current || current.mode !== 'citations') return;
+        store.updateTask(task.id, { citationCheck: { ...current.citationCheck!, state }, status: state.running ? 'running' : state.error ? 'failed' : 'idle', error: state.running ? null : state.error });
+      },
+    });
+  };
+  workspace.forgetCitationCheck = task => {
+    const root = store.project(task.projectId).path;
+    void citationChecks(root).then(checks => checks.removeTask(task.id));
+    void citationSuggestions(root).then(suggestions => suggestions.removeTask(task.id));
+  };
+  app.post('/api/citation-checks', request => {
+    const b = (request.body || {}) as Record<string, unknown>;
+    if (b.agent !== undefined && !isAgentId(b.agent)) throw Object.assign(new Error('Unknown agent.'), { statusCode: 400 });
+    const task = workspace.createCitationCheck({ id: string(b.id, 'Task ID', 64), projectId: string(b.projectId, 'Paper ID', 64), agent: b.agent as AgentId | undefined, model: typeof b.model === 'string' ? b.model : null, effort: typeof b.effort === 'string' ? b.effort : null });
+    if (typeof b.title === 'string' && b.title.trim() && task.titleSource === 'prompt') return store.updateTask(task.id, { title: b.title.trim().slice(0, 120) });
+    return task;
+  });
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/citations/stop', task, request => { quickChecks.stop(request.params.id); return store.task(request.params.id); });
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/citations/rerun', task, request => {
+    const b = (request.body || {}) as Record<string, unknown>;
+    if (b.agent !== undefined && !isAgentId(b.agent)) throw Object.assign(new Error('Unknown agent.'), { statusCode: 400 });
+    return workspace.rerunCitationCheck(request.params.id, b.agent ? { agent: b.agent as AgentId, model: typeof b.model === 'string' ? b.model : null, effort: typeof b.effort === 'string' ? b.effort : null } : undefined);
+  });
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/citations/show', task, request => {
+    const show = (request.body as { show?: unknown } | null)?.show, current = store.task(request.params.id);
+    if (typeof show !== 'boolean' || current.mode !== 'citations') throw Object.assign(new Error('Choose whether the paper shows this check.'), { statusCode: 400 });
+    return store.updateTask(current.id, { citationCheck: { ...current.citationCheck!, show } });
+  });
+  app.get<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/library', project(), async request => {
+    const root = store.project(request.params.id).path;
+    return libraryReport(root, libraryOptions(request.query), papers());
+  });
+  // The checked citations of the paper's PDF named by key, as marks beside
+  // their sentences. The PDF's lines are read once per build and kept; the
+  // marks are worked out again only when the findings change.
+  const evidence = new Map<string, { text: Promise<{ snapshot: ReviewSnapshot; text: ReturnType<typeof pdfText> }>; findings?: string; marks?: EvidenceMark[] }>();
+  app.get<{ Params: { id: string }; Querystring: { key?: string } }>('/api/projects/:id/manuscript/evidence', project(), async request => {
+    const project = store.project(request.params.id), key = String(request.query.key || ''), shelf = papers();
+    // Only the checks the author chose to show in the paper.
+    const checks = store.tasks().filter(item => item.projectId === project.id && item.mode === 'citations'), shown = new Set(checks.filter(item => item.citationCheck?.show).map(item => item.id));
+    const running = checks.some(item => shown.has(item.id) && item.status === 'running');
+    const all = await citations(project.path, shelf), entries = all.entries;
+    const sentences = all.sentences.map(sentence => ({ ...sentence, findings: Object.fromEntries(Object.entries(sentence.findings).filter(([, finding]) => finding.task && shown.has(finding.task))) }));
+    const checked = sentences.filter(sentence => sentence.keys.some(item => sentence.findings[item] && !sentence.findings[item].stale));
+    const suggestions = (await currentSuggestions(project.path, all.uncited, key => { const input = entries.find(entry => entry.key === key); return (input && shelf.pdfOf(input)?.hash) ?? null; })).filter(item => item.task && shown.has(item.task));
+    if (!key || (!checked.length && !suggestions.length)) return { key, marks: [], running };
+    const id = `${project.id}:${key}`;
+    let cached = evidence.get(id);
+    if (!cached) {
+      const text = manuscripts.pdfLines(project.id, project.path, key).then(snapshot => ({ snapshot, text: pdfText(snapshot) }));
+      evidence.set(id, cached = { text });
+      for (const old of [...evidence.keys()].slice(0, -4)) evidence.delete(old);
+      text.catch(() => { if (evidence.get(id)?.text === text) evidence.delete(id); });
+    }
+    const { snapshot, text } = await cached.text, findings = JSON.stringify([checked.map(sentence => [sentence.id, sentence.findings]), suggestions.map(item => [item.id, item.key, item.checkedAt])]);
+    if (cached.findings !== findings) {
+      cached.marks = [...evidenceMarks(snapshot, sentences, entries, input => shelf.pdfOf(input)?.hash ?? null, text), ...suggestionMarks(snapshot, suggestions, entries, text)].sort((a, b) => a.page - b.page || a.rects[0][1] - b.rects[0][1]);
+      cached.findings = findings;
+    }
+    return { key, marks: cached.marks!, running };
+  });
+  // A suggestion the author does not want is not shown or made again for that sentence.
+  app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/citations/suggestions/dismiss', project(), async request => {
+    const id = (request.body as { id?: unknown } | null)?.id;
+    if (typeof id !== 'string' || !id) throw Object.assign(new Error('Choose a suggestion to dismiss.'), { statusCode: 400 });
+    const root = store.project(request.params.id).path;
+    (await citationSuggestions(root)).dismiss(id);
+    return libraryReport(root, libraryOptions(request.query), papers());
+  });
+  app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/references/confirm', project(), async request => {
     const b = request.body as any;
     if (typeof b?.id !== 'string' || typeof b?.confirmed !== 'boolean') throw new Error('Choose an entry to confirm.');
-    return confirmEntry(store.project(request.params.id).path, b.id, b.confirmed);
+    const root = store.project(request.params.id).path;
+    await confirmEntry(root, b.id, b.confirmed);
+    return libraryReport(root, libraryOptions(request.query), papers());
+  });
+  // A finding the author judges otherwise is forgotten; an agent can check again.
+  app.post<{ Params: { id: string }; Querystring: LibraryQuery }>('/api/projects/:id/citations/forget', project(), async request => {
+    const b = request.body as any;
+    if (typeof b?.id !== 'string' || typeof b?.key !== 'string') throw new Error('Choose a citation to forget.');
+    const root = store.project(request.params.id).path;
+    await forgetFinding(root, b.id, b.key, papers());
+    return libraryReport(root, libraryOptions(request.query), papers());
+  });
+  // A PDF the author adds, to the entry it is dropped on or to the one its
+  // first pages name.
+  app.post<{ Params: { id: string }; Querystring: { entry?: string } }>('/api/projects/:id/library/pdf', project(), async request => {
+    if (!Buffer.isBuffer(request.body)) throw new Error('Upload the PDF as binary data.');
+    const { entries } = await libraryInputs(store.project(request.params.id).path, false);
+    return papers().add(request.body, entries, request.query.entry || undefined);
+  });
+  app.post<{ Params: { id: string } }>('/api/projects/:id/library/remove', project(), async request => {
+    const b = request.body as any;
+    if (typeof b?.entry !== 'string') throw new Error('Choose an entry.');
+    const { entries } = await libraryInputs(store.project(request.params.id).path, false), input = entries.find(item => item.id === b.entry);
+    if (!input) throw Object.assign(new Error('This entry is no longer in the bibliography. Refresh the library.'), { statusCode: 404 });
+    papers().remove(input);
+    return { ok: true };
+  });
+  // Words or a phrase in the PDFs of the works the paper cites, as passages
+  // with their lines, a page of results at a time. No model is involved.
+  app.get<{ Params: { id: string }; Querystring: { q?: string; cursor?: string } }>('/api/projects/:id/library/search', project(), async request => {
+    const query = String(request.query.q || '').trim(), shelf = papers();
+    if (!query.normalize('NFKC').replace(/\s+/g, '')) return { matches: [], nextCursor: null };
+    const { entries } = await libraryInputs(store.project(request.params.id).path, false);
+    const works = entries.flatMap(input => { const found = shelf.pdfOf(input); return found ? [{ input, hash: found.hash }] : []; });
+    let [work, line] = request.query.cursor ? String(request.query.cursor).split(':').map(Number) : [0, 0];
+    if (!Number.isSafeInteger(work) || !Number.isSafeInteger(line) || work < 0 || line < 0) throw Object.assign(new Error('Search again.'), { statusCode: 400 });
+    const matches: unknown[] = []; let size = 0;
+    for (; work < works.length; work++, line = 0) {
+      const snapshot = await shelf.text(works[work].hash);
+      if (!snapshot) continue;
+      const index = new Map(snapshot.lines.map((item, at) => [item.id, at]));
+      const found = searchPaper(snapshot, query, line);
+      for (const match of found.matches) {
+        const from = index.get(match.start)!, to = index.get(match.end)!;
+        // The passage as the PDF prints it: the matched lines and one on each side.
+        const around = snapshot.lines.slice(Math.max(0, from - 1), to + 2).filter(item => item.page === snapshot.lines[from].page).map(item => item.text).join(' ').replace(/\s+/g, ' ').trim();
+        const item = { entry: works[work].input.id, key: works[work].input.key, hash: works[work].hash, page: match.page, text: around, marks: snapshot.lines.slice(from, to + 1).map(item => ({ page: item.page + 1, rect: item.rect })) };
+        // A page of results is bounded by what one response carries, not by the library's size.
+        if (matches.length && size > 60000) return { matches, nextCursor: `${work}:${from}` };
+        matches.push(item); size += JSON.stringify(item).length;
+      }
+      if (found.nextCursor !== null) return { matches, nextCursor: `${work}:${found.nextCursor}` };
+    }
+    return { matches, nextCursor: null };
+  });
+  // Only PDFs of the paper's own entries are served for it.
+  app.get<{ Params: { id: string; hash: string } }>('/api/projects/:id/library/pdfs/:hash', project(), async (request, reply) => {
+    const { entries } = await libraryInputs(store.project(request.params.id).path, false), shelf = papers();
+    const file = entries.some(input => shelf.pdfOf(input)?.hash === request.params.hash) ? shelf.file(request.params.hash) : null;
+    if (!file) throw Object.assign(new Error('This PDF is not in the paper\'s library.'), { statusCode: 404 });
+    return reply.type('application/pdf').header('Content-Disposition', 'inline').header('Cache-Control', 'private, max-age=31536000, immutable').send(fs.createReadStream(file));
   });
   app.get<{ Params: { id: string } }>('/api/projects/:id/git/overview', project(), request => gitOverview(store.project(request.params.id).path, store.tasks().filter(task => task.projectId === request.params.id)));
   app.get<{ Params: { id: string }; Querystring: { before?: string } }>('/api/projects/:id/git/history', project(), request => gitHistory(store.project(request.params.id).path, request.query.before));
@@ -905,6 +1127,13 @@ export async function buildApp(options: AppOptions) {
     let pushError: string | undefined;
     return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => {
       const commit = await gitCommit(project.path, message, chosen, b.amend === true);
+      store.recordActivity({
+        key: `commit:${project.id}:${String((commit as any)?.hash || commit || randomUUID())}`,
+        at: Date.now(),
+        kind: 'git_commit',
+        projectId: project.id,
+        data: { projectName: project.name },
+      });
       // The commit stands even when the push fails; the author can push again.
       if (b.push === true) try { await gitRemote(project.path, 'push'); } catch (error) { pushError = (error as Error).message; }
       return { commit, git: await gitStatus(project.path), ...(pushError ? { pushError } : {}) };
@@ -935,7 +1164,17 @@ export async function buildApp(options: AppOptions) {
   });
   app.post<{ Params: { id: string } }>('/api/projects/:id/git/finish', project(), request => {
     const project = store.project(request.params.id);
-    return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => ({ commit: await gitFinishMerge(project.path), git: await gitStatus(project.path) })));
+    return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => {
+      const commit = await gitFinishMerge(project.path);
+      store.recordActivity({
+        key: `commit:${project.id}:${String((commit as any)?.hash || commit || randomUUID())}`,
+        at: Date.now(),
+        kind: 'git_commit',
+        projectId: project.id,
+        data: { projectName: project.name },
+      });
+      return { commit, git: await gitStatus(project.path) };
+    }));
   });
   app.post<{ Params: { id: string } }>('/api/projects/:id/git/abort', project(), request => {
     const project = store.project(request.params.id);
@@ -1058,6 +1297,13 @@ export async function buildApp(options: AppOptions) {
     if (settled && 'error' in settled) throw settled.error;
     const document = manuscripts.documentOf(project.id, key);
     const note = store.saveAnnotation({ id: randomUUID(), projectId: project.id, ...(document ? { document } : {}), key, page, rect: b.rect, ...(b.group ? { group: b.group } : {}), ...(b.kind ? { kind: b.kind } : {}), ...(stamp ? { stamp } : {}), ...(rects.length ? { rects } : {}), comment, quote: settled?.value.quote || selected, source: settled?.value.source ?? null, createdAt: Date.now() });
+    store.recordActivity({
+      key: `note:${note.id}`,
+      at: note.createdAt,
+      kind: 'annotation_created',
+      projectId: project.id,
+      data: { source: 'author', ...(note.group ? { group: note.group } : {}), ...(note.kind ? { markKind: note.kind } : {}), projectName: project.name },
+    });
     if (!settled) {
       const lookup = located.then(({ quote, source }) => {
         // Keep what the author changed meanwhile; a note moved to a newer PDF
@@ -1190,7 +1436,7 @@ export async function buildApp(options: AppOptions) {
     const selected = body?.agent;
     if (!isAgentId(selected)) throw new Error('Connect the selected agent before diagnosing compilation problems.');
     return manuscripts.repair(paper.id, paper.path, string(body.failureId, 'Compilation failure ID', 64), prompt => workspace.diagnoseLatexBuild(paper.path, prompt, {
-      agent: selected, model: typeof body.model === 'string' ? body.model : undefined,
+      agent: selected, model: typeof body.model === 'string' ? body.model : undefined, projectId: paper.id,
     }));
   });
   // Exact word places for the PDF view's selection layer; immutable per build key.
@@ -1255,13 +1501,53 @@ export async function buildApp(options: AppOptions) {
     const project = store.project(request.params.projectId), b = request.body as any, action = CHANGE_ACTIONS[String(b?.action)];
     if (!action) throw new Error('Choose stage, unstage or revert.');
     const ids = Array.isArray(b.changes) ? b.changes.filter((id: unknown): id is string => typeof id === 'string') : [];
-    const act = () => changes.act(project.id, project.path, options.csrf, action, Number(b.round), ids);
+    const round = Number(b.round);
+    const act = async () => {
+      let applied: { base: string; signatures: string[]; revertId?: string } | undefined;
+      const result = await changes.act(project.id, project.path, options.csrf, action, round, ids, info => { applied = info; });
+      if (applied) {
+        if (action === 'stage') {
+          for (const sig of applied.signatures) {
+            store.recordActivity({
+              key: `decision:changes:${project.id}:${applied.base}:${sig}`,
+              at: Date.now(),
+              kind: 'review_decision',
+              projectId: project.id,
+              data: { action: 'accept', count: 1, source: 'changes', projectName: project.name },
+            }, true);
+          }
+        } else if (action === 'unstage') {
+          for (const sig of applied.signatures) store.clearActivity(`decision:changes:${project.id}:${applied.base}:${sig}`);
+        } else if (action === 'revert') {
+          // The revert keeps the acceptances it removes, to restore them if it is undone.
+          const base = applied.base;
+          const restores = applied.signatures.flatMap(sig => store.clearActivity(`decision:changes:${project.id}:${base}:${sig}`) ?? []);
+          store.recordActivity({
+            key: `decision:changes:${project.id}:${String(applied.revertId || result.undo?.id || randomUUID())}`,
+            at: Date.now(),
+            kind: 'review_decision',
+            projectId: project.id,
+            data: { action: 'reject', count: Math.max(1, applied.signatures.length), source: 'changes', projectName: project.name, ...(restores.length ? { restores } : {}) },
+          });
+        }
+      }
+      return result;
+    };
     return serialGit(project.id, () => action === 'revert' ? workspace.exclusiveCommit(project.id, act) : act());
   });
   app.post<{ Params: { projectId: string } }>('/review/:projectId/api/changes/undo', changesAccess, request => {
     changesToken(request);
     const project = store.project(request.params.projectId), id = string((request.body as any)?.id, 'Revert ID', 80);
-    return serialGit(project.id, () => workspace.exclusiveCommit(project.id, () => changes.undo(project.id, project.path, options.csrf, id)));
+    return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => {
+      const result = await changes.undo(project.id, project.path, options.csrf, id);
+      const key = `decision:changes:${project.id}:${id}`, revert = store.activityEvent(key);
+      store.undoActivity(key);
+      // Undoing a revert stages its changes again, and with them their acceptances.
+      for (const event of Array.isArray(revert?.data.restores) ? revert.data.restores as ActivityEventRow[] : []) {
+        store.recordActivity({ key: event.key, at: event.at, kind: event.kind, projectId: event.projectId, taskId: event.taskId, agent: event.agent, model: event.model, data: event.data }, true);
+      }
+      return result;
+    }));
   });
 
   // The complete PDF of a round's new version, for the review's full paper.
@@ -1292,7 +1578,11 @@ export async function buildApp(options: AppOptions) {
         if (!equals(String(request.headers['x-review-token'] || ''), client.token)) return reply.code(403).send({ error: 'This review page has expired. Refresh it and try again.' });
       }
       const reviewTask = request.method === 'POST' ? store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]) : undefined;
-      const writesFiles = /\/source(?:\/options)?$/.test(route) || route.endsWith('/undo') || (route.endsWith('/decide') && (request.body as any)?.action !== 'comment');
+      const writesFiles = /\/source$/.test(route) || route.endsWith('/undo') || (route.endsWith('/decide') && (request.body as any)?.action !== 'comment');
+      // A comparison the page asks for reads the review and changes nothing,
+      // and it can take as long as a build: it is neither a review action nor
+      // the task's error.
+      const comparison = /\/(?:rounds\/\d+\/mixed|source\/options\/preview)$/.test(route);
       if (request.method === 'POST' && writesFiles) string((request.body as any)?.id, 'Review action ID', 80);
       // The next poll waits for the summary a write is still reading.
       if (request.method === 'GET' && /^\/api\/tasks\/[a-z0-9-]+\/state$/.test(route)) {
@@ -1304,11 +1594,12 @@ export async function buildApp(options: AppOptions) {
       // an accept of an earlier round publishes a round of the worktree, so
       // it waits like rejecting.
       // A reject waits for the turn to end in the engine, and so does
-      // undoing one still waiting.
+      // undoing one still waiting. Accepting a note option writes its
+      // wording into the worktree, and so does undoing it: both wait.
       const besideAgent = Boolean(reviewTask?.deferred && AGENT_TURN.includes(reviewTask.status)) && (route.endsWith('/decide')
-        ? ['accept', 'reject'].includes((request.body as any)?.action)
-        : route.endsWith('/undo') && await client.get<{ undo?: { id: string; kind: string; republish?: boolean; queued?: boolean } | null }>(`${taskRoute(reviewTask!.name)}/state`)
-          .then(state => state.undo?.id === (request.body as any)?.id && (state.undo?.kind !== 'reject' || Boolean(state.undo?.queued)) && !state.undo?.republish, () => false));
+        ? ['accept', 'reject'].includes((request.body as any)?.action) && !(request.body as any)?.edits
+        : route.endsWith('/undo') && await client.get<{ undo?: { id: string; kind: string; republish?: boolean; queued?: boolean; worktree?: boolean } | null }>(`${taskRoute(reviewTask!.name)}/state`)
+          .then(state => state.undo?.id === (request.body as any)?.id && (state.undo?.kind !== 'reject' || Boolean(state.undo?.queued)) && !state.undo?.republish && !state.undo?.worktree, () => false));
       if (besideAgent && route.endsWith('/decide') && (request.body as any)?.action === 'reject') (request.body as any).queue = true;
       const input = request.body as { noteKey?: string; action?: string; changes?: string[]; round?: number } | undefined;
       const returns = new Map<string, { key: string; copy: Annotation }>();
@@ -1339,12 +1630,12 @@ export async function buildApp(options: AppOptions) {
         if (type.includes('application/json')) {
           const value = await response.json();
           if (reviewTask && writesFiles && !confirmedReviewResponse(response.status, value, reviewTask.name)) throw new Error('The review engine could not confirm this action. Select Check status before continuing.');
-          if (!response.ok && request.method === 'POST' && (value as any).error) {
+          if (!response.ok && request.method === 'POST' && !comparison && (value as any).error) {
             const task = store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]);
             if (task) store.updateTask(task.id, { error: 'Review action failed: ' + (value as any).error });
           }
           // Saying what the page shows changes nothing about the task.
-          if (response.ok && request.method === 'POST' && !route.endsWith('/references/confirm') && !route.endsWith('/look')) {
+          if (response.ok && request.method === 'POST' && !comparison && !route.endsWith('/references/confirm') && !route.endsWith('/look')) {
             const task = store.tasks().find(t => t.projectId === project.id && t.name === route.split('/')[3]);
             if (task) {
               store.updateTask(task.id, { error: null });
@@ -1369,11 +1660,25 @@ export async function buildApp(options: AppOptions) {
       const readReturns = [...returns.values()].map(({ key, copy }) => ({ key, read: observeReturn(copy) }));
       const readUndo = reviewTask && route.endsWith('/undo') ? observeReturnUndo(reviewTask, String((request.body as any).id)) : undefined;
       let result: unknown;
-      try { result = await (reviewTask ? workspace.reviewWrite(reviewTask.id, writesFiles, forward, writesFiles ? { route, body: request.body as Record<string, unknown>, ...(returns.size ? { returnNotes: [...returns.values()].map(entry => entry.copy) } : {}) } : undefined, besideAgent) : forward()); }
+      try { result = await (reviewTask && !comparison ? workspace.reviewWrite(reviewTask.id, writesFiles, forward, writesFiles ? { route, body: request.body as Record<string, unknown>, ...(returns.size ? { returnNotes: [...returns.values()].map(entry => entry.copy) } : {}) } : undefined, besideAgent) : forward()); }
       finally { if (settles) settle(workspace, settles); }
       if ((readUndo || readReturns.length) && confirmedReviewResponse(200, result, reviewTask!.name)) {
         const noteReturns = readUndo?.() ?? readReturns.map(({ key, read }) => ({ key, ...read() }));
         if (noteReturns.length) Object.assign(result as object, { noteReturns, ...(input?.noteKey ? { noteReturn: noteReturns[0] } : {}) });
+      }
+      if (reviewTask && route.endsWith('/decide') && input?.action === 'comment' && confirmedReviewResponse(200, result, reviewTask.name)) {
+        const actionId = (request.body as any)?.id || (result as any)?.undo?.id || randomUUID();
+        const count = Array.isArray(input.changes) ? Math.max(1, input.changes.length) : 1;
+        store.recordActivity({
+          key: `decision:${reviewTask.id}:${String(actionId)}`,
+          at: Date.now(),
+          kind: 'review_decision',
+          projectId: project.id,
+          taskId: reviewTask.id,
+          agent: reviewTask.agent || 'codex',
+          model: reviewTask.model,
+          data: { action: 'comment', count, source: 'task', projectName: project.name },
+        });
       }
       return annotateReviewState(result, store.tasks().filter(task => task.projectId === project.id));
     },
