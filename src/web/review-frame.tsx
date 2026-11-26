@@ -347,12 +347,8 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     if (!readingPdf || !ready) return;
     const key = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.defaultPrevented || !frame.current?.clientHeight) return;
-      if (event.key.toLowerCase() === 'f') {
-        event.preventDefault(); if (findInput.current) findInput.current.select(); else setFindOpen(true);
-      } else if (event.view === window) {
-        if (event.key === '0') { event.preventDefault(); readerCommand({ type: 'zoom', value: 'page-width' }); }
-        else if (['+', '=', '-'].includes(event.key)) { event.preventDefault(); readerCommand({ type: 'zoomBy', factor: event.key === '-' ? 1 / 1.1 : 1.1 }); }
-      }
+      // Only find: Ctrl/⌘ +/−/0 stay with the window zoom.
+      if (event.key.toLowerCase() === 'f') { event.preventDefault(); if (findInput.current) findInput.current.select(); else setFindOpen(true); }
     };
     window.addEventListener('keydown', key); document?.defaultView?.addEventListener('keydown', key);
     return () => { window.removeEventListener('keydown', key); document?.defaultView?.removeEventListener('keydown', key); };

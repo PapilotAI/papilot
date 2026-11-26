@@ -23,10 +23,12 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
+- Ctrl/⌘ +, − and 0 now always zoom the whole interface (desktop **Interface size**, or the browser's zoom), including when a PDF or review is shown. Zoom the PDF itself with its toolbar, a pinch or Ctrl/⌘ + scroll. ([#345](https://github.com/PapilotAI/papilot/issues/345))
 - Rename **Settings → Check references online** to **Look up references online**. It now also controls PDF downloads. A new **Settings → Zotero** page shows the Zotero library Papilot found on this computer, with its data directory and how many items have a PDF and a citation key, lets you choose another data directory, and holds the **Use PDFs from Zotero** switch; turned off, PDFs from Zotero are no longer used.
 
 ### Fixed
 
+- The PDF zoom menu keeps one width across percentages, so the toolbar no longer shifts between 90% and 100%.
 - The `papilot` command uses the Codex it downloads on the same launch, even when an older copy is on `PATH`.
 
 ## [0.14.1] - 2026-11-23

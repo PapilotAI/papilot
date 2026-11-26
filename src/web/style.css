@@ -665,7 +665,8 @@ body.resizing iframe{pointer-events:none}
 .usage .critical .usage-value{color:var(--red)}
 .usage-value{font-variant-numeric:tabular-nums;color:var(--text-2)}
 .usage-credits{font-variant-numeric:tabular-nums}
-.chip-select.zoom-chip{height:24px;padding:0 6px 0 8px;border-radius:var(--r);border-color:transparent;font-size:12px;color:var(--text);box-shadow:none;background:var(--bg-muted)}
+/* Percentages share one width, so the toolbar holds still while zooming. */
+.chip-select.zoom-chip{min-width:calc(5ch + 32px);justify-content:space-between;font-variant-numeric:tabular-nums;height:24px;padding:0 6px 0 8px;border-radius:var(--r);border-color:transparent;font-size:12px;color:var(--text);box-shadow:none;background:var(--bg-muted)}
 .chip-select.zoom-chip:hover:not(:disabled),.chip-select.zoom-chip[aria-expanded=true]{background:var(--bg-muted);border-color:var(--line)}
 
 /* Home */
