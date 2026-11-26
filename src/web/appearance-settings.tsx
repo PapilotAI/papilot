@@ -1,8 +1,8 @@
 import { useState, type CSSProperties } from 'react';
-import { ACCENTS, DEFAULT_APPEARANCE, PRESETS, appearanceColors, appearanceVariables, hexColor, type AccentId, type Appearance, type ColorMode, type PresetId } from './appearance.ts';
+import { ACCENTS, DEFAULT_APPEARANCE, INTERFACE_SIZES, PRESETS, appearanceColors, appearanceVariables, hexColor, type AccentId, type Appearance, type ColorMode, type PresetId } from './appearance.ts';
 import { ChipSelect } from './chip-select.tsx';
 import { Icon } from './icons.tsx';
-import { t } from './i18n.ts';
+import { locale, t } from './i18n.ts';
 import type { Theme } from './theme.tsx';
 import './appearance-settings.css';
 
@@ -47,6 +47,9 @@ function PaperAppearanceOptions<T extends Appearance['review']>({ label, name, v
   </div>;
 }
 
+// Only the desktop app can zoom its own window; browsers already offer page zoom.
+const nativeZoom = Boolean(window.papilotDesktop?.setZoom);
+
 export function AppearanceSettings({ theme, onTheme, resolved, appearance, onAppearance }: AppearanceSettingsProps) {
   const colors = appearanceColors(appearance, resolved);
   const customized = Object.values(appearance.colors).some(colors => colors.background || colors.foreground);
@@ -71,6 +74,12 @@ export function AppearanceSettings({ theme, onTheme, resolved, appearance, onApp
               <span className="appearance-mode-label"><Icon name={mode === 'system' ? 'monitor' : mode === 'light' ? 'sun' : 'moon'} size={13}/>{mode === 'system' ? t('System') : mode === 'light' ? t('Light') : t('Dark')}</span>
             </label>)}
           </div>
+        </div>
+      </div>
+      <div className="settings-card">
+        <div className="settings-row settings-choice">
+          <div className="settings-text"><span className="settings-name">{t('Interface size')}</span><p>{nativeZoom ? t('Scales text and controls everywhere, including the editor, PDF and dialogs.') : t('Use your browser’s zoom to scale text and controls.')}</p></div>
+          {nativeZoom && <ChipSelect label={t('Interface size')} value={String(appearance.size)} options={INTERFACE_SIZES.map(size => ({ value: String(size), label: new Intl.NumberFormat(locale(), { style: 'percent' }).format(size) }))} onChange={value => onAppearance({ ...appearance, size: Number(value) })}/>}
         </div>
       </div>
       <div className="settings-card appearance-paper-card">

@@ -41,6 +41,8 @@ try {
       if (pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
       if (pathname === '/api/runtime/requirements') return route.fulfill({ json: { platform: 'win32', checks: ['git', 'latexmk', 'synctex', 'tex-engine'].map(id => ({ id, ok: false })) } });
       if (pathname === '/api/runtime/latex') return route.fulfill({ json: { distribution: 'MiKTeX', version: '26.10', path: 'C:\\Users\\Researcher.with.a.very.long.university.username\\AppData\\Local\\Programs\\MiKTeX\\miktex\\bin\\x64' } });
+      if (pathname === '/api/library/zotero') return route.fulfill({ json: { local: { chosen: 'C:\\Users\\Researcher.with.a.very.long.university.username\\OneDrive - Example University\\Zotero', state: 'ready', dataDir: 'C:\\Users\\Researcher.with.a.very.long.university.username\\OneDrive - Example University\\Zotero', items: 12408, withPdf: 9876, citationKeys: 12408 },
+        account: { username: 'researcher.with.a.long.zotero.username', libraries: [{ name: null, items: 12408, withPdf: 9876, citationKeys: 12408 }, { name: 'Programming Languages and Formal Methods Reading Group', items: 2210, withPdf: 1980, citationKeys: 0 }], syncing: false, synced: 1, problem: 'unreachable' }, use: true } });
       if (pathname === '/api/diagnostics') return route.fulfill({ json: { version: '0.9.4', checkedAt: 1, platform: 'win32', arch: 'x64', node: '24.22.2', ok: true, checks: [] } });
       if (pathname.startsWith('/api/updates')) return route.fulfill({ json: update });
       if (pathname === '/api/quick-notes') return route.fulfill({ json: { quickNotes: [
@@ -124,7 +126,7 @@ try {
           await page.screenshot({ animations: 'disabled', path: `test-results/settings-navigation-${width}.png` });
         }
         await category.click();
-        if (name === 'latex') await page.locator('.latex-installation-facts').waitFor();
+        if (name === 'latex' || name === 'zotero') await page.locator('.settings-facts').last().waitFor();
         if (name === 'experiments') await expect(page.locator('.phitex-experiment').getByRole('switch')).toBeChecked();
         if (name === 'updates') await page.locator('.settings-content-updates [role=alert]').waitFor();
         if (name === 'skills') await expect(page.locator('.skill-library-new')).toBeEnabled();

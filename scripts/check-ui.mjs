@@ -261,6 +261,7 @@ await page.route('**/api/**', async route => {
     pending.status = 'preparing'; pending.error = null;
     return json(pending);
   }
+  if (url.pathname === '/api/quick-model') return route.fulfill({ json: { choice: null } });
   throw new Error(`Unexpected fixture request: ${url.pathname}`);
 });
 await page.route('**/review/**', route => reviewFailure ? route.fulfill({ status: 503, json: { error: 'Review server unavailable.' } }) : reviewStarting ? route.fulfill({ contentType: 'text/html', body: '<html><head></head><body><div id="root"></div></body></html>' }) : route.fulfill({ contentType: 'text/html', body: '<html lang="en"><head></head><body><div class="bar">Review round 1</div><main id="paper"><h2>Introduction</h2><p>PDF review fixture</p></main></body></html>' }));
@@ -390,7 +391,7 @@ try {
   await settingsDialog.getByRole('searchbox', { name: 'Search settings' }).fill('');
   await page.screenshot({ path: 'test-results/settings-review-desktop.png' });
   const runtimeGroup = settingsDialog.locator('.settings-category-group').filter({ has: page.getByRole('heading', { name: 'Runtime', exact: true }) });
-  assert.deepEqual(await runtimeGroup.getByRole('button').allTextContents(), ['Git', 'Agents', 'LaTeX', 'Overleaf']);
+  assert.deepEqual(await runtimeGroup.getByRole('button').allTextContents(), ['Git', 'Agents', 'LaTeX', 'Overleaf', 'Zotero']);
   await runtimeGroup.getByRole('button', { name: 'Agents', exact: true }).click();
   const diagnostics = settingsDialog;
   assert.equal(await diagnostics.getByRole('button', { name: 'Copy diagnostic summary' }).count(), 0);

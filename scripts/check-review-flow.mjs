@@ -101,6 +101,7 @@ const appRoutes = async route => {
   }
   if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
   if (url.pathname.endsWith('/messages')) { task.status = 'running'; task.review.unsent = 0; return route.fulfill({ json: { ok: true } }); }
+  if (url.pathname === '/api/quick-model') return route.fulfill({ json: { choice: null } });
   throw Error(`Unexpected app request ${url.pathname}`);
 };
 const reviewRoutes = async route => {

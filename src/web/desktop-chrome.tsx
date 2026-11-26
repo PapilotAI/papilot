@@ -19,6 +19,8 @@ declare global {
       onNewPaper?(listener: () => void): () => void;
       notify?(alert: { taskId: string | null; title: string; body: string; sound: boolean }): Promise<boolean>;
       onOpenTask?(listener: (taskId: string) => void): () => void;
+      setZoom?(factor: number): void;
+      onZoom?(listener: (direction: 'in' | 'out' | 'reset') => void): () => void;
     };
   }
 }

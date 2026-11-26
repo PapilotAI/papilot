@@ -48,6 +48,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/manuscript')) return json({ git, build: { status: 'ready', key: 'fixture', pages: [[612, 792]], builtAt: 1 }, annotations: [] });
   if (url.pathname.endsWith('/manuscript.pdf')) return route.fulfill({ contentType: 'application/pdf', body: fs.readFileSync('tests/fixtures/outline.pdf') });
   if (url.pathname.endsWith('/manuscript/words')) return json(JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'))[Number(url.searchParams.get('page'))]);
+  if (url.pathname === '/api/quick-model') return route.fulfill({ json: { choice: null } });
   throw new Error(`Unexpected app request ${url.pathname}`);
 });
 const open = async () => {

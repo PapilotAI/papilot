@@ -52,7 +52,9 @@ export interface Task {
   // after switching agents; its next turn is given it.
   handoff?: boolean;
   permissions?: TaskPermissions;
-  mode?: 'edit' | 'review';
+  mode?: 'edit' | 'review' | 'citations';
+  // A citation check: its progress, and whether the paper's PDF shows its findings.
+  citationCheck?: { show: boolean; state?: CitationCheckState | null };
   aiReview?: { key: string; notes?: number; revision?: number };
   // Accepted changes remain isolated until the author applies them.
   reconciliation?: TaskReconciliation | null;
@@ -511,3 +513,47 @@ export interface ActivityReport {
   agents: ActivityAgentSummary[];
   models: ActivityModelSummary[];
 }
+// Where an entry's PDF came from, and why an entry has none yet: Papilot is
+// still looking, the work has no open copy (the landing page is where the
+// author can get one), no DOI or arXiv identifier says which work it is, a
+// source could not be reached, the author took a wrong PDF away, or online
+// lookups are off.
+export type LibrarySource = 'zotero' | 'arxiv' | 'open-access' | 'author' | 'agent';
+export interface LibraryPdf { hash: string; source: LibrarySource; pages: number | null; text: 'pending' | 'ready' | 'none'; url?: string }
+export interface LibraryEntry { pdf: LibraryPdf | null; find: 'waiting' | 'searching' | 'paywalled' | 'unidentified' | 'unreachable' | 'removed' | 'off' | null; landing: string | null }
+// What a cited work says about a sentence that cites it, as an agent found
+// it in the work's PDF: a verdict, a note, and the PDF's own lines as
+// evidence, cut out by Papilot from the anchors the agent gave. A finding
+// made on another PDF of the work than the library now has is stale.
+export type CitationVerdict = 'supported' | 'partial' | 'unsupported' | 'unclear';
+export interface CitationEvidence { quote: string; page: number; marks: { page: number; rect: [number, number, number, number] }[] }
+// by: the quick model that checked it; an agent's finding has none.
+export interface CitationFinding { verdict: CitationVerdict; note: string; evidence: CitationEvidence[]; pdf: string; checkedAt: number; by?: string; task?: string; stale?: boolean }
+// A checked citing sentence where it prints in the paper's PDF: its lines,
+// and the findings for the works it cites, with each work's library PDF.
+export interface EvidenceMark { id: string; page: number; rects: [number, number, number, number][]; sentence: string; file: string; line: number;
+  findings: (CitationFinding & { key: string; entry: string; title: string; hash: string })[];
+  // A sentence citing nothing: the library work it could cite.
+  suggestion?: CitationSuggestion & { entry: string; title: string } }
+// A sentence that cites nothing and a library work the quick model found to
+// say what it claims, with that work's lines.
+export interface CitationSuggestion { id: string; file: string; line: number; section: string | null; sentence: string; key: string; verdict: 'supported' | 'partial'; note: string; evidence: CitationEvidence[]; pdf: string; checkedAt: number; by?: string; task?: string }
+// A paper's quick citation check: how far it got, the model doing it, and why it stopped early.
+export interface CitationCheckState { phase?: 'citations' | 'sources'; output?: string; running: boolean; stopping?: boolean; done: number; total: number; failed: number; model: string | null; error: string | null; finishedAt: number | null }
+/** A sentence of the paper that cites works, with what was found for each. */
+export interface CitingSentence { id: string; keys: string[]; file: string; line: number; section: string | null; sentence: string; findings: Record<string, CitationFinding> }
+export interface LibraryReport extends BibliographyReport {
+  library: { entries: Record<string, LibraryEntry>; pending: number };
+  citations: CitingSentence[];
+  // Sentences citing nothing that a library work supports, and how many cite nothing.
+  suggestions: CitationSuggestion[]; uncited: number;
+}
+// The Zotero libraries the Library takes PDFs from. On this host: none, one
+// whose database cannot be read, or one with its counts. The account: its
+// libraries (the user's own has no name) as last synced, and why the last
+// sync did not finish. Whether works take PDFs from Zotero at all is the
+// server's setting, for every paper and browser.
+// chosen: the data directory the author chose, or null when Papilot finds it.
+export type ZoteroLocal = ({ state: 'missing' } | { state: 'unreadable'; dataDir: string } | { state: 'ready'; dataDir: string; items: number; withPdf: number; citationKeys: number }) & { chosen: string | null };
+export interface ZoteroAccountStatus { username: string; libraries: { name: string | null; items: number; withPdf: number; citationKeys: number }[]; syncing: boolean; synced: number | null; problem: 'revoked' | 'unreachable' | null }
+export interface ZoteroStatus { local: ZoteroLocal; account: ZoteroAccountStatus | null; use: boolean }

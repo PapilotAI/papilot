@@ -199,16 +199,6 @@
     "textHash": "ec3a91e31747eac088ef52e321f69806c77d56919c1cbc83b3af0e00ddc067d5",
     "model": "gemini-4-argon-high"
   },
-  "Cited {n} time: {places}": {
-    "revision": "1bc161466a462bfe65bfea916117ab45f19aaf52b889a88675b455fe5d1c248b",
-    "textHash": "10248d57eb4ca77840bfe92c737bf44b5c15ebd18ecd20bf0fc4f0749f495143",
-    "model": "gemini-4-argon-medium"
-  },
-  "Cited {n} times: {places}": {
-    "revision": "4ad84c98bbdd19f75107356b1ac56483f4cb09bc27ce8dddfa7b6737d91d24fb",
-    "textHash": "1d9187a28e5b921c32cf0420865aed9f33adae488f5b835231d95a220c4a6809",
-    "model": "gemini-4-argon-medium"
-  },
   "Cites {key}, which no bibliography entry defines.": {
     "revision": "fa0e2d14305116ae74014a8c9072993ed3dc40bc36faa620e623a38664dd67ca",
     "textHash": "a4348061f3e166bda4d5d32244621f00fd72a4da09b5aff8853a52bc5d06ca45",

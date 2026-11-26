@@ -784,7 +784,9 @@ progress.pdf-preparing::-moz-progress-bar{background:none}
 .pdf-toolbar .icon-button{width:28px;height:28px}
 .pdf-toolbar .icon-button.active,.pdf-find .icon-button.active{background:var(--bg-active);color:var(--text)}
 @container (max-width:1120px){.review-host-bar.pdf-toolbar .pdf-zoom>.icon-button{display:none}}
-@container (max-width:760px){.pdf-toolbar .pdf-zoom,.review-host-bar.pdf-toolbar .pdf-pager>.icon-button{display:none}}
+@container (max-width:760px){
+  html:not([data-desktop]) .pdf-toolbar .pdf-zoom,.pdf-toolbar .pdf-zoom>.icon-button,.review-host-bar.pdf-toolbar .pdf-pager>.icon-button{display:none}
+}
 @container (max-width:620px){.pdf-pager>.icon-button{display:none}}
 @container (max-width:400px){.pdf-toolbar .pdf-modes>button{padding:0 6px}.pdf-pages{min-width:24px;padding-left:2px}}
 .pdf-find{display:flex;align-items:center;gap:6px;height:40px;padding:0 8px 0 14px;border-bottom:1px solid var(--line);background:var(--bg);flex-shrink:0}
@@ -1026,11 +1028,11 @@ progress.pdf-preparing::-moz-progress-bar{background:none}
 .settings-text p{margin:2px 0 0;font-size:11px;line-height:1.45;color:var(--text-2)}
 .message-author{align-self:flex-end;margin:0 6px 3px;font-size:12px;font-weight:500;color:var(--text-3)}
 .message.user:has(>.message-author){display:flex;flex-direction:column;align-items:flex-end}
-.settings-dialog input.switch,.import-sync input.switch{appearance:none;flex:none;position:relative;width:28px;height:16px;margin:2px 0 0;padding:0;border:0;border-radius:8px;background:var(--bg-active);box-shadow:none;cursor:pointer;transition:background-color .15s}
-.settings-dialog input.switch::before,.import-sync input.switch::before{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.25);transition:transform .15s var(--ease)}
-.settings-dialog input.switch:checked,.import-sync input.switch:checked{background:var(--accent)}
-.settings-dialog input.switch:checked::before,.import-sync input.switch:checked::before{transform:translateX(12px)}
-.settings-dialog input.switch:focus-visible,.import-sync input.switch:focus-visible{box-shadow:0 0 0 1px var(--raised),0 0 0 3px var(--accent)}
+.settings-dialog input.switch,.citation-check-show input.switch,.import-sync input.switch{appearance:none;flex:none;position:relative;width:28px;height:16px;margin:2px 0 0;padding:0;border:0;border-radius:8px;background:var(--bg-active);box-shadow:none;cursor:pointer;transition:background-color .15s}
+.settings-dialog input.switch::before,.citation-check-show input.switch::before,.import-sync input.switch::before{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.25);transition:transform .15s var(--ease)}
+.settings-dialog input.switch:checked,.citation-check-show input.switch:checked,.import-sync input.switch:checked{background:var(--accent)}
+.settings-dialog input.switch:checked::before,.citation-check-show input.switch:checked::before,.import-sync input.switch:checked::before{transform:translateX(12px)}
+.settings-dialog input.switch:focus-visible,.citation-check-show input.switch:focus-visible,.import-sync input.switch:focus-visible{box-shadow:0 0 0 1px var(--raised),0 0 0 3px var(--accent)}
 .settings-dialog input.switch:disabled,.import-sync input.switch:disabled{opacity:.45;cursor:not-allowed}
 .settings-test{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:12px;color:var(--text-2)}
 .settings-test .button{display:inline-flex;align-items:center;gap:6px}
@@ -1042,9 +1044,9 @@ progress.pdf-preparing::-moz-progress-bar{background:none}
   .settings-row.settings-note-options{flex-direction:column;align-items:stretch;gap:8px}
   .settings-note-count{width:100%}
   .segmented label{height:32px;font-size:13px}
-  .settings-dialog input.switch,.import-sync input.switch{width:40px;height:24px;margin-top:0;border-radius:12px}
-  .settings-dialog input.switch::before,.import-sync input.switch::before{width:20px;height:20px}
-  .settings-dialog input.switch:checked::before,.import-sync input.switch:checked::before{transform:translateX(16px)}
+  .settings-dialog input.switch,.citation-check-show input.switch,.import-sync input.switch{width:40px;height:24px;margin-top:0;border-radius:12px}
+  .settings-dialog input.switch::before,.citation-check-show input.switch::before,.import-sync input.switch::before{width:20px;height:20px}
+  .settings-dialog input.switch:checked::before,.citation-check-show input.switch:checked::before,.import-sync input.switch:checked::before{transform:translateX(16px)}
   .settings-dialog input.switch::after,.import-sync input.switch::after{content:"";position:absolute;inset:-6px -2px}
 }
 @media(max-width:480px){.settings-row:not(.settings-notifications):not(.settings-toggle){flex-direction:column;align-items:stretch;gap:8px}.segmented{display:flex}.segmented label{flex:1;justify-content:center}.settings-dialog select{width:100%}}
@@ -1175,7 +1177,7 @@ progress.pdf-preparing::-moz-progress-bar{background:none}
   .review-host-bar.pdf-toolbar{height:auto;min-height:42px;gap:0;padding:0;background:transparent;border-bottom:0;pointer-events:none}
   .review-host-bar.pdf-toolbar .review-lead{min-height:42px;padding-left:6px}
   .review-host-bar.pdf-toolbar .review-tools{min-height:42px;padding-left:8px}
-  .pdf-zoom{display:none}
+  html:not([data-desktop]) .pdf-zoom{display:none}
   .pdf-modes{border:0;padding:2px;border-radius:8px;background:var(--bg-muted)}
   .pdf-modes>button{width:30px;height:28px;padding:0;border-radius:6px}
   .pdf-modes>button>span{display:none}

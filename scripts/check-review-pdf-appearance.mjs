@@ -42,6 +42,7 @@ await page.route('**/api/**', async route => {
   if (url.pathname.endsWith('/skills')) return json({ skills: [] });
   if (url.pathname.endsWith('/git')) return json({ files: [], branch: 'main', ahead: 0, behind: 0 });
   if (url.pathname.endsWith('/manuscript')) return json({ git: { files: [] }, annotations: [], build: { status: 'building', current: false } });
+  if (url.pathname === '/api/quick-model') return route.fulfill({ json: { choice: null } });
   throw Error(`Unexpected app request ${url.pathname}`);
 });
 await page.route('**/review/**', async route => {

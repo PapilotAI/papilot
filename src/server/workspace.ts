@@ -45,7 +45,7 @@ import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress, recentCommitSubjects } from './manuscript.ts';
 import { Memory, memoryDigest, memoryUpdate } from './memory.ts';
 import { MEMORY_EVIDENCE, MEMORY_LANGUAGE, MEMORY_LEARNING, MEMORY_SINCE, acceptedSuggestions, dismissedKey, evidenceHash, hasEvidence, learningPrompt, memoryLearningInstructions, taskEvidence, type EvidenceRecord, type MemoryEvidence } from './memory-learning.ts';
-import { AGENT_IDS, usesCodex, isTaskReviewNote, collaborationRoutes, type CollaborationRole, type CollaborationRoutes, type CollaborationSettings } from '../shared.ts';
+import { AGENT_IDS, isAgentId, usesCodex, isTaskReviewNote, collaborationRoutes, type CollaborationRole, type CollaborationRoutes, type CollaborationSettings } from '../shared.ts';
 import type { HelperChoice, Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, PendingBuild, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview, PageView, ToolPlace } from '../shared.ts';
 
 const execute = promisify(execFile);
@@ -120,6 +120,8 @@ const signInFailure = (error: { message?: unknown; codexErrorInfo?: unknown } | 
 // by the names agents give them (GPT Luna and mini, Claude Haiku, Gemini Flash).
 const LIGHT = /\b(?:luna|mini|nano|haiku|flash|lite)\b/i;
 export const lightModel = (models: AgentModel[]) => models.find(model => LIGHT.test(model.id) || LIGHT.test(model.name));
+export const QUICK_MODEL = 'quick-model';
+export interface QuickModel { agent: AgentId; model: string | null; effort: string | null }
 // A commit message's agent sees the changes in its prompt and needs no tools.
 function commitInstructions(language: CommitMessageLanguage = 'auto') {
   const languageRule = language === 'auto'
@@ -590,7 +592,7 @@ export class Workspace extends EventEmitter {
       const client = await this.connectReview(root);
       await client.get('/api/tasks');
       // A task that was never prepared has no copy yet; Retry makes one at the new path.
-      const tasks = this.store.tasks().filter(task => task.projectId === id && !task.preparation), worktrees = new Map<string, string>();
+      const tasks = this.store.tasks().filter(task => task.projectId === id && !task.preparation && task.mode !== 'citations'), worktrees = new Map<string, string>();
       // A new path must still contain this paper's existing review tasks.
       // Taking paths from the engine also handles a relocated repository.
       const common = async (folder: string) => realPath(path.resolve(folder, (await execute('git', ['-C', folder, 'rev-parse', '--git-common-dir'])).stdout.trim()));
@@ -637,6 +639,37 @@ export class Workspace extends EventEmitter {
   // and attachments claimed, and is then prepared in the background (see
   // prepareTask). An AI review passes prepareReview, which reads the PDF of
   // the new task's manuscript copy.
+  /** Runs a citation check task with its model; app.ts connects the library. */
+  runCitationCheck?: (task: Task) => void;
+  forgetCitationCheck?: (task: Task) => void;
+  /** A citation check is a task of its own: no worktree or conversation,
+   * only the run of the model the author chose over the paper's citations
+   * and its uncited sentences. */
+  createCitationCheck(input: { id: string; projectId: string; agent?: AgentId; model?: string | null; effort?: string | null }) {
+    if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
+    const existing = this.store.findTask(input.id);
+    if (existing) { if (existing.projectId !== input.projectId || existing.mode !== 'citations') throw new Error('Invalid task ID.'); return existing; }
+    if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
+    this.store.project(input.projectId);
+    const now = Date.now(), task: Task = {
+      id: input.id, projectId: input.projectId, name: `c-${input.id}`, title: 'Check citations', titleSource: 'prompt', instructions: '',
+      mode: 'citations', citationCheck: { show: false, state: null }, worktree: '', threadId: null, turnId: null,
+      ...(input.agent ? { agent: input.agent } : {}), model: input.model ?? null, ...(input.effort ? { effort: input.effort } : {}),
+      status: 'running', createdAt: now, updatedAt: now, feedbackCursor: 0, error: null, review: null,
+    };
+    this.store.saveTask(task);
+    this.runCitationCheck?.(task);
+    return this.store.task(task.id);
+  }
+  /** Checks again, with another model when one is given. */
+  rerunCitationCheck(taskId: string, choice?: { agent: AgentId; model?: string | null; effort?: string | null }) {
+    const task = this.store.task(taskId);
+    if (task.mode !== 'citations') throw new Error('This task does not check citations.');
+    if (task.status === 'running') return task;
+    this.store.updateTask(task.id, { status: 'running', error: null, ...(choice ? { agent: choice.agent, model: choice.model ?? null, effort: choice.effort ?? null } : {}) });
+    this.runCitationCheck?.(this.store.task(task.id));
+    return this.store.task(task.id);
+  }
   async createTask(input: { permissions?: TaskPermissions; prepareReview?: (worktree: string, document?: string) => Promise<ReviewSnapshot>; projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; noteContexts?: Record<string, TaskNoteContext>; groupInstructions?: GroupInstructions; attachments?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
@@ -1109,7 +1142,10 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       const scope = task.mode === 'review' ? [] : await this.reviewScope(task), codex = usesCodex(this.agentOf(task));
       const freshThread = !task.threadId;
       let viewPdf = task.mode !== 'review' && codex && (task.threadId ? Boolean(task.viewPdf) : !this.noViewPdf);
-      const options = (tool: boolean) => ({ cwd: task.worktree, approvalPolicy: 'on-request', sandbox: 'workspace-write', ...permissions?.thread, ...reviewer, config: { web_search: 'live', 'sandbox_workspace_write.network_access': true }, developerInstructions: this.instructions(task, scope, tool, memory) + (this.agentOf(task) === 'collaboration' ? '\n\n' + workflowInstructions(this.collaborationRoutes) : ''), ...(task.model ? { model: task.model } : {}) });
+      // Agents that start MCP servers get Papilot's tools natively; the
+      // others use the JSON client named in each turn's instructions.
+      const mcp = this.paperTools && task.mode !== 'review' && !codex && this.agentOf(task) !== 'papilot' ? { command: process.execPath, args: [path.join(ROOT, 'bin/papilot-mcp.mjs'), this.toolBridge.file(task.id)] } : undefined;
+      const options = (tool: boolean) => ({ cwd: task.worktree, approvalPolicy: 'on-request', sandbox: 'workspace-write', ...permissions?.thread, ...reviewer, ...(mcp ? { mcp } : {}), config: { web_search: 'live', 'sandbox_workspace_write.network_access': true }, developerInstructions: this.instructions(task, scope, tool, memory) + (this.agentOf(task) === 'collaboration' ? '\n\n' + workflowInstructions(this.collaborationRoutes) : ''), ...(task.model ? { model: task.model } : {}) });
       let result;
       if (task.threadId) result = await agent.request('thread/resume', { ...options(viewPdf), threadId: task.threadId, excludeTurns: true });
       else {
@@ -1162,7 +1198,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       if (this.agentOf(task) !== 'papilot') {
         const file = await this.toolBridge.open(task.id, current, (tool, args) => this.paperTools!(this.store.task(task.id), tool, args, current));
         // JSON quoting is for the model to see arguments, never executed as shell code here.
-        paperInstructions += `\nUse native paper tools when available. Otherwise run the local JSON client: ${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(ROOT, 'bin/paper-tools.mjs'))} ${JSON.stringify(file)} TOOL JSON. Use help for schemas; pass @FILE or - (stdin) to avoid shell quoting of comments. The session file is private; do not print it. It works only during this turn.`;
+        paperInstructions += `\nUse native paper tools when available (the papilot MCP server's tools). Otherwise run the local JSON client: ${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(ROOT, 'bin/paper-tools.mjs'))} ${JSON.stringify(file)} TOOL JSON. Use help for schemas; pass @FILE or - (stdin) to avoid shell quoting of comments. The session file is private; do not print it. It works only during this turn.`;
       }
       if (!current()) return;
     }
@@ -2163,6 +2199,41 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const items = feedback.feedback || [];
     return { unsent: items.length, comments: items.filter(item => item.kind === 'comment' || item.kind === 'note').length };
   }
+  /** The model for quick background jobs, such as checking citations and
+   * naming tasks: the author's choice in Settings, or null to let each job
+   * use the small model of the agent it would use anyway. */
+  quickModel(): QuickModel | null {
+    const choice = this.store.preference<QuickModel | null>(QUICK_MODEL);
+    return choice && isAgentId(choice.agent) ? choice : null;
+  }
+  setQuickModel(choice: QuickModel | null) { this.store.savePreference(QUICK_MODEL, choice); }
+  // The agent, model and effort for a quick job. The author's choice wins
+  // while it is signed in; otherwise the fallback agent's small model does it.
+  private quick(fallback: { agent?: AgentId; model?: string }, what: string) {
+    const choice = this.quickModel();
+    if (choice && !this.agentOff(choice.agent) && this.agents[choice.agent].ready && this.runtimes[choice.agent].authenticated && this.agents[choice.agent].supportsReadOnlyTasks !== false) {
+      const models = this.runtimes[choice.agent].models, model = models.find(item => item.id === choice.model) || lightModel(models) || models.find(item => item.isDefault);
+      return { id: choice.agent, model, effort: choice.effort && model?.efforts.includes(choice.effort) ? choice.effort : model?.efforts[0] };
+    }
+    const { id, model } = this.helper(fallback, what, { light: true, readOnly: true });
+    return { id, model, effort: model?.efforts[0] };
+  }
+  // The agent and model a task chose for its quick job; one signed out or off says so.
+  // An agent still connecting, as just after Papilot starts, is waited for.
+  private async chosen(choice: { agent: AgentId; model?: string | null; effort?: string | null }, what: string) {
+    if (!this.agents[choice.agent].ready && !this.agentOff(choice.agent)) { await this.connecting; if (!this.agents[choice.agent].ready) await this.connectAgent(choice.agent).catch(() => undefined); }
+    const runtime = this.runtimes[choice.agent];
+    if (this.agentOff(choice.agent) || !this.agents[choice.agent].ready || !runtime.authenticated) throw new Error(`Connect ${AGENT_NAMES[choice.agent]} to ${what}, or choose another model.`);
+    const model = runtime.models.find(item => item.id === choice.model) || runtime.models.find(item => item.isDefault);
+    return { id: choice.agent, model, effort: choice.effort && model?.efforts.includes(choice.effort) ? choice.effort : model?.efforts[0] };
+  }
+  /** One quick job's reply, from a read-only turn that has everything it
+   * needs in its prompt, and the agent and model that wrote it. */
+  async quickReply(options: { instructions: string; prompt: string; what: string; projectId?: string; signal?: AbortSignal; onText?: (text: string) => void; choice?: { agent?: AgentId; model?: string | null; effort?: string | null } }) {
+    const { id, model, effort } = options.choice?.agent ? await this.chosen(options.choice as { agent: AgentId; model?: string | null; effort?: string | null }, options.what) : this.quick({}, options.what);
+    const reply = await this.oneOff(id, { cwd: os.tmpdir(), sandbox: 'read-only', instructions: options.instructions, prompt: options.prompt, model, effort, what: options.what, projectId: options.projectId, signal: options.signal, onText: options.onText });
+    return { reply, agent: id, model: model?.name || model?.id || null };
+  }
   // The agent that writes a commit message or resolves a merge: the one the
   // author chose, or else the first that is signed in, with the chosen model
   // or the default one; light asks for the agent's small model when it has one.
@@ -2199,7 +2270,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   }
   // One turn on a thread the agent does not keep, outside any task: its
   // reply is returned and no chat shows it.
-  private async oneOff(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout: number; what: string; projectId?: string; taskId?: string }) {
+  private async oneOff(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout?: number; signal?: AbortSignal; onText?: (text: string) => void; what: string; projectId?: string; taskId?: string }) {
     if (this.closing) throw new Error('The server is shutting down.');
     // A read-only helper (a title, a commit message) has everything in its
     // prompt. It runs in an empty folder, so an agent that does not enforce a
@@ -2209,7 +2280,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     // An empty folder left behind must not discard the reply.
     finally { if (scratch) await fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 5 }).catch(() => {}); }
   }
-  private async helperTurn(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout: number; what: string; projectId?: string; taskId?: string }) {
+  private async helperTurn(id: AgentId, options: { cwd: string; sandbox: 'read-only' | 'workspace-write'; instructions: string; prompt: string; model?: AgentModel; effort?: string | null; serviceTier?: string; timeout?: number; signal?: AbortSignal; onText?: (text: string) => void; what: string; projectId?: string; taskId?: string }) {
     const agent = this.agents[id], name = AGENT_NAMES[id], codex = usesCodex(id);
     // Codex unloads the thread as soon as it is released, not a minute later.
     const thread = await agent.request('thread/start', { cwd: options.cwd, approvalPolicy: 'never', sandbox: options.sandbox, ephemeral: true, config: { thread_unload_delay_secs: 0 }, developerInstructions: options.instructions, ...(options.model ? { model: options.model.id } : {}) }, options.timeout);
@@ -2224,7 +2295,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       await releaseThread(agent, threadId);
     }
   }
-  private helperReply(id: AgentId, agent: AgentRuntime, name: string, threadId: string, resolvedModel: string | null, options: { cwd: string; prompt: string; effort?: string | null; serviceTier?: string; timeout: number; what: string; projectId?: string; taskId?: string }) {
+  private helperReply(id: AgentId, agent: AgentRuntime, name: string, threadId: string, resolvedModel: string | null, options: { cwd: string; prompt: string; effort?: string | null; serviceTier?: string; timeout?: number; signal?: AbortSignal; onText?: (text: string) => void; what: string; projectId?: string; taskId?: string }) {
     const helperId = randomUUID(), startedAt = Date.now(), codex = usesCodex(id);
     const projectName = this.projectName(options.projectId);
     this.store.recordActivity({
@@ -2239,6 +2310,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     }, true);
     return new Promise<string>((resolve, reject) => {
       let text = '', turnId = '', settled = false;
+      // What the agent has written so far, for a caller that shows it as it comes.
+      let streamed = '';
       const listen = (message: any) => {
         const p = message.params || {};
         if (p.threadId !== threadId) return;
@@ -2271,16 +2344,23 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
               data: { role: 'helper', what: options.what, tokens: normalized.tokens, costUsd: normalized.costUsd, costSource: normalized.costSource, ...(projectName ? { projectName } : {}) },
             });
           }
-        } else if (message.method === 'item/completed' && p.item?.type === 'agentMessage') text = p.item.text || text;
+        } else if (message.method === 'item/agentMessage/delta' && options.onText) { streamed += p.delta || ''; options.onText(streamed); }
+        else if (message.method === 'item/completed' && p.item?.type === 'agentMessage') text = p.item.text || text;
         else if (message.method === 'turn/completed') finish(p.turn?.status === 'completed' ? null : new Error(p.turn?.error?.message || `${name} stopped before it could ${options.what}.`));
       };
-      const timer = setTimeout(() => {
+      // A helper without a timeout runs until it answers or is stopped.
+      const timer = options.timeout === undefined ? undefined : setTimeout(() => {
         if (turnId) agent.request('turn/interrupt', { threadId, turnId }).catch(() => undefined);
         finish(new Error(`${name} did not ${options.what} in time. Try again.`));
       }, options.timeout);
+      const aborted = () => {
+        if (turnId) agent.request('turn/interrupt', { threadId, turnId }).catch(() => undefined);
+        finish(new Error(`Stopped before ${name} could ${options.what}.`));
+      };
+      options.signal?.addEventListener('abort', aborted, { once: true });
       const finish = (error: Error | null) => {
         if (settled) return; settled = true;
-        clearTimeout(timer); agent.off('notification', listen); agent.off('disconnected', disconnected); this.helperStops.delete(stop);
+        clearTimeout(timer); options.signal?.removeEventListener('abort', aborted); agent.off('notification', listen); agent.off('disconnected', disconnected); this.helperStops.delete(stop);
         const finishedAt = Date.now();
         this.store.recordActivity({
           key: `turn:helper:${helperId}`,
@@ -2315,13 +2395,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     const pending = this.titles.get(taskId);
     if (pending) return pending;
-    const { id, model } = this.helper({ agent: this.agentOf(task), model: task.model || undefined }, 'generate a task title', { light: true, readOnly: true });
+    const { id, model, effort } = this.quick({ agent: this.agentOf(task), model: task.model || undefined }, 'generate a task title');
     const items = this.store.items(taskId), first = items.find(item => item.type === 'user');
     const outcome = items.findLast(item => item.type === 'assistant' && item.text);
     const prompt = JSON.stringify({ request: first?.text || '', taskContext: task.instructions, existingOutcome: outcome?.text || '' });
     const revision = task.titleRevision || 0;
     this.store.updateTask(taskId, { titleGeneration: 'pending' });
-    const written = this.oneOff(id, { cwd: this.store.project(task.projectId).path, sandbox: 'read-only', instructions: taskCaptionInstructions, prompt, model, effort: model?.efforts[0], timeout: 45000, what: 'generate a task title', projectId: task.projectId, taskId }).then(reply => {
+    const written = this.oneOff(id, { cwd: this.store.project(task.projectId).path, sandbox: 'read-only', instructions: taskCaptionInstructions, prompt, model, effort, timeout: 45000, what: 'generate a task title', projectId: task.projectId, taskId }).then(reply => {
       if (this.closing) return null;
       const current = this.store.findTask(taskId);
       if (!current || current.status === 'deleting' || (current.titleRevision || 0) !== revision) return current || null;
@@ -2542,6 +2622,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (this.deletions.has(taskId)) throw new Error('Deletion is already in progress. Wait for it to finish.');
     const task = this.store.findTask(taskId);
     if (!task) return { ok: true };
+    // A citation check has no worktree: stopping it and forgetting its findings is all.
+    if (task.mode === 'citations') {
+      if (task.status === 'running') throw new Error('Stop the check before deleting it.');
+      this.forgetCitationCheck?.(task);
+      this.store.deleteTask(task.id);
+      return { ok: true };
+    }
     // A task that was never prepared has only its first message, which never ran.
     const unprepared = Boolean(task.preparation);
     if (!['idle', 'interrupted', 'reviewing', 'failed', 'deleting', ...(unprepared ? ['preparing'] : [])].includes(task.status)

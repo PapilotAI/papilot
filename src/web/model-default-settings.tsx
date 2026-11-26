@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { AgentId } from '../shared.ts';
 import type { AgentOption } from './agent-picker.tsx';
 import { shownModels } from './agent-choice.ts';
@@ -12,10 +13,13 @@ export interface ModelDefaultSettingsProps {
   effort: string;
   onSelect: (agent: AgentId, model: string) => void;
   onEffort: (effort: string) => void;
+  quick?: QuickModelApi;
 }
+export interface QuickModel { agent: AgentId; model: string | null; effort: string | null }
+export interface QuickModelApi { load: () => Promise<{ choice: QuickModel | null }>; save: (choice: QuickModel | null) => Promise<{ choice: QuickModel | null }> }
 
 // Use the same catalog and saved choices as the new-task composer.
-export function ModelDefaultSettings({ agents, agent, model, effort, onSelect, onEffort }: ModelDefaultSettingsProps) {
+export function ModelDefaultSettings({ agents, agent, model, effort, onSelect, onEffort, quick }: ModelDefaultSettingsProps) {
   const groups = agents.map(option => {
     const models = shownModels(option.runtime, option.value === agent ? model : undefined), fallback = models.find(item => item.isDefault);
     return { ...option, choices: [
@@ -44,5 +48,26 @@ export function ModelDefaultSettings({ agents, agent, model, effort, onSelect, o
         label={t('Default reasoning effort')} description={t('Available levels depend on the selected model.')}/>
         : <div className="settings-text"><span className="settings-name">{t('Default reasoning effort')}</span><p>{t('This model uses its own reasoning settings.')}</p></div>}
     </div>
+    {quick && <QuickModelSettings agents={agents} api={quick}/>}
   </>;
+}
+
+// The model for quick background jobs, saved on the Papilot host because
+// those jobs run there: checking citations and naming tasks.
+function QuickModelSettings({ agents, api }: { agents: AgentOption[]; api: QuickModelApi }) {
+  const [choice, setChoice] = useState<QuickModel | null | undefined>(undefined), [error, setError] = useState('');
+  useEffect(() => { void api.load().then(result => setChoice(result.choice), failure => setError(failure instanceof Error ? failure.message : String(failure))); }, [api]);
+  const options = [{ value: 'auto', label: t('Automatic') },
+    ...agents.flatMap(option => shownModels(option.runtime, choice?.agent === option.value ? choice.model ?? undefined : undefined).map(item => ({ value: JSON.stringify([option.value, item.id]), label: item.name || item.id, group: option.label })))];
+  const value = choice ? JSON.stringify([choice.agent, choice.model]) : 'auto';
+  if (choice && !options.some(option => option.value === value)) options.push({ value, label: choice.model || choice.agent, group: agents.find(option => option.value === choice.agent)?.label || choice.agent });
+  const save = (next: QuickModel | null) => { setError(''); void api.save(next).then(result => setChoice(result.choice), failure => setError(failure instanceof Error ? failure.message : String(failure))); };
+  return <div className="settings-row settings-choice">
+    <div className="settings-text"><span className="settings-name">{t('Quick model')}</span><p>{t('Checks citations and names tasks. Automatic uses each agent’s small model.')}</p>{error && <p role="alert">{error}</p>}</div>
+    <ChipSelect className="settings-model-select" label={t('Quick model')} value={value} disabled={choice === undefined} options={options} onChange={chosen => {
+      if (chosen === 'auto') return save(null);
+      const [agent, model] = JSON.parse(chosen) as [AgentId, string];
+      save({ agent, model, effort: null });
+    }}/>
+  </div>;
 }

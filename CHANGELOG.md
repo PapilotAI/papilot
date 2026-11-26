@@ -4,6 +4,33 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added
+
+- Choose an **Interface size** from 100% to 200% in **Settings → Appearance** in the desktop app. It zooms text, controls, the editor, PDF and review viewer together, follows **View → Zoom In / Zoom Out / Actual Size**, and is restored after a restart. Browsers keep using their own page zoom. ([#314](https://github.com/PapilotAI/papilot/issues/314))
+- Keep a PDF for every cited work in the new **Library** (**Research Tools → Library**), which replaces **Reference check**. PDFs come from your local Zotero library (matched by citation key, DOI, arXiv identifier or title, and read where Zotero keeps them), from arXiv and open-access copies listed by OpenAlex, or from PDFs you drop on the library or on an entry. Copies found by DOI or title are kept only when their first pages show the entry's DOI or full title. Works without an open copy link to their publisher page. With online lookups on, the library checks entries and looks for missing PDFs as soon as it opens, where **Reference check** waited for **Check online**. PDFs are stored once for all papers in Papilot's data folder, never in the paper's repository. The bibliography's problems, online record checks and **Ask an agent to look into** remain in the library.
+- Check whether the works a paper cites say what it says of them with a citation check, a task of its own started from **Check** in the Library with the quick model; its page checks again with another model. For each citing sentence, Papilot picks the passages of the cited work's PDF that share its words and asks the model for a verdict (supported, partly supported, not supported, cannot tell) with its reason and the lines that show it; Papilot quotes those lines from the PDF itself, and a quote opens the PDF there. The check's page shows its progress, then what needs you first; **Check again** runs it once more and deleting it takes its findings with it. The Library, now in the sidebar below **Version Management**, opens on what needs you, with each work's citing sentences as rows that open for the reason and the quotes.
+- See a check's findings in the paper's PDF when you turn on **Show in the paper** on its page: a bar in the margin beside each paragraph, one segment per citation in reading order, coloured by its verdict. Its card lists the paragraph's sentences with each verdict, why and the quotes, and a quote opens the cited work's PDF at those lines in the Library. There, each passage the paper relies on has its own bar, whose card shows the citing sentences and goes back to them in the paper with **Show in paper**.
+- Find sources for sentences that cite nothing: the same check ranks the library's passages for each uncited sentence and asks the quick model whether a work states its claim. Suggestions show as dashed segments in the paper's PDF, under **Could cite** in the Library and on each work's page, with **Ask an agent to cite it** to draft the change and **Dismiss**.
+- Search the words of the cited works' PDFs from the Library's search box. Each passage shows its work, page and a thumbnail of the page with the passage marked, and opens the PDF there.
+- Choose a **Quick model** in **Settings → General** for quick background jobs: checking citations and naming tasks. **Automatic** keeps each job on the small model of the agent it would use anyway; a chosen model, such as DeepSeek V4.1 Flash UltraFast, does all of them, saved on the Papilot host.
+- Connect a Zotero account in **Settings → Zotero** with an API key, for a computer without Zotero such as a server opened from a phone. Papilot syncs the items of your library and the groups the key can read, and downloads a cited work's PDF from Zotero's online storage when an entry needs one. The key stays on the server and is sent only to Zotero's web API.
+- Let agents list the works a paper cites and search and read their PDFs with the `library_list`, `library_search` and `library_read` paper tools, so they can check what a cited work says before describing it, and list the citing sentences and record what each work says of them with `citations_list` and `citation_record`.
+- Ask an agent to remember, reword or forget a writing preference: agents read and change saved preferences with the new `memory_list`, `memory_add`, `memory_update` and `memory_remove` tools, only when you ask or confirm, and say what they saved and where.
+- Claude and ACP agents such as DeepSeek, Kimi, Qwen and OpenCode now get Papilot's tools natively through a `papilot` MCP server started with their session, instead of only through a command-line client. [Agent tools](docs/agent-tools.md) lists every tool.
+- Ask an agent to find the PDFs the Library could not, with **Ask an agent to find N PDFs** under **Without PDF**. The agent looks for openly available copies and adds them with the new `library_add` paper tool; Papilot downloads each one itself and keeps it only when its first page shows the work's DOI or full title.
+
+### Changed
+
+- Rename **Settings → Check references online** to **Look up references online**. It now also controls PDF downloads. A new **Settings → Zotero** page shows the Zotero library Papilot found on this computer, with its data directory and how many items have a PDF and a citation key, lets you choose another data directory, and holds the **Use PDFs from Zotero** switch; turned off, PDFs from Zotero are no longer used.
+
+### Fixed
+
+- The `papilot` command uses the Codex it downloads on the same launch, even when an older copy is on `PATH`.
+
+## [0.14.1] - 2026-11-23
+
+Choose among a note's alternatives without holding up the review, let the conflict-resolution agent prepare merge suggestions, and select text anywhere on a review's whole PDF. See the [release notes](docs/releases/0.14.1/release-notes.md) for update instructions.
+
 ### Changed
 
 - **The conflict-resolution agent prepares merge suggestions too.** When saving a task finds that the manuscript changed in overlapping passages, the agent chosen under **Settings → Git → Conflict-resolution agent** now prepares the merge suggestion instead of the task's own agent. It takes over the task's conversation for the merge and can ask about passages it cannot settle. The merge waits until that agent is connected; if it cannot take the task, the merge ends with an error instead of running on another agent. Once the merge is saved, the task returns to its own agent and settings. With **Follow current conversation**, the task's agent prepares it as before. ([#331](https://github.com/PapilotAI/papilot/pull/331))
@@ -16,6 +43,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 - **Typing a paper name right away no longer clears where the paper is saved.** In **New paper**, the default folder arrives just after the dialog opens; typing the name at that moment could put back the empty folder from before it arrived. The import dialog's fields update the same safe way. ([#330](https://github.com/PapilotAI/papilot/pull/330))
 - **A review's toolbar no longer jumps between one and two rows when the comparison rebuilds.** The PDF controls left the toolbar while the round's comparison rendered again, so on a narrow window the toolbar changed rows and moved the pages. They now stay in place, disabled, until the whole paper is back. ([#332](https://github.com/PapilotAI/papilot/pull/332))
 - **Text can be selected anywhere on a review's whole-paper PDF.** Only the changes' before and after rows could be selected, because the rest of each page was drawn as an image. The pages now carry a text layer, as the manuscript's PDF does, and a drag through the margin stops at the line's end. ([#332](https://github.com/PapilotAI/papilot/pull/332))
+
+### Updates
+
+The desktop app updates from 0.14.0 in **Settings → Updates** without a new installer, because the desktop shell is unchanged. CLI/server installations update with `npm install -g papilot@0.14.1`; APT, AUR, and other managed installations update through their package manager.
 
 ## [0.14.0] - 2026-11-23
 
@@ -763,7 +794,8 @@ The first release on npm.
 - A Git panel to diff files, commit the chosen ones, and fetch, pull or push.
 - Remote access through Tailscale, and a background service on macOS.
 
-[Unreleased]: https://github.com/PapilotAI/papilot/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/PapilotAI/papilot/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/PapilotAI/papilot/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/PapilotAI/papilot/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/PapilotAI/papilot/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/PapilotAI/papilot/compare/v0.12.0...v0.12.1

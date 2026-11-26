@@ -123,7 +123,7 @@
   .settings-search>svg{top:11px;left:10px;width:16px;height:16px}
   .settings-dialog .settings-search input{height:38px;padding-left:34px;font-size:16px}
   .settings-category-group h3{min-height:32px;font-size:13px}
-  .settings-category[data-settings-page="shortcuts"]{display:none}
+  html:not([data-desktop]) .settings-category[data-settings-page="shortcuts"]{display:none}
   .settings-category{min-height:44px;gap:12px;font-size:15px}
   .settings-category>svg,.settings-category>img{width:20px;height:20px}
   .settings-category>.brand-icon{width:20px!important;height:20px!important}
@@ -311,19 +311,33 @@
 @media(max-width:760px){.runtime-agent-overview{grid-template-columns:1fr;gap:16px}}
 
 /* LaTeX: the installation as label/value rows. */
-.latex-installation-header{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.latex-installation-header>.brand-icon{width:20px!important;height:20px!important}
-.latex-installation-header h3{flex:1;min-width:0;margin:0;font-size:13px;font-weight:500}
-.latex-installation-header>.icon-button{flex:none;color:var(--text-2)}
-.latex-installation-facts{margin:8px 0 0}
-.latex-installation-facts>div{display:grid;grid-template-columns:140px minmax(0,1fr);gap:16px;padding:8px 0}
-.latex-installation-facts>div:last-child{padding-bottom:0}
-.latex-installation-facts dt{color:var(--text-2);font-size:12px}
-.latex-installation-facts dd{margin:0;overflow-wrap:anywhere}
-.latex-installation-facts code{font-size:12px}
-@media(max-width:480px){.latex-installation-facts>div{grid-template-columns:1fr;gap:4px}}
-@media(max-width:680px){.latex-installation-facts dt,.latex-installation-facts dd,.latex-installation-facts code{font-size:13px}}
+.settings-tool-header{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.settings-tool-header>.brand-icon{width:20px!important;height:20px!important}
+.settings-tool-header h3{flex:1;min-width:0;margin:0;font-size:13px;font-weight:500}
+.settings-tool-header>.icon-button{flex:none;color:var(--text-2)}
+.settings-facts{margin:8px 0 0}
+.settings-facts>div{display:grid;grid-template-columns:140px minmax(0,1fr);gap:16px;padding:8px 0}
+.settings-facts>div:last-child{padding-bottom:0}
+.settings-facts dt{color:var(--text-2);font-size:12px}
+.settings-facts dd{margin:0;overflow-wrap:anywhere}
+.settings-facts code{font-size:12px}
+@media(max-width:480px){.settings-facts>div{grid-template-columns:1fr;gap:4px}}
+@media(max-width:680px){.settings-facts dt,.settings-facts dd,.settings-facts code{font-size:13px}}
 /* Papilot Writer: built in, based on Pi; its model providers. */
 .diagnostic-agent-subtitle{display:block;margin-top:2px;font-size:11px;font-weight:400;color:var(--text-3)}
 
 .collaboration-route .settings-effort { border-top: 0; padding-top: 0; }
+.zotero-key{display:grid;gap:6px}
+.settings-dialog .zotero-key>label{margin:0;font-size:13px;font-weight:500;color:var(--text)}
+.zotero-key-row{display:flex;align-items:stretch;gap:8px}
+.settings-dialog .zotero-key-row input{flex:1;min-width:0;margin:0;height:auto}
+.zotero-key-row .button{flex:none;height:28px}
+.zotero-key .settings-warning,.zotero-key .settings-intro{margin:0}
+.zotero-key .settings-warning{color:var(--amber-text);font-size:12px}
+.zotero-account-actions{display:flex;justify-content:flex-end;margin-top:12px}
+.zotero-location-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.zotero-location{display:grid;gap:6px;margin-top:12px}
+.settings-dialog .zotero-location>label{margin:0;font-size:13px;font-weight:500;color:var(--text)}
+.zotero-location .settings-warning,.zotero-location .settings-intro{margin:0}
+.zotero-location .settings-warning{color:var(--amber-text);font-size:12px}
+.zotero-chosen{margin-left:8px;padding:1px 6px;border-radius:5px;background:var(--bg-muted);font-size:11px;color:var(--text-2);white-space:nowrap}

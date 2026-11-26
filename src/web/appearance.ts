@@ -2,9 +2,18 @@ export type ColorMode = 'light' | 'dark';
 export type PresetId = 'papilot' | 'paper' | 'slate';
 export type AccentId = 'default' | 'blue' | 'graphite' | 'stone';
 type Colors = { background?: string; foreground?: string };
-export type Appearance = { preset: PresetId; accent: AccentId; colors: Record<ColorMode, Colors>; pdf: 'theme' | 'light'; review: 'pdf' | 'theme' | 'light' };
+export type Appearance = { preset: PresetId; accent: AccentId; colors: Record<ColorMode, Colors>; pdf: 'theme' | 'light'; review: 'pdf' | 'theme' | 'light'; size: number };
 export const APPEARANCE_KEY = 'papilot:appearance';
-export const DEFAULT_APPEARANCE: Appearance = { preset: 'papilot', accent: 'default', colors: { light: {}, dark: {} }, pdf: 'theme', review: 'pdf' };
+export const DEFAULT_APPEARANCE: Appearance = { preset: 'papilot', accent: 'default', colors: { light: {}, dark: {} }, pdf: 'theme', review: 'pdf', size: 1 };
+// Interface size is a whole-window zoom factor, so text, controls, the editor
+// and rendered pages grow together instead of text outgrowing fixed layouts.
+export const INTERFACE_SIZES = [1, 1.1, 1.25, 1.5, 1.75, 2] as const;
+export function stepInterfaceSize(size: number, direction: 'in' | 'out' | 'reset') {
+  if (direction === 'reset') return 1;
+  const index = INTERFACE_SIZES.findIndex(value => value >= size);
+  const current = index < 0 ? INTERFACE_SIZES.length - 1 : index;
+  return INTERFACE_SIZES[Math.max(0, Math.min(INTERFACE_SIZES.length - 1, current + (direction === 'in' ? 1 : -1)))];
+}
 // Paper stays the visual focus. Presets vary the warmth of neutral surfaces;
 // accents are reserved for actions, selection and focus, with no decorative tint.
 export const PRESETS = {
@@ -32,6 +41,7 @@ export function parseAppearance(value: string | null): Appearance {
       colors: { light: colors('light'), dark: colors('dark') },
       pdf: saved?.pdf === 'light' ? 'light' : 'theme',
       review: saved?.review === 'theme' || saved?.review === 'light' ? saved.review : 'pdf',
+      size: INTERFACE_SIZES.find(size => size === saved?.size) ?? 1,
     };
   } catch { return DEFAULT_APPEARANCE; }
 }

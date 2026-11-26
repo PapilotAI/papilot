@@ -72,11 +72,11 @@ try {
   for (const colorScheme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme });
     await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme);
-    await page.getByRole('button', { name: 'Research Tools', exact: true }).click();
-    const command = page.locator('.paper-tools-menu').getByRole('menuitem', { name: /^Reference check/ });
+    await page.getByRole('button', { name: 'Task list actions', exact: true }).click();
+    const command = page.getByRole('menuitem', { name: 'Archive all tasks…', exact: true });
     for (const input of ['pointer', 'keyboard']) {
       if (input === 'pointer') await command.hover();
-      else { await page.mouse.move(0, 0); await page.keyboard.press('Escape'); await page.getByRole('button', { name: 'Research Tools', exact: true }).press('ArrowDown'); }
+      else { await page.mouse.move(0, 0); await page.keyboard.press('Escape'); await page.getByRole('button', { name: 'Task list actions', exact: true }).press('ArrowDown'); }
       if (input === 'keyboard') await expect(command).toBeFocused();
       const colors = await command.evaluate(element => {
         const luminance = color => color.match(/[\d.]+/g).slice(0, 3).map(value => {
@@ -89,7 +89,7 @@ try {
           return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
         });
       });
-      assert.ok(colors.length >= 3 && colors.every(contrast => contrast >= 4.5), `${colorScheme} ${input}: menu labels, icons and details retain contrast`);
+      assert.ok(colors.length >= 2 && colors.every(contrast => contrast >= 4.5), `${colorScheme} ${input}: menu labels and icons retain contrast`);
       await page.screenshot({ path: `test-results/menu-${colorScheme}-${input}.png` });
     }
     await page.keyboard.press('Escape');

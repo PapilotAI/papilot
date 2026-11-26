@@ -192,6 +192,39 @@ export interface PdfHistoryActions {
   undo: () => void; redo: () => void;
 }
 
+/** The first page of a PDF, drawn small, as a reference manager shows a
+ * work on its shelf. Decorative: the work's title says what it is. */
+/** A page of a PDF drawn small: the first by default, with the given marks
+ * on it. Lazy thumbnails wait until they scroll into view. */
+export function PdfThumbnail({ url, width, page: number = 1, marks, lazy }: { url: string; width: number; page?: number; marks?: Rect[]; lazy?: boolean }) {
+  const canvas = useRef<HTMLCanvasElement>(null), [failed, setFailed] = useState(false), [visible, setVisible] = useState(!lazy);
+  useEffect(() => {
+    if (visible || !canvas.current) return;
+    const observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { setVisible(true); observer.disconnect(); } }, { rootMargin: '200px' });
+    observer.observe(canvas.current);
+    return () => observer.disconnect();
+  }, [visible]);
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false, render: { cancel(): void } | undefined;
+    const task = pdfjs.getDocument({ url, enableXfa: false, BinaryDataFactory: CMapData });
+    void (async () => {
+      const page = await (await task.promise).getPage(number), element = canvas.current;
+      if (cancelled || !element) return;
+      const ratio = window.devicePixelRatio || 1, base = page.getViewport({ scale: 1 }), viewport = page.getViewport({ scale: width / base.width * ratio });
+      element.width = Math.round(viewport.width); element.height = Math.round(viewport.height);
+      element.style.aspectRatio = `${base.width} / ${base.height}`;
+      const drawing = page.render({ canvas: element, canvasContext: element.getContext('2d')!, viewport });
+      render = drawing;
+      await drawing.promise;
+    })().catch(() => { if (!cancelled) setFailed(true); });
+    return () => { cancelled = true; render?.cancel(); void task.destroy(); };
+  }, [url, width, number, visible]);
+  if (failed) return null;
+  const drawn = <canvas ref={canvas} className="pdf-thumbnail" style={{ width, aspectRatio: '612 / 792' }} aria-hidden="true"/>;
+  return marks?.length ? <span className="pdf-thumbnail-marked" style={{ width }}>{drawn}{marks.map((rect, index) => <span key={index} className="pdf-thumbnail-mark" style={percent(rect)}/>)}</span> : drawn;
+}
+
 export const PdfView = forwardRef<PdfHandle, {
   readOnly?: boolean;
   inFlightMarks?: InFlightMark[]; onOpenTask?: (id: string) => void;
@@ -226,6 +259,9 @@ export const PdfView = forwardRef<PdfHandle, {
   onComment?: (target: Target, comment: string, key?: string) => void;
   /** Passages commented on in the chat's unsent message, kept marked. */
   comments?: PdfComment[];
+  /** What a page shows in its margin, such as checked citations, drawn in
+   *  the page's layer; with `pdfKey`, only on that build's pages. */
+  margin?: (page: number) => ReactNode;
 }>(function PdfView(props, ref) {
   const latest = useRef(props); latest.current = props;
   const root = useRef<HTMLDivElement>(null), container = useRef<HTMLDivElement>(null), inner = useRef<HTMLDivElement>(null), findInput = useRef<HTMLInputElement>(null);
@@ -1111,6 +1147,7 @@ export const PdfView = forwardRef<PdfHandle, {
         {comment.rects.map((rect, index) => <div key={index} className="pdf-comment-mark" data-comment={comment.id} style={percent(rect)}/>)}
         <span className="pdf-comment-tag" style={{ left: `${comment.rects[0][0] * 100}%`, top: `${comment.rects[0][1] * 100}%` }} aria-hidden>{comment.number}</span>
       </Fragment>)}
+      {props.margin && (!props.pdfKey || shown.key === props.pdfKey) && props.margin(number - 1)}
       {props.passage?.page === number - 1 && props.passage.marks.map((rect, index) => <div key={index} className="source-mark" style={percent(rect)}/>)}
       {flash?.page === number - 1 && <div key={flash.id} className="problem-flash" style={percent(flash.rect)}/>}
       {selection?.handles && selection.page === number - 1 && !editing && <>

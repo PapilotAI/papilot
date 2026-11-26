@@ -77,6 +77,7 @@ await page.route('**/api/**', async route => {
     target.archivedAt = route.request().postDataJSON().archived ? Date.now() : null;
     return json(target);
   }
+  if (url.pathname === '/api/quick-model') return route.fulfill({ json: { choice: null } });
   throw new Error(`Unexpected app request ${url.pathname}`);
 });
 await page.route('**/review/**', route => route.fulfill({ contentType: 'text/html', body: '<html lang="en"><head></head><body><div class="bar">Review round 2</div><main id="paper"><p>PDF review fixture</p></main></body></html>' }));
