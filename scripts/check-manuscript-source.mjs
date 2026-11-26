@@ -9,6 +9,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { chromium, expect } from './playwright.mjs';
+import { selectOption } from './select.mjs';
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-source-edit-'));
 process.env.PAPILOT_DATA = path.join(temp, 'data');
@@ -146,6 +147,31 @@ try {
   await expect(panel.locator('.cm-change-bar')).toHaveCount(0);
   await page.waitForTimeout(700);
   await shot('open');
+
+  // The editor's own font size: keys while it is focused and the Settings
+  // picker change only the editor, and the choice is saved.
+  const editorFont = () => panel.locator('.cm-content').evaluate(content => [getComputedStyle(content).fontSize, getComputedStyle(content.closest('.cm-scroller')).lineHeight]);
+  const tabFont = () => tabs.getByRole('tab', { name: 'intro.tex' }).evaluate(tab => getComputedStyle(tab).fontSize);
+  const interfaceFont = await tabFont();
+  assert.deepEqual(await editorFont(), ['12px', '20px']);
+  await page.keyboard.press('ControlOrMeta+='); await page.keyboard.press('ControlOrMeta+=');
+  await expect.poll(editorFont).toEqual(['14px', '23px']);
+  assert.equal(await tabFont(), interfaceFont, 'the rest of the interface keeps its size');
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:editor-font-size')), '14');
+  await expect(field).toBeFocused();
+  await page.keyboard.press('ControlOrMeta+-');
+  await expect.poll(editorFont).toEqual(['13px', '22px']);
+  await page.keyboard.press('ControlOrMeta+0');
+  await expect.poll(editorFont).toEqual(['12px', '20px']);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const settings = page.locator('.settings-dialog');
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await selectOption(settings.getByRole('combobox', { name: 'Editor font size', exact: true }), '18');
+  await expect.poll(editorFont).toEqual(['18px', '30px']);
+  await settings.getByRole('button', { name: 'Close', exact: true }).click();
+  await shot('editor-font-18');
+  await field.focus(); await page.keyboard.press('ControlOrMeta+0');
+  await expect.poll(editorFont).toEqual(['12px', '20px']);
 
   // What changed since the last commit, as bars beside the lines while editing.
   await page.keyboard.press('End');

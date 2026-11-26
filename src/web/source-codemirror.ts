@@ -7,6 +7,7 @@ import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/sea
 import { Chunk } from '@codemirror/merge';
 import { tags } from '@lezer/highlight';
 import { personHue } from './overleaf-presence.ts';
+import { editorFontSize, onEditorFontSize, setEditorFontSize, stepEditorFontSize } from './editor-font.ts';
 
 // The LaTeX editor of the manuscript's source tab, loaded when a source is
 // first opened. It shows the whole file, with bars beside the lines that
@@ -41,16 +42,24 @@ const highlight = HighlightStyle.define([
   { tag: tags.comment, color: 'var(--latex-comment)', fontStyle: 'italic' },
   { tag: tags.invalid, color: 'var(--danger)' },
 ]);
+// Text and line numbers follow the editor font size; lines keep the 12/20
+// proportion of the default size.
+const fontTheme = (size: number) => EditorView.theme({
+  '&': { fontSize: `${size}px` },
+  '.cm-scroller': { lineHeight: `${Math.round(size * 5 / 3)}px` },
+  '.cm-lineNumbers .cm-gutterElement': { fontSize: `${size - 1}px` },
+});
+const changeFontSize = (direction: 'in' | 'out' | 'reset') => () => { setEditorFontSize(stepEditorFontSize(editorFontSize(), direction)); return true; };
 const theme = EditorView.theme({
-  '&': { height: '100%', fontSize: '12px', color: 'var(--text)', backgroundColor: 'var(--bg)' },
+  '&': { height: '100%', color: 'var(--text)', backgroundColor: 'var(--bg)' },
   '&.cm-focused': { outline: 'none' },
-  '.cm-scroller': { fontFamily: 'var(--mono)', lineHeight: '20px' },
+  '.cm-scroller': { fontFamily: 'var(--mono)' },
   '.cm-content': { padding: '6px 0 40vh', caretColor: 'var(--text)' },
   '.cm-line': { padding: '0 16px 0 10px' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--text)', borderLeftWidth: '1.5px' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'color-mix(in srgb, var(--accent) 22%, transparent)' },
   '.cm-gutters': { backgroundColor: 'var(--bg)', color: 'var(--text-3)', border: 'none' },
-  '.cm-lineNumbers .cm-gutterElement': { minWidth: '34px', padding: '0 6px 0 10px', fontSize: '11px', fontVariantNumeric: 'tabular-nums' },
+  '.cm-lineNumbers .cm-gutterElement': { minWidth: '34px', padding: '0 6px 0 10px', fontVariantNumeric: 'tabular-nums' },
   '.cm-activeLine': { backgroundColor: 'color-mix(in srgb, var(--text) 4%, transparent)' },
   '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--text)' },
   '.cm-matchingBracket, &.cm-focused .cm-matchingBracket': { backgroundColor: 'color-mix(in srgb, var(--accent) 18%, transparent)', outline: 'none' },
@@ -399,6 +408,8 @@ export class SourceCodeEditor {
   readonly view: EditorView;
   private bars = new Compartment();
   private editable = new Compartment();
+  private font = new Compartment();
+  private unsubscribeFont: () => void;
   private base = Text.empty;
   private silent = false;
   private review: Extension;
@@ -408,18 +419,24 @@ export class SourceCodeEditor {
   constructor(private options: SourceEditorOptions) {
     this.review = [reviewField, reviewView(options)];
     this.view = new EditorView({ parent: options.parent, state: this.state('') });
+    this.unsubscribeFont = onEditorFontSize(size => this.view.dispatch({ effects: this.font.reconfigure(fontTheme(size)) }));
   }
 
   private state(text: string) {
     const options = this.options;
     return EditorState.create({ doc: text, extensions: [
       lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), history(), bracketMatching(),
-      search({ top: false }), highlightSelectionMatches(), latex, syntaxHighlighting(highlight), EditorView.lineWrapping, theme,
+      search({ top: false }), highlightSelectionMatches(), latex, syntaxHighlighting(highlight), EditorView.lineWrapping, theme, this.font.of(fontTheme(editorFontSize())),
       this.editable.of(EditorState.readOnly.of(false)), this.bars.of(changeBars(this.base, options.onChangeBar)), focusField, flashField, this.review, authorsField, cursorsField, cursorsView,
       EditorView.contentAttributes.of({ 'aria-label': options.label, spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off' }),
       keymap.of([
         { key: 'Mod-s', preventDefault: true, run: () => { options.onSave(); return true; } },
         { key: 'Mod-Enter', preventDefault: true, run: () => { options.onSave(); return true; } },
+        // With the editor focused, these size its text rather than the whole interface.
+        { key: 'Mod-=', preventDefault: true, run: changeFontSize('in') },
+        { key: 'Mod-+', preventDefault: true, run: changeFontSize('in') },
+        { key: 'Mod--', preventDefault: true, run: changeFontSize('out') },
+        { key: 'Mod-0', preventDefault: true, run: changeFontSize('reset') },
         ...searchKeymap, ...historyKeymap, indentWithTab, ...defaultKeymap,
         { key: 'Escape', run: () => options.onEscape() },
       ]),
@@ -523,5 +540,5 @@ export class SourceCodeEditor {
 
   focus() { this.view.focus(); }
 
-  destroy() { clearTimeout(this.flashTimer); this.view.destroy(); }
+  destroy() { clearTimeout(this.flashTimer); this.unsubscribeFont(); this.view.destroy(); }
 }
