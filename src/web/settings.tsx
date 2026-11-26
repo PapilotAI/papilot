@@ -16,7 +16,7 @@ import type { CommitMessageChoice } from './commit-agent-preferences.ts';
 import type { RefreshUsage } from './usage.tsx';
 import { saveAdvancedGit, useAdvancedGit, saveCommitMessageLanguage, useCommitMessageLanguage } from './git-preferences.ts';
 import type { CommitMessageLanguage } from '../commit.ts';
-import { AppearanceSettings, type AppearanceSettingsProps } from './appearance-settings.tsx';
+import { AppearanceSettings, windowButtonSettingsAvailable, type AppearanceSettingsProps } from './appearance-settings.tsx';
 import { ShortcutSettings } from './shortcut-settings.tsx';
 import { QuickNoteSettings } from './quick-note-settings.tsx';
 import { AboutSettings, LicenseSettings } from './about-settings.tsx';
@@ -88,10 +88,11 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
   }
   const browserName = LANGUAGES.find(item => item.id === browserLanguage())!.name;
   const close = () => { if (page === 'skills') skillControls.current?.cancel(); else navigate(onClose); };
+  const windowButtonKeywords = windowButtonSettingsAvailable ? ` ${t('Window buttons')} ${t('Window button style')} ${t('Left')} ${t('Right')} ${t('Compact')} ${t('Wide')}` : '';
   const groups: { label: string; entries: SettingsEntry[] }[] = [
     { label: t('Personal'), entries: [
       { page: 'general', label: t('General'), icon: 'settings', keywords: `${t('Language')} ${t('Default model')} ${t('Default reasoning effort')}` },
-      { page: 'appearance', label: t('Appearance'), icon: 'sun', keywords: `${t('Light')} ${t('Dark')} ${t('System')} ${t('Theme')} ${t('Accent')} ${t('Background')} ${t('Foreground')} ${t('Interface size')} ${t('Text size')}` },
+      { page: 'appearance', label: t('Appearance'), icon: 'sun', keywords: `${t('Light')} ${t('Dark')} ${t('System')} ${t('Theme')} ${t('Accent')} ${t('Background')} ${t('Foreground')} ${t('Interface size')} ${t('Text size')}${windowButtonKeywords}` },
       { page: 'notifications', label: t('Notifications'), icon: 'bell' },
       { page: 'shortcuts', label: t('Keyboard shortcuts'), icon: 'keyboard' },
     ] },

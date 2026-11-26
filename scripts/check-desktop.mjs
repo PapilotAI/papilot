@@ -116,6 +116,31 @@ try {
     await checkWindowsHitRegions(application, page);
     await maximize.click();
     await expect.poll(() => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMaximized())).toBe(false);
+    // Switch window buttons to the opposite side and style, verify layout and
+    // Windows native hit regions (open and collapsed sidebar), then restore.
+    await page.getByRole('button', { name: /^(Settings|设置)$/ }).click();
+    const settingsDialog = page.locator('.settings-dialog');
+    await settingsDialog.getByRole('button', { name: /^(Appearance|外观)$/ }).click();
+    const oppositeSide = process.platform === 'win32' ? /^(Left|左侧)$/ : /^(Right|右侧)$/;
+    const oppositeStyle = process.platform === 'win32' ? /^(Compact|紧凑)$/ : /^(Wide|宽按钮)$/;
+    await settingsDialog.getByRole('radiogroup', { name: /^(Window buttons|窗口按钮)$/ }).getByRole('radio', { name: oppositeSide }).check();
+    await settingsDialog.getByRole('radiogroup', { name: /^(Window button style|窗口按钮样式)$/ }).getByRole('radio', { name: oppositeStyle }).check();
+    await settingsDialog.getByRole('button', { name: /^(Close|关闭)$/ }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-desktop-controls', process.platform === 'win32' ? 'left' : 'right');
+    await expect(page.locator('html')).toHaveAttribute('data-desktop-controls-style', process.platform === 'win32' ? 'compact' : 'wide');
+    await checkWindowsHitRegions(application, page);
+    await page.getByRole('button', { name: /^(Hide task list|隐藏任务列表)$/ }).click();
+    await expect(restoreSidebar).toBeVisible();
+    if (process.platform === 'win32') await expect.poll(async () => await sidebarLeft() ?? -Infinity).toBeGreaterThanOrEqual(112);
+    else await expect.poll(async () => await sidebarLeft() ?? Infinity).toBeLessThan(92);
+    await checkWindowsHitRegions(application, page);
+    await restoreSidebar.click();
+    await page.getByRole('button', { name: /^(Settings|设置)$/ }).click();
+    await settingsDialog.getByRole('button', { name: /^(Appearance|外观)$/ }).click();
+    await settingsDialog.getByRole('button', { name: /^(Reset appearance|重置外观)$/ }).click();
+    await settingsDialog.getByRole('button', { name: /^(Close|关闭)$/ }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-desktop-controls', process.platform === 'win32' ? 'right' : 'left');
+    await expect(page.locator('html')).toHaveAttribute('data-desktop-controls-style', process.platform === 'win32' ? 'wide' : 'compact');
   }
   await expect(page.locator('.pdf-viewer canvas, .pdfViewer canvas').first()).toBeVisible({ timeout: 30000 });
   fs.mkdirSync('test-results', { recursive: true });

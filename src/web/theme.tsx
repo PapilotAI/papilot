@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { browserStorage } from './storage.ts';
-import { APPEARANCE_KEY, appearanceVariables, parseAppearance, stepInterfaceSize, type Appearance } from './appearance.ts';
+import { APPEARANCE_KEY, appearanceVariables, parseAppearance, resolveWindowControls, resolveWindowControlsStyle, stepInterfaceSize, type Appearance } from './appearance.ts';
 
 export type Theme = 'system' | 'light' | 'dark';
 const key = 'papilot:theme';
@@ -39,6 +39,12 @@ export function useTheme() {
   }, [resolved, appearance]);
   // The desktop app zooms the whole window, including the review frame.
   useLayoutEffect(() => { window.papilotDesktop?.setZoom?.(appearance.size); }, [appearance.size]);
+  useLayoutEffect(() => {
+    const platform = window.papilotDesktop?.platform;
+    if (!platform) return;
+    document.documentElement.dataset.desktopControls = resolveWindowControls(appearance.windowControls, platform);
+    document.documentElement.dataset.desktopControlsStyle = resolveWindowControlsStyle(appearance.windowControlsStyle, platform);
+  }, [appearance.windowControls, appearance.windowControlsStyle]);
   // View › Zoom In/Out/Actual Size step the saved size rather than a separate
   // zoom. Repeated steps build on each other even before a render.
   useEffect(() => window.papilotDesktop?.onZoom?.(direction => {

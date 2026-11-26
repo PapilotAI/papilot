@@ -52,6 +52,7 @@ const open = async () => {
 const variable = (target, name) => target.locator('html').evaluate((el, name) => getComputedStyle(el).getPropertyValue(name).trim(), name);
 const rootHas = async (name, value) => page.waitForFunction(([name, value]) => document.documentElement.style.getPropertyValue(name) === value, [name, value]);
 const choose = async (name, value) => selectOption(dialog.getByRole('combobox', { name, exact: true }), value);
+const searchWindowButtonStyle = settings => settings.getByRole('searchbox', { name: 'Search settings' }).fill('Window button style');
 try {
   await page.goto(origin);
   await page.getByRole('button', { name: /^Refine the introduction/ }).click();
@@ -173,7 +174,31 @@ try {
 
   // Browsers keep their own page zoom; Settings points to it instead of a size picker.
   await expect(dialog.getByRole('combobox', { name: 'Interface size', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('radiogroup', { name: 'Window buttons', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('radiogroup', { name: 'Window button style', exact: true })).toHaveCount(0);
   await expect(dialog.getByText('Use your browser’s zoom to scale text and controls.')).toBeVisible();
+  await searchWindowButtonStyle(dialog);
+  await expect(dialog.getByRole('button', { name: 'Appearance', exact: true })).toHaveCount(0);
+
+  // macOS keeps native traffic lights and hides the window button side/style controls.
+  const macDesktop = await browser.newContext({ locale: 'en-US', colorScheme: 'light', viewport: { width: 1440, height: 960 } });
+  macDesktop.setDefaultTimeout(15000);
+  await macDesktop.addInitScript(() => {
+    window.papilotDesktop = { platform: 'darwin', minimize() {}, maximize() {}, close() {} };
+  });
+  await macDesktop.route('**/api/**', api);
+  const macPage = await macDesktop.newPage();
+  macPage.on('pageerror', error => errors.push(error.message));
+  await macPage.goto(origin);
+  await expect(macPage.locator('html')).toHaveAttribute('data-desktop-controls', 'left');
+  await macPage.getByRole('button', { name: 'Settings', exact: true }).click();
+  const macSettings = macPage.locator('.settings-dialog');
+  await macSettings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await expect(macSettings.getByRole('radiogroup', { name: 'Window buttons', exact: true })).toHaveCount(0);
+  await expect(macSettings.getByRole('radiogroup', { name: 'Window button style', exact: true })).toHaveCount(0);
+  await searchWindowButtonStyle(macSettings);
+  await expect(macSettings.getByRole('button', { name: 'Appearance', exact: true })).toHaveCount(0);
+  await macDesktop.close();
 
   // The desktop app zooms its window to the saved interface size, and its
   // View menu steps the same setting.
@@ -188,15 +213,129 @@ try {
       onZoom: listener => { listeners.add(listener); return () => listeners.delete(listener); } };
   });
   await desktop.route('**/api/**', api);
+  await desktop.route('**/review/**', route => route.fulfill({ contentType: 'text/html', body: '<html><head></head><body><div class="bar">Review</div><main id="paper">Paper</main></body></html>' }));
   const app = await desktop.newPage();
   app.on('pageerror', error => errors.push(error.message));
   const lastZoom = () => app.evaluate(() => window.zoomCalls.at(-1));
   await app.goto(origin);
   await app.waitForFunction(() => window.zoomCalls.length > 0);
   assert.equal(await lastZoom(), 1);
+  // Linux defaults to compact left-aligned window buttons: Close, Minimize, Maximize.
+  const desktopButtons = app.locator('.desktop-window-buttons button');
+  await expect(app.locator('html')).toHaveAttribute('data-desktop-controls', 'left');
+  await expect(app.locator('html')).toHaveAttribute('data-desktop-controls-style', 'compact');
+  await expect(desktopButtons.nth(0)).toHaveAttribute('aria-label', 'Close window');
+  await expect(desktopButtons.nth(1)).toHaveAttribute('aria-label', 'Minimize window');
+  await expect(desktopButtons.nth(2)).toHaveAttribute('aria-label', 'Maximize or restore window');
+  const assertNoControlOverlap = async target => {
+    const overlapping = await target.evaluate(() => {
+      const controls = document.querySelector('.desktop-window-buttons')?.getBoundingClientRect();
+      if (!controls) return [{ error: 'missing controls' }];
+      return [...document.querySelectorAll('button,a,input,select')].filter(element => !element.closest('.desktop-window-buttons') && !element.closest('dialog')).flatMap(element => {
+        const box = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        if (style.visibility === 'hidden' || box.width <= 0 || box.height <= 0) return [];
+        if (box.top < controls.bottom && box.bottom > controls.top && box.right > controls.left && box.left < controls.right) {
+          return [{ tag: element.tagName, className: element.className, label: element.getAttribute('aria-label') || element.textContent?.trim(), box: { left: box.left, top: box.top, right: box.right, bottom: box.bottom }, controls: { left: controls.left, top: controls.top, right: controls.right, bottom: controls.bottom } }];
+        }
+        return [];
+      });
+    });
+    assert.deepEqual(overlapping, [], 'Workspace controls stay clear of window buttons');
+  };
+  await assertNoControlOverlap(app);
   await app.getByRole('button', { name: 'Settings', exact: true }).click();
   const settings = app.locator('.settings-dialog');
+  await searchWindowButtonStyle(settings);
   await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  const windowPosition = settings.getByRole('radiogroup', { name: 'Window buttons', exact: true });
+  const windowStyle = settings.getByRole('radiogroup', { name: 'Window button style', exact: true });
+  await expect(windowPosition.getByRole('radio', { name: 'Left', exact: true })).toBeChecked();
+  await expect(windowStyle.getByRole('radio', { name: 'Compact', exact: true })).toBeChecked();
+  await app.screenshot({ animations: 'disabled', path: 'test-results/appearance-window-controls-settings.png' });
+  await windowPosition.getByRole('radio', { name: 'Right', exact: true }).check();
+  await expect(app.locator('html')).toHaveAttribute('data-desktop-controls', 'right');
+  await expect(desktopButtons.nth(0)).toHaveAttribute('aria-label', 'Minimize window');
+  await expect(desktopButtons.nth(1)).toHaveAttribute('aria-label', 'Maximize or restore window');
+  await expect(desktopButtons.nth(2)).toHaveAttribute('aria-label', 'Close window');
+  await settings.getByRole('button', { name: 'Close', exact: true }).click();
+  await assertNoControlOverlap(app);
+  await app.screenshot({ animations: 'disabled', path: 'test-results/appearance-linux-right-compact.png' });
+  await app.getByRole('button', { name: 'Settings', exact: true }).click();
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await windowStyle.getByRole('radio', { name: 'Wide', exact: true }).check();
+  await expect(app.locator('html')).toHaveAttribute('data-desktop-controls-style', 'wide');
+  await settings.getByRole('button', { name: 'Close', exact: true }).click();
+  await assertNoControlOverlap(app);
+  const wideRightClose = await desktopButtons.nth(2).boundingBox();
+  assert.equal(Math.round(wideRightClose.x + wideRightClose.width), 1440, 'Wide right close button reaches the right window edge');
+  await app.screenshot({ animations: 'disabled', path: 'test-results/appearance-linux-right-wide.png' });
+  // The split toolbar must keep its controls clickable after the sidebar is hidden.
+  await app.getByRole('button', { name: /^Refine the introduction/ }).click();
+  await app.getByRole('button', { name: 'Hide task list', exact: true }).click();
+  const activity = app.locator('.activity-panel');
+  const chat = activity.getByRole('button', { name: 'Chat', exact: true });
+  for (const width of [901, 681]) {
+    await app.setViewportSize({ width, height: 620 });
+    await expect(chat).toBeVisible();
+    await assertNoControlOverlap(app);
+  }
+  await app.screenshot({ animations: 'disabled', path: 'test-results/appearance-right-wide-split.png' });
+  await chat.click();
+  await expect(app.locator('.task-grid')).toHaveClass(/\blayout-conversation\b/);
+  await app.setViewportSize({ width: 1440, height: 960 });
+  await activity.getByRole('button', { name: 'Split', exact: true }).click();
+  await app.getByRole('button', { name: 'Show task list', exact: true }).click();
+  await app.getByRole('button', { name: 'Settings', exact: true }).click();
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await windowPosition.getByRole('radio', { name: 'Left', exact: true }).check();
+  await settings.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(app.locator('html')).toHaveAttribute('data-desktop-controls', 'left');
+  await assertNoControlOverlap(app);
+  await app.getByRole('button', { name: 'Hide task list', exact: true }).click();
+  const wideToggle = await app.getByRole('button', { name: 'Show task list', exact: true }).boundingBox();
+  const wideDrag = await app.locator('.desktop-window-drag').boundingBox();
+  assert.ok(wideToggle.x >= wideDrag.width, 'Collapsed sidebar toggle clears wide left buttons');
+  await assertNoControlOverlap(app);
+  await app.screenshot({ animations: 'disabled', path: 'test-results/appearance-left-wide-collapsed.png' });
+  await app.getByRole('button', { name: 'Show task list', exact: true }).click();
+  // Switching window button side/style updates the review iframe's --papilot-tools live.
+  await app.getByRole('button', { name: /^Refine the introduction/ }).click();
+  await app.frameLocator('.review-frame').locator('#paper').waitFor();
+  await app.locator('.view-selector').getByRole('button', { name: 'Review', exact: true }).click();
+  const reviewToolsWidth = () => app.frameLocator('.review-frame').locator('html').evaluate(el => parseInt(el.style.getPropertyValue('--papilot-tools'), 10));
+  await expect.poll(reviewToolsWidth).toBeGreaterThan(0);
+  const leftReviewTools = await reviewToolsWidth();
+  await app.getByRole('button', { name: 'Settings', exact: true }).click();
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await windowPosition.getByRole('radio', { name: 'Right', exact: true }).check();
+  await expect.poll(reviewToolsWidth).toBe(leftReviewTools + 138);
+  await windowStyle.getByRole('radio', { name: 'Compact', exact: true }).check();
+  await expect.poll(reviewToolsWidth).toBe(leftReviewTools + 116);
+  await windowPosition.getByRole('radio', { name: 'Left', exact: true }).check();
+  await windowStyle.getByRole('radio', { name: 'Wide', exact: true }).check();
+  await expect.poll(reviewToolsWidth).toBe(leftReviewTools);
+  await settings.getByRole('button', { name: 'Close', exact: true }).click();
+  // Narrow zoomed layout (900x620 @ 200% = 450x310) keeps manuscript navigation clear with left+wide buttons.
+  await app.getByRole('button', { name: 'Manuscript', exact: true }).click();
+  await app.setViewportSize({ width: 450, height: 310 });
+  await expect(app.locator('.sidebar')).toBeHidden();
+  await app.locator('.workspace-navigation .manuscript-view-selector').getByRole('button', { name: 'PDF', exact: true }).click();
+  await expect(app.locator('.workspace-nav-end')).toBeInViewport({ ratio: 1 });
+  await assertNoControlOverlap(app);
+  await app.screenshot({ animations: 'disabled', path: 'test-results/appearance-left-wide-narrow-450.png' });
+  await app.setViewportSize({ width: 1440, height: 960 });
+  await app.reload();
+  await expect(app.locator('html')).toHaveAttribute('data-desktop-controls', 'left');
+  await expect(app.locator('html')).toHaveAttribute('data-desktop-controls-style', 'wide');
+  assert.equal(JSON.parse(await app.evaluate(() => localStorage.getItem('papilot:appearance'))).windowControlsStyle, 'wide');
+  await app.getByRole('button', { name: 'Settings', exact: true }).click();
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await settings.getByRole('button', { name: 'Reset appearance', exact: true }).click();
+  await expect(app.locator('html')).toHaveAttribute('data-desktop-controls', 'left');
+  await expect(app.locator('html')).toHaveAttribute('data-desktop-controls-style', 'compact');
+  await expect(windowPosition.getByRole('radio', { name: 'Left', exact: true })).toBeChecked();
+  await expect(windowStyle.getByRole('radio', { name: 'Compact', exact: true })).toBeChecked();
   const size = settings.getByRole('combobox', { name: 'Interface size', exact: true });
   await selectOption(size, '1.5');
   await app.waitForFunction(() => window.zoomCalls.at(-1) === 1.5);
@@ -239,6 +378,39 @@ try {
   await settings.getByRole('button', { name: 'Reset appearance', exact: true }).click();
   await app.waitForFunction(() => window.zoomCalls.at(-1) === 1);
   await desktop.close();
+
+  // Windows defaults to wide right-aligned controls and can move them to the left.
+  const winDesktop = await browser.newContext({ locale: 'en-US', colorScheme: 'dark', viewport: { width: 1440, height: 960 } });
+  winDesktop.setDefaultTimeout(15000);
+  await winDesktop.addInitScript(() => {
+    window.papilotDesktop = { platform: 'win32', minimize() {}, maximize() {}, close() {} };
+  });
+  await winDesktop.route('**/api/**', api);
+  const winApp = await winDesktop.newPage();
+  winApp.on('pageerror', error => errors.push(error.message));
+  await winApp.goto(origin);
+  await expect(winApp.locator('html')).toHaveAttribute('data-desktop-controls', 'right');
+  await expect(winApp.locator('html')).toHaveAttribute('data-desktop-controls-style', 'wide');
+  await winApp.getByRole('button', { name: 'Settings', exact: true }).click();
+  const winSettings = winApp.locator('.settings-dialog');
+  await winSettings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  const winPos = winSettings.getByRole('radiogroup', { name: 'Window buttons', exact: true });
+  const winStyle = winSettings.getByRole('radiogroup', { name: 'Window button style', exact: true });
+  await expect(winPos.getByRole('radio', { name: 'Right', exact: true })).toBeChecked();
+  await expect(winStyle.getByRole('radio', { name: 'Wide', exact: true })).toBeChecked();
+  await winPos.getByRole('radio', { name: 'Left', exact: true }).check();
+  await winStyle.getByRole('radio', { name: 'Compact', exact: true }).check();
+  await winSettings.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(winApp.locator('html')).toHaveAttribute('data-desktop-controls', 'left');
+  await expect(winApp.locator('html')).toHaveAttribute('data-desktop-controls-style', 'compact');
+  await assertNoControlOverlap(winApp);
+  await winApp.screenshot({ animations: 'disabled', path: 'test-results/appearance-win32-left-compact-dark.png' });
+  await winApp.getByRole('button', { name: 'Settings', exact: true }).click();
+  await winSettings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await winSettings.getByRole('button', { name: 'Reset appearance', exact: true }).click();
+  await expect(winApp.locator('html')).toHaveAttribute('data-desktop-controls', 'right');
+  await expect(winApp.locator('html')).toHaveAttribute('data-desktop-controls-style', 'wide');
+  await winDesktop.close();
 
   assert.deepEqual(errors, []);
   console.log('Appearance: live colors, iframe sync, validation, per-mode persistence, system mode, cross-tab sync, reset, interface size and responsive layouts passed.');

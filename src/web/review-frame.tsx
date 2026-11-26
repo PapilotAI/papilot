@@ -466,12 +466,12 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
   useEffect(() => {
     const element = toolbar.current; if (!element) return;
     const observer = new ResizeObserver(() => setReserve(Math.ceil(element.offsetWidth)));
-    observer.observe(element); return () => observer.disconnect();
+    observer.observe(element, { box: 'border-box' }); return () => observer.disconnect();
   }, [Boolean(tools), pdfControls]);
   useEffect(() => {
     const element = leading.current; if (!element) { setLeadWidth(0); return; }
     const observer = new ResizeObserver(() => setLeadWidth(Math.ceil(element.offsetWidth)));
-    observer.observe(element); return () => observer.disconnect();
+    observer.observe(element, { box: 'border-box' }); return () => observer.disconnect();
   }, [Boolean(lead || pdfControls || noteLinks?.focus)]);
   useEffect(() => {
     if (!document || !frame.current || !hostBar.current) return;

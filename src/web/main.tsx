@@ -2632,7 +2632,7 @@ function App() {
     if (fresh.size) void refresh(true);
     return fresh;
   }} task={task} items={task ? timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || [] : []} read={id => api(`/tasks/${id}/note-results`)} returnRequest={isPlayground ? undefined : changeReturnedNote} optionsRequest={(id, key, body) => body ? api(`/tasks/${id}/note-options`, { key, ...body }) : api(`/tasks/${id}/note-options?key=${encodeURIComponent(key)}`)} previewRequest={(id, key, round, option, retry, version, background) => api(`/tasks/${id}/note-options/preview?key=${encodeURIComponent(key)}&round=${round}&option=${encodeURIComponent(option)}${retry ? '&retry=1' : ''}${background ? '&background=1' : ''}${version ? '&comparison=' + encodeURIComponent(version) : ''}`, undefined, undefined, undefined, background ? 'low' : 'auto')} openReview={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} openChat={() => { setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}><div className={'app-shell' + (sidebarVisible ? '' : ' sidebar-collapsed')}>
-    <DesktopWindowChrome/>
+    <DesktopWindowChrome windowControls={theme.appearance.windowControls} windowControlsStyle={theme.appearance.windowControlsStyle} sidebarCollapsed={!sidebarVisible}/>
     {project && <WorkspaceSwitcher key={project.id} active={task?.id ?? (manuscriptOpen ? '' : null)}
       items={[{ id: '', title: t('Manuscript') }, ...[...tasks].reverse().filter(item => item.status !== 'deleting' && (!item.archivedAt || item.id === task?.id)).map(item => ({ id: item.id, title: item.title }))]}
       onSelect={id => void switchWorkspace(id)}/>}

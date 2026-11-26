@@ -1,5 +1,5 @@
-import { useState, type CSSProperties } from 'react';
-import { ACCENTS, DEFAULT_APPEARANCE, INTERFACE_SIZES, PRESETS, appearanceColors, appearanceVariables, hexColor, type AccentId, type Appearance, type ColorMode, type PresetId } from './appearance.ts';
+import { useId, useState, type CSSProperties } from 'react';
+import { ACCENTS, DEFAULT_APPEARANCE, INTERFACE_SIZES, PRESETS, appearanceColors, appearanceVariables, hexColor, resolveWindowControls, resolveWindowControlsStyle, type AccentId, type Appearance, type ColorMode, type PresetId } from './appearance.ts';
 import { ChipSelect } from './chip-select.tsx';
 import { Icon } from './icons.tsx';
 import { locale, t } from './i18n.ts';
@@ -47,10 +47,25 @@ function PaperAppearanceOptions<T extends Appearance['review']>({ label, name, v
   </div>;
 }
 
+function SegmentedOptions<T extends string>({ labelId, describedBy, name, value, options, onChange }: { labelId: string; describedBy?: string; name: string; value: T; options: readonly { value: T; label: string }[]; onChange: (value: T) => void }) {
+  return <div className="segmented appearance-paper-options" role="radiogroup" aria-labelledby={labelId} aria-describedby={describedBy}>
+    {options.map(option => <label key={option.value} className={value === option.value ? 'checked' : undefined}>
+      <input type="radio" name={name} value={option.value} checked={value === option.value} onChange={() => onChange(option.value)}/>
+      <span>{option.label}</span>
+    </label>)}
+  </div>;
+}
+
 // Only the desktop app can zoom its own window; browsers already offer page zoom.
 const nativeZoom = Boolean(window.papilotDesktop?.setZoom);
+const desktopPlatform = window.papilotDesktop?.platform;
+export const windowButtonSettingsAvailable = Boolean(desktopPlatform && desktopPlatform !== 'darwin');
 
 export function AppearanceSettings({ theme, onTheme, resolved, appearance, onAppearance }: AppearanceSettingsProps) {
+  const windowControlsId = useId(), windowControlsDesc = useId();
+  const windowStyleId = useId(), windowStyleDesc = useId();
+  const resolvedWindowControls = resolveWindowControls(appearance.windowControls, desktopPlatform);
+  const resolvedWindowControlsStyle = resolveWindowControlsStyle(appearance.windowControlsStyle, desktopPlatform);
   const colors = appearanceColors(appearance, resolved);
   const customized = Object.values(appearance.colors).some(colors => colors.background || colors.foreground);
   // Each theme shows its surface and accent in the current mode; each accent its color.
@@ -82,6 +97,16 @@ export function AppearanceSettings({ theme, onTheme, resolved, appearance, onApp
           {nativeZoom && <ChipSelect label={t('Interface size')} value={String(appearance.size)} options={INTERFACE_SIZES.map(size => ({ value: String(size), label: new Intl.NumberFormat(locale(), { style: 'percent' }).format(size) }))} onChange={value => onAppearance({ ...appearance, size: Number(value) })}/>}
         </div>
       </div>
+      {windowButtonSettingsAvailable && <div className="settings-card appearance-paper-card">
+        <div className="settings-row settings-choice appearance-paper-row">
+          <div className="settings-text"><span className="settings-name" id={windowControlsId}>{t('Window buttons')}</span><p id={windowControlsDesc}>{t('Place minimize, maximize and close on the left or right.')}</p></div>
+          <SegmentedOptions labelId={windowControlsId} describedBy={windowControlsDesc} name="window-controls-position" value={resolvedWindowControls} options={[{ value: 'left', label: t('Left') }, { value: 'right', label: t('Right') }]} onChange={windowControls => onAppearance({ ...appearance, windowControls })}/>
+        </div>
+        <div className="settings-row settings-choice appearance-paper-row">
+          <div className="settings-text"><span className="settings-name" id={windowStyleId}>{t('Window button style')}</span><p id={windowStyleDesc}>{t('Choose compact rounded buttons or wide full-height buttons.')}</p></div>
+          <SegmentedOptions labelId={windowStyleId} describedBy={windowStyleDesc} name="window-controls-style" value={resolvedWindowControlsStyle} options={[{ value: 'compact', label: t('Compact') }, { value: 'wide', label: t('Wide') }]} onChange={windowControlsStyle => onAppearance({ ...appearance, windowControlsStyle })}/>
+        </div>
+      </div>}
       <div className="settings-card appearance-paper-card">
         <div className="settings-row settings-choice appearance-paper-row">
           <div className="settings-text"><span className="settings-name">{t('PDF appearance')}</span><p>{t('Auto matches the interface mode.')}</p></div>

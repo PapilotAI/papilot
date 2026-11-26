@@ -1,10 +1,26 @@
 export type ColorMode = 'light' | 'dark';
 export type PresetId = 'papilot' | 'paper' | 'slate';
 export type AccentId = 'default' | 'blue' | 'graphite' | 'stone';
+export type WindowControlsPosition = 'auto' | 'left' | 'right';
+export type ResolvedWindowControlsPosition = 'left' | 'right';
+export type WindowControlsStyle = 'auto' | 'compact' | 'wide';
+export type ResolvedWindowControlsStyle = 'compact' | 'wide';
 type Colors = { background?: string; foreground?: string };
-export type Appearance = { preset: PresetId; accent: AccentId; colors: Record<ColorMode, Colors>; pdf: 'theme' | 'light'; review: 'pdf' | 'theme' | 'light'; size: number };
+export type Appearance = { preset: PresetId; accent: AccentId; colors: Record<ColorMode, Colors>; pdf: 'theme' | 'light'; review: 'pdf' | 'theme' | 'light'; size: number; windowControls: WindowControlsPosition; windowControlsStyle: WindowControlsStyle };
 export const APPEARANCE_KEY = 'papilot:appearance';
-export const DEFAULT_APPEARANCE: Appearance = { preset: 'papilot', accent: 'default', colors: { light: {}, dark: {} }, pdf: 'theme', review: 'pdf', size: 1 };
+export const DEFAULT_APPEARANCE: Appearance = { preset: 'papilot', accent: 'default', colors: { light: {}, dark: {} }, pdf: 'theme', review: 'pdf', size: 1, windowControls: 'auto', windowControlsStyle: 'auto' };
+// macOS always uses its native traffic lights on the left; Linux and Windows
+// default to their own conventions and let the author override side and style.
+export function resolveWindowControls(choice: WindowControlsPosition, platform?: string): ResolvedWindowControlsPosition {
+  if (platform === 'darwin') return 'left';
+  if (choice === 'left' || choice === 'right') return choice;
+  return platform === 'win32' ? 'right' : 'left';
+}
+export function resolveWindowControlsStyle(choice: WindowControlsStyle, platform?: string): ResolvedWindowControlsStyle {
+  if (platform === 'darwin') return 'compact';
+  if (choice === 'compact' || choice === 'wide') return choice;
+  return platform === 'win32' ? 'wide' : 'compact';
+}
 // Interface size is a whole-window zoom factor, so text, controls, the editor
 // and rendered pages grow together instead of text outgrowing fixed layouts.
 export const INTERFACE_SIZES = [1, 1.1, 1.25, 1.5, 1.75, 2] as const;
@@ -42,6 +58,8 @@ export function parseAppearance(value: string | null): Appearance {
       pdf: saved?.pdf === 'light' ? 'light' : 'theme',
       review: saved?.review === 'theme' || saved?.review === 'light' ? saved.review : 'pdf',
       size: INTERFACE_SIZES.find(size => size === saved?.size) ?? 1,
+      windowControls: saved?.windowControls === 'left' || saved?.windowControls === 'right' ? saved.windowControls : 'auto',
+      windowControlsStyle: saved?.windowControlsStyle === 'compact' || saved?.windowControlsStyle === 'wide' ? saved.windowControlsStyle : 'auto',
     };
   } catch { return DEFAULT_APPEARANCE; }
 }
