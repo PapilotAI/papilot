@@ -43,10 +43,10 @@ test('the papilot command uses the Codex it just installed even with an older Co
     const run = () => spawnSync(process.execPath, [cli, '--data', data, 'codex', '--version'],
       { env: { ...env(root, tools), npm_execpath: npm }, encoding: 'utf8', timeout: 30000 });
     const first = run();
-    assert.equal(first.status, 0, first.error?.message || first.stderr);
+    assert.equal(first.status, 0, first.error?.message || first.stdout + first.stderr);
     assert.equal(first.stdout.trim().split(/\r?\n/).at(-1), `codex-cli ${version}`);
     const second = run();
-    assert.equal(second.status, 0, second.error?.message || second.stderr);
+    assert.equal(second.status, 0, second.error?.message || second.stdout + second.stderr);
     assert.equal(second.stdout.trim(), `codex-cli ${version}`, 'the installed copy is reused');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

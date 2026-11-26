@@ -115,7 +115,7 @@ async function main() {
   }
   if (codexArgs) {
     const codex = findCodex();
-    process.exit(codex ? spawnSync(codex, codexArgs, { stdio: 'inherit' }).status ?? 1 : 1);
+    process.exit(codex ? spawnSyncCommand(codex, codexArgs, { stdio: 'inherit' }).status ?? 1 : 1);
   }
   if (service !== 'stop') process.env.PAPILOT_CODEX_BIN = findCodex() || 'codex';
   const { register } = await import('tsx/esm/api');
