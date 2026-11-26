@@ -22,6 +22,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 - Rename **Settings → Check references online** to **Look up references online**. It now also controls PDF downloads. A new **Settings → Zotero** page shows the Zotero library Papilot found on this computer, with its data directory and how many items have a PDF and a citation key, lets you choose another data directory, and holds the **Use PDFs from Zotero** switch; turned off, PDFs from Zotero are no longer used.
 
+### Fixed
+
+- The `papilot` command uses the Codex it downloads on the same launch, even when an older copy is on `PATH`.
+
 ## [0.14.1] - 2026-11-23
 
 Choose among a note's alternatives without holding up the review, let the conflict-resolution agent prepare merge suggestions, and select text anywhere on a review's whole PDF. See the [release notes](docs/releases/0.14.1/release-notes.md) for update instructions.

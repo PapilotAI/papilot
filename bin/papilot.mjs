@@ -97,9 +97,10 @@ async function main() {
     const recent = file => { const [a, b] = [parse(version(file)), parse(tested)]; return (a[0] - b[0] || a[1] - b[1] || a[2] - b[2]) >= 0; };
     const onPath = findExecutable('codex');
     if (onPath && recent(onPath)) return onPath;
-    const prefix = path.join(process.env.PAPILOT_DATA, 'agents'), bin = path.join(prefix, 'node_modules/.bin');
-    const installed = findExecutable('codex', { ...process.env, PATH: bin + path.delimiter + (process.env.PATH || '') }) || path.join(bin, 'codex');
-    if (existsSync(installed) && recent(installed)) return installed;
+    const prefix = path.join(process.env.PAPILOT_DATA, 'agents');
+    const localCodex = path.join(prefix, 'node_modules', '.bin', 'codex');
+    const installed = findExecutable(localCodex);
+    if (installed && recent(installed)) return installed;
     const method = managedInstall();
     if (method) {
       console.warn(`Install a supported Codex separately${method === 'nix' ? ' with Nix' : ''}, or set PAPILOT_CODEX_BIN to an existing installation.`);
@@ -107,7 +108,8 @@ async function main() {
     }
     console.log(`Installing Codex ${tested} for Papilot (first run only)...`);
     const result = spawnSync(process.execPath, [npmCli(), 'install', '--prefix', prefix, `@openai/codex@${tested}`, '--no-audit', '--no-fund', '--loglevel=error'], { stdio: 'inherit' });
-    if (result.status === 0 && existsSync(installed)) return installed;
+    const downloaded = result.status === 0 && findExecutable(localCodex);
+    if (downloaded && recent(downloaded)) return downloaded;
     console.warn('Codex could not be installed, so Codex tasks are unavailable. Install it with npm install -g @openai/codex and run papilot again.');
     return '';
   }

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
+import { spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { killTree } from '../bin/agent-paths.mjs';
 import { codexCandidates, firstRunnable, isWsl, windowsDrive } from '../bin/codex-lookup.mjs';
@@ -21,6 +22,34 @@ function fakeCodex(dir: string, version: string | null, delay = 0) {
 // Only the given folders: the host's own Codex must not answer for the test.
 const env = (root: string, ...dirs: string[]): NodeJS.ProcessEnv => ({ PATH: dirs.join(path.delimiter), Path: dirs.join(path.delimiter), HOME: root, USERPROFILE: root,
   SystemRoot: process.env.SystemRoot, ComSpec: process.env.ComSpec, PATHEXT: process.env.PATHEXT });
+
+test('the papilot command uses the Codex it just installed even with an older Codex on PATH', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-codex-install-'));
+  try {
+    const { devDependencies } = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    const version = devDependencies['@openai/codex'].replace(/^\D+/, '');
+    const tools = path.join(root, 'tools'), data = path.join(root, 'data');
+    fakeCodex(tools, '0.1.0');
+    const replacement = fakeCodex(path.join(root, 'replacement'), version);
+    const npm = path.join(root, 'npm-cli.js');
+    fs.writeFileSync(npm, `
+      const fs = require('node:fs'), path = require('node:path');
+      const prefix = process.argv[process.argv.indexOf('--prefix') + 1];
+      const bin = path.join(prefix, 'node_modules', '.bin');
+      fs.mkdirSync(bin, { recursive: true });
+      fs.copyFileSync(${JSON.stringify(replacement)}, path.join(bin, ${JSON.stringify(path.basename(replacement))}));
+    `);
+    const cli = path.resolve(import.meta.dirname, '../bin/papilot.mjs');
+    const run = () => spawnSync(process.execPath, [cli, '--data', data, 'codex', '--version'],
+      { env: { ...env(root, tools), npm_execpath: npm }, encoding: 'utf8', timeout: 30000 });
+    const first = run();
+    assert.equal(first.status, 0, first.error?.message || first.stderr);
+    assert.equal(first.stdout.trim().split(/\r?\n/).at(-1), `codex-cli ${version}`);
+    const second = run();
+    assert.equal(second.status, 0, second.error?.message || second.stderr);
+    assert.equal(second.stdout.trim(), `codex-cli ${version}`, 'the installed copy is reused');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
 
 test('WSL is detected only on Linux from its environment or kernel release', () => {
   assert.equal(isWsl({ WSL_DISTRO_NAME: 'Ubuntu' }, 'linux', ''), true);
