@@ -11,8 +11,10 @@ test('Windows installer handoff validates ownership, parent exit and artifact be
   const fixture = fileURLToPath(new URL('./fixtures/windows-installer-handoff.ps1', import.meta.url));
   const helper = fileURLToPath(new URL('../desktop/windows-update.ps1', import.meta.url));
   const powershell = path.join(process.env.SystemRoot!, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  // The runner's TEMP can use a Windows short path that PowerShell expands.
+  const temp = fs.realpathSync.native(os.tmpdir());
   for (const scenario of ['success', 'digest', 'unconfirmed', 'parent']) {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-windows-handoff-'));
+    const root = fs.mkdtempSync(path.join(temp, 'papilot-windows-handoff-'));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', fixture,
       '-Helper', helper, '-FixtureRoot', root, '-Scenario', scenario], {
