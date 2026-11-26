@@ -9,12 +9,13 @@ import { agentPath, findExecutable, spawnSyncCommand, WINDOWS } from './agent-pa
 import { npmCli } from './npm-cli.mjs';
 import { activeInstallation, managedInstall } from './installation.mjs';
 
-const usage = `Usage: papilot [doctor | demo | codex <args> | service install | service stop] [--port <number>] [--data <folder>]
+const usage = `Usage: papilot [doctor | demo | codex <args> | handoff | service install | service stop] [--port <number>] [--data <folder>]
 
   papilot                  Start Papilot at http://127.0.0.1:7274
   papilot doctor           Check the environment; use doctor --help for options
   papilot demo             Add the example paper, then start
   papilot codex login      Sign in to Codex with the Codex that Papilot uses
+  papilot handoff --help   Exchange versioned review suggestions with another agent (experimental)
   papilot service install  Run Papilot in the background after login (macOS)
   papilot service stop     Stop the background service
   --port <number>          Listen on another local port (PAPILOT_PORT)
@@ -27,10 +28,11 @@ const installedPackage = () => JSON.parse(readFileSync(path.join(activeInstallat
 const args = process.argv.slice(2);
 async function main() {
   const doctor = args[0] === 'doctor';
+  const handoff = args[0] === 'handoff';
   // Doctor parses its own options and must never reach the installation/startup path.
   if (doctor && (args.includes('--help') || args.includes('-h'))) return (await import('./doctor.mjs')).doctor(args.slice(1));
   let demo = false, service = '', codexArgs = null;
-  for (let i = 0; !doctor && i < args.length; i++) {
+  for (let i = 0; !doctor && !handoff && i < args.length; i++) {
     const arg = args[i];
     if (arg === 'demo') demo = true;
     else if (arg === 'codex') { codexArgs = args.slice(i + 1); break; }
@@ -78,6 +80,7 @@ async function main() {
     await new Promise(() => child.on('exit', code => process.exit(code ?? 1)));
   }
   if (doctor) return (await import('./doctor.mjs')).doctor(args.slice(1));
+  if (handoff) return (await import('./handoff.mjs')).handoff(args.slice(1));
   const tex = !spawnSyncCommand('latexmk', ['-v'], { stdio: 'ignore' }).error;
 
   // Node 22 marks node:sqlite as experimental; that notice is noise for users.
