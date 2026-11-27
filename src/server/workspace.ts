@@ -47,7 +47,7 @@ import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress, recentCommitSubjects } from './manuscript.ts';
 import { Memory, memoryDigest, memoryUpdate } from './memory.ts';
 import { MEMORY_EVIDENCE, MEMORY_LANGUAGE, MEMORY_LEARNING, MEMORY_SINCE, acceptedSuggestions, dismissedKey, evidenceHash, hasEvidence, learningPrompt, memoryLearningInstructions, taskEvidence, type EvidenceRecord, type MemoryEvidence } from './memory-learning.ts';
-import { AGENT_IDS, isAgentId, usesCodex, modelServiceTier, isTaskReviewNote, collaborationRoutes, type CollaborationRole, type CollaborationRoutes, type CollaborationSettings } from '../shared.ts';
+import { AGENT_IDS, isAgentId, usesCodex, effectiveServiceTier, modelServiceTier, isTaskReviewNote, collaborationRoutes, type CollaborationRole, type CollaborationRoutes, type CollaborationSettings } from '../shared.ts';
 import type { HelperChoice, Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, PendingBuild, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview, PageView, ToolPlace } from '../shared.ts';
 
 const execute = promisify(execFile);
@@ -1237,7 +1237,7 @@ ${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for ma
     const effort = task.effort || (codex ? model?.defaultEffort : undefined);
     // A catalog refresh can remove an accelerated speed from an existing task.
     // Keep the saved choice and preserve host inheritance for tasks without one.
-    const serviceTier = task.serviceTier && model ? modelServiceTier(model, task.serviceTier) : task.serviceTier;
+    const serviceTier = effectiveServiceTier(model, task.serviceTier);
     // Apply the native policy (including configured roots and tmp exclusions)
     // and the current worktree reviewer even on already-loaded threads.
     try { result = await agent.request('turn/start', { threadId: task.threadId, input, cwd: task.worktree, ...permissions?.turn, ...reviewer, clientUserMessageId: run.id, ...(task.model ? { model: task.model } : {}), ...(effort ? { effort } : {}), ...(codex && serviceTier ? { serviceTier } : {}) }); }
@@ -2473,12 +2473,13 @@ ${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for ma
   // generate button: one read-only turn with the selected model and reasoning
   // effort. The same changes get the message already
   // written, or being written, for them unless the author asks for a fresh one.
-  async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; model?: string; effort?: string; serviceTier?: string; fresh?: boolean; staged?: boolean; taskId?: string; language?: CommitMessageLanguage } = {}) {
+  async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; model?: string; effort?: string; serviceTier?: string; inheritedSpeed?: boolean; fresh?: boolean; staged?: boolean; taskId?: string; language?: CommitMessageLanguage } = {}) {
     const project = this.store.project(projectId), { id, model } = this.helper(choice, 'write a commit message', { readOnly: true, strict: 'commit-message' });
     if (choice.model && model?.id !== choice.model) throw new Error('Choose an available model for this agent.');
     if (choice.effort && model && !model.efforts.includes(choice.effort)) throw new Error('This model does not support that reasoning effort.');
-    if (choice.serviceTier && choice.serviceTier !== 'default' && (id !== 'codex' || choice.serviceTier !== modelServiceTier(model, choice.serviceTier))) throw new Error('This speed is not available for this model.');
-    const effort = choice.effort || model?.defaultEffort, serviceTier = id === 'codex' ? choice.serviceTier : undefined;
+    const speed = choice.inheritedSpeed && id === 'codex' ? effectiveServiceTier(model, choice.serviceTier) : choice.serviceTier;
+    if (speed && speed !== 'default' && (id !== 'codex' || speed !== modelServiceTier(model, speed))) throw new Error('This speed is not available for this model.');
+    const effort = choice.effort || model?.defaultEffort, serviceTier = id === 'codex' ? speed : undefined;
     const task = choice.taskId ? this.store.task(choice.taskId) : undefined;
     if (task && task.projectId !== projectId) throw new Error('Invalid task ID.');
     // Saving a task is when Papilot offers what it noticed in the author's reviews.
@@ -2575,9 +2576,15 @@ ${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for ma
   private mergeHandover(task: Task, run: Run): HelperChoice | null {
     const choice = task.mergeAgent;
     if (!run.requestKey.startsWith('merge-review-') || !choice || task.mergeReturn) return null;
-    const differs = choice.agent !== this.agentOf(task) || Boolean(choice.model && choice.model !== task.model)
-      || Boolean(choice.effort && choice.effort !== task.effort) || Boolean(choice.serviceTier && choice.serviceTier !== task.serviceTier);
-    return differs ? choice : null;
+    const agent = this.agentOf(task);
+    const savedSpeed = (id: AgentId, modelId: string | null | undefined, tier?: string) => {
+      const model = id === 'codex' ? this.runtimes.codex.models.find(model => modelId ? model.id === modelId : model.isDefault) : undefined;
+      return effectiveServiceTier(model, tier);
+    };
+    const serviceTier = savedSpeed(choice.agent, choice.model, choice.serviceTier);
+    const differs = choice.agent !== agent || Boolean(choice.model && choice.model !== task.model)
+      || Boolean(choice.effort && choice.effort !== task.effort) || Boolean(serviceTier && serviceTier !== savedSpeed(agent, task.model, task.serviceTier));
+    return differs ? { ...choice, serviceTier } : null;
   }
   // Once no merge is left to resolve, the task's own agent takes over again
   // with its own settings, even if it is now off or offline: its next turn

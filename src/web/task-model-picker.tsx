@@ -1,6 +1,6 @@
 import { agentLabel, agentOff, canReviewWith } from './agent-choice.ts';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { AGENT_IDS, modelServiceTier, type AgentId, type RuntimeStatus, type Task } from '../shared.ts';
+import { AGENT_IDS, effectiveServiceTier, modelServiceTier, type AgentId, type RuntimeStatus, type Task } from '../shared.ts';
 import { AgentPicker } from './agent-picker.tsx';
 import { t } from './i18n.ts';
 import type { RefreshUsage } from './usage.tsx';
@@ -52,7 +52,7 @@ export function TaskModelPicker({ task, runtime, runtimes, disabled, reconnectin
         // Resolve model switches after preceding saves, including rapid A/B/A.
         const next = update(saved.current);
         const model = runtime?.models.find(model => next.model ? model.id === next.model : model.isDefault);
-        const serviceTier = model ? modelServiceTier(model, next.serviceTier) : next.serviceTier || 'default';
+        const serviceTier = effectiveServiceTier(model, next.serviceTier) || 'default';
         const result = await save({ model: next.model || '', effort: next.effort || '', ...(agent === 'codex' ? { serviceTier } : {}) });
         remember(saved.current); saved.current = settingsOf(result); remember(saved.current);
       }

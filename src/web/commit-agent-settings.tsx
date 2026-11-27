@@ -43,7 +43,7 @@ function HelperAgentSettings({ current, agents, reconnect, refreshUsage, prefere
           const next = options.find(item => item.value === agent)?.runtime?.models.find(item => selected ? item.id === selected : item.isDefault);
           save({ agent, model: selected, effort: next?.efforts.includes(current.effort) ? current.effort : '', ...(agent === 'codex' ? { serviceTier: modelServiceTier(next, current.agent === agent ? current.serviceTier : undefined) } : {}) });
         }}
-        onChange={change => save({ ...current, ...change })}/>
+        onChange={change => save({ ...(following ? current : preference), ...change })}/>
     </div>
   </>;
 }

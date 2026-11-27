@@ -2254,7 +2254,7 @@ test('commit messages honor model, effort and Fast mode and cache each selection
     const calls: unknown[] = [];
     (f.workspace as any).taskCommitChanges = async () => ({ files: [{ path: 'main.tex', status: 'M' }], patch: '-Old\n+New', recent: [] });
     (f.workspace as any).oneOff = async (agent: string, options: any) => { calls.push([agent, options.model.id, options.effort, options.serviceTier]); return 'Clarify the introduction'; };
-    const write = (choice: { model?: string; effort?: string; serviceTier?: string } = {}) => f.workspace.commitMessage(f.task.projectId, ['main.tex'], { agent: 'codex', taskId: f.task.id, ...choice });
+    const write = (choice: { model?: string; effort?: string; serviceTier?: string; inheritedSpeed?: boolean } = {}) => f.workspace.commitMessage(f.task.projectId, ['main.tex'], { agent: 'codex', taskId: f.task.id, ...choice });
     await write(); await write();
     await write({ model: 'small', effort: 'high' }); await write({ model: 'small', effort: 'high' });
     await write({ model: 'small', effort: 'low' });
@@ -2264,6 +2264,12 @@ test('commit messages honor model, effort and Fast mode and cache each selection
     await assert.rejects(write({ model: 'small', effort: 'ultra' }), /does not support that reasoning effort/);
     await assert.rejects(write({ model: 'small', serviceTier: 'priority' }), /This speed is not available/);
     assert.equal(calls.length, 4);
+    await write({ serviceTier: 'priority', inheritedSpeed: true });
+    assert.equal(calls.length, 4, 'a supported inherited speed reuses the message for that speed');
+    f.workspace.setHiddenModels('codex', ['full']);
+    await write({ serviceTier: 'priority', inheritedSpeed: true });
+    assert.deepEqual(calls.at(-1), ['codex', 'small', 'low', 'default'], 'an inherited speed is checked against the selected helper model');
+    await assert.rejects(write({ serviceTier: 'priority' }), /This speed is not available/);
   } finally { f.close(); }
 });
 
@@ -2867,6 +2873,48 @@ test('the chosen conflict-resolution agent takes over a merge suggestion once it
     assert.equal(back.agent, 'codex'); assert.equal(back.model, 'codex-model'); assert.equal(back.effort, 'xhigh');
     assert.equal(back.mergeReturn, null);
     assert.equal(back.handoff, true, 'the task\'s agent is told what happened during the merge');
+  } finally { f.close(); await disk.close(); }
+});
+
+test('a queued Codex merge suggestion uses Standard when its chosen speed disappears', async () => {
+  const { f, disk, settle, wake } = await conflictAgentFixture();
+  try {
+    const model = { id: 'merge-model', name: 'Merge model', isDefault: true, efforts: ['high'], defaultEffort: 'high', serviceTiers: ['priority', 'ultrafast'] };
+    f.workspace.runtimes.codex.models = [model];
+    const choice = { agent: 'codex' as const, model: model.id, serviceTier: 'ultrafast' };
+    const result = await f.workspace.applyTask(f.task.id, false, undefined, choice);
+    assert.ok(result.reconciliation);
+    const run = () => f.store.runs().find(run => run.requestKey === 'merge-review-' + result.reconciliation!.id);
+    await settle();
+    assert.equal(run()?.status, 'queued');
+    model.serviceTiers.pop();
+    f.codex.ready = true;
+    await wake();
+    assert.equal(run()?.status, 'running');
+    assert.equal(f.codex.calls.find(call => call.method === 'turn/start')?.params.serviceTier, 'default');
+    assert.deepEqual(f.store.task(f.task.id).mergeAgent, choice);
+  } finally { f.close(); await disk.close(); }
+});
+
+test('a queued merge with the same Codex settings keeps its task permissions and saved speed', async () => {
+  const { f, disk, settle, wake } = await conflictAgentFixture();
+  try {
+    const model = { id: 'codex-model', name: 'Codex', isDefault: true, efforts: ['xhigh'], defaultEffort: 'xhigh', serviceTiers: ['priority'] };
+    f.workspace.runtimes.codex.models = [model];
+    const choice = { agent: 'codex' as const, model: model.id, effort: 'xhigh', serviceTier: 'ultrafast' };
+    f.store.updateTask(f.task.id, { permissions: 'full', serviceTier: choice.serviceTier });
+    const result = await f.workspace.applyTask(f.task.id, false, undefined, choice);
+    assert.ok(result.reconciliation);
+    await settle();
+    f.codex.ready = true;
+    await wake();
+    const run = f.store.runs().find(run => run.requestKey === 'merge-review-' + result.reconciliation!.id);
+    const task = f.store.task(f.task.id);
+    assert.equal(run?.status, 'running');
+    assert.equal(f.codex.calls.find(call => call.method === 'turn/start')?.params.serviceTier, 'default');
+    assert.equal(task.permissions, 'full');
+    assert.equal(task.serviceTier, 'ultrafast');
+    assert.equal(task.mergeReturn, undefined);
   } finally { f.close(); await disk.close(); }
 });
 
