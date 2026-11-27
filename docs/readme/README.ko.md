@@ -92,11 +92,70 @@
 ## 시작하기
 
 <p align="center">
-<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/mac-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/mac-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/mac-compact.png"><img src="../assets/readme-downloads/mac.png" alt="macOS용 다운로드: Apple silicon 및 Intel, DMG 또는 ZIP." width="49%"></picture></a>
-<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/windows-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/windows-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/windows-compact.png"><img src="../assets/readme-downloads/windows.png" alt="Windows용 다운로드: x64 설치 프로그램 또는 포터블 앱." width="49%"></picture></a>
-<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/linux-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/linux-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/linux-compact.png"><img src="../assets/readme-downloads/linux.png" alt="Linux용 다운로드: AppImage, .deb 또는 Nix." width="49%"></picture></a>
+<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/mac-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/mac-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/mac-compact.png"><img src="../assets/readme-downloads/mac.png" alt="macOS용 다운로드: Apple 실리콘 및 Intel 지원, DMG, ZIP 또는 Homebrew." width="49%"></picture></a>
+<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/windows-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/windows-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/windows-compact.png"><img src="../assets/readme-downloads/windows.png" alt="Windows용 다운로드: x64 설치 프로그램, 포터블 앱 또는 Scoop." width="49%"></picture></a>
+<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/linux-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/linux-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/linux-compact.png"><img src="../assets/readme-downloads/linux.png" alt="Linux용 다운로드: AppImage, APT(.deb), AUR 또는 Nix." width="49%"></picture></a>
 <a href="../guide.md#install-and-run"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/terminal-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/terminal-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/terminal-compact.png"><img src="../assets/readme-downloads/terminal.png" alt="터미널에서 설치: npm install -g papilot 실행 후 papilot demo 실행. Node.js 22.22 이상 필요." width="49%"></picture></a>
 </p>
+
+<details>
+<summary><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/pm-bar-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact.png"><img src="../assets/readme-downloads/pm-bar.png" alt="패키지 관리자: Homebrew, Scoop, APT, AUR 및 Nix — 설치 명령 보기" width="96%" align="absmiddle"></picture></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/homebrew-dark.svg"><img src="../assets/readme-icons/homebrew.svg" width="16" height="16" align="absmiddle" alt=""></picture>&nbsp;<b>macOS</b> · <a href="https://github.com/PapilotAI/homebrew-tap">Homebrew</a>
+
+```sh
+brew tap PapilotAI/tap
+brew trust PapilotAI/tap
+brew install --cask PapilotAI/tap/papilot
+```
+
+<sub>미서명 — 첫 실행 시 개인정보 보호 및 보안에서 허용하세요 (<a href="https://github.com/PapilotAI/homebrew-tap#gatekeeper-note">자세히</a>).</sub>
+</td>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/scoop-dark.svg"><img src="../assets/readme-icons/scoop.svg" width="16" height="16" align="absmiddle" alt=""></picture>&nbsp;<b>Windows</b> · <a href="https://github.com/PapilotAI/scoop-bucket">Scoop</a>
+
+```powershell
+scoop bucket add papilot https://github.com/PapilotAI/scoop-bucket
+scoop install papilot/papilot
+```
+
+<sub>언제든 <code>scoop update papilot</code>으로 업그레이드하세요.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/debian-dark.svg"><img src="../assets/readme-icons/debian.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/ubuntu-dark.svg"><img src="../assets/readme-icons/ubuntu.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<b>Debian / Ubuntu</b> · <a href="../apt.md">APT</a>
+
+```sh
+curl -fsSL https://papilot.ai/apt/gpg.key | \
+  sudo gpg --dearmor -o /etc/apt/keyrings/papilot.gpg
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/papilot.gpg] https://papilot.ai/apt stable main" | \
+  sudo tee /etc/apt/sources.list.d/papilot.list
+sudo apt update && sudo apt install papilot
+```
+
+<sub>서명된 저장소 — 지문 확인은 <a href="../apt.md">APT 가이드</a>를 참고하세요.</sub>
+</td>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/archlinux-dark.svg"><img src="../assets/readme-icons/archlinux.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<b>Arch</b> · <a href="../aur.md">AUR</a> &nbsp;&amp;&nbsp; <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/nixos-dark.svg"><img src="../assets/readme-icons/nixos.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<b>Nix</b> · <a href="../nix.md">Flake</a>
+
+```sh
+# Arch Linux (AUR)
+paru -S papilot-bin
+
+# Nix
+nix run github:PapilotAI/papilot -- demo
+```
+
+<sub><a href="../aur.md">Arch 가이드</a> 및 <a href="../nix.md">Nix 가이드</a>를 참고하세요.</sub>
+</td>
+</tr>
+</table>
+
+</details>
 
 <p align="center"><sub>무료 오픈 소스입니다. Git, TeX 배포판 및 로그인된 <a href="#agents">에이전트</a>가 필요합니다.</sub></p>
 

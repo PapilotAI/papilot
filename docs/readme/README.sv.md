@@ -92,11 +92,70 @@ Varje uppgift körs i ett eget Git-arbetsträd, åtskilt från dina filer. Att c
 ## Kom igång
 
 <p align="center">
-<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/mac-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/mac-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/mac-compact.png"><img src="../assets/readme-downloads/mac.png" alt="Ladda ner för macOS: Apple Silicon och Intel, DMG eller ZIP." width="49%"></picture></a>
-<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/windows-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/windows-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/windows-compact.png"><img src="../assets/readme-downloads/windows.png" alt="Ladda ner för Windows: x64-installationsprogram eller portabel app." width="49%"></picture></a>
-<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/linux-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/linux-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/linux-compact.png"><img src="../assets/readme-downloads/linux.png" alt="Ladda ner för Linux: AppImage, .deb eller Nix." width="49%"></picture></a>
+<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/mac-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/mac-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/mac-compact.png"><img src="../assets/readme-downloads/mac.png" alt="Ladda ner för macOS: Apple Silicon och Intel, DMG, ZIP eller Homebrew." width="49%"></picture></a>
+<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/windows-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/windows-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/windows-compact.png"><img src="../assets/readme-downloads/windows.png" alt="Ladda ner för Windows: x64-installationsprogram, portabel app eller Scoop." width="49%"></picture></a>
+<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/linux-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/linux-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/linux-compact.png"><img src="../assets/readme-downloads/linux.png" alt="Ladda ner för Linux: AppImage, APT (.deb), AUR eller Nix." width="49%"></picture></a>
 <a href="../guide.md#install-and-run"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/terminal-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/terminal-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/terminal-compact.png"><img src="../assets/readme-downloads/terminal.png" alt="Installera i en terminal: npm install -g papilot, sedan papilot demo. Kräver Node.js 22.22+." width="49%"></picture></a>
 </p>
+
+<details>
+<summary><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/pm-bar-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact.png"><img src="../assets/readme-downloads/pm-bar.png" alt="Pakethanterare: Homebrew, Scoop, APT, AUR och Nix — visa installationskommandon" width="96%" align="absmiddle"></picture></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/homebrew-dark.svg"><img src="../assets/readme-icons/homebrew.svg" width="16" height="16" align="absmiddle" alt=""></picture>&nbsp;<b>macOS</b> · <a href="https://github.com/PapilotAI/homebrew-tap">Homebrew</a>
+
+```sh
+brew tap PapilotAI/tap
+brew trust PapilotAI/tap
+brew install --cask PapilotAI/tap/papilot
+```
+
+<sub>Osignerad — tillåt i Integritet och säkerhet vid första start (<a href="https://github.com/PapilotAI/homebrew-tap#gatekeeper-note">detaljer</a>).</sub>
+</td>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/scoop-dark.svg"><img src="../assets/readme-icons/scoop.svg" width="16" height="16" align="absmiddle" alt=""></picture>&nbsp;<b>Windows</b> · <a href="https://github.com/PapilotAI/scoop-bucket">Scoop</a>
+
+```powershell
+scoop bucket add papilot https://github.com/PapilotAI/scoop-bucket
+scoop install papilot/papilot
+```
+
+<sub>Uppgradera när som helst med <code>scoop update papilot</code>.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/debian-dark.svg"><img src="../assets/readme-icons/debian.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/ubuntu-dark.svg"><img src="../assets/readme-icons/ubuntu.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<b>Debian / Ubuntu</b> · <a href="../apt.md">APT</a>
+
+```sh
+curl -fsSL https://papilot.ai/apt/gpg.key | \
+  sudo gpg --dearmor -o /etc/apt/keyrings/papilot.gpg
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/papilot.gpg] https://papilot.ai/apt stable main" | \
+  sudo tee /etc/apt/sources.list.d/papilot.list
+sudo apt update && sudo apt install papilot
+```
+
+<sub>Signerat arkiv — verifiera fingeravtryck i <a href="../apt.md">APT-guiden</a>.</sub>
+</td>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/archlinux-dark.svg"><img src="../assets/readme-icons/archlinux.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<b>Arch</b> · <a href="../aur.md">AUR</a> &nbsp;&amp;&nbsp; <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/nixos-dark.svg"><img src="../assets/readme-icons/nixos.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<b>Nix</b> · <a href="../nix.md">Flake</a>
+
+```sh
+# Arch Linux (AUR)
+paru -S papilot-bin
+
+# Nix
+nix run github:PapilotAI/papilot -- demo
+```
+
+<sub>Se <a href="../aur.md">Arch-guiden</a> och <a href="../nix.md">Nix-guiden</a>.</sub>
+</td>
+</tr>
+</table>
+
+</details>
 
 <p align="center"><sub>Kostnadsfritt och med öppen källkod. Kräver Git, en TeX-distribution och en inloggad <a href="#agents">agent</a>.</sub></p>
 

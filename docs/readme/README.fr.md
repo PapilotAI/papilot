@@ -92,11 +92,70 @@ Ouvrez Papilot sur votre téléphone ou votre tablette via <a href="../guide.md#
 ## Prise en main
 
 <p align="center">
-<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/mac-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/mac-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/mac-compact.png"><img src="../assets/readme-downloads/mac.png" alt="Télécharger pour macOS : Apple silicon et Intel, DMG ou ZIP." width="49%"></picture></a>
-<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/windows-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/windows-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/windows-compact.png"><img src="../assets/readme-downloads/windows.png" alt="Télécharger pour Windows : installateur x64 ou application portable." width="49%"></picture></a>
-<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/linux-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/linux-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/linux-compact.png"><img src="../assets/readme-downloads/linux.png" alt="Télécharger pour Linux : AppImage, .deb ou Nix." width="49%"></picture></a>
+<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/mac-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/mac-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/mac-compact.png"><img src="../assets/readme-downloads/mac.png" alt="Télécharger pour macOS : Apple Silicon et Intel, DMG, ZIP ou Homebrew." width="49%"></picture></a>
+<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/windows-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/windows-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/windows-compact.png"><img src="../assets/readme-downloads/windows.png" alt="Télécharger pour Windows : installateur x64, application portable ou Scoop." width="49%"></picture></a>
+<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/linux-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/linux-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/linux-compact.png"><img src="../assets/readme-downloads/linux.png" alt="Télécharger pour Linux : AppImage, APT (.deb), AUR ou Nix." width="49%"></picture></a>
 <a href="../guide.md#install-and-run"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/terminal-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/terminal-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/terminal-compact.png"><img src="../assets/readme-downloads/terminal.png" alt="Installer dans un terminal : npm install -g papilot, puis papilot demo. Nécessite Node.js 22.22+." width="49%"></picture></a>
 </p>
+
+<details>
+<summary><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/pm-bar-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact.png"><img src="../assets/readme-downloads/pm-bar.png" alt="Gestionnaires de paquets : Homebrew, Scoop, APT, AUR et Nix — afficher les commandes" width="96%" align="absmiddle"></picture></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/homebrew-dark.svg"><img src="../assets/readme-icons/homebrew.svg" width="16" height="16" align="absmiddle" alt=""></picture>&nbsp;<b>macOS</b> · <a href="https://github.com/PapilotAI/homebrew-tap">Homebrew</a>
+
+```sh
+brew tap PapilotAI/tap
+brew trust PapilotAI/tap
+brew install --cask PapilotAI/tap/papilot
+```
+
+<sub>Non signé — autorisez dans Confidentialité et sécurité au premier lancement (<a href="https://github.com/PapilotAI/homebrew-tap#gatekeeper-note">détails</a>).</sub>
+</td>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/scoop-dark.svg"><img src="../assets/readme-icons/scoop.svg" width="16" height="16" align="absmiddle" alt=""></picture>&nbsp;<b>Windows</b> · <a href="https://github.com/PapilotAI/scoop-bucket">Scoop</a>
+
+```powershell
+scoop bucket add papilot https://github.com/PapilotAI/scoop-bucket
+scoop install papilot/papilot
+```
+
+<sub>Mettez à jour à tout moment avec <code>scoop update papilot</code>.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/debian-dark.svg"><img src="../assets/readme-icons/debian.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/ubuntu-dark.svg"><img src="../assets/readme-icons/ubuntu.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<b>Debian / Ubuntu</b> · <a href="../apt.md">APT</a>
+
+```sh
+curl -fsSL https://papilot.ai/apt/gpg.key | \
+  sudo gpg --dearmor -o /etc/apt/keyrings/papilot.gpg
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/papilot.gpg] https://papilot.ai/apt stable main" | \
+  sudo tee /etc/apt/sources.list.d/papilot.list
+sudo apt update && sudo apt install papilot
+```
+
+<sub>Dépôt signé — vérifiez l’empreinte dans le <a href="../apt.md">guide APT</a>.</sub>
+</td>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/archlinux-dark.svg"><img src="../assets/readme-icons/archlinux.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<b>Arch</b> · <a href="../aur.md">AUR</a> &nbsp;&amp;&nbsp; <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/nixos-dark.svg"><img src="../assets/readme-icons/nixos.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<b>Nix</b> · <a href="../nix.md">Flake</a>
+
+```sh
+# Arch Linux (AUR)
+paru -S papilot-bin
+
+# Nix
+nix run github:PapilotAI/papilot -- demo
+```
+
+<sub>Voir le <a href="../aur.md">guide Arch</a> et le <a href="../nix.md">guide Nix</a>.</sub>
+</td>
+</tr>
+</table>
+
+</details>
 
 <p align="center"><sub>Gratuit et open source. Nécessite Git, une distribution TeX et un <a href="#agents">agent</a> connecté.</sub></p>
 

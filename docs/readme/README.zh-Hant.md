@@ -92,11 +92,70 @@
 ## 快速上手
 
 <p align="center">
-<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/mac-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/mac-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/mac-compact.png"><img src="../assets/readme-downloads/mac.png" alt="下載 macOS 版：支援 Apple silicon 與 Intel，提供 DMG 或 ZIP 格式。" width="49%"></picture></a>
-<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/windows-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/windows-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/windows-compact.png"><img src="../assets/readme-downloads/windows.png" alt="下載 Windows 版：x64 安裝程式或免安裝版。" width="49%"></picture></a>
-<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/linux-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/linux-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/linux-compact.png"><img src="../assets/readme-downloads/linux.png" alt="下載 Linux 版：提供 AppImage、.deb 或 Nix。" width="49%"></picture></a>
+<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/mac-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/mac-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/mac-compact.png"><img src="../assets/readme-downloads/mac.png" alt="下載 macOS 版：支援 Apple 晶片與 Intel，提供 DMG、ZIP 或 Homebrew。" width="49%"></picture></a>
+<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/windows-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/windows-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/windows-compact.png"><img src="../assets/readme-downloads/windows.png" alt="下載 Windows 版：提供 x64 安裝程式、可攜式版本或 Scoop。" width="49%"></picture></a>
+<a href="https://papilot.ai/#download"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/linux-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/linux-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/linux-compact.png"><img src="../assets/readme-downloads/linux.png" alt="下載 Linux 版：提供 AppImage、APT（.deb）、AUR 或 Nix。" width="49%"></picture></a>
 <a href="../guide.md#install-and-run"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/terminal-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/terminal-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/terminal-compact.png"><img src="../assets/readme-downloads/terminal.png" alt="在終端機中安裝：執行 npm install -g papilot，接著執行 papilot demo。需安裝 Node.js 22.22+。" width="49%"></picture></a>
 </p>
+
+<details>
+<summary><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/pm-bar-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact.png"><img src="../assets/readme-downloads/pm-bar.png" alt="套件管理員安裝：Homebrew、Scoop、APT、AUR 與 Nix — 展開檢視指令" width="96%" align="absmiddle"></picture></summary>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/homebrew-dark.svg"><img src="../assets/readme-icons/homebrew.svg" width="16" height="16" align="absmiddle" alt=""></picture>&nbsp;<b>macOS</b> · <a href="https://github.com/PapilotAI/homebrew-tap">Homebrew</a>
+
+```sh
+brew tap PapilotAI/tap
+brew trust PapilotAI/tap
+brew install --cask PapilotAI/tap/papilot
+```
+
+<sub>未簽章 — 首次啟動請在「隱私權與安全性」中允許（<a href="https://github.com/PapilotAI/homebrew-tap#gatekeeper-note">詳情</a>）。</sub>
+</td>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/scoop-dark.svg"><img src="../assets/readme-icons/scoop.svg" width="16" height="16" align="absmiddle" alt=""></picture>&nbsp;<b>Windows</b> · <a href="https://github.com/PapilotAI/scoop-bucket">Scoop</a>
+
+```powershell
+scoop bucket add papilot https://github.com/PapilotAI/scoop-bucket
+scoop install papilot/papilot
+```
+
+<sub>隨時執行 <code>scoop update papilot</code> 升級。</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/debian-dark.svg"><img src="../assets/readme-icons/debian.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/ubuntu-dark.svg"><img src="../assets/readme-icons/ubuntu.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<b>Debian / Ubuntu</b> · <a href="../apt.md">APT</a>
+
+```sh
+curl -fsSL https://papilot.ai/apt/gpg.key | \
+  sudo gpg --dearmor -o /etc/apt/keyrings/papilot.gpg
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/papilot.gpg] https://papilot.ai/apt stable main" | \
+  sudo tee /etc/apt/sources.list.d/papilot.list
+sudo apt update && sudo apt install papilot
+```
+
+<sub>簽章軟體庫 — 指紋驗證請見 <a href="../apt.md">APT 指南</a>。</sub>
+</td>
+<td width="50%" valign="top">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/archlinux-dark.svg"><img src="../assets/readme-icons/archlinux.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<b>Arch</b> · <a href="../aur.md">AUR</a> &nbsp;&amp;&nbsp; <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/nixos-dark.svg"><img src="../assets/readme-icons/nixos.svg" width="15" height="15" align="absmiddle" alt=""></picture>&nbsp;<b>Nix</b> · <a href="../nix.md">Flake</a>
+
+```sh
+# Arch Linux (AUR)
+paru -S papilot-bin
+
+# Nix
+nix run github:PapilotAI/papilot -- demo
+```
+
+<sub>詳見 <a href="../aur.md">Arch 指南</a> 與 <a href="../nix.md">Nix 指南</a>。</sub>
+</td>
+</tr>
+</table>
+
+</details>
 
 <p align="center"><sub>免費且開源。需安裝 Git、TeX 發行版，以及已登入的<a href="#agents">智慧代理</a>。</sub></p>
 
