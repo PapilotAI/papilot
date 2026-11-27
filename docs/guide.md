@@ -306,6 +306,8 @@ A repository can hold several root documents, such as a thesis, its slides and a
 
 Switching documents saves pending note edits first, including when using the keyboard. If a note cannot be saved, the current document and the draft stay open so you can retry.
 
+If Papilot cannot read a `.tex` file as UTF-8, open it in a text editor using its original encoding. Once the text looks right, save a UTF-8 copy and open it from **Files**. If Papilot reports null bytes, check the file's encoding and contents in a text editor.
+
 ### Fix a LaTeX build
 
 Papilot continues past recoverable LaTeX errors by default and shows the generated PDF with the errors in **Compilation Problems**. For example, `minted` can display code without syntax highlighting when its helper is unavailable. Fatal errors, such as a missing chapter that stops XeLaTeX, still fail the build even if the compiler leaves a partial PDF. The previous preview stays visible when a build fails.

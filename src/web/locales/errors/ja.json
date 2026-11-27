@@ -111,6 +111,7 @@
   "Could not reach the source website. Check the internet connection and try again.": "ソースの Web サイトに接続できませんでした。インターネット接続を確認して再試行してください。",
   "Could not reach zotero.org. Try again.": "zotero.org に接続できませんでした。もう一度お試しください。",
   "Could not read the LaTeX installation.": "LaTeX のインストール情報を読み取れませんでした。",
+  "Could not read “{file}” as UTF-8. Check its encoding in a text editor, then save a UTF-8 copy.": "「{file}」を UTF-8 として読み込めませんでした。テキストエディターで文字コードを確認してから、UTF-8 のコピーを保存してください。",
   "Could not restart the background service.": "バックグラウンドサービスを再起動できませんでした。",
   "Cursor session closed.": "Cursor セッションが閉じられました。",
   "Custom API setup is unavailable.": "カスタム API は設定できません。",
@@ -529,5 +530,6 @@
   "Zotero does not accept this key. Check it and try again.": "このキーは Zotero で受け付けられませんでした。キーを確認して、もう一度お試しください。",
   "npm is unavailable to Papilot.": "Papilot から npm を利用できません。",
   "too large": "サイズが大きすぎます",
-  "unsupported index": "サポートされていないインデックスです"
+  "unsupported index": "サポートされていないインデックスです",
+  "“{file}” contains null bytes. Check its encoding and contents in a text editor.": "「{file}」にヌルバイトが含まれています。テキストエディターで文字コードと内容を確認してください。"
 }

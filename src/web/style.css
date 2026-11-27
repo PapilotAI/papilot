@@ -110,7 +110,10 @@ code{font-family:var(--mono);font-variant-ligatures:none}
 .manuscript-link.active{background:var(--accent-soft);font-weight:500}
 .manuscript-link.active>svg{color:var(--accent)}
 .manuscript-note-count { display: inline-grid; place-items: center; min-width: 1.5em; padding: 0 4px; border-radius: 4px; background: var(--bg-muted); color: var(--text-2); font-size: 11px; line-height: 1.5; font-variant-numeric: tabular-nums; }
-.manuscript-shortcut { display: inline-flex; align-items: center; gap: 4px; padding: 5px; background: transparent; color: var(--text-2); white-space: nowrap; }
+.manuscript-shortcut { display: inline-flex; align-items: center; gap: 4px; padding: 5px; background: transparent; color: var(--text-2); white-space: nowrap; min-width: 0; }
+/* In a narrow toolbar the label gives way before the controls beside it. */
+.manuscript-shortcut > svg { flex-shrink: 0; }
+.manuscript-shortcut-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 [data-notes-home="manuscript"].notes-received .manuscript-note-count { animation: task-received .45s var(--ease); }
 [data-notes-home="manuscript"].notes-received::after { content: none; }
 .manuscript-link .nav-meta{font-size:11px}

@@ -111,6 +111,7 @@
   "Could not reach the source website. Check the internet connection and try again.": "No se pudo acceder al sitio del código fuente. Revisa la conexión a Internet y vuelve a intentarlo.",
   "Could not reach zotero.org. Try again.": "No se pudo conectar con zotero.org. Inténtelo de nuevo.",
   "Could not read the LaTeX installation.": "No se pudo leer la instalación de LaTeX.",
+  "Could not read “{file}” as UTF-8. Check its encoding in a text editor, then save a UTF-8 copy.": "No se pudo leer «{file}» como UTF-8. Comprueba su codificación en un editor de texto y guarda una copia en UTF-8.",
   "Could not restart the background service.": "No se pudo reiniciar el servicio en segundo plano.",
   "Cursor session closed.": "Sesión de Cursor cerrada.",
   "Custom API setup is unavailable.": "La configuración de la API personalizada no está disponible.",
@@ -529,5 +530,6 @@
   "Zotero does not accept this key. Check it and try again.": "Zotero no acepta esta clave. Verifíquela e inténtelo de nuevo.",
   "npm is unavailable to Papilot.": "npm no está disponible para Papilot.",
   "too large": "demasiado grande",
-  "unsupported index": "índice no compatible"
+  "unsupported index": "índice no compatible",
+  "“{file}” contains null bytes. Check its encoding and contents in a text editor.": "«{file}» contiene bytes nulos. Comprueba su codificación y su contenido en un editor de texto."
 }

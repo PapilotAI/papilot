@@ -94,7 +94,13 @@ async function readSource(root: string, file: string): Promise<Source> {
   if (!stat.isFile()) throw new Error('This file cannot be edited here.');
   if (stat.size > MAX_FILE) throw new Error('This source file is too large to edit here.');
   const data = fs.readFileSync(target), text = textOf(data);
-  if (text === null) throw new Error('This file is not text that can be edited here.');
+  if (text === null) {
+    if (path.extname(file).toLowerCase() !== '.tex') throw new Error('This file is not text that can be edited here.');
+    const error = data.includes(0)
+      ? new Error('“{file}” contains null bytes. Check its encoding and contents in a text editor.')
+      : new Error('Could not read “{file}” as UTF-8. Check its encoding in a text editor, then save a UTF-8 copy.');
+    throw Object.assign(error, { errorValues: { file } });
+  }
   // The decoder drops a byte order mark; a save puts it back.
   return { target, data, bom: data.subarray(0, 3).equals(BOM), lines: splitLines(text) };
 }

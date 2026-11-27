@@ -54,8 +54,10 @@ export function t(text: string, values?: Record<string, string | number>) {
   const template = Object.hasOwn(messages[state.language], text) ? messages[state.language][text] : text;
   return interpolateMessage(template, state.language, values);
 }
-export function errorText(text: string) {
-  return Object.hasOwn(errorMessages[state.language], text) ? errorMessages[state.language][text] : t(text);
+export function errorText(text: string, values?: Record<string, string | number>) {
+  return Object.hasOwn(errorMessages[state.language], text)
+    ? interpolateMessage(errorMessages[state.language][text], state.language, values)
+    : t(text, values);
 }
 // Select the count form using the active locale; {n} is the count.
 export function tn(count: number, one: string, other: string, values?: Record<string, string | number>) {

@@ -111,6 +111,7 @@
   "Could not reach the source website. Check the internet connection and try again.": "소스 웹사이트에 연결할 수 없습니다. 인터넷 연결을 확인하고 다시 시도하세요.",
   "Could not reach zotero.org. Try again.": "zotero.org에 연결할 수 없습니다. 다시 시도하세요.",
   "Could not read the LaTeX installation.": "LaTeX 설치 정보를 읽을 수 없습니다.",
+  "Could not read “{file}” as UTF-8. Check its encoding in a text editor, then save a UTF-8 copy.": "“{file}” 파일을 UTF-8로 읽을 수 없습니다. 텍스트 편집기에서 인코딩을 확인한 다음 UTF-8로 사본을 저장하세요.",
   "Could not restart the background service.": "백그라운드 서비스를 재시작할 수 없습니다.",
   "Cursor session closed.": "Cursor 세션이 종료되었습니다.",
   "Custom API setup is unavailable.": "사용자 지정 API를 설정할 수 없습니다.",
@@ -529,5 +530,6 @@
   "Zotero does not accept this key. Check it and try again.": "Zotero에서 이 키를 승인하지 않았습니다. 키를 확인하고 다시 시도하세요.",
   "npm is unavailable to Papilot.": "Papilot에서 npm을 사용할 수 없습니다.",
   "too large": "너무 큼",
-  "unsupported index": "지원되지 않는 인덱스"
+  "unsupported index": "지원되지 않는 인덱스",
+  "“{file}” contains null bytes. Check its encoding and contents in a text editor.": "“{file}” 파일에 널 바이트가 있습니다. 텍스트 편집기에서 파일의 인코딩과 내용을 확인하세요."
 }
