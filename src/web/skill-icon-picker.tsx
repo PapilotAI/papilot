@@ -3,8 +3,8 @@ import { SKILL_ICONS, type SkillIcon } from '../skill-icons.ts';
 import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
 
-export function SkillIconPicker({ value, onChange, disabled }: { value: SkillIcon; onChange: (value: SkillIcon) => void; disabled: boolean }) {
-  return <IconPicker value={value} onChange={onChange} disabled={disabled} searchable icons={SKILL_ICONS.map(icon => ({ id: icon.id, label: t(icon.label), keywords: icon.label }))} name={t('Skill icon')}/>;
+export function SkillIconPicker({ value, onChange, disabled, name }: { value: SkillIcon; onChange: (value: SkillIcon) => void; disabled: boolean; name?: string }) {
+  return <IconPicker value={value} onChange={onChange} disabled={disabled} searchable icons={SKILL_ICONS.map(icon => ({ id: icon.id, label: t(icon.label), keywords: icon.label }))} name={name || t('Skill icon')}/>;
 }
 
 // Skills and quick notes each offer their own set; large catalogs can opt into search.

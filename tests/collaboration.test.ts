@@ -17,7 +17,7 @@ function paper() {
 }
 const notes = workflowNotes([{ id: 'message', meta: { notes: [{ where: 'main.tex', quote: 'First', comment: 'Polish first.' }, { where: 'main.tex', quote: 'Second', comment: 'Check second.' }] } }], 'Edit');
 const signal = () => new AbortController().signal;
-const routes: CollaborationRoutes = {
+const routes: Record<CollaborationRole, WorkflowWorker> = {
   quick: { agent: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', effort: 'max' },
   polish: { agent: 'antigravity', model: 'gemini-4-argon', effort: 'high' },
   rigorous: { agent: 'codex', model: 'task-codex-model', effort: 'xhigh' },
@@ -395,28 +395,29 @@ test('Antigravity workers reject a selected effort when the default model is unk
   assert.equal(helper.calls.some(entry => entry.method === 'thread/start'), false);
   assert.equal(helper.closed, true);
 });
-test('saved routes default to Codex with the task model and reject unknown workers', () => {
-  assert.deepEqual(collaborationRoutes(undefined), { quick: { agent: 'codex', model: null, effort: null }, polish: { agent: 'codex', model: null, effort: null }, rigorous: { agent: 'codex', model: null, effort: null } });
+test('saved routes default to Auto (null) and accept any connected agent while rejecting unknown ones', () => {
+  assert.deepEqual(collaborationRoutes(undefined), { quick: null, polish: null, rigorous: null });
   assert.deepEqual(collaborationRoutes(routes), routes);
-  assert.deepEqual(collaborationRoutes({ ...routes, quick: { agent: 'shell', model: 'x', effort: null }, rigorous: { agent: 'codex', model: ' ', effort: 'xhigh' } }).quick, { agent: 'codex', model: null, effort: null });
-  assert.equal(collaborationRoutes({ rigorous: { agent: 'codex', model: null, effort: 'xhigh' } }).rigorous.effort, null, 'a Codex worker without a model inherits the task effort');
+  assert.equal(collaborationRoutes({ ...routes, quick: { agent: 'shell', model: 'x', effort: null } }).quick, null);
+  assert.equal(collaborationRoutes({ rigorous: { agent: 'codex', model: null, effort: 'xhigh' } }).rigorous?.effort, 'xhigh');
   assert.equal(validRoutes(routes), true);
-  assert.equal(validRoutes({ ...routes, polish: { agent: 'claude', model: null, effort: null } }), false);
+  assert.equal(validRoutes({ ...routes, polish: { agent: 'claude', model: null, effort: null } }), true);
+  assert.equal(validRoutes({ ...routes, quick: { agent: 'deepseek', model: 'flash', effort: null } }), true);
   assert.equal(validRoutes({ quick: routes.quick }), false);
   const instructions = workflowInstructions(collaborationRoutes({ ...routes, rigorous: { agent: 'codex', model: null, effort: null } }));
   assert.match(instructions, /quick: .*OpenCode \(opencode-go\/deepseek-v4\.1-flash, max reasoning effort\)/);
   assert.match(instructions, /polish: .*Antigravity \(gemini-4-argon, high reasoning effort\)/);
   assert.match(instructions, /rigorous: .*Codex \(the task's model\)/);
 });
-test('local ACP task agents remain selectable without becoming isolated collaboration workers', () => {
+test('all local ACP task agents are selectable and accepted as collaboration routes', () => {
   const ready: RuntimeStatus = { connected: true, authenticated: true, models: [], account: null, error: null };
   for (const agent of ['qoder', 'codebuddy', 'workbuddy'] as const) {
     const runtimes = { [agent]: ready }, offered = offeredAgents(runtimes);
     assert.deepEqual(offered, [agent]);
     assert.equal(chosenAgent(agent, offered, runtimes), agent);
     const saved = { ...routes, quick: { agent, model: 'selected-model', effort: 'high' } };
-    assert.equal(validRoutes(saved), false);
-    assert.deepEqual(collaborationRoutes(saved), { ...routes, quick: { agent: 'codex', model: null, effort: null } });
+    assert.equal(validRoutes(saved), true);
+    assert.deepEqual(collaborationRoutes(saved), saved);
   }
 });
 test('stopping a native helper closes its process and ignores late results', async () => {

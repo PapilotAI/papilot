@@ -1,5 +1,5 @@
 import type { GroupInstructions, NoteGroup } from './note-groups.ts';
-import type { SkillIcon } from './skill-icons.ts';
+import { isSkillIcon, type SkillIcon } from './skill-icons.ts';
 export type TaskStatus = 'preparing' | 'idle' | 'queued' | 'running' | 'waiting_input' | 'building' | 'reviewing' | 'interrupted' | 'failed' | 'uncertain' | 'deleting';
 export interface Project { id: string; name: string; path: string; createdAt: number }
 export const MAX_ATTACHMENTS = 10;
@@ -148,17 +148,54 @@ export interface NoteReturnState { returned: boolean; undoReturnAt?: number }
 export interface RemovedNoteReturn { id: string; projectId: string; createdAt: number; originalId: string }
 export interface NoteReturnReceipt extends NoteReturnState { key: string; annotation?: Annotation; removed?: RemovedNoteReturn; moved?: boolean }
 export interface NoteResult extends Partial<NoteReturnState> { key: string; itemId: string; index: number; note: NoteSummary; round: number | null; state: 'waiting' | 'unmatched' | 'matched'; changes: NoteChange[] }
-export interface NoteOption { id: string; label: string; reason?: string; previewError?: string; edits: { unit: string; text: string }[] }
+export interface NoteOptionEdit { unit: string; text: string; before?: number; after?: number }
+export interface NoteOptionMeta {
+  recommended?: boolean;
+  rigor?: 'pass' | 'warn' | 'fail';
+  lineDelta?: number;
+  consensus?: string[];
+  model?: string;
+  synthesized?: boolean;
+}
+export interface NoteOption { id: string; label: string; reason?: string; meta?: NoteOptionMeta; previewError?: string; edits: NoteOptionEdit[] }
 export const NOTE_ALTERNATIVE_RANGES = { few: [1, 2], balanced: [2, 3], many: [3, 5] } as const;
 export type NoteAlternativeRange = keyof typeof NOTE_ALTERNATIVE_RANGES;
 export const noteAlternativeRange = (value: unknown): NoteAlternativeRange => typeof value === 'string' && Object.hasOwn(NOTE_ALTERNATIVE_RANGES, value) ? value as NoteAlternativeRange : 'few';
 // The requested range is guidance. Keep useful responses outside it bounded.
 export const MAX_NOTE_ALTERNATIVES = 6;
-// Prepared by the editing agent in the same turn, before review-unit IDs exist.
-export interface PreparedNoteOptions { note: number; current: { label: string; reason: string }; options: { label: string; reason: string; edits: { file: string; find: string; replace: string }[] }[] }
+// Prepared by the editing agent or collaboration race in the same turn, before review-unit IDs exist.
+export interface PreparedNoteOptions { note: number; current: { label: string; reason: string; meta?: NoteOptionMeta }; options: { label: string; reason: string; meta?: NoteOptionMeta; edits: { file: string; find: string; replace: string }[] }[] }
 export interface NoteOptions { noteReturn?: NoteReturnState & { annotation?: Annotation; moved?: boolean }; before?: Record<string, string>; round: number; key: string; options: NoteOption[]; selected?: string; locked?: string; comparisonKey?: string }
+export interface CollaborationDispatchWorker {
+  itemId: string;
+  agent: CollaborationWorkerAgent;
+  model: string;
+}
+export interface CollaborationDispatchEntry {
+  clusterId: string;
+  notes: number[];
+  file: string;
+  laneId: string;
+  laneName: string;
+  laneIcon?: SkillIcon;
+  mode: 'assign' | 'race' | 'answer';
+  itemId: string;
+  workers: CollaborationDispatchWorker[];
+  judge?: CollaborationDispatchWorker;
+}
+export interface CollaborationDispatchMeta {
+  strategy: CollaborationStrategy;
+  router: { agent: CollaborationWorkerAgent; model: string };
+  entries: CollaborationDispatchEntry[];
+  reason?: string;
+}
+export interface CollaborationRaceResultMeta {
+  winnerModel: string;
+  winnerItemIds: string[];
+  synthesized?: boolean;
+}
 // request: the author's own overall request sent with notes, which the prompt otherwise only embeds.
-export interface MessageMeta { attachments?: Attachment[]; skill?: { id: string; name: string; icon?: SkillIcon }; notes?: NoteSummary[]; request?: string; groupInstructions?: GroupInstructions; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author }
+export interface MessageMeta { attachments?: Attachment[]; skill?: { id: string; name: string; icon?: SkillIcon }; notes?: NoteSummary[]; request?: string; groupInstructions?: GroupInstructions; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author; dispatch?: CollaborationDispatchMeta; raceResult?: CollaborationRaceResultMeta }
 // Historical attribution on messages and notes from older shared workspaces.
 export interface Author { id: string; name: string }
 // A failed review build as the engine reports it; log is the compiler log's path.
@@ -170,37 +207,172 @@ export type AgentId = 'papilot' | 'pi' | 'codex' | 'claude' | 'antigravity' | 'k
 // Every agent Papilot can drive, in menu order. Only the ones found on the host are offered.
 export const AGENT_IDS: AgentId[] = ['papilot', 'pi', 'codex', 'claude', 'cursor', 'copilot', 'grok', 'antigravity', 'kimi', 'glm', 'zcode', 'deepseek', 'qwen', 'opencode', 'qoder', 'codebuddy', 'workbuddy', 'collaboration'];
 export const AGENT_NAMES: Record<AgentId, string> = { papilot: 'Papilot Writer', pi: 'Pi', codex: 'Codex', claude: 'Claude', cursor: 'Cursor', copilot: 'Copilot', grok: 'Grok', antigravity: 'Antigravity', kimi: 'Kimi', glm: 'GLM', zcode: 'ZCode', deepseek: 'DeepSeek', qwen: 'Qwen', opencode: 'OpenCode', qoder: 'Qoder', codebuddy: 'CodeBuddy', workbuddy: 'WorkBuddy', collaboration: 'Collaboration mode' };
-export const usesCodex = (id: AgentId) => id === 'codex' || id === 'collaboration';
-// Collaboration mode: the coordinator sends each piece of work to the worker
-// configured for its role. A Codex worker without a model uses the task's.
+export const usesCodex = (id: AgentId) => id === 'codex';
+// Collaboration mode: a fast router assigns annotations to per-task lanes
+// (single-model direct execution or 2–4 model parallel racing), with a
+// rigorous judge selecting the default proposal and exposing alternatives inline.
+export type CollaborationStrategy = 'balanced' | 'fast' | 'thorough';
+export const COLLABORATION_STRATEGIES: CollaborationStrategy[] = ['balanced', 'fast', 'thorough'];
+export const isCollaborationStrategy = (value: unknown): value is CollaborationStrategy => typeof value === 'string' && COLLABORATION_STRATEGIES.includes(value as CollaborationStrategy);
 export type CollaborationRole = 'quick' | 'polish' | 'rigorous';
 export const COLLABORATION_ROLES: CollaborationRole[] = ['quick', 'polish', 'rigorous'];
-export type CollaborationWorkerAgent = 'codex' | 'antigravity' | 'opencode';
-export const COLLABORATION_WORKERS: CollaborationWorkerAgent[] = ['codex', 'antigravity', 'opencode'];
-export interface CollaborationRoute { agent: CollaborationWorkerAgent; model: string | null; effort: string | null }
-export type CollaborationRoutes = Record<CollaborationRole, CollaborationRoute>;
-export interface CollaborationSettings { enabled: boolean; routes: CollaborationRoutes }
-export const DEFAULT_COLLABORATION_ROUTE: CollaborationRoute = { agent: 'codex', model: null, effort: null };
-// A route update from a client: every role, a known worker, optional strings.
+export type BuiltinCollaborationLaneId = 'quick' | 'polish' | 'rigorous' | 'layout';
+export const BUILTIN_COLLABORATION_LANES: BuiltinCollaborationLaneId[] = ['quick', 'polish', 'rigorous', 'layout'];
+export const MAX_COLLABORATION_LANES = 8;
+export type CollaborationSlot = 'router' | CollaborationRole | 'judge';
+export type CollaborationWorkerAgent = Exclude<AgentId, 'collaboration'>;
+export const COLLABORATION_WORKERS: CollaborationWorkerAgent[] = AGENT_IDS.filter((id): id is CollaborationWorkerAgent => id !== 'collaboration');
+export interface CollaborationRoute { agent: CollaborationWorkerAgent; model: string | null; effort: string | null; serviceTier?: string | null }
+export type CollaborationRoutes = Record<CollaborationRole, CollaborationRoute | null>;
+export interface CollaborationLane {
+  id: string;
+  name: string;
+  description: string;
+  models: CollaborationRoute[];
+  icon?: SkillIcon;
+  custom?: boolean;
+}
+export const DEFAULT_COLLABORATION_LANE_DEFS: Record<BuiltinCollaborationLaneId, { name: string; description: string }> = {
+  quick: { name: 'Simple edits', description: 'Typos, punctuation, word swaps, and minor mechanical fixes' },
+  polish: { name: 'Prose & polish', description: 'Clarity, flow, conciseness, phrasing, and academic tone' },
+  rigorous: { name: 'Math & rigorous', description: 'Proofs, lemmas, typing rules, claims, citations, and technical correctness' },
+  layout: { name: 'Layout & LaTeX', description: 'Tables, figures, spacing, macros, formatting, and visual layout' },
+};
+export interface CollaborationResolved {
+  router: CollaborationRoute | null;
+  judge: CollaborationRoute | null;
+  routes: CollaborationRoutes;
+  racers: CollaborationRoute[];
+  lanes: CollaborationLane[];
+}
+export interface CollaborationConfig {
+  router: CollaborationRoute | null;
+  judge: CollaborationRoute | null;
+  routes: CollaborationRoutes;
+  racers: CollaborationRoute[];
+  lanes?: CollaborationLane[];
+}
+export interface CollaborationSettings extends CollaborationConfig {
+  enabled: boolean;
+  resolved?: CollaborationResolved;
+  readOnlyAgents?: Partial<Record<CollaborationWorkerAgent, boolean>>;
+}
+export const MAX_COLLABORATION_RACERS = 4;
+export const DEFAULT_COLLABORATION_CONFIG: CollaborationConfig = {
+  router: null,
+  judge: null,
+  routes: { quick: null, polish: null, rigorous: null },
+  racers: [],
+  lanes: [],
+};
+export function validRoute(value: unknown): value is CollaborationRoute {
+  if (!value || typeof value !== 'object') return false;
+  const route = value as Record<string, unknown>;
+  const optional = (field: unknown) => field === undefined || field === null || (typeof field === 'string' && field.length <= 300 && !field.includes('\0'));
+  return typeof route.agent === 'string' && COLLABORATION_WORKERS.includes(route.agent as CollaborationWorkerAgent)
+    && optional(route.model) && optional(route.effort) && optional(route.serviceTier);
+}
+export function normalizeRoute(value: unknown): CollaborationRoute | null {
+  if (!validRoute(value)) return null;
+  const text = (field: unknown) => typeof field === 'string' && field.trim() ? field.trim() : null;
+  const model = text(value.model), effort = text(value.effort), serviceTier = text(value.serviceTier);
+  return { agent: value.agent, model, effort, ...(value.agent === 'codex' && serviceTier && serviceTier !== 'default' ? { serviceTier } : {}) };
+}
+function dedupeRoutes(list: unknown[]): CollaborationRoute[] {
+  const seen = new Set<string>();
+  const out: CollaborationRoute[] = [];
+  for (const entry of list) {
+    const normalized = normalizeRoute(entry);
+    if (!normalized) continue;
+    const key = `${normalized.agent}\0${normalized.model || ''}\0${normalized.effort || ''}\0${normalized.serviceTier || ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(normalized);
+    if (out.length >= MAX_COLLABORATION_RACERS) break;
+  }
+  return out;
+}
+// A route update from a client: every role may be null (auto) or a valid route.
 export function validRoutes(value: unknown): value is CollaborationRoutes {
   if (!value || typeof value !== 'object') return false;
-  const optional = (field: unknown) => field === null || typeof field === 'string';
   return COLLABORATION_ROLES.every(role => {
-    const route = (value as Record<string, any>)[role];
-    return route && COLLABORATION_WORKERS.includes(route.agent) && optional(route.model) && optional(route.effort);
+    const route = (value as Record<string, unknown>)[role];
+    return route === null || validRoute(route);
   });
 }
-// Saved routes are validated field by field; anything else uses the default.
-export function collaborationRoutes(value: unknown): CollaborationRoutes {
-  const saved = value && typeof value === 'object' ? value as Record<string, any> : {};
+export function validRacers(value: unknown): value is CollaborationRoute[] {
+  return Array.isArray(value) && value.length <= MAX_COLLABORATION_RACERS && value.every(validRoute);
+}
+export const MAX_CUSTOM_COLLABORATION_LANES = MAX_COLLABORATION_LANES - BUILTIN_COLLABORATION_LANES.length;
+export function validLanes(value: unknown): value is CollaborationLane[] {
+  if (!Array.isArray(value) || value.length > MAX_COLLABORATION_LANES) return false;
+  const ids = new Set<string>();
+  let customCount = 0;
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') return false;
+    const lane = entry as Record<string, unknown>;
+    if (typeof lane.id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,39}$/.test(lane.id) || ids.has(lane.id)) return false;
+    ids.add(lane.id);
+    if (!(BUILTIN_COLLABORATION_LANES as string[]).includes(lane.id) && ++customCount > MAX_CUSTOM_COLLABORATION_LANES) return false;
+    if (typeof lane.name !== 'string' || !lane.name.trim() || lane.name.length > 60 || lane.name.includes('\0')) return false;
+    if (typeof lane.description !== 'string' || lane.description.length > 260 || lane.description.includes('\0')) return false;
+    if (lane.icon !== undefined && !isSkillIcon(lane.icon)) return false;
+    if (!validRacers(lane.models)) return false;
+  }
+  return true;
+}
+export function normalizeLanes(value: unknown): CollaborationLane[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: CollaborationLane[] = [];
+  let customCount = 0;
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue;
+    const lane = entry as Record<string, unknown>;
+    const rawId = typeof lane.id === 'string' ? lane.id.trim().toLowerCase() : '';
+    if (!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(rawId) || seen.has(rawId)) continue;
+    const builtin = (BUILTIN_COLLABORATION_LANES as string[]).includes(rawId);
+    if (!builtin && customCount >= MAX_CUSTOM_COLLABORATION_LANES) continue;
+    seen.add(rawId);
+    if (!builtin) customCount++;
+    const def = builtin ? DEFAULT_COLLABORATION_LANE_DEFS[rawId as BuiltinCollaborationLaneId] : null;
+    const name = typeof lane.name === 'string' && lane.name.trim() ? lane.name.trim().slice(0, 60) : (def?.name || rawId);
+    const description = typeof lane.description === 'string' ? lane.description.trim().slice(0, 260) : (def?.description || '');
+    const models = Array.isArray(lane.models) ? dedupeRoutes(lane.models) : [];
+    const icon = !builtin && isSkillIcon(lane.icon) ? lane.icon : undefined;
+    out.push({ id: rawId, name, description, models, ...(icon ? { icon } : {}), ...(!builtin ? { custom: true } : {}) });
+    if (out.length >= MAX_COLLABORATION_LANES) break;
+  }
+  return out;
+}
+// Saved routes are validated field by field; anything else falls back to auto (null).
+export function collaborationRoutes(value: unknown, legacy = false): CollaborationRoutes {
+  const saved = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   return Object.fromEntries(COLLABORATION_ROLES.map(role => {
-    const route = saved[role];
-    if (!route || !COLLABORATION_WORKERS.includes(route.agent)) return [role, DEFAULT_COLLABORATION_ROUTE];
-    const text = (field: unknown) => typeof field === 'string' && field.trim() ? field.trim() : null;
-    const model = text(route.model);
-    // Without a model, a Codex worker also uses the task's reasoning effort.
-    return [role, { agent: route.agent, model, effort: route.agent === 'codex' && !model ? null : text(route.effort) }];
+    const normalized = normalizeRoute(saved[role]);
+    // Legacy v1 stored `{ agent: 'codex', model: null, effort: null }` as its
+    // untouched default. Treat that as Auto so v1 users are not locked to Codex.
+    if (legacy && normalized && normalized.agent === 'codex' && !normalized.model && !normalized.effort && !normalized.serviceTier) return [role, null];
+    return [role, normalized];
   })) as CollaborationRoutes;
+}
+export function collaborationConfig(value: unknown, legacyRoutes?: unknown): CollaborationConfig {
+  if (value && typeof value === 'object') {
+    const saved = value as Record<string, unknown>;
+    const racers = Array.isArray(saved.racers) ? dedupeRoutes(saved.racers) : [];
+    const lanes = normalizeLanes(saved.lanes);
+    return {
+      router: normalizeRoute(saved.router),
+      judge: normalizeRoute(saved.judge),
+      routes: collaborationRoutes(saved.routes),
+      racers,
+      lanes,
+    };
+  }
+  if (legacyRoutes && typeof legacyRoutes === 'object') {
+    return { ...DEFAULT_COLLABORATION_CONFIG, routes: collaborationRoutes(legacyRoutes, true), lanes: [] };
+  }
+  return { ...DEFAULT_COLLABORATION_CONFIG, routes: { ...DEFAULT_COLLABORATION_CONFIG.routes }, racers: [], lanes: [] };
 }
 // Papilot Writer's providers: subscriptions it signs in to, and API keys
 // stored by Papilot or read from the environment.

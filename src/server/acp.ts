@@ -266,6 +266,23 @@ export class AcpAgent extends Adapter {
   protected account() { return { account: this.ready ? { type: `Local ${this.name} configuration` } : null, requiresOpenaiAuth: !this.ready }; }
   protected models() { return { data: this.catalog }; }
 
+  async closeThread(threadId: string) {
+    if ([...this.live.values()].some(entry => entry.turn.threadId === threadId)) return;
+    const had = this.sessions.delete(threadId);
+    if (had && this.ready && this.child) {
+      const caps = this.capabilities.sessionCapabilities || {};
+      const cleanup = caps.delete ? this.rpc('session/delete', { sessionId: threadId })
+        : caps.close ? this.rpc('session/close', { sessionId: threadId }) : null;
+      if (cleanup) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          cleanup.catch(() => {}),
+          new Promise<void>(resolve => { timer = setTimeout(resolve, 3000); timer.unref(); }),
+        ]).finally(() => clearTimeout(timer));
+      }
+    }
+    await super.closeThread(threadId);
+  }
   // A replacement process resumes native history, but a locally known session
   // may never have received its first prompt or Papilot's initial instructions.
   inheritThread(threadId: string, previous: AcpAgent) {
@@ -551,8 +568,13 @@ export class AcpAgent extends Adapter {
         questions: [{ id: 'choice', question: asked || tool.title || `${this.name} needs your input.`, isOther: false, options: options.filter((option: any) => option.kind === 'allow_once' || option.kind === 'reject_once').map((option: any) => ({ label: option.name || option.optionId })) }] } });
       return;
     }
+    const paths = [
+      ...(Array.isArray(tool.locations) ? tool.locations.map((loc: any) => loc?.path).filter((p: unknown): p is string => typeof p === 'string' && Boolean(p.trim())) : []),
+      ...(typeof tool.rawInput?.file_path === 'string' && tool.rawInput.file_path.trim() ? [tool.rawInput.file_path] : []),
+      ...(typeof tool.rawInput?.path === 'string' && tool.rawInput.path.trim() ? [tool.rawInput.path] : []),
+    ];
     this.emit('request', { id, method: edit ? 'item/fileChange/requestApproval' : 'item/commandExecution/requestApproval',
-      params: { threadId: live.turn.threadId, turnId: live.turn.id, reason: tool.title || `${this.name} requests permission.`, command: tool.rawInput?.command || (edit && file ? `Edit ${file}` : tool.title || `${this.name} tool`) } });
+      params: { threadId: live.turn.threadId, turnId: live.turn.id, reason: tool.title || `${this.name} requests permission.`, command: tool.rawInput?.command || (edit && file ? `Edit ${file}` : tool.title || `${this.name} tool`), ...(edit && paths.length ? { paths: [...new Set(paths)] } : {}) } });
   }
   respond(id: string | number, result: any) {
     const wait = this.approvals.get(String(id));

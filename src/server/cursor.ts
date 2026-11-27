@@ -103,7 +103,7 @@ export class CursorAgent extends Adapter {
     if (effort && !parameter?.values.some(value => value.value === effort)) throw new Error(`Cursor does not support reasoning effort ${effort} for this model.`);
     return { id, ...(effort && parameter ? { params: [{ id: parameter.id, value: effort }] } : {}) };
   }
-  private async agent(threadId: string, cwd: string, model: ModelSelection | undefined, sandbox: boolean) {
+  private async agent(threadId: string, cwd: string, model: ModelSelection | undefined, sandbox: boolean, ephemeral = false) {
     const known = this.agents.get(threadId);
     if (known && this.sandboxed.get(threadId) === sandbox) return known;
     // Sandbox options belong to the SDK handle. Resume the same conversation
@@ -111,9 +111,10 @@ export class CursorAgent extends Adapter {
     if (known) { known.close(); this.agents.delete(threadId); this.sandboxed.delete(threadId); }
     const sdk = await this.load();
     const options: AgentOptions = { local: { cwd, settingSources: ['project'], sandboxOptions: { enabled: sandbox } } };
-    const id = this.ids[threadId];
+    const id = ephemeral ? undefined : this.ids[threadId];
     const agent = id ? await sdk.Agent.resume(id, options) : await sdk.Agent.create({ ...options, name: 'Papilot task', ...(model ? { model } : {}) });
-    if (!id) { this.ids[threadId] = agent.agentId; this.save(); }
+    if (!this.ready) { agent.close(); throw new Error('Cursor session closed.'); }
+    if (!id && !ephemeral) { this.ids[threadId] = agent.agentId; this.save(); }
     this.agents.set(threadId, agent);
     this.sandboxed.set(threadId, sandbox);
     return agent;
@@ -130,7 +131,7 @@ export class CursorAgent extends Adapter {
     };
     try {
       const model = this.selection(thread.model, effort);
-      const agent = await this.agent(turn.threadId, thread.cwd, model, Boolean(thread.readOnly) || thread.permissions !== 'full');
+      const agent = await this.agent(turn.threadId, thread.cwd, model, Boolean(thread.readOnly) || thread.permissions !== 'full', Boolean(thread.ephemeral));
       // Cursor's harness prompt stays in place: the first turn carries Papilot's instructions.
       const prompt = thread.started ? text : `${thread.instructions}\n\n---\n\n${text}`;
       const attached = await Promise.all(images.map(async file => {
@@ -179,6 +180,11 @@ export class CursorAgent extends Adapter {
   }
   private save() {
     try { fs.mkdirSync(path.dirname(this.file), { recursive: true }); fs.writeFileSync(this.file, JSON.stringify(this.ids)); } catch { /* A later turn starts a new agent. */ }
+  }
+  async closeThread(threadId: string) {
+    const agent = this.agents.get(threadId);
+    if (agent) { try { agent.close(); } catch { /* Already closed. */ } this.agents.delete(threadId); this.sandboxed.delete(threadId); }
+    await super.closeThread(threadId);
   }
   close() {
     super.close();

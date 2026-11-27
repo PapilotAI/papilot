@@ -49,7 +49,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
   const { choice } = useLanguage();
   const indirectChanges = useIndirectChanges();
   const advancedGit = useAdvancedGit();
-  const gitAgents = diagnostics ? offeredAgents(diagnostics.runtimes).map(value => ({ value, label: agentLabel(value), runtime: diagnostics.runtimes[value] })) : modelDefaults.agents;
+  const gitAgents = (diagnostics ? offeredAgents(diagnostics.runtimes).map(value => ({ value, label: agentLabel(value), runtime: diagnostics.runtimes[value] })) : modelDefaults.agents).filter(item => item.value !== 'collaboration');
   const commitLanguage = useCommitMessageLanguage();
   useEffect(loadIndirectChanges, []);
   useEffect(loadNoteAlternatives, []);

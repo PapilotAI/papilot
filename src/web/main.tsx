@@ -12,7 +12,7 @@ import { ClearAnnotationsDialog } from './clear-annotations-dialog.tsx';
 import { useGroupInstructions, type GroupDraftChange } from './group-instructions.ts';
 import { markText, NoteQuote, SubmittedNoteContent } from './note-content.tsx';
 import { NoteAttachButton, NoteEditButton, PdfNoteCard, TaskRemoveButton } from './pdf-suggestion.tsx';
-import { StrictMode, Suspense, lazy, memo, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, StrictMode, Suspense, lazy, memo, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal, flushSync } from 'react-dom';
 import { readNotesInstructions, type NoteSummary } from '../notes.ts';
@@ -41,7 +41,8 @@ import { BulkTaskDialog, type BulkTaskAction } from './bulk-task-dialog.tsx';
 import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
 import { BrandIcon } from './brand-icon.tsx';
-import { toolIcon, toolNote, toolSentence, toolSummary } from './tool-calls.ts';
+import { toolIcon, toolNote, toolSentence, toolSummary, workflowKind } from './tool-calls.ts';
+import { CollaborationDispatchCard } from './collaboration-dispatch.tsx';
 import { ContextMeter } from './context-meter.tsx';
 import { ChangeSummary, FileDiffs } from './file-changes.tsx';
 import { UpdateNotice, versionLabel } from './update-notice.tsx';
@@ -334,11 +335,11 @@ function toolLabel(item: TimelineItem, root: string) {
 // One worker in Collaboration mode can be stopped; the coordinator does its work instead.
 function StopWorker({ item }: { item: TimelineItem }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
-  async function stop() { setBusy(true); setError(''); try { await api(`/tasks/${encodeURIComponent(item.taskId)}/workers/stop`, { item: item.id }); } catch (e) { setError((e as Error).message); setBusy(false); } }
-  return <div className="worker-stop"><button type="button" className="button secondary compact" disabled={busy} onClick={() => void stop()}>{t('Stop worker')}</button>{error && <p className="inline-error" role="alert">{error}</p>}</div>;
+  async function stop() { setBusy(true); setError(''); try { await api(`/tasks/${encodeURIComponent(item.taskId)}/workers/stop`, { item: item.id }); } catch (e) { setError(errorText(e instanceof Error ? e.message : String(e))); setBusy(false); } }
+  return <div className="worker-stop"><button type="button" className="button secondary compact" aria-description={item.text} disabled={busy} onClick={() => void stop()}>{t('Stop worker')}</button>{error && <p className="inline-error" role="alert">{error}</p>}</div>;
 }
 
-const TimelineEntry = memo(function TimelineEntry({ item, agent, root, pages = true, steps }: { item: TimelineItem; agent: string; root: string; pages?: boolean; steps?: TimelineItem[] }) {
+const TimelineEntry = memo(function TimelineEntry({ item, agent, root, pages = true, steps, allSteps, depth = 0 }: { item: TimelineItem; agent: string; root: string; pages?: boolean; steps?: TimelineItem[]; allSteps?: Map<string, TimelineItem[]>; depth?: number }) {
   // Memoized, so it follows a language change itself rather than through App.
   useLanguage();
   if (PlaygroundProgress && item.type === 'demo-progress') return <Suspense fallback={null}><PlaygroundProgress item={item}/></Suspense>;
@@ -348,17 +349,21 @@ const TimelineEntry = memo(function TimelineEntry({ item, agent, root, pages = t
   const label = toolLabel(item, root);
   const detail = item.type === 'files' ? null : item.detail;
   const state = toolState(item);
-  // A running worker's latest step shows on its delegation line, as with a subagent.
-  const latest = state === 'running' ? steps?.findLast(step => step.type !== 'assistant') : undefined;
+  // A running worker's latest active step shows on its delegation line, as with a subagent.
+  const latest = state === 'running'
+    ? (steps?.findLast(step => step.type !== 'assistant' && toolState(step) === 'running') ?? steps?.findLast(step => step.type !== 'assistant'))
+    : undefined;
   const note = latest ? toolLabel(latest, root) : toolNote(item);
-  const delegation = item.type === 'tool' && item.text.startsWith('workflow_delegate');
-  const row = <details className={'tool-item ' + state} data-kind={item.type === 'tool' ? item.tool?.kind || 'tool' : item.type}><summary><Icon name={toolIcon(item)} size={14}/><span className="tool-label">{label}{note && <span className="tool-note">{note}</span>}</span>{state === 'running' ? <span className="spinner" aria-label={t('Running')}/> : state && <span className="tool-status">{item.status === 'declined' ? t('Declined') : state === 'stopped' ? t('Stopped') : t('Failed')}</span>}</summary>
+  const wfKind = workflowKind(item);
+  const isWorkflowRow = wfKind === 'workflow_delegate' || wfKind === 'workflow_race' || wfKind === 'workflow_racer';
+  const stoppable = wfKind === 'workflow_delegate' || wfKind === 'workflow_racer';
+  const row = <details className={'tool-item ' + state} data-kind={item.type === 'tool' ? item.tool?.kind || 'tool' : item.type} data-workflow={wfKind || undefined}><summary><Icon name={toolIcon(item)} size={14}/><span className="tool-label">{label}{note && <span className="tool-note">{note}</span>}</span>{state === 'running' ? <span className="spinner" aria-label={t('Running')}/> : state && <span className="tool-status">{item.status === 'declined' ? t('Declined') : state === 'stopped' ? t('Stopped') : t('Failed')}</span>}</summary>
     {item.type === 'files' ? <FileDiffs changes={item.changes} files={files}/> : detail && <pre>{detail}</pre>}
-    {steps?.length ? <div className="tool-group-items worker-steps">{steps.map(step => step.type === 'assistant'
+    {steps?.length && depth < 3 ? <div className="tool-group-items worker-steps">{steps.map(step => step.type === 'assistant'
       ? <div key={step.id} className="worker-message markdown"><Markdown text={step.text}/></div>
-      : <TimelineEntry key={step.id} item={step} agent={agent} root={root} pages={false}/>)}</div> : null}
-    {delegation && item.changes?.length ? <FileDiffs changes={item.changes} files={item.changes.map(change => change.path)}/> : null}
-    {delegation && state === 'running' && <StopWorker item={item}/>}
+      : <TimelineEntry key={step.id} item={step} agent={agent} root={root} pages={false} steps={allSteps?.get(step.id)} allSteps={allSteps?.get(step.id)?.some(child => allSteps.has(child.id)) ? allSteps : undefined} depth={depth + 1}/>)}</div> : null}
+    {isWorkflowRow && item.changes?.length ? <FileDiffs changes={item.changes} files={item.changes.map(change => change.path)}/> : null}
+    {stoppable && state === 'running' && <StopWorker item={item}/>}
   </details>;
   return pages && item.pages?.length ? <>{row}<PageStrip items={[item]}/></> : row;
 });
@@ -370,7 +375,11 @@ function ToolGroup({ items, agent, root, steps }: { items: TimelineItem[]; agent
   const summary = toolSummary(items, item => editedFiles(item, root));
   const running = items.some(item => toolState(item) === 'running'), failed = items.filter(item => toolState(item) === 'failed').length;
   return <><details className="tool-group"><summary><Icon name={summary.icon} size={14}/><span className="tool-group-label">{summary.text}</span>{running ? <span className="spinner" aria-label={t('Running')}/> : failed ? <span className="tool-status">{t('{n} failed', { n: failed })}</span> : null}<Icon name="chevronDown" size={13}/></summary>
-    <div className="tool-group-items">{items.map(item => <TimelineEntry key={item.id} item={item} agent={agent} root={root} pages={false} steps={steps.get(item.id)}/>)}</div>
+    <div className="tool-group-items">{items.map(item => {
+      const childSteps = steps.get(item.id);
+      const hasNested = Boolean(childSteps?.some(child => steps.has(child.id)));
+      return <TimelineEntry key={item.id} item={item} agent={agent} root={root} pages={false} steps={childSteps} allSteps={hasNested ? steps : undefined}/>;
+    })}</div>
   </details><PageStrip items={items}/></>;
 }
 
@@ -453,11 +462,36 @@ function Activity({ runtimes, relatedTasks, onOpenTask, source, onRevealQuote, t
     for (const item of items) if (nested(item)) { const list = steps.get(item.parent!); if (list) list.push(item); else steps.set(item.parent!, [item]); }
     return timelineEntries(visibleTimeline(items).filter(item => item.type !== 'reviewOutput' && !nested(item)).map(item => review && item.type === 'assistant' ? { ...item, text: aiReviewSummary(item.text) } : item))
     .flatMap((entry, index, all) => {
-      const shown = entry.length > 1 ? <ToolGroup key={entry[0].id} items={entry} agent={agent} root={root} steps={steps}/> : <TimelineEntry key={entry[0].id} item={entry[0]} agent={agent} root={root} steps={steps.get(entry[0].id)}/>;
+      const childSteps = steps.get(entry[0].id);
+      const hasNested = Boolean(childSteps?.some(child => steps.has(child.id)));
+      const hasDispatch = entry.some(item => workflowKind(item) === 'workflow_route');
+      let turnUserId: string | undefined;
+      if (hasDispatch) {
+        for (let i = index - 1; i >= 0; i--) {
+          if (all[i][0].type === 'user') { turnUserId = all[i][0].id; break; }
+        }
+      }
+      const shown = hasDispatch
+        ? <Fragment key={entry[0].id}>
+            <CollaborationDispatchCard
+              items={entry}
+              steps={steps}
+              turnUserId={turnUserId}
+              renderItem={item => {
+                const itemSteps = steps.get(item.id);
+                const itemNested = Boolean(itemSteps?.some(child => steps.has(child.id)));
+                return <TimelineEntry key={item.id} item={item} agent={agent} root={root} pages={false} steps={itemSteps} allSteps={itemNested ? steps : undefined}/>;
+              }}
+            />
+            <PageStrip items={entry}/>
+          </Fragment>
+        : entry.length > 1
+          ? <ToolGroup key={entry[0].id} items={entry} agent={agent} root={root} steps={steps}/>
+          : <TimelineEntry key={entry[0].id} item={entry[0]} agent={agent} root={root} steps={childSteps} allSteps={hasNested ? steps : undefined}/>;
       // A finished turn that changed files ends with where it changed the paper.
       const turn = turnOf(entry[0]), next = all[index + 1];
       if (!turn || (next && (next[0].type !== 'user' && turnOf(next[0]) === turn)) || (!next && active)) return [shown];
-      const edits = all.filter(other => turnOf(other[0]) === turn).flat().filter(item => item.type === 'files' && item.changes?.length);
+      const edits = all.filter(other => turnOf(other[0]) === turn).flat().filter(item => (item.type === 'files' || (item.type === 'tool' && (item.text.startsWith('workflow_delegate') || item.text.startsWith('workflow_race')))) && item.changes?.length);
       return edits.length ? [shown, <ChangeSummary key={turn + ':changes'} items={edits}/>] : [shown];
     });
   }, [items, review, agent, root, active]);
@@ -1774,7 +1808,7 @@ function App() {
   }
   const defaultSelection = modelSelection(defaultAgent);
   const { agent, pref } = agentChoice === defaultAgent ? defaultSelection : modelSelection(agentChoice);
-  const readOnlyAgents = taskAgents.filter(id => runtimes[id]?.supportsReadOnlyTasks !== false);
+  const readOnlyAgents = taskAgents.filter(id => id !== 'collaboration' && runtimes[id]?.supportsReadOnlyTasks !== false);
   // A read-only helper follows the editing choice when that runtime supports
   // it. Otherwise use an available read-only agent and its own model default.
   function readOnlyChoice(choice: CommitMessageChoice): CommitMessageChoice | undefined {
@@ -1790,10 +1824,17 @@ function App() {
     const serviceTier = effectiveServiceTier(model, choice.serviceTier);
     return serviceTier === choice.serviceTier ? choice : { ...choice, serviceTier };
   }
-  const conversationHelper = commitContext ? effectiveGitChoice({
-    agent: commitContext.agent || 'codex', model: commitContext.model || '', effort: commitContext.effort || '',
-    ...(commitContext.serviceTier ? { serviceTier: commitContext.serviceTier } : {}),
-  }) : defaultSelection.agent;
+  const fallbackGitAgent = taskAgents.find(id => id !== 'collaboration') || 'codex';
+  const conversationHelper = commitContext
+    ? commitContext.agent === 'collaboration'
+      ? { agent: fallbackGitAgent, model: '', effort: '' }
+      : effectiveGitChoice({
+          agent: commitContext.agent || fallbackGitAgent, model: commitContext.model || '', effort: commitContext.effort || '',
+          ...(commitContext.serviceTier ? { serviceTier: commitContext.serviceTier } : {}),
+        })
+    : defaultSelection.agent.agent === 'collaboration'
+      ? { agent: fallbackGitAgent, model: '', effort: '' }
+      : defaultSelection.agent;
   const commitWriter = commitPreference === 'conversation' ? readOnlyChoice(conversationHelper)
     : runtimes[commitPreference.agent]?.supportsReadOnlyTasks === false ? undefined : effectiveGitChoice(commitPreference);
   const diagnosisAgent = readOnlyChoice(defaultSelection.agent);

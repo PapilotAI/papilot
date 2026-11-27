@@ -2,7 +2,7 @@ import { PaperTools, searchPaper } from './paper-tools.ts';
 import { buildActivityReport, type ActivityEventRow } from './activity.ts';
 import { canonicalGroup, isNoteGroup, regroupAnnotation, sameAnnotationGroup } from '../note-groups.ts';
 import { isCommitMessageLanguage, type CommitMessageLanguage } from '../commit.ts';
-import { noteAlternativeRange, NOTE_ALTERNATIVE_RANGES, validRoutes, taskFinished, type InFlightMark } from '../shared.ts';
+import { AGENT_NAMES, noteAlternativeRange, NOTE_ALTERNATIVE_RANGES, validLanes, validRacers, validRoute, validRoutes, taskFinished, type CollaborationRoute, type InFlightMark } from '../shared.ts';
 import Fastify from 'fastify';
 import compress from '@fastify/compress';
 import { registerImportUpload } from './import-upload.ts';
@@ -408,11 +408,32 @@ export async function buildApp(options: AppOptions) {
   });
   app.get('/api/collaboration', () => workspace.collaborationSettings());
   app.post('/api/collaboration', (request, reply) => {
-    const { enabled, routes } = (request.body as any) || {};
-    if (enabled === undefined && routes === undefined) return reply.code(400).send({ error: 'Send enabled or routes.' });
+    const { enabled, router, judge, routes, racers, lanes, reset } = (request.body as any) || {};
+    if (enabled === undefined && router === undefined && judge === undefined && routes === undefined && racers === undefined && lanes === undefined && reset !== true) {
+      return reply.code(400).send({ error: 'Send collaboration settings to update.' });
+    }
     if (enabled !== undefined && typeof enabled !== 'boolean') return reply.code(400).send({ error: 'Send enabled as true or false.' });
+    if (router !== undefined && router !== null && !validRoute(router)) return reply.code(400).send({ error: 'Choose a valid router model.' });
+    if (judge !== undefined && judge !== null && !validRoute(judge)) return reply.code(400).send({ error: 'Choose a valid judge model.' });
     if (routes !== undefined && !validRoutes(routes)) return reply.code(400).send({ error: 'Choose a supported worker for each collaboration role.' });
-    if (routes !== undefined) workspace.setCollaborationRoutes(routes);
+    if (racers !== undefined && !validRacers(racers)) return reply.code(400).send({ error: 'Choose up to four supported models for the race pool.' });
+    if (lanes !== undefined && !validLanes(lanes)) return reply.code(400).send({ error: 'Configure valid task lanes with up to four models each.' });
+    const checkReadOnly = (slot: string, route: CollaborationRoute | null | undefined) => {
+      if (route && !workspace.supportsReadOnlyAgent(route.agent)) return `${AGENT_NAMES[route.agent]} does not support read-only ${slot} tasks. Choose another agent.`;
+      return null;
+    };
+    const roError = checkReadOnly('routing', router) || checkReadOnly('judging', judge);
+    if (roError) return reply.code(400).send({ error: roError });
+    if (reset === true) workspace.resetCollaborationConfig();
+    if (router !== undefined || judge !== undefined || routes !== undefined || racers !== undefined || lanes !== undefined) {
+      workspace.setCollaborationConfig({
+        ...(router !== undefined ? { router } : {}),
+        ...(judge !== undefined ? { judge } : {}),
+        ...(routes !== undefined ? { routes } : {}),
+        ...(racers !== undefined ? { racers } : {}),
+        ...(lanes !== undefined ? { lanes } : {}),
+      });
+    }
     if (enabled !== undefined) workspace.setCollaborationEnabled(enabled);
     return workspace.collaborationSettings();
   });

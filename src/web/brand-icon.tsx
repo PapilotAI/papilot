@@ -27,14 +27,16 @@ import overleaf from './brand-icons/overleaf.svg';
 import github from './brand-icons/github.svg';
 import zotero from './brand-icons/zotero.svg';
 import { PapilotMark } from './papilot-mark.tsx';
+import { Icon } from './icons.tsx';
 import './brand-icon.css';
 
-const marks = { collaboration: codex, papilot, pi, codex, claude, cursor, copilot, grok, antigravity, kimi, glm, zcode, deepseek, qwen, opencode, qoder, codebuddy, workbuddy, git, latex, openai, gemini, openrouter, mistral, arxiv, overleaf, github, zotero };
+const marks = { collaboration: papilot, papilot, pi, codex, claude, cursor, copilot, grok, antigravity, kimi, glm, zcode, deepseek, qwen, opencode, qoder, codebuddy, workbuddy, git, latex, openai, gemini, openrouter, mistral, arxiv, overleaf, github, zotero };
 export type Brand = keyof typeof marks;
 
 // Decorative beside a visible name. Local assets work offline and inherit theme colors.
 export function BrandIcon({ name, size = 24 }: { name: Brand; size?: number }) {
-  // Papilot Writer is Papilot's own agent: it shows the app's mark in its colours.
+  // Papilot Writer uses Papilot's own mark in full colour; Collaboration mode uses a workflow mark.
   if (name === 'papilot') return <PapilotMark size={size} className="brand-icon"/>;
+  if (name === 'collaboration') return <span className="brand-icon brand-icon-svg" data-brand={name} aria-hidden="true" style={{ width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="workflow" size={size}/></span>;
   return <i className="brand-icon" data-brand={name} aria-hidden="true" style={{ '--brand-image': `url("${marks[name]}")`, width: size, height: size } as CSSProperties}/>;
 }

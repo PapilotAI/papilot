@@ -403,6 +403,12 @@ export class WriterAgent extends Adapter {
     });
   }
 
+  async closeThread(threadId: string) {
+    const live = this.live.get(threadId);
+    if (live) { try { live.session.dispose(); } catch { /* Already closed. */ } this.live.delete(threadId); }
+    await super.closeThread(threadId);
+  }
+
   close() {
     super.close();
     for (const id of [...this.waits.keys()]) this.reject(id, 'Papilot is closing.');
