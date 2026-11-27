@@ -42,3 +42,5 @@ Native strings use `src/i18n.ts` and `package.nls.json`. The shared i18n command
 Set `PAPILOT_TEST_VSIX` to test the packaged extension on older editors such as VS Code 1.96.4. Running the test from the source checkout uses the editor's Node.js, which must be 22.22 or newer. The test opens two papers, edits LaTeX in the native editor, checks diagnostics and PDF navigation, renders the conversation sidebar, and stages a reviewed change in Git. It makes no live agent calls. `PAPILOT_HOST_INSPECT=1` keeps its temporary directory and screenshots.
 
 Package with an official Node.js distribution (22.22 or newer). The platform-specific VSIX includes that Node executable and Papilot's production dependencies. Install it with **Extensions: Install from VSIX…**. For Remote SSH, use a VSIX for the workspace host's OS and architecture.
+
+The [CI workflow](../.github/workflows/ci.yml) builds the VSIX on native runners. Download the `vscode-extension-<target>` artifact from a successful run for `darwin-arm64`, `darwin-x64`, `linux-x64`, or `win32-x64`. Use packages from the same run for a Marketplace release.
