@@ -115,7 +115,8 @@ export function AgentPicker({ label, agents, agent, model, effort, serviceTier, 
   const runtime = current?.runtime, models = runtime?.models || [];
   const selected = model ? models.find(item => item.id === model) : models.find(item => item.isDefault);
   const agentName = current?.label || agent;
-  const modelName = selected?.name || model || t('Default model');
+  const modelDisplayName = (agentId: AgentId, item?: { id: string; name: string }, label?: string) => agentId === 'chatgpt' && item?.id === 'chatgpt-pro' && label ? label : item?.name;
+  const modelName = modelDisplayName(agent, selected, agentName) || model || t('Default model');
   const currentEffort = effort || selected?.defaultEffort;
   const tiers = agent === 'codex' && serviceTier !== undefined ? selected?.serviceTiers : undefined;
   const speed = modelServiceTier(selected, serviceTier);
@@ -128,7 +129,7 @@ export function AgentPicker({ label, agents, agent, model, effort, serviceTier, 
     const list = option.runtime?.models || [];
     return [
       ...((option.allowUnknownDefault ?? allowUnknownDefault) && !list.some(item => item.isDefault) ? [{ key: `${option.value}\n`, agent: option, model: '', name: t('Default model'), isDefault: false, recent: false }] : []),
-      ...shownModels(option.runtime, option.value === agent ? model : undefined).map(item => ({ key: `${option.value}\n${item.id}`, agent: option, model: item.id, name: item.name, source: item.source, isDefault: item.isDefault, recent: false })),
+      ...shownModels(option.runtime, option.value === agent ? model : undefined).map(item => ({ key: `${option.value}\n${item.id}`, agent: option, model: item.id, name: modelDisplayName(option.value, item, option.label) || item.name, source: item.source, isDefault: item.isDefault, recent: false })),
     ];
   };
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
@@ -191,7 +192,8 @@ export function AgentPicker({ label, agents, agent, model, effort, serviceTier, 
   }
   const renderChoice = (choice: Choice) => {
     const chosen = isSelected(choice), state = agentState(choice.agent.runtime);
-    return <div key={choice.key} id={`${id}-${choice.key.replace(/\W/g, '_')}`} data-key={choice.key} role="option" aria-selected={chosen} aria-label={[choice.name, choice.source, choice.agent.label].filter(Boolean).join(' · ')}
+    const optionLabel = [choice.name, choice.source, choice.agent.label].filter((part, index, all) => part && all.indexOf(part) === index).join(' · ');
+    return <div key={choice.key} id={`${id}-${choice.key.replace(/\W/g, '_')}`} data-key={choice.key} role="option" aria-selected={chosen} aria-label={optionLabel}
       className={'model-option' + (choice.key === active ? ' active' : '')} onPointerMove={() => setActive(choice.key)} onClick={() => choose(choice)}>
       {choice.recent && <BrandIcon name={choice.agent.value} size={15}/>}<span className="model-option-name">{choice.name}</span>
       {choice.isDefault && !choice.recent && <small className="model-option-tag">{t('Default')}</small>}

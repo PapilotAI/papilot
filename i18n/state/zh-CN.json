@@ -4,6 +4,11 @@
     "textHash": "6c4ab6383f85aa325948445d5217c1010164679afea0ebb4d4c444fb6af515c4",
     "model": "gemini-4-argon-medium"
   },
+  "A connected local agent applies ChatGPT Pro’s suggestions to your manuscript.": {
+    "revision": "40f01af57ac3ee57228024a4256c5a309c25083cb54bbdc827b27ce98aa2250b",
+    "textHash": "daa3b12b3d05b2630ae2661f038f173871695ffb8004059554b617e0921ed949",
+    "model": "gemini-4-argon-medium"
+  },
   "Add PDF": {
     "revision": "0b88621b365ba6268b1f9bd9f9ff813056d629c4872475c8960c30fa9bfcbf0b",
     "textHash": "5b62b44860a6ee5cbd2c075724b6965e4a844ee41b33d289538b4e28e4826a94",
@@ -69,6 +74,11 @@
     "textHash": "34a917cd44b00b9d23b7377e0bffead29a1e75762a0eac51569e59fce678f166",
     "model": "gemini-4-argon-medium"
   },
+  "Applies ChatGPT Pro’s reply to the manuscript and prepares the PDF comparison. Automatic uses your first connected local agent.": {
+    "revision": "ba062b2f071df44ce5cbfde40048cecd5b14bfe970f3bba9449d928f97e3cc10",
+    "textHash": "12dcbb6333af224f980d3e7ccd4633aca1737fbc6c3b6b769bbbe2cf0cfc003d",
+    "model": "gemini-4-argon-medium"
+  },
   "Archive all": {
     "revision": "96f1107c9ab67e0e1c675157dd05ff42ce1b54458fb5541a510cd56f5446a3d9",
     "textHash": "cb7aa46a18d279ea378f81cedf3e2ee7ae2cd6636a8b701e1efcd589287ff4b9",
@@ -110,7 +120,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Automatic": {
-    "revision": "81897b5efb0424fc670ca3246bbb70b36eacc165ef2f6ab63b64b0b1a765e039",
+    "revision": "3a95e9133722a02163c3079bae330166886e669dfcaf19a6ce5f5e7b8e967ffa",
     "textHash": "7eb336e42cb5076b0eac0305418ecd8ff2833ad84645aedbe0d315ac017c798b",
     "model": "gemini-4-argon-medium"
   },
@@ -162,6 +172,16 @@
   "Change project…": {
     "revision": "25e1c8688c6b9a5814567640a8efe036c59a06347ba986510a1ca63b54c21f8c",
     "textHash": "b9ff74e3c537340655cf5fe881386f0dc8b17e84409e82ef4b85e2df1ebdcc0e",
+    "model": "gemini-4-argon-medium"
+  },
+  "ChatGPT Pro (web)": {
+    "revision": "3c05c7bcc4d5f652be68dcbb387fb286a8c9f6aaeb6cb0584a78fd5b3fa46547",
+    "textHash": "fd717b8f3584567b563cf2de9f904f02bed1155f3345ec2978464ae0fcb9ddc0",
+    "model": "gemini-4-argon-medium"
+  },
+  "ChatGPT Pro (web) runs manually through chat.": {
+    "revision": "1caf535a68a5b60b8f942eb6047888603a3a66326e231e991cf0b2d29e192a23",
+    "textHash": "52558c5d64c4fa56d9bbce94c8b9151e9ffe500ea039bbf14e2b58a2a3c73ebe",
     "model": "gemini-4-argon-medium"
   },
   "Check": {
@@ -269,6 +289,11 @@
     "textHash": "c2cad342cda99ca274103f00d6dd68b0b5daf2e0a5868ea53caeaca08ce8c330",
     "model": "manual"
   },
+  "Connect a local agent in Settings → Agents to apply replies.": {
+    "revision": "d019a19b447e112842e5187ae1a13fc55399b186af511fe89bc7d553706ba14a",
+    "textHash": "b9401fcb242f0428305c309b0e2bd38e19b216f399551fc90fbf2f1a3cce5064",
+    "model": "gemini-4-argon-medium"
+  },
   "Connect account": {
     "revision": "31803de129a2806e4d84be9eb3c3c17f7b650c046376f0806a9b81d899d66d76",
     "textHash": "9d9348850984d0aa4d597205cede620a618632c456ab998d7b896ccac765c789",
@@ -279,9 +304,29 @@
     "textHash": "79f5d558eaad20e6d3a3ed42984e9a49aea046b52bee62e976d09bb9edc82257",
     "model": "gemini-4-argon-medium"
   },
+  "Copy prompt": {
+    "revision": "5daa5e3543085abb48a76ce2cceb7f1e958f7b877c72c4f2b5c0d5aa2730a13e",
+    "textHash": "3ed2c259da3251fa5061167bb8c2da98e4e539a00142b249cfa488b11789b8f2",
+    "model": "gemini-4-argon-medium"
+  },
+  "Copy the prompt from the field below.": {
+    "revision": "91a9355ed5e3fafb73eb82e25f6033ed68b25ef09072799048f1f16dbbbeaa80",
+    "textHash": "ffbc3a55aa2ef37819f48dbb49b7a5d2def31e3d87914dcc66ac19df58aaf3d3",
+    "model": "gemini-4-argon-medium"
+  },
+  "Copy the prompt in the chat, then paste ChatGPT Pro’s reply there to apply edits.": {
+    "revision": "ff7941f5bec4ea001e3122b381d478ff5c0f87ee5a2a25dec8b5ef4c91f9c0ca",
+    "textHash": "0f27f1a701b93111fe9bd4b60313406ff5b74d688ed175133c196606bfa78277",
+    "model": "gemini-4-argon-medium"
+  },
   "Copy the value of {cookie} and paste it here.": {
     "revision": "3a208dfa748687ae3bbbf18504ab3105e04bcaaeae770cf6b6c1c97623748f64",
     "textHash": "200029b60a5ebe5de15d32998cdb36d0ddf7abe3de1547f36be5443827b8af0c",
+    "model": "gemini-4-argon-medium"
+  },
+  "Copy this prompt into your ChatGPT Pro conversation, then paste its reply below.": {
+    "revision": "bd1f2fb228f3d93f29ad93f3f0b8faa8538470a3a4d8a611719f785c8c34327c",
+    "textHash": "3789155638ce2067dd6d622ceb8e2da08942e2e7c8d483034f99a0de3dadf2f2",
     "model": "gemini-4-argon-medium"
   },
   "Could cite": {
@@ -384,6 +429,16 @@
     "textHash": "5cb189913469a3e697084d72e202eb77976b208c4bda4689834a76e1d0f009c6",
     "model": "manual"
   },
+  "Enable ChatGPT Pro (web)": {
+    "revision": "697cf818a56e48a7f34d026f9d49d00d8402aaaab679d9be37f73a73cdfdd46c",
+    "textHash": "abdfb8f2ac44708f20fad71c6d969ab9b09380aaff6c74441b29ce693f4627a5",
+    "model": "gemini-4-argon-medium"
+  },
+  "Enable ChatGPT Pro (web) in Settings → Experiments.": {
+    "revision": "325f3ae56567a2504e5b3c10ae94a60a0727d166936608dfebbbb7af5bfd3481",
+    "textHash": "34400d453cea9d6e612031bfb33025818780c447bc5bb714b0f1944fdae8123f",
+    "model": "gemini-4-argon-medium"
+  },
   "Enable collaboration mode": {
     "revision": "99460596a91bf2f9b3a84c15f85b2a8d08fc2c952be4a922e6c520fa24d0a816",
     "textHash": "ae4c7e5d55b129fc7f30677ee24dddbbd925ed9c4bddbd0839c1e30dcca8a0e9",
@@ -452,6 +507,16 @@
   "Found by an agent": {
     "revision": "1a12a1298f21674a75c4072d2ab90def45d13ee52802fa773205c271e536d16a",
     "textHash": "e276396179c43e002a34a07d475ca2c11344dd11883572e7bb734762e6909801",
+    "model": "gemini-4-argon-medium"
+  },
+  "GitHub context ready": {
+    "revision": "358b8854c6a3861134c64a733a53a626dcccac487b7b7033ccaf70b91970794d",
+    "textHash": "1de92008beab15c288737c8a84776d14c05a036f147f31556f8132ed13fa0167",
+    "model": "gemini-4-argon-medium"
+  },
+  "Hide prompt": {
+    "revision": "ff0072276e25fa69d19ba09898333fb5ffd19a3e7569c78a44c70b72667e69eb",
+    "textHash": "07e7ecb8963f4ba64207ccfbcccc941c3d9567c95fafe464ec32bafda7ba7949",
     "model": "gemini-4-argon-medium"
   },
   "Import": {
@@ -557,6 +622,11 @@
   "Loading projects…": {
     "revision": "b209ae56cc27b92393b7b8ea4dc6e3f721b1dc1289bafa3dc3672e227c9b4eb9",
     "textHash": "70f35eb00ee85bfeab2acabbde9dbb4789aeae673f94fa29316b46a416c20d63",
+    "model": "gemini-4-argon-medium"
+  },
+  "Local agent for edits": {
+    "revision": "8aba4c95a5b71c08a559fe0c74e3ee77b37377e761e19cb9623854352c929d37",
+    "textHash": "89646d5ca6ab40b09b53707f31e354c66c03ed9e7b1935657cbd2992c171ce96",
     "model": "gemini-4-argon-medium"
   },
   "Look for PDFs again": {
@@ -859,6 +929,16 @@
     "textHash": "20d1668fca39f52875c17923c5ffba3ce89dec7926e18cf0e998df4d729aaf89",
     "model": "gemini-4-argon-medium"
   },
+  "Paste ChatGPT Pro’s reply": {
+    "revision": "809cbf4640b7ec92da0040179fad72d5b8824746f88190d2933baaa7f9496968",
+    "textHash": "54450df239b9a0b51ce46a2667d395813b16f5a4fa9d19032ffd404c9f3a62c1",
+    "model": "gemini-4-argon-medium"
+  },
+  "Paste ChatGPT Pro’s reply here…": {
+    "revision": "84ddd404e15275253b64d2025a81fa99c4510ff04ffd23ee3cece4209f26e5dd",
+    "textHash": "d37b816f35e18bd3e6abfd178b1f0f592894c51fa227ff7b6a66659f2f4be52a",
+    "model": "gemini-4-argon-medium"
+  },
   "Paste a link…": {
     "revision": "b8231d1dd1cac2f4b8effed557d12e0ff42c1b9076691333b46333a46cadc1da",
     "textHash": "fc43f8a2532bddf3f1474196ef806eaaae97aea450828836543d4040528124dc",
@@ -889,6 +969,11 @@
     "textHash": "c6a7960d55d21226e94ca0555edad8cb59d44e9df51a4011c82e4e98736735f1",
     "model": "manual"
   },
+  "Preparing prompt…": {
+    "revision": "b6a4d9f9f9f9afa50ff44a51fccf95822dac08f72b7019a5cfb6e44ea425b7da",
+    "textHash": "fb98559264af56cebf3b81ec524d723b415ac0f481a9ccd14c7177dcbfdceb72",
+    "model": "gemini-4-argon-medium"
+  },
   "Preview unavailable": {
     "revision": "a0e937b25017392df1ac0b8a8c13aa0f974354c8589ddeb911b2174878722935",
     "textHash": "a1c3ce8944f8bb275cd6352ae065c7bb8b9f0c3f4d9666018d5d9d3f10a2ccda",
@@ -907,6 +992,11 @@
   "Progress": {
     "revision": "e0e8c6bdedf41eac54b8133ad93a12a1ad34c0b52275bfc6afbace9e15f3cb42",
     "textHash": "f81ff55de14e3f455a87f7fe1c23e7ba1f138bd9a112d7d18488d027b2f7dea7",
+    "model": "gemini-4-argon-medium"
+  },
+  "Prompt for ChatGPT Pro": {
+    "revision": "158c93799ab7ed2710e9eb7fe6607d3d5d9d392096cca70a53dd0d6261fb66cc",
+    "textHash": "97752591f4f3cf2e4430531f9b8eb6dee48a749148540bc79dacaac3965ee318",
     "model": "gemini-4-argon-medium"
   },
   "Publisher page": {
@@ -954,6 +1044,11 @@
     "textHash": "994450ecaf84e7e4213367e8a11f82a1f09461fe8a805b3b37987d4f22fa3f00",
     "model": "codex"
   },
+  "Runs manually through your ChatGPT Pro conversation, with a local agent applying edits.": {
+    "revision": "632af4665f470488da295ca94b096da6cab35b168656c6ed9a87276648be9fb0",
+    "textHash": "634ccc783f68abc6e502faf43b5250c16a1f185727c2a2597ae0aad3bb09780d",
+    "model": "gemini-4-argon-medium"
+  },
   "Save a place to return to later.": {
     "revision": "a98c7016187cd24fe1bad8e640d7fe98ea085d88c0ca7032311b08edaae775f8",
     "textHash": "f1ce0b53d1e6b7c3f11218ba85328c874512d7fd4c61d91df5913ac4f06917c0",
@@ -992,6 +1087,16 @@
   "Selected work": {
     "revision": "e73fb7a892838e9ad96bf2051a51b459196bb9e8abcf474412b829f27290d740",
     "textHash": "82f82ef102193a4c39614c23679edcc03ff545b604d47c16d8a097e6d0b5971f",
+    "model": "gemini-4-argon-medium"
+  },
+  "Send reply to local agent": {
+    "revision": "41c866e9817879ce8a89781eae5fa097ad6d020026264d1933a90d37ef67dfb7",
+    "textHash": "afedbd19219ff5b0704f5cd6ded31501ec8fa9c6adc980c311479b076dc91930",
+    "model": "gemini-4-argon-medium"
+  },
+  "Sending asks {agent} to apply the edits in this task.": {
+    "revision": "86febc4098e2a957c8905f643d9f2d6f15edf625cc46b2a77806cb4906db88d0",
+    "textHash": "8c6a17fbe0b890b68769e1b28b3af0afcdce73eac01ea51e8ccca9cd57dab9fe",
     "model": "gemini-4-argon-medium"
   },
   "Sending {n} files…": {
@@ -1037,6 +1142,11 @@
   "Show more": {
     "revision": "c08cf00e85b99b606850a9176caf9e4748248fb0419b72d056fe22649f20fb81",
     "textHash": "331af79f34e7a551441d0aa5c2a4eebaccea5f2a3db89f87bad09d66080fc384",
+    "model": "gemini-4-argon-medium"
+  },
+  "Show prompt": {
+    "revision": "391629f5c2fc193a9b3be04b1a0e8e02113b938925684304bf879f4103bbed9a",
+    "textHash": "7d80b5c74f074a8aef62e0f9e12e56801cec32fbda97dd6461b55635fdb1772b",
     "model": "gemini-4-argon-medium"
   },
   "Sign in to {server}": {
@@ -1094,6 +1204,16 @@
     "textHash": "3328125f8a4d64705c1badcd66f146ff56bcba9e47af59695e745c1dd0fd41b1",
     "model": "gemini-4-argon-medium"
   },
+  "Sync snapshot to GitHub automatically": {
+    "revision": "02a565e3072fec43e934d88a8ef6d019aa5a302ddd796fc13c8b4d8cb7025f1a",
+    "textHash": "713b21ef19fc22f80aed992aeb1e5d87629229406d79c604408e3781cd162aea",
+    "model": "gemini-4-argon-medium"
+  },
+  "Sync to GitHub": {
+    "revision": "dd81112b39a3dc6b853c52c181578dd0a052ecda38b971dca31916958ae38745",
+    "textHash": "d78b753dedfec292ed3438ab92067702ec8d39c2546fa8f545c8fb2447ced8ae",
+    "model": "gemini-4-argon-medium"
+  },
   "Sync with Overleaf": {
     "revision": "5d36041ec454c8bda18af50c771fd11e8048cab973dc97322ab5254f3aa43c22",
     "textHash": "d2f732a328e2e883d225ef2aedd405f99ffe8bc4d39cef6ef6bd72e104cc383e",
@@ -1107,6 +1227,11 @@
   "Syncing now": {
     "revision": "6a93c8863963393aa1fa4bb8a05fad544666565ba0ec41d00ea32aa268b8489d",
     "textHash": "01679253dade46b3c642bd7b9c5278668637a012c60e1eb8f0269da2c83e06a5",
+    "model": "gemini-4-argon-medium"
+  },
+  "Syncing snapshot to GitHub…": {
+    "revision": "3074d76dd42947819ad11010914606e3a5f262a9c047c9465d7f30845bbf2d24",
+    "textHash": "f61fb69bda49604a36856de442a37dbecc755d6ab8965b0bfe1f91db2f29826e",
     "model": "gemini-4-argon-medium"
   },
   "Task list actions": {
@@ -1139,6 +1264,11 @@
     "textHash": "949a70261f18e7937d2eb83fc1fa69477d40a11d1b6bfebd73bbab584bd3ef6c",
     "model": "codex"
   },
+  "This prompt points ChatGPT Pro to your synced GitHub repo for full-manuscript context. Copy it into ChatGPT Pro, then paste its reply below.": {
+    "revision": "252eca20d6ccbfcb9cc11cfee8c617e4b9ebc87fa4f056c48d1755a11c194318",
+    "textHash": "7a66f5cb8b4511d46da178a4b4f5121ab4bc305e28dea4b9f308aaadff001cfc",
+    "model": "gemini-4-argon-medium"
+  },
   "To do": {
     "revision": "51dac5b20a823231df6bfd6405eeb26c777318577031c2e72a158253fc1893d9",
     "textHash": "5e415ae2bb8630c10e05c6a0b83b1f6d40698a456b38d2fd9dc744501826ed3e",
@@ -1164,6 +1294,16 @@
     "textHash": "0f08c831eabc55cfe1b2b710857c961567941076dbca03f3a7c19531ae874ad2",
     "model": "gemini-4-argon-medium"
   },
+  "Try again": {
+    "revision": "ae5111111a26988f7151e4edf4037feb21273e54a2b0f3c0389219cc67a1ea73",
+    "textHash": "b8784c8dd5636ff231b121892144e4a3977d5b874f21934c53f850cde7bac0ea",
+    "model": "gemini-4-argon-medium"
+  },
+  "Turn on ChatGPT Pro (web) in Settings → Experiments to copy prompts and paste replies inside normal tasks.": {
+    "revision": "6bcf8f606adfae7d237f66d838f3321e5367bd7458daefa8deb0d7a4c746ea50",
+    "textHash": "cd511055ba2e8d9313e771a73c50d67d1dea65ca62d834639c013ad1c1800d65",
+    "model": "gemini-4-argon-medium"
+  },
   "Typeless voice notes": {
     "revision": "9a27d25f562e148860cb4288a657de90388a21b24134750f84c722a39e4d72a5",
     "textHash": "37528ee62e2ba5a8e9f2ff22edde676f3c84a72d4cf2487557d5158848f9046a",
@@ -1172,6 +1312,11 @@
   "Use": {
     "revision": "c48e8e4898e3c0d0fbcc4c90fc9e4f27ccb1bec0b6dc6a64f142e9236bf3cf7f",
     "textHash": "cdfd0b34e4918648910bd74bb862cf6076871cdf7fb6c6571a8a5bda78e9b942",
+    "model": "gemini-4-argon-medium"
+  },
+  "Use ChatGPT Pro manually inside normal tasks: copy the prompt, paste its reply, and let a local agent apply the edits.": {
+    "revision": "49cc772b1e58dfb1a17242ffc182557ec815dc2ba3bdd93eaef8cb9e72ef3671",
+    "textHash": "49a0d78863fe3da07ab6916a248f44b12b20f240cbbd92f4fc934f6b107553ed",
     "model": "gemini-4-argon-medium"
   },
   "Use PDFs from Zotero": {
@@ -1239,9 +1384,19 @@
     "textHash": "39395c1df20e0d428c609732bac274d4a0259ad0a944a90e912fc7279e0b29dc",
     "model": "gemini-4-argon-medium"
   },
+  "Waiting for ChatGPT Pro": {
+    "revision": "042188513c372586c9b311d2916c46796ae1bf07aa78fda65008ed44d0230b9f",
+    "textHash": "ff97259818b32bb25c3da89cc98f2e27fcdff76dd39564f1b1875417b52bda65",
+    "model": "gemini-4-argon-medium"
+  },
   "Waiting for the model… {n} s": {
     "revision": "0021726287c42e3af548e4d2b10e304534f6d76849a75c171a45f39ff93f0cd6",
     "textHash": "ea3c9ad1bb1865f91aa001b3162fc2d6f0db02a83eb44d8da880a2e9f65e73f2",
+    "model": "gemini-4-argon-medium"
+  },
+  "When a paper has a GitHub remote, push the task’s current files to a branch so ChatGPT Pro can read the full repository.": {
+    "revision": "53f4fc22a6d5b18df2c70ae94b41d71976385636f28ae8339c5c74acb4816e84",
+    "textHash": "a5384e38107b1709ac003f8c81da65ba12eba5021f56204d62cf0974b69e9f26",
     "model": "gemini-4-argon-medium"
   },
   "Where files differ": {

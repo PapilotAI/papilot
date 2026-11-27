@@ -18,8 +18,8 @@ import { createPortal, flushSync } from 'react-dom';
 import { readNotesInstructions, type NoteSummary } from '../notes.ts';
 import { aiReviewSummary, isFeedbackPrompt } from '../conversation.ts';
 import { ignorePattern } from '../commit.ts';
-import { effectiveServiceTier, modelServiceTier, AGENT_IDS, isAgentId, isTaskReviewNote, taskFinished } from '../shared.ts';
-import type { TaskCommitReview, CompilerChoice, LatexInstallation, ZoteroStatus, AgentId, Annotation, AnnotationGroupEdit, AnnotationGroupState, AnnotationBatch, AnnotationBatchResult, NoteSection, PageReadingLayout, BuildRepairResult, MarkKind, Author, FeedbackSummary, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
+import { effectiveServiceTier, modelServiceTier, AGENT_IDS, isAgentId, isManualAgent, isTaskReviewNote, taskFinished } from '../shared.ts';
+import type { ChatgptProSettings as ChatgptProSettingsState, TaskCommitReview, CompilerChoice, LatexInstallation, ZoteroStatus, AgentId, Annotation, AnnotationGroupEdit, AnnotationGroupState, AnnotationBatch, AnnotationBatchResult, NoteSection, PageReadingLayout, BuildRepairResult, MarkKind, Author, FeedbackSummary, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
 import { SkillChip, SkillMenu, SkillPicker, matchSkills, skillName, skillQuery } from './skills.tsx';
 import { reviewDraft, useReviewDraft, reviewNoteSummary, reviewSubmission } from './review-draft.ts';
 import { ReviewDraftCards } from './review-draft-cards.tsx';
@@ -38,6 +38,7 @@ import { AiReviewView } from './ai-review.tsx';
 import { keepDialogFocus } from './focus.ts';
 import { DeleteTaskDialog } from './task-dialog.tsx';
 import { BulkTaskDialog, type BulkTaskAction } from './bulk-task-dialog.tsx';
+import { ManualTurnCard, type ManualExecutorPreview } from './manual-turn-card.tsx';
 import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
 import { BrandIcon } from './brand-icon.tsx';
@@ -141,6 +142,7 @@ const loadActivity = (params: { tz: string; range: string; projectId?: string },
   return api<ActivityReport>(`/activity?${query.toString()}`, undefined, signal);
 };
 const agentName = (task: Task) => agentLabel(task.agent || 'codex') || 'Codex';
+const workingAgentName = (task: Task) => task.manualTurn?.executor?.agent ? agentLabel(task.manualTurn.executor.agent) : agentName(task);
 // A finished publication with no round is a valid answer-only result. Keep
 // earlier comparisons available when a follow-up answer makes no new edits.
 const noManuscriptChanges = (task: Task) => task.status === 'reviewing' && task.review?.round === null && task.review.state !== 'build_failed' && !task.review.counts.pending;
@@ -151,7 +153,8 @@ const preparingLabel = (task: Task) => task.mode === 'review' ? t('Preparing the
 function Status({ task }: { task: Task }) {
   const answered = noManuscriptChanges(task), done = task.status === 'reviewing' && task.review?.state === 'done';
   const saved = taskSaveStatus(task);
-  return <span className={`status ${task.status}${saved ? ' done' : ''}`}><i/>{saved === 'committed' ? t('Committed') : saved === 'applied' ? t('Applied to manuscript') : answered ? t('Completed') : done ? t('Review complete') : task.status === 'running' ? t('{agent} is working', { agent: agentName(task) }) : task.status === 'preparing' ? preparingLabel(task) : task.status === 'building' && task.review?.ready ? t('Ready for review') : statusNames()[task.status] || task.status}</span>;
+  const awaitingManual = task.status === 'waiting_input' && task.manualTurn?.status === 'awaiting_reply';
+  return <span className={`status ${task.status}${saved ? ' done' : ''}`}><i/>{saved === 'committed' ? t('Committed') : saved === 'applied' ? t('Applied to manuscript') : answered ? t('Completed') : done ? t('Review complete') : awaitingManual ? t('Waiting for ChatGPT Pro') : task.status === 'running' ? t('{agent} is working', { agent: workingAgentName(task) }) : task.status === 'preparing' ? preparingLabel(task) : task.status === 'building' && task.review?.ready ? t('Ready for review') : statusNames()[task.status] || task.status}</span>;
 }
 function time(timestamp: number) { return new Date(timestamp).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }); }
 function ago(timestamp: number) {
@@ -344,7 +347,10 @@ const TimelineEntry = memo(function TimelineEntry({ item, agent, root, pages = t
   useLanguage();
   if (PlaygroundProgress && item.type === 'demo-progress') return <Suspense fallback={null}><PlaygroundProgress item={item}/></Suspense>;
   if (item.type === 'user') return <UserMessage item={item} agent={agent}/>;
-  if (item.type === 'assistant') return <article className="message assistant" aria-label={`${agent}, ${time(item.createdAt)}`}><div className="message-body markdown"><Markdown text={item.text}/></div><div className="message-actions"><CopyButton text={item.text}/><time dateTime={new Date(item.createdAt).toISOString()}>{time(item.createdAt)}</time></div></article>;
+  if (item.type === 'assistant') {
+    const speaker = item.meta?.advisor || agent;
+    return <article className="message assistant" aria-label={`${speaker}, ${time(item.createdAt)}`}>{item.meta?.advisor && <div className="message-author"><BrandIcon name="chatgpt" size={14}/>{item.meta.advisor}</div>}<div className="message-body markdown"><Markdown text={item.text}/></div><div className="message-actions"><CopyButton text={item.text}/><time dateTime={new Date(item.createdAt).toISOString()}>{time(item.createdAt)}</time></div></article>;
+  }
   const files = item.type === 'files' ? editedFiles(item, root) : [];
   const label = toolLabel(item, root);
   const detail = item.type === 'files' ? null : item.detail;
@@ -393,7 +399,7 @@ function timelineEntries(items: TimelineItem[]) {
   return entries;
 }
 
-function Activity({ runtimes, relatedTasks, onOpenTask, source, onRevealQuote, task, runtime, reconnecting, onReconnect, skills, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, onTaskSaved, reportError, pause, pausing, openReview, feedback, connection, tools, lead, errorActions }: { runtimes: Partial<Record<AgentId, RuntimeStatus>>; relatedTasks: Task[]; onOpenTask: (id: string) => void; source?: { tabs: React.ReactNode; panel: React.ReactNode; selected: boolean }; errorActions?: React.ReactNode; tools?: React.ReactNode; lead?: React.ReactNode; onRevealQuote: () => void; task: Task; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void; skills: Skill[]; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; onTaskSaved: (task: Task) => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void; feedback?: React.ReactNode; connection?: React.ReactNode }) {
+function Activity({ runtimes, manualSettingsVersion = 0, relatedTasks, onOpenTask, source, onRevealQuote, task, runtime, reconnecting, onReconnect, skills, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, onTaskSaved, reportError, pause, pausing, openReview, feedback, connection, tools, lead, errorActions }: { runtimes: Partial<Record<AgentId, RuntimeStatus>>; manualSettingsVersion?: number; relatedTasks: Task[]; onOpenTask: (id: string) => void; source?: { tabs: React.ReactNode; panel: React.ReactNode; selected: boolean }; errorActions?: React.ReactNode; tools?: React.ReactNode; lead?: React.ReactNode; onRevealQuote: () => void; task: Task; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void; skills: Skill[]; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; onTaskSaved: (task: Task) => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void; feedback?: React.ReactNode; connection?: React.ReactNode }) {
   const input = useRef<HTMLTextAreaElement>(null);
   const reviewNotes = reviewDraft(task.id), notes = useReviewDraft(task.id);
   const [savingModel, setSavingModel] = useState(false);
@@ -426,7 +432,16 @@ function Activity({ runtimes, relatedTasks, onOpenTask, source, onRevealQuote, t
   const noteResults = useNoteResults();
   useLayoutEffect(() => { if (noteResults?.selected) { back.current = undefined; shouldFollow.current = false; setFollowing(false); } }, [noteResults?.selected, noteResults?.reveal]);
   function latest() { back.current = undefined; shouldFollow.current = true; setFollowing(true); if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight; }
-  useEffect(() => { if (shouldFollow.current && !scroller.current?.querySelector(':popover-open')) latest(); }, [items, requests]);
+  const awaitingManual = task.status === 'waiting_input' && task.manualTurn?.status === 'awaiting_reply';
+  const [manualExecutor, setManualExecutor] = useState<ManualExecutorPreview | null | undefined>(undefined);
+  const [manualOverride, setManualOverride] = useState<{ agent: AgentId; model: string; effort: string } | null>(null);
+  useEffect(() => {
+    setManualOverride(null);
+    if (!awaitingManual) setManualExecutor(undefined);
+  }, [awaitingManual, task.id, task.manualTurn?.runId]);
+  const localExecutorAgents = offeredAgents(runtimes).filter(id => !isManualAgent(id) && id !== 'collaboration');
+  const effectiveManualExecutor = manualOverride ?? (manualExecutor ? { agent: manualExecutor.agent, model: manualExecutor.model || '', effort: manualExecutor.effort || '' } : null);
+  useEffect(() => { if (shouldFollow.current && !scroller.current?.querySelector(':popover-open')) latest(); }, [items, requests, awaitingManual]);
   useEffect(() => {
     if (!scroller.current) return;
     const observer = new ResizeObserver(() => { if (back.current !== undefined) goBack(); else if (shouldFollow.current) latest(); });
@@ -435,10 +450,23 @@ function Activity({ runtimes, relatedTasks, onOpenTask, source, onRevealQuote, t
   const feedbackCount = task.mode === 'review' ? 0 : pendingReviewFeedback(task.review);
   const readyReview = reviewSubmission(notes, draft, skill?.id);
   const emptyNotes = notes.notes.length - readyReview.notes.length;
-  const canSend = Boolean(draft.trim() || skill || files.files.length || readyReview.notes.length || readyReview.instructions.trim() || feedbackCount);
+  const manualRefreshKey = `${manualSettingsVersion}:${AGENT_IDS.map(id => `${id}:${runtimes[id]?.connected ? 1 : 0}${runtimes[id]?.authenticated ? 1 : 0}${runtimes[id]?.hidden ? 1 : 0}`).join(',')}`;
+  const canSend = awaitingManual ? Boolean(draft.trim()) : Boolean(draft.trim() || skill || files.files.length || readyReview.notes.length || readyReview.instructions.trim() || feedbackCount);
   async function submit() {
-    if (savingPermissions || savingModel || composer.sending || ['uncertain', 'deleting'].includes(task.status) || task.preparation || files.draft.getSnapshot().blocked) return;
+    if (savingPermissions || savingModel || composer.sending || ['uncertain', 'deleting'].includes(task.status) || task.preparation || (!awaitingManual && files.draft.getSnapshot().blocked)) return;
     if (isPlayground && canSend) { requestPlaygroundDownload(); return; }
+    if (awaitingManual) {
+      const executorPayload = manualOverride
+        ? { agent: manualOverride.agent, ...(manualOverride.model ? { model: manualOverride.model } : {}), ...(manualOverride.effort ? { effort: manualOverride.effort } : {}) }
+        : undefined;
+      try {
+        if (await composer.submit('draft', message => api('/tasks/' + task.id + '/manual-reply', { reply: message.text, requestKey: message.requestKey, ...(executorPayload ? { executor: executorPayload } : {}) }))) {
+          shouldFollow.current = true;
+          refresh();
+        }
+      } catch (e) { reportError(e); }
+      return;
+    }
     const submitted = reviewSubmission(reviewNotes.getSnapshot(), composer.text, skill?.id), attached = files.draft.getSnapshot().files;
     const source = !composer.text.trim() && !skill && !attached.length && !submitted.notes.length && !submitted.instructions.trim() && feedbackCount ? 'feedback' : 'draft';
     reviewNotes.setBusy(true);
@@ -454,7 +482,7 @@ function Activity({ runtimes, relatedTasks, onOpenTask, source, onRevealQuote, t
   const active = ACTIVE.includes(task.status), blocked = ['uncertain', 'deleting'].includes(task.status);
   // The draft re-renders this panel on every keystroke; the same elements let
   // React skip the conversation until its items change.
-  const agent = agentName(task), review = task.mode === 'review', root = task.worktree;
+  const agent = agentName(task), activeAgent = workingAgentName(task), review = task.mode === 'review', root = task.worktree;
   const thread = useMemo(() => {
     // Collaboration workers' steps belong under their delegation, not in the thread.
     const steps = new Map<string, TimelineItem[]>(), lines = new Set(items.map(item => item.id));
@@ -496,7 +524,8 @@ function Activity({ runtimes, relatedTasks, onOpenTask, source, onRevealQuote, t
     });
   }, [items, review, agent, root, active]);
   const hint = task.status === 'deleting' ? t('This task is being deleted') : task.status === 'uncertain' ? t('Check task status before sending') : task.preparation ? t('Send more instructions once the task has started.') : sending ? t('Sending…')
-    : emptyNotes ? canSend ? tn(emptyNotes, '{n} empty comment will stay in drafts', '{n} empty comments will stay in drafts') : t('Write a comment or message to send.') : active ? t('{agent} is working · new instructions run next', { agent: agentName(task) }) : '';
+    : awaitingManual ? (effectiveManualExecutor ? t('Sending asks {agent} to apply the edits in this task.', { agent: agentLabel(effectiveManualExecutor.agent) }) : manualExecutor === null ? t('Connect a local agent in Settings → Agents to apply replies.') : '')
+    : emptyNotes ? canSend ? tn(emptyNotes, '{n} empty comment will stay in drafts', '{n} empty comments will stay in drafts') : t('Write a comment or message to send.') : active ? t('{agent} is working · new instructions run next', { agent: activeAgent }) : '';
   // A source tab beside the chat hides the chat while it is selected; both stay as they were.
   return <section id="conversation-panel" className="activity-panel" data-side={source?.selected ? 'source' : undefined} aria-label={t('{agent} conversation', { agent: agentName(task) })}><div className="panel-heading">{lead}{source?.tabs}{tools && <div className="panel-tools">{tools}</div>}</div>
     {source && <div className="side-pane" hidden={!source.selected}>{source.panel}</div>}
@@ -505,8 +534,9 @@ function Activity({ runtimes, relatedTasks, onOpenTask, source, onRevealQuote, t
       {loadError && <div className="conversation-error" role="alert"><p>{loadError}</p><button className="button secondary compact" onClick={retry}>{t('Retry conversation')}</button></div>}
       {relatedTasks.map(related => <p className="restart-link" key={related.id}>{related.id === task.restart?.taskId ? t('Restarted from') : t('Replacement task')}: <button type="button" onClick={() => onOpenTask(related.id)}>{related.title}</button></p>)}
       {thread}
-      {requests.map(r => <RequestCard key={r.id} request={r} agent={agentName(task)} answerDrafts={answerDrafts} onDone={refresh}/>)}
-      {task.status === 'running' && <div className="working"><span className="working-dots"><i/><i/><i/></span>{t('{agent} is working on this task', { agent: agentName(task) })}</div>}
+      {awaitingManual && <ManualTurnCard key={task.manualTurn!.runId} taskId={task.id} runId={task.manualTurn!.runId} api={api} refreshKey={manualRefreshKey} onExecutor={setManualExecutor}/>}
+      {requests.map(r => <RequestCard key={r.id} request={r} agent={activeAgent} answerDrafts={answerDrafts} onDone={refresh}/>)}
+      {task.status === 'running' && <div className="working"><span className="working-dots"><i/><i/><i/></span>{t('{agent} is working on this task', { agent: activeAgent })}</div>}
       {task.status === 'queued' && <p className="muted">{t('Task saved. Waiting for an available {agent} session.', { agent: agentName(task) })}</p>}
       {task.status === 'preparing' && <p className="muted" role="status">{preparingLabel(task)}</p>}
       {openReview && task.status === 'reviewing' && task.review?.counts?.pending ? <div className="review-ready"><Icon name="paper" size={16}/><span>{tn(task.review.counts.pending, '{n} change to review', '{n} changes to review')}</span><button className="button secondary compact" onClick={openReview}>{t('Open review')}</button></div> : null}
@@ -515,20 +545,41 @@ function Activity({ runtimes, relatedTasks, onOpenTask, source, onRevealQuote, t
     </div></div>{!following && <button className="jump-latest" onClick={latest}><Icon name="arrowDown" size={14}/>{t('Latest messages')}</button>}</div>
     <div className="composer-wrap">
       {connection}
-      <Composer reviewContent={<ReviewDraftCards task={task} feedbackCount={feedbackCount} onReveal={onRevealQuote}/>} attachments={task.mode === 'review' ? undefined : files.draft} upload={(file, signal) => uploadAttachment(task.projectId, file, signal)} filesDisabled={sending || blocked || savingModel} imageHint={task.agent === 'antigravity' && files.files.some(file => file.mime.startsWith('image/'))} inputRef={input} label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit()} placeholder={task.mode === 'review' ? t('Ask for another review of this PDF version…') : active ? t('Queue instructions for the next turn…') : notes.notes.length || feedbackCount ? t('Add overall instructions (optional)') : t('Ask a question or request changes…')} skills={task.mode === 'review' ? [] : skills.filter(skill => skill.output !== 'annotations')} skill={skill} onSkill={savingModel ? undefined : setSkill}
+      <Composer reviewContent={awaitingManual ? undefined : <ReviewDraftCards task={task} feedbackCount={feedbackCount} onReveal={onRevealQuote}/>} attachments={task.mode === 'review' || awaitingManual ? undefined : files.draft} upload={(file, signal) => uploadAttachment(task.projectId, file, signal)} filesDisabled={sending || blocked || savingModel} imageHint={task.agent === 'antigravity' && files.files.some(file => file.mime.startsWith('image/'))} inputRef={input} label={awaitingManual ? t('Paste ChatGPT Pro’s reply') : t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit()} placeholder={awaitingManual ? t('Paste ChatGPT Pro’s reply here…') : task.mode === 'review' ? t('Ask for another review of this PDF version…') : active ? t('Queue instructions for the next turn…') : notes.notes.length || feedbackCount ? t('Add overall instructions (optional)') : t('Ask a question or request changes…')} skills={task.mode === 'review' || awaitingManual ? [] : skills.filter(skill => skill.output !== 'annotations')} skill={awaitingManual ? null : skill} onSkill={savingModel || awaitingManual ? undefined : setSkill}
         footer={attach => <div className="composer-options">
-          {task.mode !== 'review' && <SkillPicker onAttach={attach} skills={skills.filter(skill => skill.output !== 'annotations')} selected={skill} disabled={sending || blocked || savingModel} onPick={value => { setSkill(value); input.current?.focus(); }}/>}
-          <TaskModelPicker refreshUsage={refreshUsage} task={task} runtime={runtime} runtimes={runtimes} disabled={sending || blocked || savingPermissions || files.blocked || notes.busy} reconnecting={reconnecting} onReconnect={onReconnect} save={settings => api<Task>(`/tasks/${task.id}/model`, settings)} onSaving={setSavingModel} refresh={refresh} reportError={reportError}
-            switchAgent={async settings => {
-              if (isPlayground) { requestPlaygroundDownload(); return; }
-              onTaskSaved(await api<Task>(`/tasks/${task.id}/agent`, settings));
-            }}
-            permissions={<TaskPermissionOptions task={task} runtime={runtime} disabled={sending || blocked || savingModel} save={permissions => api<Task>(`/tasks/${task.id}/permissions`, { permissions })} onSaved={onTaskSaved} onSaving={setSavingPermissions} refresh={refresh} reportError={reportError}/>}/>
+          {task.mode !== 'review' && !awaitingManual && <SkillPicker onAttach={attach} skills={skills.filter(skill => skill.output !== 'annotations')} selected={skill} disabled={sending || blocked || savingModel} onPick={value => { setSkill(value); input.current?.focus(); }}/>}
+          {awaitingManual ? (
+            <AgentPicker
+              label={t('Local agent for edits')}
+              agents={localExecutorAgents.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] }))}
+              agent={effectiveManualExecutor?.agent || localExecutorAgents[0] || 'codex'}
+              model={effectiveManualExecutor?.model || ''}
+              effort={effectiveManualExecutor?.effort || ''}
+              noAgent={!localExecutorAgents.length}
+              reconnecting={reconnecting}
+              onReconnect={onReconnect}
+              refreshUsage={refreshUsage}
+              disabled={sending || blocked}
+              onSelect={(nextAgent, nextModel) => setManualOverride({ agent: nextAgent, model: nextModel, effort: '' })}
+              onChange={change => {
+                if (change.effort === undefined) return;
+                const base = effectiveManualExecutor ?? { agent: localExecutorAgents[0] || 'codex', model: '', effort: '' };
+                setManualOverride({ ...base, effort: change.effort });
+              }}
+            />
+          ) : (
+            <TaskModelPicker refreshUsage={refreshUsage} task={task} runtime={runtime} runtimes={runtimes} disabled={sending || blocked || savingPermissions || files.blocked || notes.busy} reconnecting={reconnecting} onReconnect={onReconnect} save={settings => api<Task>(`/tasks/${task.id}/model`, settings)} onSaving={setSavingModel} refresh={refresh} reportError={reportError}
+              switchAgent={async settings => {
+                if (isPlayground) { requestPlaygroundDownload(); return; }
+                onTaskSaved(await api<Task>(`/tasks/${task.id}/agent`, settings));
+              }}
+              permissions={<TaskPermissionOptions task={task} runtime={runtime} disabled={sending || blocked || savingModel} save={permissions => api<Task>(`/tasks/${task.id}/permissions`, { permissions })} onSaved={onTaskSaved} onSaving={setSavingPermissions} refresh={refresh} reportError={reportError}/>}/>
+          )}
         </div>}
         action={<div className="composer-actions">
           <ContextMeter usage={task.context}/>
-          {active && <button type="button" className="send-button stop" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: agentName(task) })} disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
-          {(!active || draft.trim() || skill || files.entries.length || notes.notes.length || feedbackCount || sending) && <button aria-label={t('Send instructions')} title={t('Send (Enter) · New line (Shift+Enter)')} disabled={!canSend || files.blocked || sending || savingModel || savingPermissions || blocked || Boolean(task.preparation)} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
+          {active && <button type="button" className="send-button stop" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: activeAgent })} disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
+          {(!active || awaitingManual || draft.trim() || skill || files.entries.length || notes.notes.length || feedbackCount || sending) && <button aria-label={awaitingManual ? t('Send reply to local agent') : t('Send instructions')} title={t('Send (Enter) · New line (Shift+Enter)')} disabled={!canSend || (!awaitingManual && files.blocked) || sending || savingModel || savingPermissions || blocked || Boolean(task.preparation)} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
         </div>}/>
       {hint && <p className="composer-hint" role="status">{hint}</p>}
     </div>
@@ -1195,11 +1246,13 @@ function PendingComparison({ task, busy, onBuild }: { task: Task; busy: boolean;
       detail = t('Comparing the typeset pages…');
     }
   } else if (task.status === 'running' || task.status === 'queued') {
-    title = task.status === 'running' ? t('{agent} is working', { agent: agentName(task) }) : t('Queued');
+    title = task.status === 'running' ? t('{agent} is working', { agent: workingAgentName(task) }) : t('Queued');
     detail = t('If the task changes the manuscript, a PDF comparison will appear here. Otherwise, read the answer in the chat.');
   } else if (task.status === 'waiting_input') {
-    title = t('Needs your reply');
-    detail = t('Reply in the chat to continue. A PDF comparison is needed only if the manuscript changes.');
+    title = task.manualTurn?.status === 'awaiting_reply' ? t('Waiting for ChatGPT Pro') : t('Needs your reply');
+    detail = task.manualTurn?.status === 'awaiting_reply'
+      ? t('Copy the prompt in the chat, then paste ChatGPT Pro’s reply there to apply edits.')
+      : t('Reply in the chat to continue. A PDF comparison is needed only if the manuscript changes.');
   } else if (task.status === 'uncertain') {
     title = t('Check task status');
     detail = t('Confirm whether the task is still running before generating a PDF comparison.');
@@ -1417,6 +1470,7 @@ function App() {
   const [newSkill, setNewSkill] = useState<Skill | null>(null);
   const [skills, setSkills] = useState<{ projectId: string; list: Skill[] }>({ projectId: '', list: [] });
   const [skillsRevision, setSkillsRevision] = useState(0);
+  const [manualSettingsVersion, setManualSettingsVersion] = useState(0);
   // The agent, and each agent's model and reasoning effort, are remembered for
   // every new task, whether it starts from the composer or from PDF notes.
   useAgentPreferenceChanges();
@@ -1824,15 +1878,19 @@ function App() {
     const serviceTier = effectiveServiceTier(model, choice.serviceTier);
     return serviceTier === choice.serviceTier ? choice : { ...choice, serviceTier };
   }
-  const fallbackGitAgent = taskAgents.find(id => id !== 'collaboration') || 'codex';
+  const fallbackGitAgent = taskAgents.find(id => id !== 'collaboration' && !isManualAgent(id)) || 'codex';
   const conversationHelper = commitContext
     ? commitContext.agent === 'collaboration'
       ? { agent: fallbackGitAgent, model: '', effort: '' }
-      : effectiveGitChoice({
-          agent: commitContext.agent || fallbackGitAgent, model: commitContext.model || '', effort: commitContext.effort || '',
-          ...(commitContext.serviceTier ? { serviceTier: commitContext.serviceTier } : {}),
-        })
-    : defaultSelection.agent.agent === 'collaboration'
+      : isManualAgent(commitContext.agent)
+        ? commitContext.manualExecutor
+          ? effectiveGitChoice({ agent: commitContext.manualExecutor.agent, model: commitContext.manualExecutor.model || '', effort: '' })
+          : { agent: fallbackGitAgent, model: '', effort: '' }
+        : effectiveGitChoice({
+            agent: commitContext.agent || fallbackGitAgent, model: commitContext.model || '', effort: commitContext.effort || '',
+            ...(commitContext.serviceTier ? { serviceTier: commitContext.serviceTier } : {}),
+          })
+    : defaultSelection.agent.agent === 'collaboration' || isManualAgent(defaultSelection.agent.agent)
       ? { agent: fallbackGitAgent, model: '', effort: '' }
       : defaultSelection.agent;
   const commitWriter = commitPreference === 'conversation' ? readOnlyChoice(conversationHelper)
@@ -2799,7 +2857,7 @@ function App() {
           {!mobile && !chatOnly && task.status === 'deleting' && (sidebarToggle || !conversationVisible) && <div className="review-placeholder-toolbar">{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}<div className="panel-tools">{!conversationVisible && taskStateActions}</div></div>}
           {(task.review?.state === 'build_failed' || task.status === 'failed' && task.review?.job?.status === 'failed') && <div className="review-build-error" role="status"><Icon name="alert" size={15}/><span>{t('Could not generate the PDF comparison.')}</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Retry build')}</button></div>}
           {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : !task.preparation && task.mode === 'review' ? <AiReviewView key={task.id} task={task} api={api} onCopied={() => void loadManuscript(task.projectId)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}</> : null} tools={!mobile && !conversationVisible ? taskStateActions : null}/> : <TaskDocument key={task.id} projectId={task.projectId} manuscript={manuscriptData.data} placeholder={task.preparation ? <PreparingTask task={task}/> : <PendingComparison task={task} busy={taskActionBusy} onBuild={() => void action('/tasks/' + task.id + '/publish')}/>} task={task} sources={taskReview} onOpenSource={openTaskSource} onRetryComparison={isPlayground ? undefined : () => void action('/tasks/' + task.id + '/publish')} retryBusy={comparisonRetryBusy} onChanges={next => setTaskChanges(current => JSON.stringify(current) === JSON.stringify(next) ? current : next)} onCurrentChange={change => { if (taskSource.editing && taskSide === 'source') void taskSource.follow(change, () => undefined); }} onDecided={() => void refresh(true)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}</> : null} tools={<>{reviewTools}{!mobile && !conversationVisible && taskStateActions}</>} completion={chatOnly ? null : completion} onComment={() => { setMobileTab('conversation'); setTaskSide('chat'); setLayout(current => current === 'review' ? 'split' : current); }}/>}
-        </section><Activity key={task.id} runtimes={runtimes} relatedTasks={state?.tasks.filter(other => other.id === task.restart?.taskId || other.restart?.taskId === task.id) || []} onOpenTask={id => { setSelected(id); setSidebar(false); }} source={taskSourceSide} onRevealQuote={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} task={task} lead={!mobile && chatOnly ? sidebarToggle : null} tools={!mobile && conversationVisible ? taskControls : null} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={taskRequests} refresh={() => void refresh(true)} errorActions={task.preparation && task.status === 'failed' ? <div className="task-error-actions">
+        </section><Activity key={task.id} runtimes={runtimes} manualSettingsVersion={manualSettingsVersion} relatedTasks={state?.tasks.filter(other => other.id === task.restart?.taskId || other.restart?.taskId === task.id) || []} onOpenTask={id => { setSelected(id); setSidebar(false); }} source={taskSourceSide} onRevealQuote={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} task={task} lead={!mobile && chatOnly ? sidebarToggle : null} tools={!mobile && conversationVisible ? taskControls : null} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={taskRequests} refresh={() => void refresh(true)} errorActions={task.preparation && task.status === 'failed' ? <div className="task-error-actions">
             <button type="button" className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/prepare')}><Icon name="refresh" size={14}/>{t('Retry')}</button>
             <button type="button" className="button secondary compact" onClick={() => setDeleteTarget(task)}><Icon name="trash" size={14}/>{t('Delete task…')}</button>
           </div> : chatOnly && task.mode !== 'review' && ['failed', 'interrupted'].includes(task.status) ? <div className="task-error-actions">
@@ -2819,7 +2877,7 @@ function App() {
       : <div className="home"><div className="home-inner"><PapilotMark size={52} className="home-logo"/><h1>{t('Add your first paper')}</h1><div className="home-paper-actions"><button className="button primary" onClick={createProject}><Icon name="plus" size={16}/>{t('New paper')}</button><button className="button secondary" onClick={importProject}><Icon name="download" size={16}/>{t('Import or open')}</button></div>{overleafEntry && <div className="home-integrations">{overleafEntry}</div>}</div></div>}
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
-    {settings && <SettingsDialog refreshUsage={refreshUsage} commitWriter={commitWriter} conflictWriter={conflictWriter} activity={loadActivity} memory={!isPlayground ? { project, api } : undefined} workflow={isPlayground ? undefined : { enabled: runtimes.collaboration?.hidden === false, online, runtimes, load: () => api<CollaborationSettingsState>('/collaboration'), save: async change => { const result = await api<CollaborationSettingsState>('/collaboration', change); await refresh(true); return result; } }} requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: taskAgents.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] })), agent: defaultAgent, model: defaultSelection.chosen, effort: defaultSelection.agent.effort, onSelect: chooseModel, onEffort: effort => saveModelPreferences(defaultAgent, defaultSelection.agent.model, { ...defaultSelection.pref, effort }), ...(!isPlayground ? { quick: quickModelApi } : {}) }} updates={!isPlayground ? api : undefined} overleaf={!isPlayground ? { api, state: state?.overleaf } : undefined} zotero={!isPlayground ? zoteroApi : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, compiler: chooseCompiler, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body), agentSettings: async change => { await api('/agent-settings', change); await refresh(true); } } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
+    {settings && <SettingsDialog refreshUsage={refreshUsage} commitWriter={commitWriter} conflictWriter={conflictWriter} activity={loadActivity} memory={!isPlayground ? { project, api } : undefined} workflow={isPlayground ? undefined : { enabled: runtimes.collaboration?.hidden === false, online, runtimes, load: () => api<CollaborationSettingsState>('/collaboration'), save: async change => { const result = await api<CollaborationSettingsState>('/collaboration', change); await refresh(true); return result; } }} chatgptPro={isPlayground ? undefined : { enabled: runtimes.chatgpt?.hidden === false, online, runtimes, load: () => api<ChatgptProSettingsState>('/chatgpt-pro'), save: async change => { const result = await api<ChatgptProSettingsState>('/chatgpt-pro', change); setManualSettingsVersion(value => value + 1); await refresh(true); return result; } }} requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: taskAgents.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] })), agent: defaultAgent, model: defaultSelection.chosen, effort: defaultSelection.agent.effort, onSelect: chooseModel, onEffort: effort => saveModelPreferences(defaultAgent, defaultSelection.agent.model, { ...defaultSelection.pref, effort }), ...(!isPlayground ? { quick: quickModelApi } : {}) }} updates={!isPlayground ? api : undefined} overleaf={!isPlayground ? { api, state: state?.overleaf } : undefined} zotero={!isPlayground ? zoteroApi : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, compiler: chooseCompiler, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body), agentSettings: async change => { await api('/agent-settings', change); await refresh(true); } } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}
     {bulkTarget && <BulkTaskDialog target={bulkTarget}
       submit={target => api('/tasks/' + target.id + '/' + bulkTarget.action, bulkTarget.action === 'archive' ? { archived: true } : { confirm: true })}
