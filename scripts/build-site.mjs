@@ -42,6 +42,8 @@ const urlFor = locale => site + (locale === 'en' ? '' : `${locale}/`);
 const ogLocales = { en: 'en_US', 'zh-CN': 'zh_CN', 'zh-Hant': 'zh_TW', ja: 'ja_JP', ko: 'ko_KR', de: 'de_DE', fr: 'fr_FR', es: 'es_ES', pt: 'pt_BR', it: 'it_IT', sv: 'sv_SE' };
 const alternates = locales.map(locale => `<link rel="alternate" hreflang="${locale}" href="${urlFor(locale)}">`).join('\n') + `\n<link rel="alternate" hreflang="x-default" href="${site}">`;
 const blogLabels = { en: 'Blog', 'zh-CN': '博客', 'zh-Hant': '部落格', ja: 'ブログ', ko: '블로그', de: 'Blog', fr: 'Blog', es: 'Blog', pt: 'Blog', it: 'Blog', sv: 'Blogg' };
+const wechatTopbar = '<a class="icon-button wechat-link" href="https://papilot.ai/wechat/" aria-label="微信群" title="微信群"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.69 4.5C4.44 4.5 1 7.42 1 11.02c0 2.04 1.12 3.86 2.87 5.05l-.72 2.17 2.53-1.27c.94.29 1.96.45 3.01.45.28 0 .56-.01.83-.04a6.45 6.45 0 0 1-.31-1.97c0-3.38 3.09-6.12 6.9-6.12.23 0 .45.01.68.03-.67-2.78-3.56-4.82-7.1-4.82ZM6.2 9.48a.95.95 0 1 1 0-1.9.95.95 0 0 1 0 1.9Zm5.02 0a.95.95 0 1 1 0-1.9.95.95 0 0 1 0 1.9Z"/><path d="M16.11 10.6c-3.25 0-5.89 2.22-5.89 4.96s2.64 4.96 5.89 4.96c.79 0 1.54-.13 2.22-.37l2 .99-.56-1.71c1.36-.92 2.23-2.32 2.23-3.87 0-2.74-2.64-4.96-5.89-4.96Zm-2.02 4.18a.78.78 0 1 1 0-1.56.78.78 0 0 1 0 1.56Zm4.04 0a.78.78 0 1 1 0-1.56.78.78 0 0 1 0 1.56Z"/></svg></a>';
+const wechatFooter = '<a href="https://papilot.ai/wechat/">微信群</a>';
 for (const locale of locales) {
   const translations = locale === 'en' ? {} : JSON.parse(fs.readFileSync(path.join(root, `site/locales/${locale}.json`), 'utf8'));
   const menu = locales.map(code => `<a href="${code === 'en' ? '/' : `/${code}/`}" role="menuitemradio" lang="${code}" aria-checked="${code === locale}" tabindex="-1">${names[code]}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></a>`).join('');
@@ -49,6 +51,8 @@ for (const locale of locales) {
   const title = translated.match(/<title>([^<]*)<\/title>/)[1];
   let html = translated
     .replaceAll('<!-- blog-navigation -->', `<a href="${blogRoute(locale)}">${blogLabels[locale]}</a>`)
+    .replace('<!-- wechat-topbar -->', locale === 'zh-CN' ? wechatTopbar : '')
+    .replace('<!-- wechat-footer -->', locale === 'zh-CN' ? wechatFooter : '')
     .replace('<!-- analytics -->', analytics)
     .replaceAll('{{version}}', release)
     .replace('<!-- github-stars -->', starCount)
@@ -117,8 +121,8 @@ for (const page of [...locales.map(locale => locale === 'en' ? '' : locale), 'pr
   for (const ref of refs) {
     const url = new URL(ref, site + (page ? page + '/' : ''));
     if (url.origin !== new URL(site).origin) continue;
-    // Universe is served by its own Worker, not this static build (site/wrangler.toml).
-    if (url.href === 'https://papilot.ai/universe/') continue;
+    // Universe and WeChat are served by their own Workers, not this static build (site/wrangler.toml).
+    if (url.href === 'https://papilot.ai/universe/' || url.href === 'https://papilot.ai/wechat/') continue;
     const file = path.join(out, decodeURIComponent(url.pathname), url.pathname.endsWith('/') ? 'index.html' : '');
     if (!fs.existsSync(file)) missing.push(`${page || 'en'}: ${ref}`);
   }

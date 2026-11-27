@@ -45,7 +45,10 @@ test('README regeneration writes translations under docs and leaves the root ent
     fs.cpSync(path.join(root, 'docs/assets'), path.join(directory, 'docs/assets'), { recursive: true });
     renderReadme(directory, JSON.parse(fs.readFileSync(path.join(root, 'i18n/readme/zh-CN.json'), 'utf8')), 'zh-CN');
     assert.deepEqual(fs.readdirSync(directory).sort(), ['README.md', 'docs']);
-    assert.equal(fs.readFileSync(path.join(directory, 'docs/readme/README.zh-CN.md'), 'utf8'), fs.readFileSync(path.join(root, 'docs/readme/README.zh-CN.md'), 'utf8'));
+    const renderedZh = fs.readFileSync(path.join(directory, 'docs/readme/README.zh-CN.md'), 'utf8');
+    assert.equal(renderedZh, fs.readFileSync(path.join(root, 'docs/readme/README.zh-CN.md'), 'utf8'));
+    assert.ok(renderedZh.includes('https://papilot.ai/wechat/'), 'zh-CN README includes WeChat group links');
+    assert.ok(!fs.readFileSync(path.join(root, 'README.md'), 'utf8').includes('https://papilot.ai/wechat/'), 'English README stays free of zh-CN-only WeChat links');
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 test('README translations use the translated copy of an image when one exists', () => {

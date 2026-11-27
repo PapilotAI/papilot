@@ -14,6 +14,7 @@
 [![npm monthly downloads](https://img.shields.io/npm/dm/papilot?style=flat&logo=npm&label=downloads&color=cb3837)](https://www.npmjs.com/package/papilot)
 [![GitHub stars](https://img.shields.io/github/stars/PapilotAI/papilot?style=flat&logo=github&label=stars&color=0969da)](https://github.com/PapilotAI/papilot/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/WdgZDDAvwj)
+[![微信群](https://img.shields.io/badge/%E5%BE%AE%E4%BF%A1%E7%BE%A4-%E6%89%AB%E7%A0%81%E5%8A%A0%E5%85%A5-07C160?style=flat&logo=wechat&logoColor=white)](https://papilot.ai/wechat/)
 <!-- END BADGES -->
 
 <p data-language-switcher><sub><a href="../../README.md">English</a>&emsp;<a href="README.zh-CN.md">简体中文</a>&emsp;<a href="README.zh-Hant.md">繁體中文</a>&emsp;<a href="README.ja.md">日本語</a>&emsp;<a href="README.ko.md">한국어</a>&emsp;<a href="README.de.md">Deutsch</a>&emsp;<a href="README.fr.md">Français</a>&emsp;<a href="README.es.md">Español</a>&emsp;<a href="README.pt.md">Português</a>&emsp;<a href="README.it.md">Italiano</a>&emsp;<a href="README.sv.md">Svenska</a></sub></p>
@@ -208,6 +209,8 @@ papilot demo
 <a href="https://discord.gg/WdgZDDAvwj"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-community/discord-compact-dark.zh-CN.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-community/discord-dark.zh-CN.png"><source media="(max-width: 600px)" srcset="../assets/readme-community/discord-compact.zh-CN.png"><img src="../assets/readme-community/discord.zh-CN.png" alt="在 Discord 上与 Papilot 的开发者和用户交流。" width="49%"></picture></a>
 <a href="../../.github/CONTRIBUTING.md"><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-community/contribute-compact-dark.zh-CN.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-community/contribute-dark.zh-CN.png"><source media="(max-width: 600px)" srcset="../assets/readme-community/contribute-compact.zh-CN.png"><img src="../assets/readme-community/contribute.zh-CN.png" alt="参与贡献：欢迎提交 Pull Request，包括借助 AI 智能体编写的贡献。" width="49%"></picture></a>
 </p>
+
+<p align="center"><sub>中文用户也可以直接扫码加入 <a href="https://papilot.ai/wechat/">Papilot 微信讨论群</a>。</sub></p>
 
 Papilot 更新频繁：请查看[更新日志](../../CHANGELOG.md)。
 
