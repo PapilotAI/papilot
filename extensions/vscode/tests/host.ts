@@ -29,14 +29,19 @@ async function checks() {
   await vscode.workspace.applyEdit(edit); await document.save();
   await vscode.commands.executeCommand('papilot.open', paper);
   await waitFor(() => vscode.languages.getDiagnostics(document.uri), entries => entries.some(entry => entry.severity === vscode.DiagnosticSeverity.Error));
-  const unsaved = new vscode.WorkspaceEdit(); unsaved.insert(document.uri, new vscode.Position(2, 0), 'Unsaved text.\n');
-  await vscode.workspace.applyEdit(unsaved);
+  const savedText = document.getText(), insertion = new vscode.Position(2, 0);
+  const unsaved = new vscode.WorkspaceEdit(); unsaved.insert(document.uri, insertion, 'Unsaved text.\n');
+  assert.ok(await vscode.workspace.applyEdit(unsaved));
   await fs.writeFile(path.join(process.env.PAPILOT_HOST_ARTIFACTS!, 'host-ready'), 'ready');
   // The browser harness inspects both editor webviews and the independent sidebar.
   await waitFor(() => fs.access(path.join(process.env.PAPILOT_HOST_ARTIFACTS!, 'revert-draft')).then(() => true, () => false), Boolean, 180000);
   assert.ok(document.isDirty && document.getText().includes('Unsaved text.'), 'Review must preserve unsaved editor text');
-  await vscode.window.showTextDocument(document, vscode.ViewColumn.One);
-  await vscode.commands.executeCommand('workbench.action.files.revert');
+  assert.equal(await fs.readFile(document.uri.fsPath, 'utf8'), savedText, 'Review must leave the saved source unchanged');
+  const restore = new vscode.WorkspaceEdit();
+  restore.delete(document.uri, new vscode.Range(insertion, insertion.translate(1)));
+  assert.ok(await vscode.workspace.applyEdit(restore));
+  assert.equal(document.getText(), savedText);
+  assert.ok(await document.save());
   assert.equal(document.isDirty, false);
   await fs.writeFile(path.join(process.env.PAPILOT_HOST_ARTIFACTS!, 'draft-reverted'), 'ready');
   await waitFor(() => fs.access(path.join(process.env.PAPILOT_HOST_ARTIFACTS!, 'light-theme')).then(() => true, () => false), Boolean, 180000);
@@ -51,5 +56,5 @@ async function checks() {
 
 export async function run() {
   try { await checks(); }
-  catch (error) { await fs.writeFile(path.join(process.env.PAPILOT_HOST_ARTIFACTS!, 'host-error'), String(error)); throw error; }
+  catch (error) { await fs.writeFile(path.join(process.env.PAPILOT_HOST_ARTIFACTS!, 'host-error'), error instanceof Error ? error.stack ?? error.message : String(error)); throw error; }
 }

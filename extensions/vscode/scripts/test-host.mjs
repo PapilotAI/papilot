@@ -33,16 +33,22 @@ const child = spawn(process.env.PAPILOT_CODE || 'code', ['--wait', '--new-window
   env: { ...process.env, PAPILOT_WORKTREES: path.join(temp, 'worktrees'), PAPILOT_MEMORY: path.join(temp, 'memory.md'), PAPILOT_HOST_ARTIFACTS: temp, PAPILOT_HOST_INSPECT: '1' }, stdio: 'inherit',
 });
 let exited = false;
-const completion = new Promise(resolve => child.on('exit', code => { exited = true; resolve(code); }));
+const completion = new Promise(resolve => child.on('exit', (code, signal) => { exited = true; resolve(signal || code); }));
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-let browser;
-try {
-  const deadline = Date.now() + 120000;
-  while (!fs.existsSync(path.join(temp, 'host-ready'))) {
-    if (fs.existsSync(path.join(temp, 'host-error'))) throw new Error(fs.readFileSync(path.join(temp, 'host-error'), 'utf8'));
-    if (exited || Date.now() > deadline) throw new Error('VS Code host checks did not finish.');
+const hostError = path.join(temp, 'host-error');
+async function waitForHost(marker, message, timeout = 120000) {
+  const deadline = Date.now() + timeout;
+  while (!fs.existsSync(path.join(temp, marker))) {
+    if (fs.existsSync(hostError)) throw new Error(fs.readFileSync(hostError, 'utf8'));
+    if (exited) throw new Error(`${message} VS Code exited with status ${await completion}.`);
+    if (Date.now() > deadline) throw new Error(message);
     await wait(200);
   }
+}
+let browser;
+try {
+  await waitForHost('host-ready', 'VS Code host checks did not finish.');
+  const deadline = Date.now() + 120000;
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   const page = browser.contexts()[0].pages()[0];
   const frames = async () => {
@@ -92,12 +98,10 @@ try {
   await expect(review.getByText('Save your edited files before applying or rejecting changes.', { exact: true })).toBeVisible();
   if (execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: fixture, encoding: 'utf8' }).trim()) throw new Error('Review staged a dirty editor.');
   fs.writeFileSync(path.join(temp, 'revert-draft'), 'ready');
-  while (!fs.existsSync(path.join(temp, 'draft-reverted'))) {
-    if (exited || Date.now() > reviewDeadline) throw new Error('The native editor did not clear its draft.');
-    await wait(200);
-  }
+  await waitForHost('draft-reverted', 'The native editor did not clear its draft.');
   await review.getByRole('button', { name: /^Stage(?: all)?(?: \(|$)/ }).first().click();
-  while (Date.now() < reviewDeadline) {
+  const stagingDeadline = Date.now() + 120000;
+  while (Date.now() < stagingDeadline) {
     const staged = execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: fixture, encoding: 'utf8' }).trim();
     if (staged === 'paper/main.tex') break;
     if (await review.getByRole('alert').count()) console.log(await review.getByRole('alert').allTextContents());
@@ -115,7 +119,7 @@ try {
   fs.writeFileSync(path.join(temp, 'inspected'), 'done');
   await browser.close(); browser = undefined;
   const code = await completion;
-  if (fs.existsSync(path.join(temp, 'host-error'))) throw new Error(fs.readFileSync(path.join(temp, 'host-error'), 'utf8'));
+  if (fs.existsSync(hostError)) throw new Error(fs.readFileSync(hostError, 'utf8'));
   if (code !== 0) throw new Error(`VS Code exited with status ${code}.`);
 } finally {
   if (browser && !exited) {
