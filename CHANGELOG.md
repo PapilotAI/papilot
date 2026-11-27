@@ -33,6 +33,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 - Identify the `.tex` file the manuscript source editor could not open, with guidance for invalid UTF-8 and null bytes. ([#352](https://github.com/PapilotAI/papilot/issues/352))
 - Fix LaTeX compilation and PDF reviews on Windows when TeX Live or MiKTeX passes LaTeX code through the Perl bundled with Git for Windows. ([#340](https://github.com/PapilotAI/papilot/pull/340), [#346](https://github.com/PapilotAI/papilot/issues/346))
+- On Windows, the toolbar divider extends beneath the window buttons to the right edge.
 - The PDF zoom menu keeps one width across percentages, so the toolbar no longer shifts between 90% and 100%.
 - The `papilot` command uses the Codex it downloads on the same launch, even when an older copy is on `PATH`.
 
