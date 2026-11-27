@@ -246,34 +246,44 @@ export class CollaborationRuntime extends Adapter {
       status: 'inProgress',
     });
 
-    let plan = deterministicFallbackPlan(clusters, strategy, resolved.racers.length);
+    const activeLanes = resolved.lanes?.length ? resolved.lanes : undefined;
+    const laneOf = (laneId: string) => activeLanes?.find(l => l.id === laneId);
+    const laneRacers = (laneId: string) => {
+      const lane = laneOf(laneId);
+      if (lane && lane.models.length >= 2) return lane.models;
+      return resolved.racers.length >= 2 ? resolved.racers : [lane?.models[0] || primaryWorker];
+    };
+
+    let plan = deterministicFallbackPlan(clusters, strategy, resolved.racers.length, activeLanes);
     if (routerCanReadOnly) {
       const routerPrompt = buildRouterPrompt({
         clusters, request: ctx.request || text, strategy,
-        racerCount: resolved.racers.length, roles: resolved.routes, memory: ctx.memory,
+        racerCount: resolved.racers.length, roles: resolved.routes, lanes: activeLanes, memory: ctx.memory,
       });
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           const reply = await limiter.run(routerWorker.agent, signal, () =>
             this.invoke(routerWorker, routerPrompt, signal, undefined, undefined, activity),
           );
-          const parsed = parseRouterPlan(reply, clusters, strategy, resolved.racers.length);
+          const parsed = parseRouterPlan(reply, clusters, strategy, resolved.racers.length, activeLanes);
           plan = parsed;
           if (!parsed.fallback) break;
         } catch (error) {
           if (signal.aborted) throw error;
-          if (attempt === 1) plan = { ...deterministicFallbackPlan(clusters, strategy, resolved.racers.length), reason: `Router fallback (${errorMessage(error)})` };
+          if (attempt === 1) plan = { ...deterministicFallbackPlan(clusters, strategy, resolved.racers.length, activeLanes), reason: `Router fallback (${errorMessage(error)})` };
         }
       }
     }
     const planLines = plan.units.map(u => {
       const cluster = clusters.find(c => c.id === u.clusterId)!;
       const nums = cluster.notes.map(n => `#${n.noteNumber}`).join(', ');
+      const lane = laneOf(u.lane);
+      const laneName = lane?.name || u.lane || u.role;
       return u.mode === 'race'
-        ? `${nums} (${cluster.file}): race (${resolved.racers.map(shortModel).join(' vs ')})`
+        ? `${nums} (${cluster.file}): ${laneName} · race (${laneRacers(u.lane).map(shortModel).join(' vs ')})`
         : u.mode === 'answer'
           ? `${nums} (${cluster.file}): answer`
-          : `${nums} (${cluster.file}): assign → ${u.role}`;
+          : `${nums} (${cluster.file}): ${laneName} → ${shortModel(lane?.models[0] || resolved.routes[u.role] || primaryWorker)}`;
     });
     this.host.saveItem(taskId, {
       id: routeItemId, type: 'tool', text: 'workflow_route',
@@ -409,9 +419,11 @@ export class CollaborationRuntime extends Adapter {
       }
 
       if (unit.mode === 'assign') {
-        const worker = roleRoute(unit.role);
+        const lane = laneOf(unit.lane);
+        const worker = lane?.models[0] || roleRoute(unit.role);
+        const laneLabel = lane?.name || unit.lane || unit.role;
         const itemId = `${taskId}:${turn.id}:assign:${cluster.id}`;
-        let res = await runOneCandidate(cluster, worker, unit.role, unit.instruction, itemId, undefined, `workflow_delegate · ${unit.role}`, base);
+        let res = await runOneCandidate(cluster, worker, unit.role, unit.instruction, itemId, undefined, `workflow_delegate · ${unit.lane || unit.role}`, base);
         // If quick/polish failed or produced a hard-broken edit, fall back once to rigorous worker.
         if (!signal.aborted && ('error' in res ? !res.stopped : res.candidate.fidelity.hardFail) && resolved.routes.rigorous && routeKey(worker) !== routeKey(resolved.routes.rigorous)) {
           const fallbackId = `${taskId}:${turn.id}:fallback:${cluster.id}`;
@@ -432,7 +444,7 @@ export class CollaborationRuntime extends Adapter {
             for (const conflict of merged.conflicts) conflicts.push({ cluster, conflict });
             reportLines.push(`- **${noteNums}** (${cluster.file}): Assigned to **${res.candidate.modelName}** (reconciling overlap).`);
           } else {
-            reportLines.push(`- **${noteNums}** (${cluster.file}): Assigned to **${res.candidate.modelName}** (${unit.role})${res.candidate.summary ? ` — ${res.candidate.summary.replace(/\.+$/, '')}` : ''}.`);
+            reportLines.push(`- **${noteNums}** (${cluster.file}): **${laneLabel}** → **${res.candidate.modelName}**${res.candidate.summary ? ` — ${res.candidate.summary.replace(/\.+$/, '')}` : ''}.`);
           }
         } catch (error) {
           if (signal.aborted) return;
@@ -441,12 +453,14 @@ export class CollaborationRuntime extends Adapter {
         return;
       }
 
-      // Per-annotation Race mode!
-      const racers = resolved.racers.length >= 2 ? resolved.racers : [primaryWorker];
+      // Per-annotation Race mode (using this lane's competing models)!
+      const lane = laneOf(unit.lane);
+      const laneLabel = lane?.name || unit.lane || unit.role;
+      const racers = laneRacers(unit.lane);
       const raceItemId = `${taskId}:${turn.id}:race:${cluster.id}`;
       this.host.saveItem(taskId, {
         id: raceItemId, type: 'tool', text: `workflow_race · Notes ${cluster.notes.map(n => n.noteNumber).join(', ')}`,
-        detail: `${racers.map(shortModel).join(' vs ')}\n${unit.instruction}`,
+        detail: `${laneLabel}: ${racers.map(shortModel).join(' vs ')}\n${unit.instruction}`,
         status: 'inProgress',
       });
 

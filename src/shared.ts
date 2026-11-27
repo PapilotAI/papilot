@@ -188,22 +188,40 @@ export const COLLABORATION_STRATEGIES: CollaborationStrategy[] = ['balanced', 'f
 export const isCollaborationStrategy = (value: unknown): value is CollaborationStrategy => typeof value === 'string' && COLLABORATION_STRATEGIES.includes(value as CollaborationStrategy);
 export type CollaborationRole = 'quick' | 'polish' | 'rigorous';
 export const COLLABORATION_ROLES: CollaborationRole[] = ['quick', 'polish', 'rigorous'];
+export type BuiltinCollaborationLaneId = 'quick' | 'polish' | 'rigorous' | 'layout';
+export const BUILTIN_COLLABORATION_LANES: BuiltinCollaborationLaneId[] = ['quick', 'polish', 'rigorous', 'layout'];
+export const MAX_COLLABORATION_LANES = 8;
 export type CollaborationSlot = 'router' | CollaborationRole | 'judge';
 export type CollaborationWorkerAgent = Exclude<AgentId, 'collaboration'>;
 export const COLLABORATION_WORKERS: CollaborationWorkerAgent[] = AGENT_IDS.filter((id): id is CollaborationWorkerAgent => id !== 'collaboration');
 export interface CollaborationRoute { agent: CollaborationWorkerAgent; model: string | null; effort: string | null; serviceTier?: string | null }
 export type CollaborationRoutes = Record<CollaborationRole, CollaborationRoute | null>;
+export interface CollaborationLane {
+  id: string;
+  name: string;
+  description: string;
+  models: CollaborationRoute[];
+  custom?: boolean;
+}
+export const DEFAULT_COLLABORATION_LANE_DEFS: Record<BuiltinCollaborationLaneId, { name: string; description: string }> = {
+  quick: { name: 'Simple edits', description: 'Typos, punctuation, word swaps, and minor mechanical fixes' },
+  polish: { name: 'Prose & polish', description: 'Clarity, flow, conciseness, phrasing, and academic tone' },
+  rigorous: { name: 'Math & rigorous', description: 'Proofs, lemmas, typing rules, claims, citations, and technical correctness' },
+  layout: { name: 'Layout & LaTeX', description: 'Tables, figures, spacing, macros, formatting, and visual layout' },
+};
 export interface CollaborationResolved {
   router: CollaborationRoute | null;
   judge: CollaborationRoute | null;
   routes: CollaborationRoutes;
   racers: CollaborationRoute[];
+  lanes: CollaborationLane[];
 }
 export interface CollaborationConfig {
   router: CollaborationRoute | null;
   judge: CollaborationRoute | null;
   routes: CollaborationRoutes;
   racers: CollaborationRoute[];
+  lanes?: CollaborationLane[];
 }
 export interface CollaborationSettings extends CollaborationConfig {
   enabled: boolean;
@@ -216,6 +234,7 @@ export const DEFAULT_COLLABORATION_CONFIG: CollaborationConfig = {
   judge: null,
   routes: { quick: null, polish: null, rigorous: null },
   racers: [],
+  lanes: [],
 };
 export function validRoute(value: unknown): value is CollaborationRoute {
   if (!value || typeof value !== 'object') return false;
@@ -230,6 +249,20 @@ export function normalizeRoute(value: unknown): CollaborationRoute | null {
   const model = text(value.model), effort = text(value.effort), serviceTier = text(value.serviceTier);
   return { agent: value.agent, model, effort, ...(value.agent === 'codex' && serviceTier && serviceTier !== 'default' ? { serviceTier } : {}) };
 }
+function dedupeRoutes(list: unknown[]): CollaborationRoute[] {
+  const seen = new Set<string>();
+  const out: CollaborationRoute[] = [];
+  for (const entry of list) {
+    const normalized = normalizeRoute(entry);
+    if (!normalized) continue;
+    const key = `${normalized.agent}\0${normalized.model || ''}\0${normalized.effort || ''}\0${normalized.serviceTier || ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(normalized);
+    if (out.length >= MAX_COLLABORATION_RACERS) break;
+  }
+  return out;
+}
 // A route update from a client: every role may be null (auto) or a valid route.
 export function validRoutes(value: unknown): value is CollaborationRoutes {
   if (!value || typeof value !== 'object') return false;
@@ -240,6 +273,40 @@ export function validRoutes(value: unknown): value is CollaborationRoutes {
 }
 export function validRacers(value: unknown): value is CollaborationRoute[] {
   return Array.isArray(value) && value.length <= MAX_COLLABORATION_RACERS && value.every(validRoute);
+}
+export function validLanes(value: unknown): value is CollaborationLane[] {
+  if (!Array.isArray(value) || value.length > MAX_COLLABORATION_LANES) return false;
+  const ids = new Set<string>();
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') return false;
+    const lane = entry as Record<string, unknown>;
+    if (typeof lane.id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,39}$/.test(lane.id) || ids.has(lane.id)) return false;
+    ids.add(lane.id);
+    if (typeof lane.name !== 'string' || !lane.name.trim() || lane.name.length > 60 || lane.name.includes('\0')) return false;
+    if (typeof lane.description !== 'string' || lane.description.length > 260 || lane.description.includes('\0')) return false;
+    if (!validRacers(lane.models)) return false;
+  }
+  return true;
+}
+export function normalizeLanes(value: unknown): CollaborationLane[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: CollaborationLane[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue;
+    const lane = entry as Record<string, unknown>;
+    const rawId = typeof lane.id === 'string' ? lane.id.trim().toLowerCase() : '';
+    if (!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(rawId) || seen.has(rawId)) continue;
+    seen.add(rawId);
+    const builtin = (BUILTIN_COLLABORATION_LANES as string[]).includes(rawId);
+    const def = builtin ? DEFAULT_COLLABORATION_LANE_DEFS[rawId as BuiltinCollaborationLaneId] : null;
+    const name = typeof lane.name === 'string' && lane.name.trim() ? lane.name.trim().slice(0, 60) : (def?.name || rawId);
+    const description = typeof lane.description === 'string' ? lane.description.trim().slice(0, 260) : (def?.description || '');
+    const models = Array.isArray(lane.models) ? dedupeRoutes(lane.models) : [];
+    out.push({ id: rawId, name, description, models, ...(!builtin ? { custom: true } : {}) });
+    if (out.length >= MAX_COLLABORATION_LANES) break;
+  }
+  return out;
 }
 // Saved routes are validated field by field; anything else falls back to auto (null).
 export function collaborationRoutes(value: unknown, legacy = false): CollaborationRoutes {
@@ -255,26 +322,20 @@ export function collaborationRoutes(value: unknown, legacy = false): Collaborati
 export function collaborationConfig(value: unknown, legacyRoutes?: unknown): CollaborationConfig {
   if (value && typeof value === 'object') {
     const saved = value as Record<string, unknown>;
-    const seen = new Set<string>();
-    const racers = Array.isArray(saved.racers) ? saved.racers.flatMap(entry => {
-      const normalized = normalizeRoute(entry);
-      if (!normalized) return [];
-      const key = `${normalized.agent}\0${normalized.model || ''}\0${normalized.effort || ''}\0${normalized.serviceTier || ''}`;
-      if (seen.has(key)) return [];
-      seen.add(key);
-      return [normalized];
-    }).slice(0, MAX_COLLABORATION_RACERS) : [];
+    const racers = Array.isArray(saved.racers) ? dedupeRoutes(saved.racers) : [];
+    const lanes = normalizeLanes(saved.lanes);
     return {
       router: normalizeRoute(saved.router),
       judge: normalizeRoute(saved.judge),
       routes: collaborationRoutes(saved.routes),
       racers,
+      lanes,
     };
   }
   if (legacyRoutes && typeof legacyRoutes === 'object') {
-    return { ...DEFAULT_COLLABORATION_CONFIG, routes: collaborationRoutes(legacyRoutes, true) };
+    return { ...DEFAULT_COLLABORATION_CONFIG, routes: collaborationRoutes(legacyRoutes, true), lanes: [] };
   }
-  return { ...DEFAULT_COLLABORATION_CONFIG, routes: { ...DEFAULT_COLLABORATION_CONFIG.routes }, racers: [] };
+  return { ...DEFAULT_COLLABORATION_CONFIG, routes: { ...DEFAULT_COLLABORATION_CONFIG.routes }, racers: [], lanes: [] };
 }
 // Papilot Writer's providers: subscriptions it signs in to, and API keys
 // stored by Papilot or read from the environment.

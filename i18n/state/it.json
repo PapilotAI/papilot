@@ -174,6 +174,11 @@
     "textHash": "bdc5dd9071a66effd97f20251cc2f76eb85cc0ef08143e0e32aec915a40d2ca6",
     "model": "gemini-4-argon-medium"
   },
+  "Active when a lane has 2+ models": {
+    "revision": "37a99a096ce7bd8583736ad95bf74c6ae1932a00281cf9c5f317143d9c55c984",
+    "textHash": "b4b78d4d729c99766dd1f31e3599e79613a934856e0cb27fb161f7ce5bb32502",
+    "model": "gemini-4-argon-medium"
+  },
   "Activity": {
     "revision": "9aa780af91795a95153821e2d752994e0573d2d377264795218bdda319430f19",
     "textHash": "387ad1fd422d2239a710e1a30e0aa9bc54b0b051ed868fbde85ec0aeb0d22e37",
@@ -234,9 +239,19 @@
     "textHash": "4d6f15c4f633035e0b1afeea5aa9d1a74e4a0b48c1d1b2ef5ceb51d179b7c3c5",
     "model": "gemini-4-argon-medium"
   },
+  "Add lane": {
+    "revision": "29f012b56b3dbd51422ddf38d534701426a290170c50b173aab451648f9fb48f",
+    "textHash": "c2d060867ab04435afff24c364005a572a2799ea46326f9bcc3b5452aaf03604",
+    "model": "gemini-4-argon-medium"
+  },
   "Add model": {
     "revision": "7f217183f2ea70c823921c4f84328690e21c0e974f98ceee3c902963fce90657",
     "textHash": "50357d73a09d8984dcf29e9d51b66890bcd5638aab287aee9cbdc1c8d4121551",
+    "model": "gemini-4-argon-medium"
+  },
+  "Add model to {lane}": {
+    "revision": "08ba757aae0ffc27cb00642ac6c0a739440d82ffe00edb9e4957ce48f621e235",
+    "textHash": "a66b802d759341d60d88ab97c77ad118818d571d460b26de79cdc8e974bfb9cd",
     "model": "gemini-4-argon-medium"
   },
   "Add note": {
@@ -679,19 +694,9 @@
     "textHash": "2d2c6e7bea6c7c837d3a368a7051d92e30453faec4aeaee65cfa82ef84a01943",
     "model": "gemini-4-argon-medium"
   },
-  "Blind judge & rigorous tasks": {
-    "revision": "d8ef328833118c08da1f6f236ec0772a824de924d4c2215f3b6a9e8bdad121ce",
-    "textHash": "bda59155c9ea8eb49c9bf909ee382b7876e778b1468d9a73b672035c6c513009",
-    "model": "gemini-4-argon-medium"
-  },
   "Blind judge · {target}": {
     "revision": "54df8a5b89544f56edcda929ef1f2f8d5fbcb3b38a398a539f601392bd19799a",
     "textHash": "c64fbdb008a6e16889d985e9541fc982686aae9bdcdf077d6b67ce3b9771eb2d",
-    "model": "gemini-4-argon-medium"
-  },
-  "Blind-judges race candidates, catches claim drift, and handles rigorous tasks.": {
-    "revision": "16d0bb2620088d8ebc0651d836231f96d1919cfc48526de118c56054a44e0a80",
-    "textHash": "9a0a79d8684905eeba0bb6034b121e3f13e82553d3c7a1557b2ce8aaacd9889d",
     "model": "gemini-4-argon-medium"
   },
   "Book": {
@@ -1049,6 +1054,16 @@
     "textHash": "365a88bb638f5f7a53f221f19dca00d236ba35ba2b6cd4a320d8b00c379ee9ab",
     "model": "gemini-4-argon-medium"
   },
+  "Clarity, flow, conciseness, phrasing, and academic tone": {
+    "revision": "dbc238af120b4f36a53f9a56a8b2e8b6cea05a27255e80771b2bc2d700f38158",
+    "textHash": "134d5a16cfe4d630d75f322a8024159243296e0cabcdf0c17e508838fb9b5489",
+    "model": "gemini-4-argon-medium"
+  },
+  "Classifies each note": {
+    "revision": "9b2c35fb3bdd0610425ddb3856a3acc51b61a3c21eedf7caac4945c3f0b4e2c6",
+    "textHash": "df42b83876277a22ce501c79ee3be2c8ba144500e5bef9d935b503cc6fd432b0",
+    "model": "gemini-4-argon-medium"
+  },
   "Claude Code or API credentials were not detected.": {
     "revision": "a7fdb7255958eb7420a9a536cb8102fdac2197e32679fdc6e962f832547afc6b",
     "textHash": "81aaa1172315327f49035e9100e430bc60793de7061b0c07009ffa67ae8b3e10",
@@ -1074,9 +1089,9 @@
     "textHash": "da0571d8162a97aa00ff6c0930300e99c8b5498e9f94ac2e5fd0da45a3d3df7f",
     "model": "gemini-4-argon-medium"
   },
-  "Click any model to customize": {
-    "revision": "7db09c3e2ebd1ef5012e9695f6432283dfde8d0f8be04f89b4081478709f767a",
-    "textHash": "0defb568ca428a60d5582522d6180437118d83566cce3cc60b51b44566ea2771",
+  "Click any model to customize · + to race a lane": {
+    "revision": "d9c59429c42b090385cf12777a4bd988ea273ce6ce24eccb8f60ae76d75c3ac0",
+    "textHash": "c80a8da28ecf463e026e93250be489ea542e498480d6f8f853b5b7b6e922805a",
     "model": "gemini-4-argon-medium"
   },
   "Click anywhere on the page to leave a note there.": {
@@ -1309,11 +1324,6 @@
     "textHash": "b2ffd80204acf1f6d8846332896e1bad8bc5b67724bab1fd57ede9307cd1c898",
     "model": "gemini-4-argon-medium"
   },
-  "Competes in parallel on substantive annotations.": {
-    "revision": "36f86c4861cda0f6eee4ad642b6ab9dcde5aeb6e2e891f10d139b9e75eccb751",
-    "textHash": "29172520636f8a8a600536a8f2219f9d733bc880df3523c57f0d5722ce9f0dcd",
-    "model": "gemini-4-argon-medium"
-  },
   "Compilation details": {
     "revision": "2e643efa389b03e71e13568da4d41b528c3b4982cd1b75289875f4cf13ec286d",
     "textHash": "15fa2f0a714744815425b63e9fec8dfd740cb085836db396c8e34bdc36039dd3",
@@ -1432,11 +1442,6 @@
   "Connect and sign in to load the model list.": {
     "revision": "b288b4c5815eb0909eb66b9323464a9ea48526b30a237b0b6293e2a2b560d81b",
     "textHash": "c1b85862ca8b08c527feffaa93be52b2762297a0f8d390fe7cda3069026900e3",
-    "model": "gemini-4-argon-medium"
-  },
-  "Connect at least two models to race annotations in parallel.": {
-    "revision": "c44c439b09e6ce89307dfbbf78c4a8901373f8384387b2c287c473aff1d65436",
-    "textHash": "44c60b03056d84ad433f74154bbdfef7614f309bd921c0b47d168a70562b2753",
     "model": "gemini-4-argon-medium"
   },
   "Connect to view account, models, and usage.": {
@@ -1719,6 +1724,11 @@
     "textHash": "7925666e597623c00acc507c75f6a40f7fc3e6e3f1fee3b8da5aaf2d9fefb768",
     "model": "gemini-4-argon-medium"
   },
+  "Custom lane {n}": {
+    "revision": "f6f8441e971c635e240a7748e8567120c25bf79818bc0f954cd6726d8747af2f",
+    "textHash": "8eeef6fa26f39f84bad0a5f159a641f23a7e2dca09e62aeab145d5507cb4eaa8",
+    "model": "gemini-4-argon-medium"
+  },
   "Customize shortcuts": {
     "revision": "26f28d7b4030725dab871d3667201774c38e271a6a101532f087f826f968c146",
     "textHash": "1d6a23edec81c027b784e1f1d3706db0364a3dc49d7bede7b3fb409b56280a95",
@@ -1780,7 +1790,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Delete": {
-    "revision": "b8af16745f1d99726900f2a9e1b18e0a69a71ec6390a340112f986c3f92fe2f6",
+    "revision": "a155e52eb6979cb90330595500873f8694202538d2dcab931791bfaf24529e1a",
     "textHash": "7efe336bd548c1eb2ddfa0bd4cb809ee7210f0896649795e33cfe51d34e0d8b5",
     "model": "gemini-4-argon-medium"
   },
@@ -1904,6 +1914,11 @@
     "textHash": "6c8e0e137493d2b2d10144501089614e8db577bdb081f02b0889af16d0d38cbe",
     "model": "gemini-4-argon-medium"
   },
+  "Describe what kind of annotations Router should route here…": {
+    "revision": "5481ee39433b318aebc0e0d7a1ebc67220bf787c24c1b09d818519ddf481c783",
+    "textHash": "0e860d587b3b99b7581c8f58e11a56d3bfe1be57febd4fe29e6a00916b199d42",
+    "model": "gemini-4-argon-medium"
+  },
   "Describe what the agent should do, what to preserve, and how to present the result.": {
     "revision": "7c4274f064a9b5bbb8d8dd692cddf54c4357a5612f13aa9898da894b405b4ef7",
     "textHash": "92f6c91dff6b72aa30d15e03ede3d25db8567239f057106df26838685eeba651",
@@ -1938,6 +1953,11 @@
     "revision": "dd2ae20154d173cf8e874136d6240778048b36ccb8a381b0e80ba53b8c51be82",
     "textHash": "80c8c95517488ac554f4cc913ce8b9e64abe8fd6ca1a5fbe4fdd176654d5f6dd",
     "model": "codex"
+  },
+  "Direct": {
+    "revision": "7f4d0f2f0a5ff9c44443cc93214f40ab30ea1ef4d6998169fe534593993ae289",
+    "textHash": "1e1a28fdb0d7bab8092d427b855b0a0aec9518b12ee60286c6601a410ed03275",
+    "model": "gemini-4-argon-medium"
   },
   "Discard all changes": {
     "revision": "1e6844b73fd2a391941554c0226dc3a6e54b42f1e80aac70b81dc9919046d198",
@@ -1997,11 +2017,6 @@
   "Dismiss error": {
     "revision": "795fe0e8aceff43af762f61c4a94ba5a66dd073e20db848b9dd2b2d0faeb30ec",
     "textHash": "c4bd9f1c79759cedbe8d061786501f5818875653c8ff5b794d34e8a714a87953",
-    "model": "gemini-4-argon-medium"
-  },
-  "Dispatches each annotation and handles simple mechanical edits directly.": {
-    "revision": "a6c848526a404821535ebd298283c7171c3f9127a804d0dc047e79af577fa0ba",
-    "textHash": "f17b921ab182550766fbd1d7768bc5045950ccbe813872b1be6876540bf39d2b",
     "model": "gemini-4-argon-medium"
   },
   "Distribution": {
@@ -2254,6 +2269,11 @@
     "textHash": "102d83e2550d191f27cb43fde0a8c4b74c5cec67c3e0a5afa531a490558ff9c9",
     "model": "gemini-4-argon-medium"
   },
+  "Fast read-only classifier that routes each annotation into the matching task lane.": {
+    "revision": "58f149f0c5e4746504a43b8d918c34df051aebb9bd3c65d5921a385418068b95",
+    "textHash": "b0d8cfe8890c424d371f37dfc700bc866b285eb0488679b2a6f1d19ddc1eac53",
+    "model": "gemini-4-argon-medium"
+  },
   "Feedback & issues": {
     "revision": "e0ef12f99df1df8aeb98e99cd6df5551895517429e29ef41a3dba7c13f925286",
     "textHash": "6f6abbe4a95a314de9d6e0bf8db72374365f4d17b549b0dc9a755d5f76c77827",
@@ -2489,9 +2509,9 @@
     "textHash": "5684206e60541069219ede23f3ef60f3d45fe2ff224f5b42ab0f57923c6d588f",
     "model": "gemini-4-argon-medium"
   },
-  "Handles substantive annotations directly; click + to add a second model to race.": {
-    "revision": "fc6e8c0030c55c2d2cae61e00bbb8ed048c0c1710b49fe7055416e1b587bea8c",
-    "textHash": "f782e8f538590317f15d028f7a27d787d57d805e5e37046272aad30bb2483ae5",
+  "Handles annotations routed to this lane.": {
+    "revision": "c003c34573fab53d730718f9d29fdb3621615c088a366e23b6328857d02cded5",
+    "textHash": "e67eb926c11f032905387a5cc990c37f893678aa3f1f7d276be4a9449f6ffbd7",
     "model": "gemini-4-argon-medium"
   },
   "Help fix compilation": {
@@ -2724,9 +2744,14 @@
     "textHash": "c4ead974f916cc290a7b8118ca97acb2b86acc53606463211724a405538645e6",
     "model": "gemini-4-argon-medium"
   },
-  "Judge & rigorous": {
-    "revision": "2f7af35b25e0b0766e95e315fed3c3370e849c05119bdfe091c44c4b2746b61b",
-    "textHash": "2fdb69d70d7b8e0c1bd255634518b465e26a0f48f28509ba33d3490885142851",
+  "Judge": {
+    "revision": "abed09e24d03d286c4d595034a67931c3c4f5d1d9e1c7716716d88a8e04c7c91",
+    "textHash": "0e2e439dc6e464609f90853fa81542ee4036f1c02c63ac6ab5208cb9f5da7c84",
+    "model": "gemini-4-argon-medium"
+  },
+  "Judges raced lanes": {
+    "revision": "35482a5975b9a6d441aab0b7721f4a832b8c6a9770b9dc88b483f05e1a631893",
+    "textHash": "0e0c8cf449b73229a9873ac2f4a59a161a5c515ef1a28d83b2eec73129ccfc15",
     "model": "gemini-4-argon-medium"
   },
   "Jump to the next change that still needs a decision.": {
@@ -2824,6 +2849,11 @@
     "textHash": "14e7ee67e3d869391bce7f2caf3fccd2250c268d0df362b092c83cfc67f84f7c",
     "model": "gemini-4-argon-medium"
   },
+  "Lane name": {
+    "revision": "a728fc8c0c361cfe71fbd3ee9b981389f1074a9f2eaf7d28a82b41176156bd72",
+    "textHash": "741a1b8c63d302954ce93e079ed4cf510183500cbec5149d811c1287fe716d7f",
+    "model": "gemini-4-argon-medium"
+  },
   "Language": {
     "revision": "02c7a2db7ca2d304af9731498cbb0fe58a24dac7949d2762073371ce70c77b57",
     "textHash": "0fcc9b7d744c5feeeaad15919402773216cba26b703a5ad3e0724c2ab2d315ee",
@@ -2857,6 +2887,11 @@
   "Latest version": {
     "revision": "314aab45ebd6facb34b0579e250ced981712a31e838b021438c72170ee322bdf",
     "textHash": "ef5a7987abe55e654ef05ff9243fb5b473496727cca04628803d7a11286b5e89",
+    "model": "gemini-4-argon-medium"
+  },
+  "Layout & LaTeX": {
+    "revision": "4d9e729afc2607a09d7db5b2663dbcf0d57276cc852f1e9945454a60f8712603",
+    "textHash": "f5b4c71bc62e881cef813b0887fa5c41e1c8bfeecdcb650d7cc9e9095374d1db",
     "model": "gemini-4-argon-medium"
   },
   "Learn from reviews": {
@@ -3099,6 +3134,11 @@
     "textHash": "db69ca266f00964c8d8f44bda67918b22478b4df4d4723004e052807b988462b",
     "model": "gemini-4-argon-medium"
   },
+  "Math & rigorous": {
+    "revision": "7662430798ff08bb7abab07b1378f678bb3fbfb87d5577cd280f71916ba299e1",
+    "textHash": "c3879d27ab222bdbc6495eb0b747cccf0c4a6f99b54b670db57427bfe3b5eefa",
+    "model": "gemini-4-argon-medium"
+  },
   "Maximize or restore window": {
     "revision": "76cd97b80130feec11f49ba5a100f8b31843949ef761eba58c1de2afb3e68c33",
     "textHash": "d70e194f2bdd1fe69407c76716cafdb53a11335c0e2dd71396f10eacb019baf9",
@@ -3192,6 +3232,11 @@
   "Model output": {
     "revision": "a59927d9ff825e2aee40004104c2d56b57eef497cb92329bbad877afad38461c",
     "textHash": "f1d61c8a896977ab324f83b7392cbfc41eb25933b02a8d85ddc51d68224e997b",
+    "model": "gemini-4-argon-medium"
+  },
+  "Model {n}": {
+    "revision": "3de1950d1c0bb7c290ea7008098a49c54a75d3c784c5691918d2bd5269bf7d69",
+    "textHash": "045c20141d206bc96ea22fee4e2bb22df5da0be1c6fdda8c4af946302b76ecbc",
     "model": "gemini-4-argon-medium"
   },
   "Models": {
@@ -4104,11 +4149,6 @@
     "textHash": "51af418185d19d1fd3cc275cf1cdc6621071d9b8d3b59470aa61899335519d77",
     "model": "gemini-4-argon-medium"
   },
-  "Parallel race on key notes": {
-    "revision": "09bba5ec45e7768f6827aa4a00e97466014794d5b672372174b6c12f1b6dfe99",
-    "textHash": "5f9cf178f8076905f562d8b396ec98ae0fb19ca389fce890de6939c6ae5d895b",
-    "model": "gemini-4-argon-medium"
-  },
   "Parent folder": {
     "revision": "76ef8b829a683936e5009c0fa6762df4d580ed82827a728c9a361239f88a88c3",
     "textHash": "70d286153cf47cbfdbc0e432361b9f14f6791cc794e860eca578022d019f810f",
@@ -4354,6 +4394,16 @@
     "textHash": "548e72ad9108e1513d9e2e5a3aa682dcdb36f9eb62205cd3cafd13911dfbfc36",
     "model": "gemini-4-argon-medium"
   },
+  "Proofs, lemmas, typing rules, claims, citations, and technical correctness": {
+    "revision": "c1d0c9c1f9c6dc213b09b153b70409344d5d3494d54c1b1f15fcc4fb81056153",
+    "textHash": "abeeea04b2871e5f1f971a67847d4eaf50d0de50c95f6826465dfa1d800fdc06",
+    "model": "gemini-4-argon-medium"
+  },
+  "Prose & polish": {
+    "revision": "163e4ff3405b20e5d65a9b071ae9ac0fe3c50f11b57681bad9f278fe5ce0abaf",
+    "textHash": "00c0b66c8a639df7b405f3d9a067249d6d3643e8919df919b7010456fee518bb",
+    "model": "gemini-4-argon-medium"
+  },
   "Provide CURSOR_API_KEY to the process or service that starts Papilot, then restart Papilot. The SDK is installed automatically when used.": {
     "revision": "4909ee9f22a1098ce50260aafea3c30d2ec2ca12d51e3aa99d5dc656250b1127",
     "textHash": "028a4edd16677d48f3a3fdb2fd49272a62736ba07e9092b8884f227cff0df300",
@@ -4462,11 +4512,6 @@
   "Race candidate": {
     "revision": "fcc67ca02ff6df3e511afe792002d05ccf24a98fecaa020270b08f80d04f5fd3",
     "textHash": "1d944166acdfaa315e5c5984869384c24498deed1f5c35bbc6d804b2dbc54f0f",
-    "model": "gemini-4-argon-medium"
-  },
-  "Race model {n}": {
-    "revision": "720be2cc052ab6c73052e08d8775cf314d101ce9e708b7c61a9f0000f311cfae",
-    "textHash": "c58af3961e6c3830aaa4f2b20ca0d54a6836526c153cf2a665b82145bc1b5f49",
     "model": "gemini-4-argon-medium"
   },
   "Raced models": {
@@ -4684,6 +4729,11 @@
     "textHash": "d336b2df89172c4bc9e743f9c144e03e871246b78069ffa0d6ad3814957b4304",
     "model": "gemini-4-argon-medium"
   },
+  "Remove model {n} from {lane}": {
+    "revision": "6a5d5707787796cec074a4812852c63a426e560592560dabee93d390a7e345cc",
+    "textHash": "cc47c16edea1a85370267233eecb125491a1059656b56d8c86d52315c38f754d",
+    "model": "gemini-4-argon-medium"
+  },
   "Remove note {n} from task": {
     "revision": "32f50f37fff2781a66d61755fa57f7fcce01ddbc97165946b52981de6b385ebc",
     "textHash": "ebfcc14dcf55a2052d66e355a3af89cb054a68f5b81015312bdc3467ebcd970e",
@@ -4697,11 +4747,6 @@
   "Remove paper?": {
     "revision": "80385f212c5e1ecf07b5bf24167f0d2f79839a5dc14d15b3b0a55c65f2ea8a14",
     "textHash": "fd4b9cb9e8ee07ae327dff2ed0ae283b319e7e820cb2a58f8245a42069fe76ae",
-    "model": "gemini-4-argon-medium"
-  },
-  "Remove race model {n}": {
-    "revision": "ae38243f240a8c2ac8031e8a4b39a508aa4c3ce7caffcb3bf181150f029a516b",
-    "textHash": "606110f1d57f9d64899447299a3b594291a19342e77f05112c14df84f4bb8d59",
     "model": "gemini-4-argon-medium"
   },
   "Remove suggestion {n} from task": {
@@ -5054,9 +5099,19 @@
     "textHash": "c85a9fca61192c4a80aa15d07bfe90bf65242cfeca7f278bea3d16b4f75b019c",
     "model": "gemini-4-argon-medium"
   },
-  "Router & quick": {
-    "revision": "14fa078deb39dbd3fe96a2133d11990e897c8791e220ee57c9d9223275d4dca6",
-    "textHash": "d0b3106756a250c56c78c5ec708b70447796d5d2133d8b36e2f5903369915d75",
+  "Rigorous read-only evaluator that blind-compares proposals whenever a lane has 2+ models.": {
+    "revision": "14b0f4997492a5436e0623f8e5cfb9373a3846276f1989dbaa478a32124f4def",
+    "textHash": "9e7bdf97a1c67ccb01c5883ce3932adc95ec6035493d7de79176691916605c9b",
+    "model": "gemini-4-argon-medium"
+  },
+  "Router": {
+    "revision": "de0d4f51c4e6a49598443c1002ebb1fa2284cbf4d445ab7933215e51ae419722",
+    "textHash": "065d8e6c0bf74a69a6d312c3d5b5cc627434cece07b2787c1a538fcfd9f9c8de",
+    "model": "gemini-4-argon-medium"
+  },
+  "Router reads this description to send matching annotations into this lane.": {
+    "revision": "07f546848d80717c921f21bea599503f16e0f653286a4db41c02b8973a3e116e",
+    "textHash": "ea8bdb8f2d4d3550c74bfe887a47e7c79f0e83096ab94973212ddcf3c5af7e68",
     "model": "gemini-4-argon-medium"
   },
   "Routes and races annotations across your connected agents.": {
@@ -5064,9 +5119,9 @@
     "textHash": "572f25c404da2882e0441f6fc5015561f9e14f9563dbd14d9befb871cee5e592",
     "model": "gemini-4-argon-medium"
   },
-  "Routes simple edits to a fast model and races subjective or technical annotations across connected models, with a rigorous judge picking the default proposal.": {
-    "revision": "c0783c0e0b726217574102b86299906b0731fe50ad5a318571a7fa8b334e2a9e",
-    "textHash": "bbb7f44a992c95582298c67ce7331c3083a3b25461dcc5012b7d2606822a12ee",
+  "Routes each annotation into a matching task lane; lanes with 1 model run directly and lanes with 2+ models race in parallel with blind judging.": {
+    "revision": "28c8c07cf5d03acee5070e804c782d42d4a4537d71720b6960162727eec7837e",
+    "textHash": "b315778fe4aa24977f206cea8f7f2b6bc0924b1a3953a6465a0fca98b16e1caf",
     "model": "gemini-4-argon-medium"
   },
   "Run command": {
@@ -5105,7 +5160,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Save": {
-    "revision": "7c5150cd898f5ee3cde59e81f009982eb961dcbb69ee3c479dced490a8695c8a",
+    "revision": "3d6367165d96ce77f6c1a3a90314711eda8f303e377a236fd2dc9daf94cd44e3",
     "textHash": "c5997e85ae513c0789bc816b1230a6b9d097d897b5485f4e88fd79b0d1ba7333",
     "model": "gemini-4-argon-medium"
   },
@@ -5559,14 +5614,9 @@
     "textHash": "37808cdf8bc1bbe0715eb0f9593d332d4c5d8b6fff9aec210a9f5bbf62be790c",
     "model": "gemini-4-argon-medium"
   },
-  "Simple edits finish here": {
-    "revision": "9166651b1b70264ae8b6478d4af84718a245ab2a1dbef9f9481c7f49cbae182d",
-    "textHash": "082afafa60762c2cb4e1a74547d2f8363a8b950076302110839606a7c9b47036",
-    "model": "gemini-4-argon-medium"
-  },
-  "Single model · click + to race": {
-    "revision": "6102160951ab6d75ae6d3d3a13f14f3e50b85f0428521ffb0395e6a9b990a155",
-    "textHash": "f0ef61bf50cfe82f29a9fb4f38d7ef2561315b40a6fe81cde4210c9d35471e91",
+  "Simple edits": {
+    "revision": "b11c3a90663990d55edc1cdf3fad8dff798dd5e51bf22698800068e6d042b2b4",
+    "textHash": "d35965200d750a5df020463db1f4b80b62b313edaf3c9d4796e3bba5ae8d4f4e",
     "model": "gemini-4-argon-medium"
   },
   "Skill ID": {
@@ -5849,6 +5899,11 @@
     "textHash": "f150afd3c5994d185052d4165729e1db8eae6914164b9471c3e583edfb1db020",
     "model": "gemini-4-argon-medium"
   },
+  "Tables, figures, spacing, macros, formatting, and visual layout": {
+    "revision": "d635e4644ce0f7d08afea53cc4be1b96f86020e4dd637a76c0aee9e5575e3ebb",
+    "textHash": "bf5d4e6243664dbb5fc7bd76aba353e5e700af5aac62a93df8228a3a8051b7b7",
+    "model": "gemini-4-argon-medium"
+  },
   "Task actions for {title}": {
     "revision": "ae559f160457180dee4efe607544bc3ae393f13cb25d051b57ee2a94584fc154",
     "textHash": "52a5d496be9cf48f004f3cb538ffcfb718072a38f131ab15ae09e3dedcb2a44a",
@@ -5867,6 +5922,11 @@
   "Task finished": {
     "revision": "a790d4a7bb8417bc3994c140b72d9d3d83a22756f20f74b129fe7317b8c75e15",
     "textHash": "81e87aadb9f0ee8e964000f19cb9c7252ee315b1635adb60cfc07a3ab184f0d6",
+    "model": "gemini-4-argon-medium"
+  },
+  "Task lanes": {
+    "revision": "8280fef55896c53331ba3bd10c67d504d3f4088c443339cff65187902d1a3ba4",
+    "textHash": "0162d2b16011afaaaa58d463d996c7eb33044cf09e4eb4b74d05201da2778d9e",
     "model": "gemini-4-argon-medium"
   },
   "Task list": {
@@ -6312,6 +6372,11 @@
   "Typesetting with LaTeX, pass {n}…": {
     "revision": "00ed2d82b7f95bedc6536565fb3b38f56e0999a40f43da0c9aa29fa820e621c1",
     "textHash": "66545c492b66d5554e0502058a9834890c063904ea2ed1004af3a7d1efc154e3",
+    "model": "gemini-4-argon-medium"
+  },
+  "Typos, punctuation, word swaps, and minor mechanical fixes": {
+    "revision": "005dcbfb29cca750d24f339c1133ef0574bccfbdc19295684e4cdc0491025a0f",
+    "textHash": "175e97047a2c999de1e8ace9570784b27cf1738909170c2a25eb4082287e3cda",
     "model": "gemini-4-argon-medium"
   },
   "Unaccepted edits and comments will be lost. Accepted changes stay in your manuscript.": {
@@ -6824,6 +6889,11 @@
     "textHash": "aa32ac6c272531f173bba91ea76c44fea55a14b434baf21fc3021e632ef309d0",
     "model": "gemini-4-argon-medium"
   },
+  "When to use this lane": {
+    "revision": "ddc1d9f5d59c805d13f7090aadaec0b8703852a1757d4943b7346bacc876ff50",
+    "textHash": "801ce52029e3b8e0080249520379e0d1c927b3928813ad52009277649b269819",
+    "model": "gemini-4-argon-medium"
+  },
   "Where files differ": {
     "revision": "e4977483a09b567594f060df0c5d50037dd87e895de1769ba4589b965dd43d53",
     "textHash": "1e10d61716d02cb8dc1efdbda8acce7e7ba7ebeacbe15f5098817b049acf3411",
@@ -7052,6 +7122,11 @@
   "detached HEAD": {
     "revision": "5e15e838daf6639e03f756f08a368a0e8aef9a921c655a25fe854c1a5fe1f1e0",
     "textHash": "b4788e7a6cc04b2c72add4bd836a205614490982a2895ef7235abbcd2ba7645b",
+    "model": "gemini-4-argon-medium"
+  },
+  "e.g. TikZ diagrams, Citations": {
+    "revision": "796f4d61730c43fea6283567966abfa201b5806e900d42ad649ae73b5b836f7b",
+    "textHash": "7feae88dd7248b671364eb1998fb6f3adb1cbff80e9249c9aac437d64115a2ad",
     "model": "gemini-4-argon-medium"
   },
   "edited {file}": {

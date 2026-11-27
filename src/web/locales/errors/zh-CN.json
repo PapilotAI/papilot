@@ -91,6 +91,7 @@
   "Codex was not found on this computer. Install Codex, then select Reconnect.": "本机未找到 Codex。安装 Codex 后点“重新连接”。",
   "Collaboration mode needs a successful audit of the final source before publication. Continue the task to check all annotations.": "协作模式需要通过最终源文件检查才能发布。请继续任务，核对所有批注。",
   "Comment does not match the document.": "批注与文档不匹配。",
+  "Configure valid task lanes with up to four models each.": "请配置有效的任务通道，每个通道最多包含 4 个模型。",
   "Confirm permanent task deletion before continuing.": "继续操作前，请确认永久删除任务。",
   "Confirm stopping the current turn before switching agents.": "切换智能体前，请先确认停止当前轮次。",
   "Connect an agent that supports read-only tasks, such as Codex.": "请连接支持只读任务的智能体，例如 Codex。",

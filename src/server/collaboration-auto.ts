@@ -1,10 +1,15 @@
 import {
+  BUILTIN_COLLABORATION_LANES,
   COLLABORATION_ROLES,
   COLLABORATION_WORKERS,
+  DEFAULT_COLLABORATION_LANE_DEFS,
+  MAX_COLLABORATION_LANES,
   MAX_COLLABORATION_RACERS,
   type AgentId,
   type AgentModel,
+  type BuiltinCollaborationLaneId,
   type CollaborationConfig,
+  type CollaborationLane,
   type CollaborationResolved,
   type CollaborationRole,
   type CollaborationRoute,
@@ -275,15 +280,57 @@ export function resolveCollaborationConfig(
     racers = pool.slice(0, MAX_COLLABORATION_RACERS);
   }
 
+  // Resolve task lanes: 4 built-in academic paper lanes (defaulting to 1 model
+  // each so the author enables racing per lane via +) plus any custom lanes.
+  const savedLanes = new Map((config.lanes || []).map(lane => [lane.id, lane]));
+  const defaultModelsFor = (id: BuiltinCollaborationLaneId): CollaborationRoute[] => {
+    const pick = id === 'quick'
+      ? quickRoute
+      : id === 'polish'
+        ? polishRoute
+        : id === 'rigorous'
+          ? rigorousRoute
+          : (rigorousRoute || quickRoute);
+    return pick ? [pick] : [];
+  };
+  const lanes: CollaborationLane[] = BUILTIN_COLLABORATION_LANES.map(id => {
+    const saved = savedLanes.get(id);
+    const def = DEFAULT_COLLABORATION_LANE_DEFS[id];
+    const models = saved?.models.length
+      ? saved.models.map(route => hydrateExplicit(route, runtimes)).slice(0, MAX_COLLABORATION_RACERS)
+      : defaultModelsFor(id);
+    return {
+      id,
+      name: saved?.name?.trim() || def.name,
+      description: saved?.description?.trim() || def.description,
+      models,
+    };
+  });
+  for (const saved of config.lanes || []) {
+    if ((BUILTIN_COLLABORATION_LANES as string[]).includes(saved.id)) continue;
+    if (lanes.length >= MAX_COLLABORATION_LANES) break;
+    const models = saved.models.length
+      ? saved.models.map(route => hydrateExplicit(route, runtimes)).slice(0, MAX_COLLABORATION_RACERS)
+      : (rigorousRoute ? [rigorousRoute] : polishRoute ? [polishRoute] : []);
+    lanes.push({
+      id: saved.id,
+      name: saved.name,
+      description: saved.description,
+      models,
+      custom: true,
+    });
+  }
+
   return {
     router: routerRoute,
     judge: judgeRoute,
     routes: {
-      quick: quickRoute,
-      polish: polishRoute,
-      rigorous: rigorousRoute,
+      quick: lanes.find(l => l.id === 'quick')?.models[0] || quickRoute,
+      polish: lanes.find(l => l.id === 'polish')?.models[0] || polishRoute,
+      rigorous: lanes.find(l => l.id === 'rigorous')?.models[0] || rigorousRoute,
     },
     racers,
+    lanes,
   };
 }
 

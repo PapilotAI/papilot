@@ -91,6 +91,7 @@
   "Codex was not found on this computer. Install Codex, then select Reconnect.": "No se encontró Codex en este equipo. Instala Codex y luego selecciona Reconectar.",
   "Collaboration mode needs a successful audit of the final source before publication. Continue the task to check all annotations.": "El modo colaborativo requiere una revisión satisfactoria del código fuente final antes de publicar. Continúe la tarea para comprobar todas las anotaciones.",
   "Comment does not match the document.": "El comentario no coincide con el documento.",
+  "Configure valid task lanes with up to four models each.": "Configura carriles de tareas válidos con un máximo de cuatro modelos cada uno.",
   "Confirm permanent task deletion before continuing.": "Confirma la eliminación permanente de la tarea antes de continuar.",
   "Confirm stopping the current turn before switching agents.": "Confirma la detención del turno actual antes de cambiar de agente.",
   "Connect an agent that supports read-only tasks, such as Codex.": "Conecta un agente que admita tareas de solo lectura, como Codex.",

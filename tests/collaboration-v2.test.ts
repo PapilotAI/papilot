@@ -118,22 +118,48 @@ test('auto-team builds cross-family racers even on a single multi-provider agent
   );
 });
 
-test('3-stage config derives direct quick/polish/rigorous routes from router, racers, and judge', () => {
-  const customRouter: CollaborationRoute = { agent: 'antigravity', model: 'gemini-3.8-flash', effort: 'low' };
-  const customJudge: CollaborationRoute = { agent: 'codex', model: 'gpt-6.2-sol', effort: 'xhigh', serviceTier: 'fast' };
-  const customRacers: CollaborationRoute[] = [
-    customJudge,
-    { agent: 'antigravity', model: 'gemini-4-neon', effort: 'high' },
-  ];
-  const resolved = resolveCollaborationConfig({
-    router: customRouter,
-    judge: customJudge,
-    routes: { quick: null, polish: null, rigorous: null },
-    racers: customRacers,
+test('default Auto team gives all 4 built-in lanes 1 model each (Direct) and supports custom lanes', () => {
+  const auto = resolveCollaborationConfig(DEFAULT_COLLABORATION_CONFIG, hostRuntimes);
+  assert.deepEqual(auto.lanes.map(l => l.id), ['quick', 'polish', 'rigorous', 'layout']);
+  assert.ok(auto.lanes.every(l => l.models.length === 1), 'all 4 built-in lanes start single-model on Auto');
+  assert.equal(auto.lanes.find(l => l.id === 'quick')?.models[0].agent, 'deepseek');
+  assert.equal(auto.lanes.find(l => l.id === 'polish')?.models[0].agent, 'antigravity');
+  assert.equal(auto.lanes.find(l => l.id === 'rigorous')?.models[0].agent, 'codex');
+  assert.equal(auto.lanes.find(l => l.id === 'layout')?.models[0].agent, 'codex');
+
+  const withCustom = resolveCollaborationConfig({
+    ...DEFAULT_COLLABORATION_CONFIG,
+    lanes: [
+      { id: 'polish', name: 'Prose & polish', description: 'Clarity and flow', models: [
+        { agent: 'antigravity', model: 'gemini-4-neon', effort: 'xhigh' },
+        { agent: 'codex', model: 'gpt-6.2-sol', effort: 'xhigh', serviceTier: 'fast' },
+      ] },
+      { id: 'tikz', name: 'TikZ diagrams', description: 'TikZ figures and commutative diagrams', models: [
+        { agent: 'codex', model: 'gpt-6.2-sol', effort: 'xhigh' },
+      ], custom: true },
+    ],
   }, hostRuntimes);
-  assert.deepEqual(resolved.routes.quick, customRouter);
-  assert.deepEqual(resolved.routes.rigorous, customJudge);
-  assert.deepEqual(resolved.routes.polish, customRacers[1]);
+  assert.equal(withCustom.lanes.length, 5);
+  assert.equal(withCustom.lanes.find(l => l.id === 'polish')?.models.length, 2);
+  assert.equal(withCustom.lanes.find(l => l.id === 'tikz')?.custom, true);
+  const f = makePaper();
+  try {
+    const notes = currentTurnNotes([
+      { where: 'main.tex', quote: 'simple typign rule', comment: 'Fix typo' },
+      { where: 'main.tex', quote: 'The method works well', comment: 'Draw a TikZ diagram showing this flow' },
+    ], 'run-lanes');
+    const { clusters } = clusterCurrentNotes(f.root, notes);
+    const plan = parseRouterPlan(JSON.stringify({
+      units: [
+        { clusterId: clusters[0].id, lane: 'quick', mode: 'run', instruction: 'Fix typo' },
+        { clusterId: clusters[1].id, lane: 'tikz', mode: 'run', instruction: 'Add TikZ diagram' },
+      ],
+    }), clusters, 'balanced', 2, withCustom.lanes);
+    assert.equal(plan.units[0].lane, 'quick');
+    assert.equal(plan.units[0].mode, 'assign');
+    assert.equal(plan.units[1].lane, 'tikz');
+    assert.equal(plan.units[1].mode, 'assign');
+  } finally { f.close(); }
 });
 
 test('legacy collaboration-routes migration turns untouched Codex defaults into Auto while keeping explicit choices', () => {
@@ -270,7 +296,19 @@ test('boundary-divergent cross-model race alternatives project via before/after 
 test('CollaborationRuntime orchestrates routing, single-worker assignment, per-annotation racing, judging, and PreparedNoteOptions end-to-end', async () => {
   const f = makePaper();
   try {
-    const resolved = resolveCollaborationConfig(DEFAULT_COLLABORATION_CONFIG, hostRuntimes);
+    // Enable racing specifically on the polish lane while keeping quick single-model.
+    const resolved = resolveCollaborationConfig({
+      ...DEFAULT_COLLABORATION_CONFIG,
+      lanes: [{
+        id: 'polish',
+        name: 'Prose & polish',
+        description: 'Clarity and flow',
+        models: [
+          { agent: 'codex', model: 'gpt-6.2-sol', effort: 'xhigh', serviceTier: 'fast' },
+          { agent: 'antigravity', model: 'gemini-4-neon', effort: 'xhigh' },
+        ],
+      }],
+    }, hostRuntimes);
     const savedItems: any[] = [];
     let savedOptions: PreparedNoteOptions[] = [];
     const notes = [

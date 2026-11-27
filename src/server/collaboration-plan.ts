@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { CollaborationRole, CollaborationRoute, CollaborationStrategy, NoteSummary } from '../shared.ts';
+import type { CollaborationLane, CollaborationRole, CollaborationRoute, CollaborationStrategy, NoteSummary } from '../shared.ts';
 import type { GroupInstructions } from '../note-groups.ts';
 import { canonicalGroup } from '../note-groups.ts';
 import { realPath } from './real-path.ts';
@@ -36,6 +36,7 @@ export interface RoutedUnit {
   clusterId: string;
   mode: 'assign' | 'race' | 'answer';
   role: CollaborationRole;
+  lane: string;
   instruction: string;
 }
 
@@ -349,18 +350,35 @@ export function extractJsonObject(text: string): any {
   return null;
 }
 
+function laneToRole(laneId: string): CollaborationRole {
+  if (laneId === 'quick') return 'quick';
+  if (laneId === 'polish') return 'polish';
+  return 'rigorous';
+}
+
 export function buildRouterPrompt(options: {
   clusters: NoteCluster[];
   request: string;
   strategy: CollaborationStrategy;
   racerCount: number;
   roles: Record<CollaborationRole, CollaborationRoute | null>;
+  lanes?: CollaborationLane[];
   memory?: string;
 }): string {
-  const { clusters, request, strategy, racerCount, memory } = options;
+  const { clusters, request, strategy, racerCount, lanes, memory } = options;
+  const activeLanes = lanes?.length ? lanes : null;
   const payload = {
     strategy,
-    canRace: racerCount >= 2,
+    canRace: activeLanes ? activeLanes.some(l => l.models.length >= 2) : racerCount >= 2,
+    ...(activeLanes ? {
+      lanes: activeLanes.map(l => ({
+        id: l.id,
+        name: l.name,
+        description: l.description,
+        models: l.models.length,
+        races: strategy !== 'fast' && l.models.length >= 2,
+      })),
+    } : {}),
     overallRequest: request,
     ...(memory ? { authorMemory: memory } : {}),
     clusters: clusters.map(cluster => ({
@@ -380,6 +398,19 @@ export function buildRouterPrompt(options: {
       })),
     })),
   };
+  if (activeLanes) {
+    const laneIds = activeLanes.map(l => `"${l.id}"`).join('|');
+    return [
+      'You are the fast dispatcher for Papilot Collaboration Mode. Classify each annotation cluster into the best task lane and return ONLY JSON.',
+      'Do NOT edit any files or write prose explanations outside JSON.',
+      'For each cluster, pick:',
+      `- "lane": one of ${laneIds} based on the lane descriptions in payload.lanes (prefer a matching custom lane when its description specifically fits).`,
+      '- "mode": "answer" ONLY when the cluster asks a pure question or verification check without requesting any manuscript edit; otherwise "run" (Papilot automatically runs 1 model directly or races 2+ models based on that lane).',
+      'Return ONLY JSON matching:',
+      `{"units":[{"clusterId":"c1","lane":${laneIds},"mode":"run"|"answer","instruction":"concise concrete direction for the worker"}]}`,
+      JSON.stringify(payload),
+    ].join('\n');
+  }
   return [
     'You are the fast dispatcher for Papilot Collaboration Mode. Classify each annotation cluster cleanly and return ONLY JSON.',
     'Do NOT edit any files or write prose explanations outside JSON.',
@@ -401,37 +432,84 @@ export function buildRouterPrompt(options: {
 }
 
 const QUESTION_ONLY = /^(?:why|what|does|is|are|can|could|should|check if|verify whether|explain)\b.+\?\s*$/i;
-const MECHANICAL_HINT = /\b(typo|spelling|spell|punctuation|comma|period|hyphen|capitalize|capitalization|delete|remove this|macro|spacing|indent|whitespace|italic|bold)\b/i;
-const RIGOR_HINT = /\b(proof|lemma|theorem|proposition|equation|formula|typing|rule|judgment|inference|soundness|completeness|citation|cite|ref|bound|quantifier|assumption|notation|symbol|rigor|correctness|bug|wrong)\b/i;
+const MECHANICAL_HINT = /\b(typo|spelling|spell|punctuation|comma|period|hyphen|capitalize|capitalization|delete|remove this|whitespace)\b/i;
+const LAYOUT_HINT = /\b(table|tabular|figure|subfigure|tikz|pgfplots|layout|spacing|vspace|hspace|margin|column|minipage|caption|float|align|format|formatting|macro|latex|overflow|overfull|page break|wrap)\b|排版|表格|插图|图片|间距|对齐|版面|换行|溢出/i;
+const RIGOR_HINT = /\b(proof|lemma|theorem|proposition|equation|formula|typing|rule|judgment|inference|soundness|completeness|citation|cite|ref|bound|quantifier|assumption|notation|symbol|rigor|correctness|bug|wrong)\b|证明|引理|定理|公式|严谨|引用/i;
 
-export function deterministicFallbackPlan(clusters: NoteCluster[], strategy: CollaborationStrategy, racerCount: number): RoutingPlan {
+function matchCustomLane(combined: string, lanes: CollaborationLane[]): CollaborationLane | null {
+  const custom = lanes.filter(l => l.custom);
+  if (!custom.length || !combined.trim()) return null;
+  const hay = normalize(combined);
+  if (!hay) return null;
+  let best: CollaborationLane | null = null;
+  let bestScore = 0;
+  for (const lane of custom) {
+    const tokens = [...new Set(normalize(`${lane.name} ${lane.description}`).split(/\s+/).filter(t => t.length >= 3))];
+    let score = 0;
+    for (const token of tokens) if (hay.includes(token)) score++;
+    if (score > bestScore) { bestScore = score; best = lane; }
+  }
+  return bestScore > 0 ? best : null;
+}
+
+function resolveLaneMode(lane: CollaborationLane | undefined, strategy: CollaborationStrategy, fallbackRacerCount: number): 'assign' | 'race' {
+  if (strategy === 'fast') return 'assign';
+  if (lane && lane.models.length >= 2) return 'race';
+  if (strategy === 'thorough' && lane?.id !== 'quick' && fallbackRacerCount >= 2) return 'race';
+  return 'assign';
+}
+
+export function deterministicFallbackPlan(clusters: NoteCluster[], strategy: CollaborationStrategy, racerCount: number, lanes?: CollaborationLane[]): RoutingPlan {
   const canRace = racerCount >= 2;
+  const laneById = lanes?.length ? new Map(lanes.map(l => [l.id, l])) : null;
   const units: RoutedUnit[] = clusters.map(cluster => {
     const combined = cluster.notes.map(n => [n.note.comment, n.instruction, n.note.stamp].filter(Boolean).join(' ')).join(' ').trim();
     const isDelete = cluster.notes.every(n => n.note.kind === 'delete');
     if (!isDelete && combined && QUESTION_ONLY.test(combined) && !/\b(fix|change|rewrite|edit|update|polish|shorten|replace|add)\b/i.test(combined)) {
-      return { clusterId: cluster.id, mode: 'answer', role: 'rigorous', instruction: combined };
+      return { clusterId: cluster.id, mode: 'answer', role: 'rigorous', lane: laneById?.has('rigorous') ? 'rigorous' : 'rigorous', instruction: combined };
+    }
+    if (laneById) {
+      const customHit = matchCustomLane(combined, lanes!);
+      let laneId: string;
+      if (customHit) laneId = customHit.id;
+      else if (isDelete || (MECHANICAL_HINT.test(combined) && !RIGOR_HINT.test(combined) && !LAYOUT_HINT.test(combined) && combined.length < 140)) laneId = laneById.has('quick') ? 'quick' : lanes![0].id;
+      else if (LAYOUT_HINT.test(combined) && !RIGOR_HINT.test(combined) && laneById.has('layout')) laneId = 'layout';
+      else if (RIGOR_HINT.test(combined) && laneById.has('rigorous')) laneId = 'rigorous';
+      else laneId = laneById.has('polish') ? 'polish' : lanes![0].id;
+      const lane = laneById.get(laneId);
+      return {
+        clusterId: cluster.id,
+        mode: resolveLaneMode(lane, strategy, racerCount),
+        role: laneToRole(laneId),
+        lane: laneId,
+        instruction: combined || 'Address the annotations in this passage cleanly.',
+      };
     }
     if (isDelete || (MECHANICAL_HINT.test(combined) && !RIGOR_HINT.test(combined) && combined.length < 140)) {
       return {
         clusterId: cluster.id,
         mode: strategy === 'thorough' && canRace ? 'race' : 'assign',
         role: 'quick',
+        lane: 'quick',
         instruction: combined || 'Apply the requested edit cleanly.',
       };
     }
     if (strategy === 'fast' || !canRace) {
+      const role: CollaborationRole = RIGOR_HINT.test(combined) ? 'rigorous' : 'polish';
       return {
         clusterId: cluster.id,
         mode: 'assign',
-        role: RIGOR_HINT.test(combined) ? 'rigorous' : 'polish',
+        role,
+        lane: role,
         instruction: combined || 'Address the annotations in this passage.',
       };
     }
+    const role: CollaborationRole = RIGOR_HINT.test(combined) ? 'rigorous' : 'polish';
     return {
       clusterId: cluster.id,
       mode: 'race',
-      role: RIGOR_HINT.test(combined) ? 'rigorous' : 'polish',
+      role,
+      lane: role,
       instruction: combined || 'Revise this passage to address the annotations while preserving technical rigor.',
     };
   });
@@ -439,27 +517,36 @@ export function deterministicFallbackPlan(clusters: NoteCluster[], strategy: Col
 }
 
 /** Validate and normalize a router JSON response, guaranteeing 100% cluster coverage and strategy invariants. */
-export function parseRouterPlan(reply: string, clusters: NoteCluster[], strategy: CollaborationStrategy, racerCount: number): RoutingPlan {
+export function parseRouterPlan(reply: string, clusters: NoteCluster[], strategy: CollaborationStrategy, racerCount: number, lanes?: CollaborationLane[]): RoutingPlan {
   const parsed = extractJsonObject(reply);
-  if (!parsed || !Array.isArray(parsed.units)) return deterministicFallbackPlan(clusters, strategy, racerCount);
+  if (!parsed || !Array.isArray(parsed.units)) return deterministicFallbackPlan(clusters, strategy, racerCount, lanes);
   const canRace = racerCount >= 2;
+  const laneById = lanes?.length ? new Map(lanes.map(l => [l.id, l])) : null;
   const byId = new Map<string, any>();
   for (const entry of parsed.units) {
     if (typeof entry?.clusterId === 'string' && !byId.has(entry.clusterId)) byId.set(entry.clusterId, entry);
   }
-  const fallback = deterministicFallbackPlan(clusters, strategy, racerCount);
+  const fallback = deterministicFallbackPlan(clusters, strategy, racerCount, lanes);
   const fallbackById = new Map(fallback.units.map(u => [u.clusterId, u]));
   let usedFallback = false;
   const units: RoutedUnit[] = clusters.map(cluster => {
     const raw = byId.get(cluster.id);
     if (!raw) { usedFallback = true; return fallbackById.get(cluster.id)!; }
-    const role: CollaborationRole = raw.role === 'quick' || raw.role === 'polish' || raw.role === 'rigorous' ? raw.role : fallbackById.get(cluster.id)!.role;
-    let mode: RoutedUnit['mode'] = raw.mode === 'assign' || raw.mode === 'race' || raw.mode === 'answer' ? raw.mode : fallbackById.get(cluster.id)!.mode;
+    const fb = fallbackById.get(cluster.id)!;
+    const instruction = typeof raw.instruction === 'string' && raw.instruction.trim() ? raw.instruction.trim().slice(0, 600) : fb.instruction;
+    if (laneById) {
+      const rawLane = typeof raw.lane === 'string' ? raw.lane.trim().toLowerCase() : typeof raw.role === 'string' ? raw.role.trim().toLowerCase() : '';
+      const laneId = laneById.has(rawLane) ? rawLane : fb.lane;
+      const lane = laneById.get(laneId);
+      const mode: RoutedUnit['mode'] = raw.mode === 'answer' ? 'answer' : resolveLaneMode(lane, strategy, racerCount);
+      return { clusterId: cluster.id, mode, role: laneToRole(laneId), lane: laneId, instruction };
+    }
+    const role: CollaborationRole = raw.role === 'quick' || raw.role === 'polish' || raw.role === 'rigorous' ? raw.role : fb.role;
+    let mode: RoutedUnit['mode'] = raw.mode === 'assign' || raw.mode === 'race' || raw.mode === 'answer' ? raw.mode : fb.mode;
     if (strategy === 'fast' && mode === 'race') mode = 'assign';
     if (strategy === 'thorough' && mode === 'assign' && canRace) mode = 'race';
     if (mode === 'race' && !canRace) mode = 'assign';
-    const instruction = typeof raw.instruction === 'string' && raw.instruction.trim() ? raw.instruction.trim().slice(0, 600) : fallbackById.get(cluster.id)!.instruction;
-    return { clusterId: cluster.id, mode, role, instruction };
+    return { clusterId: cluster.id, mode, role, lane: role, instruction };
   });
   return { units, fallback: usedFallback };
 }

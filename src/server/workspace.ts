@@ -197,7 +197,7 @@ export class Workspace extends EventEmitter {
   }
   setCollaborationRoutes(routes: CollaborationRoutes) { this.setCollaborationConfig({ routes: collaborationRoutes(routes) }); }
   resetCollaborationConfig() {
-    this.store.savePreference('collaboration-settings', { ...DEFAULT_COLLABORATION_CONFIG, routes: { ...DEFAULT_COLLABORATION_CONFIG.routes }, racers: [] });
+    this.store.savePreference('collaboration-settings', { ...DEFAULT_COLLABORATION_CONFIG, routes: { ...DEFAULT_COLLABORATION_CONFIG.routes }, racers: [], lanes: [] });
     this.syncCollaborationRuntime();
     this.emit('change');
   }

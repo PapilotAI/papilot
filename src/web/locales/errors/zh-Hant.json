@@ -91,6 +91,7 @@
   "Codex was not found on this computer. Install Codex, then select Reconnect.": "在此電腦上找不到 Codex。請先安裝 Codex，然後選取「重新連線」。",
   "Collaboration mode needs a successful audit of the final source before publication. Continue the task to check all annotations.": "協作模式需要通過最終原始碼檢查才能發布。請繼續任務，核對所有註解。",
   "Comment does not match the document.": "註解內容與文件不符。",
+  "Configure valid task lanes with up to four models each.": "請設定有效的任務通道，每個通道最多包含四個模型。",
   "Confirm permanent task deletion before continuing.": "繼續前請確認永久刪除任務。",
   "Confirm stopping the current turn before switching agents.": "切換智慧代理前，請先確認停止目前回合。",
   "Connect an agent that supports read-only tasks, such as Codex.": "請連線至支援唯讀任務的智慧代理，例如 Codex。",

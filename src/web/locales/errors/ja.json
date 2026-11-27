@@ -91,6 +91,7 @@
   "Codex was not found on this computer. Install Codex, then select Reconnect.": "このコンピュータで Codex が見つかりませんでした。Codex をインストールしてから「再接続」を選択してください。",
   "Collaboration mode needs a successful audit of the final source before publication. Continue the task to check all annotations.": "協調モードでは公開前に最終ソースのチェックに合格する必要があります。タスクを続行して、すべての注釈を確認してください。",
   "Comment does not match the document.": "コメントが文書と一致しません。",
+  "Configure valid task lanes with up to four models each.": "各レーン最大4モデルで、有効なタスクレーンを設定してください。",
   "Confirm permanent task deletion before continuing.": "続行する前に、タスクの完全な削除を確認してください。",
   "Confirm stopping the current turn before switching agents.": "エージェントを切り替える前に、現在のターンの停止を確認してください。",
   "Connect an agent that supports read-only tasks, such as Codex.": "Codex など、読み取り専用タスクに対応したエージェントに接続してください。",

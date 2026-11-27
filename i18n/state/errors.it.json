@@ -389,6 +389,11 @@
     "textHash": "2413391565381e4f8db616b33b8f5b0ca8cc19dade299c60ebafa3cb4926add4",
     "model": "gemini-4-argon-medium"
   },
+  "Configure valid task lanes with up to four models each.": {
+    "revision": "3440ca8e20df2fafafa6b36c85c2d58ccd254c2592cafa6198232a4aafce42dc",
+    "textHash": "3b5bcd6e5c2f46d203be081681f3db1cc9f1ac0174048261a3fa366108eb988b",
+    "model": "gemini-4-argon-medium"
+  },
   "Confirm permanent task deletion before continuing.": {
     "revision": "0329a6013eecf15c7a3fa9411a2d21e965053b114625cb4bdb54a410b11b58c8",
     "textHash": "4342c8d2015903eea721aa766d3d2f04da2dd9b2b5154b97a27766c9e0888f69",
