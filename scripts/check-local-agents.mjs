@@ -46,7 +46,7 @@ try {
   for (const [width, dark, language] of [[1280, false, 'en'], [390, true, 'en'], [390, false, 'zh-CN']]) {
     const context = await browser.newContext({ locale: 'en-US', viewport: { width, height: 900 }, colorScheme: dark ? 'dark' : 'light', hasTouch: width < 600 });
     const state = { version: 'test', csrf: 'fixture', projects: [], tasks: [], requests: [], runtime: missing,
-      runtimes: { codex: missing, papilot: { ...missing, installed: true, connected: true }, qoder: missing, codebuddy: missing, workbuddy: missing } };
+      runtimes: { codex: missing, papilot: { ...missing, installed: true, connected: true }, qoder: missing, codebuddy: missing, workbuddy: missing, zcode: missing } };
     await context.addInitScript(language => { localStorage.setItem('papilot:language', language); localStorage.setItem('papilot:setup-seen', '1'); }, language);
     await context.route('**/api/**', route => {
       const pathname = new URL(route.request().url()).pathname;
@@ -55,6 +55,7 @@ try {
         state.runtimes.codebuddy = { ...missing, installed: true, connected: true, authenticated: true, account: 'CodeBuddy CLI',
           models: [{ id: 'research', name: 'Research model', isDefault: true, efforts: [], defaultEffort: null }] };
         for (const id of ['qoder', 'workbuddy']) state.runtimes[id] = { ...missing, installed: true, error: 'Authentication required' };
+        state.runtimes.zcode = { ...missing, installed: true, connected: true, authenticated: true, authenticationUnchecked: true, supportsReadOnlyTasks: false };
         return route.fulfill({ json: { ok: true } });
       }
       if (pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
@@ -69,7 +70,7 @@ try {
     if (width < 600) await page.locator('.sidebar-toggle').click();
     await page.locator('.settings-link').click();
     await page.locator('[data-settings-page="agents"]').click();
-    for (const id of ['qoder', 'codebuddy', 'workbuddy']) {
+    for (const id of ['qoder', 'codebuddy', 'workbuddy', 'zcode']) {
       const card = page.locator(`[data-agent="${id}"]`);
       await expect(card).toHaveAttribute('data-availability', 'missing');
       await expect(card.locator('.brand-icon')).toHaveAttribute('data-brand', id);
@@ -79,6 +80,10 @@ try {
       const panel = page.locator('.runtime-agent-detail');
       await panel.locator('.runtime-agent-detection summary').click();
       await expect(panel).toContainText(`PAPILOT_${id.toUpperCase()}_BIN`);
+      if (id === 'zcode') {
+        await expect(panel).toContainText('zcode login');
+        await expect(panel.locator('.runtime-agent-installation')).toContainText(language === 'en' ? 'configured default model' : '配置的默认模型');
+      }
       await panel.locator('.runtime-agent-header').scrollIntoViewIfNeeded();
       await page.screenshot({ path: `test-results/${id}-setup-${width}-${language}.png`, animations: 'disabled' });
       await panel.locator('.runtime-agent-header button').click();
@@ -88,10 +93,28 @@ try {
     await page.locator('.runtime-agent-help .runtime-setup-actions button').click();
     await expect(page.locator('[data-agent="codebuddy"]')).toHaveAttribute('data-availability', 'ready');
     await expect(page.locator('.runtime-agent-detail')).toContainText('Research model');
+    const zcode = page.locator('[data-agent="zcode"]');
+    await expect(zcode).toHaveAttribute('data-availability', 'unchecked');
+    const unchecked = language === 'en' ? 'Sign-in not checked' : '尚未检查登录状态';
+    await expect(zcode.locator('.diagnostic-availability')).toHaveText(unchecked);
+    await expect(zcode.getByRole('button')).toHaveAccessibleDescription(unchecked);
     for (const id of ['qoder', 'workbuddy']) await expect(page.locator(`[data-agent="${id}"]`)).toHaveAttribute('data-availability', 'unavailable');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
     await page.locator('.settings-content').evaluate(element => { element.scrollTop = 0; });
     await page.screenshot({ path: `test-results/local-agents-ready-${width}-${language}.png`, animations: 'disabled' });
+    await zcode.locator('button').click();
+    await expect(page.locator('.runtime-agent-detail .runtime-agent-account')).toHaveCount(0);
+    const contrast = await zcode.locator('.diagnostic-availability').evaluate(element => {
+      const luminance = color => color.match(/\d+/g).slice(0, 3).map(Number).reduce((sum, value, index) => {
+        const channel = value / 255;
+        return sum + [0.2126, 0.7152, 0.0722][index] * (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+      }, 0);
+      const text = luminance(getComputedStyle(element).color);
+      const surface = luminance(getComputedStyle(element.closest('button')).backgroundColor);
+      return (Math.max(text, surface) + 0.05) / (Math.min(text, surface) + 0.05);
+    });
+    assert.ok(contrast >= 4.5, `The sign-in status needs 4.5:1 contrast (${contrast.toFixed(2)}:1).`);
+    await zcode.screenshot({ path: `test-results/zcode-setup-unchecked-${width}-${language}.png`, animations: 'disabled' });
     await context.close();
   }
   assert.deepEqual(errors, []);

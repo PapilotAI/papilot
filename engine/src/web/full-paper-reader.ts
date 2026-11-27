@@ -150,11 +150,6 @@ export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: 
     if (!event.ctrlKey && !event.metaKey) return;
     event.preventDefault(); zoom(String(Math.max(0.1, Math.min(10, state.zoom.scale * Math.exp(-event.deltaY / 100)))), [event.clientX, event.clientY]);
   };
-  const keyboard = (event: KeyboardEvent) => {
-    if (!(event.ctrlKey || event.metaKey) || event.defaultPrevented) return;
-    if (event.key === '0') { event.preventDefault(); zoom('page-width'); }
-    else if (['+', '=', '-'].includes(event.key)) { event.preventDefault(); zoom(String(Math.max(0.1, Math.min(10, state.zoom.scale * (event.key === '-' ? 1 / 1.1 : 1.1))))); }
-  };
   let pinch: number | null = null;
   const spread = (touches: TouchList) => Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
   const touchStart = (event: TouchEvent) => { if (event.touches.length === 2) pinch = spread(event.touches); };
@@ -171,7 +166,6 @@ export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: 
   view.addEventListener(PDF_READER_COMMAND, command);
   resize(); observer.observe(root);
   void readOutline(pdf).then(outline => { if (alive) { state = { ...state, outline }; update(); } }, () => {});
-  view.addEventListener('keydown', keyboard);
   view.addEventListener('pagehide', persist);
   root.addEventListener('scroll', scroll, { passive: true });
   root.addEventListener('wheel', wheel, { passive: false });
@@ -187,7 +181,7 @@ export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: 
       remember(); alive = false; clearTimeout(timer); cancelAnimationFrame(tick); observer.disconnect(); search.dispose();
       root.removeEventListener('scroll', scroll); root.removeEventListener('wheel', wheel);
       root.removeEventListener('touchstart', touchStart); root.removeEventListener('touchmove', touchMove); root.removeEventListener('touchend', touchEnd); root.removeEventListener('touchcancel', touchEnd);
-      view.removeEventListener(PDF_READER_COMMAND, command); view.removeEventListener('keydown', keyboard); view.removeEventListener('pagehide', persist);
+      view.removeEventListener(PDF_READER_COMMAND, command); view.removeEventListener('pagehide', persist);
       documentBox.style.removeProperty('width'); documentBox.style.removeProperty('max-width');
       view.dispatchEvent(new CustomEvent(PDF_READER_STATE, { detail: null }));
     },

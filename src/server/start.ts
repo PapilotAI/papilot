@@ -1,4 +1,4 @@
-import { createRuntime, resumeTasks } from './runtime.ts';
+import { createRuntime, resumeTasks, RUNTIME_SHUTDOWN_TIMEOUT_MS } from './runtime.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -49,11 +49,14 @@ if (!process.env.PAPILOT_UPDATE_PROBE) { void workspace.connect(); updates.start
 resumeTasks(store, workspace);
 let shuttingDown = false;
 function shutdown() {
-  if (shuttingDown) return; shuttingDown = true; updates.close(); workspace.close(); void manuscripts.stop().catch(() => undefined);
-  void app.close().finally(() => { store.close(); process.exit(0); });
-  setTimeout(() => process.exit(0), 2500).unref();
+  if (shuttingDown) return; shuttingDown = true; updates.close();
+  const agentsClosed = workspace.close();
+  void manuscripts.stop().catch(() => undefined);
+  void Promise.allSettled([agentsClosed, app.close()]).then(() => { store.close(); process.exit(0); });
+  setTimeout(() => process.exit(0), RUNTIME_SHUTDOWN_TIMEOUT_MS).unref();
 }
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, shutdown);
+if (process.platform !== 'win32') process.on('SIGHUP', shutdown);
 if (desktop && process.send) {
   process.on('disconnect', shutdown);
   process.on('message', message => {

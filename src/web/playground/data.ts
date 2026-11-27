@@ -1,5 +1,5 @@
 import { regroupAnnotation, sameAnnotationGroup } from '../../note-groups.ts';
-import { ACTIVITY_RANGES, type ActivityDay, type ActivityRange, type ActivityReport, type Annotation, type AnnotationGroupEdit, type AnnotationBatch, type AnnotationBatchResult, type GitStatus, type Manuscript, type Snapshot, type Task, type TimelineItem, type AgentId, type Skill, type NoteSummary, type NoteResult, type NoteOptions } from '../../shared.ts';
+import { modelServiceTier, ACTIVITY_RANGES, type ActivityDay, type ActivityRange, type ActivityReport, type Annotation, type AnnotationGroupEdit, type AnnotationBatch, type AnnotationBatchResult, type GitStatus, type Manuscript, type Snapshot, type Task, type TimelineItem, type AgentId, type Skill, type NoteSummary, type NoteResult, type NoteOptions } from '../../shared.ts';
 import type { ActionKind, Decision, PageState, RoundDetail } from '../../../engine/src/types.ts';
 import plans from '../../../examples/playground-paper/edits.json';
 import seededNotes from '../../../examples/playground-paper/preview/notes.json';
@@ -277,7 +277,7 @@ export function createPlaygroundData(storage: Store, version: string, pdfKey: st
       const input = body as { model: string; effort: string; serviceTier?: string };
       const models = demoRuntimes[modelTask.agent as AgentId].models;
       const selected = models.find(model => input.model ? model.id === input.model : model.isDefault);
-      if (!selected || typeof input.effort !== 'string' || (input.effort && !selected.efforts.includes(input.effort)) || (input.serviceTier && input.serviceTier !== 'default' && input.serviceTier !== selected.fastMode?.serviceTier)) throw new Error('Invalid demo model settings.');
+      if (!selected || typeof input.effort !== 'string' || (input.effort && !selected.efforts.includes(input.effort)) || (input.serviceTier && input.serviceTier !== modelServiceTier(selected, input.serviceTier))) throw new Error('Invalid demo model settings.');
       local.taskSettings[modelTask.id] = { ...local.taskSettings[modelTask.id], model: selected.id, effort: input.effort || null, serviceTier: input.serviceTier || 'default' };
       persist(); return task(modelTask, [reviewPlan, ...plans].indexOf(modelTask));
     }

@@ -3,7 +3,7 @@ import { AGENT_IDS, type AgentId, type AgentModel, type RuntimeStatus, type Task
 import { browserStorage } from './storage.ts';
 
 type Storage = Pick<typeof browserStorage, 'getItem' | 'setItem' | 'removeItem'>;
-export interface ModelPreferences { effort: string | null; fast: boolean }
+export interface ModelPreferences { effort: string | null; serviceTier: string }
 const modelKey = (agent: AgentId, model: string) => 'papilot:model-preferences:' + JSON.stringify([agent, model]);
 const permissionKey = (agent: AgentId) => 'papilot:permissions:' + agent;
 
@@ -25,7 +25,13 @@ export function readModelPreferences(agent: AgentId, id: string, model?: AgentMo
     ?? (model?.isDefault ? storage.getItem(modelKey(agent, '')) : null);
   try {
     const saved = JSON.parse(value || 'null');
-    if (saved && (saved.effort === null || typeof saved.effort === 'string') && typeof saved.fast === 'boolean') return { effort: saved.effort, fast: saved.fast };
+    if (saved && (saved.effort === null || typeof saved.effort === 'string')) {
+      if (typeof saved.serviceTier === 'string') return { effort: saved.effort, serviceTier: saved.serviceTier };
+      if (typeof saved.fast === 'boolean') {
+        const fastTier = model?.serviceTiers?.find(tier => tier !== 'ultrafast') || 'priority';
+        return { effort: saved.effort, serviceTier: saved.fast ? fastTier : 'default' };
+      }
+    }
   } catch { /* A damaged preference uses the normal model defaults. */ }
   return null;
 }

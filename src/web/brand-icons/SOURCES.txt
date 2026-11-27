@@ -7,3 +7,4 @@ Unmodified SVG artwork; rendered locally with CSS masks. Brand marks belong to t
 Papilot Writer icon: Papilot's own mark (desktop/assets/icon.svg), drawn by src/web/papilot-mark.tsx in the app; this file, whose top capsules follow the text colour, serves the README and website.
 Writer provider icons (OpenAI, Gemini, OpenRouter, Mistral): @lobehub/icons-static-svg 1.101.0 (MIT), matching the agent icons above.
 Pi: https://pi.dev/logo-auto.svg (official Pi logo, used as a monochrome mask).
+ZCode: monochrome mask traced from the ZCode Agent mark in zai-org/ZCode v4.0.0 (Apache-2.0), https://github.com/zai-org/ZCode/blob/v4.0.0/packages/ui/src/assets/cli-icons/icon-glm-for-light.png.

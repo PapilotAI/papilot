@@ -2,7 +2,7 @@ import { createConversation, agentName, ACTIVE, preparingLabel, touch } from './
 import '../../engine/src/web/legacy-storage.ts';
 import { TaskDocument } from './task-document.tsx';
 import { requestApi, requestState } from './api.ts';
-import { agentLabel, agentsSettled, chosenAgent, defaultOfferedModel, noAgent, offeredAgents } from './agent-choice.ts';
+import { agentLabel, agentsSettled, canReviewWith, chosenAgent, defaultOfferedModel, noAgent, offeredAgents, shownModels } from './agent-choice.ts';
 import { isPlayground, pdfAsset, wordAsset, requestPlaygroundDownload } from './playground-mode.ts';
 import { annotationGroupState, canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
 import { NOTE_SORT_MODES, groupNoteEntries, isNoteSortMode, sortNoteEntries, type NoteSortMode } from '../note-sort.ts';
@@ -17,7 +17,7 @@ import { StrictMode, Suspense, lazy, useCallback, useEffect, useId, useImperativ
 import { createRoot } from 'react-dom/client';
 import { createPortal, flushSync } from 'react-dom';
 import { ignorePattern } from '../commit.ts';
-import { AGENT_IDS, isAgentId, isTaskReviewNote, taskFinished } from '../shared.ts';
+import { effectiveServiceTier, modelServiceTier, AGENT_IDS, isAgentId, isTaskReviewNote, taskFinished } from '../shared.ts';
 import type { TaskCommitReview, CompilerChoice, LatexInstallation, ZoteroStatus, AgentId, Annotation, AnnotationGroupEdit, AnnotationGroupState, AnnotationBatch, AnnotationBatchResult, NoteSection, PageReadingLayout, BuildRepairResult, MarkKind, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
 import { SkillPicker, skillName } from './skills.tsx';
 import { reviewDraft, useReviewDraft, reviewSubmission } from './review-draft.ts';
@@ -173,7 +173,7 @@ function gitSummary(git: GitStatus | null) {
 // and what is not committed yet (accepted review changes land here).
 // Untracked build output is left out of a commit unless chosen, and can go
 // into .gitignore. An agent can write the commit message.
-type CommitWriter = { agent: AgentId; model?: string; effort?: string; serviceTier?: string };
+const noReadOnlyAgent = 'Connect an agent that supports read-only tasks, such as Codex.';
 const ignorable = (file: GitFile) => file.status === '?' && Boolean(ignorePattern(file.path));
 type GitSelection = { path: string; list: 'staged' | 'changes' } | HistorySelection;
 const gitNames = (): Record<string, string> => ({ M: t('Modified'), A: t('Added'), D: t('Deleted'), R: t('Renamed'), C: t('Copied'), U: t('Conflict'), '?': t('Untracked'), T: t('Type changed') });
@@ -209,10 +209,10 @@ type GitResolution = { merge: string; agent: AgentId; busy?: boolean; summary?: 
 
 const gitMergeId = (git: GitStatus | null) => git?.merging ? [git.head?.hash, git.merging.head].join(':') : '';
 
-function GitWorkspace({ projectId, navigation, git, onStatus, resolver, onChangeResolver, resolution, setResolution, messageWriter, tasks, onOpenTask }: { navigation?: React.ReactNode; tasks: Task[]; onOpenTask: (id: string) => void; projectId: string; git: GitStatus | null; onStatus: (status: GitStatus) => void; resolver: CommitMessageChoice; onChangeResolver: () => void; resolution?: GitResolution; setResolution: (value?: GitResolution) => void; messageWriter: CommitMessageChoice }) {
+function GitWorkspace({ projectId, navigation, git, onStatus, resolver, onChangeResolver, resolution, setResolution, messageWriter, tasks, onOpenTask }: { navigation?: React.ReactNode; tasks: Task[]; onOpenTask: (id: string) => void; projectId: string; git: GitStatus | null; onStatus: (status: GitStatus) => void; resolver: CommitMessageChoice; onChangeResolver: () => void; resolution?: GitResolution; setResolution: (value?: GitResolution) => void; messageWriter?: CommitMessageChoice }) {
   const advanced = useAdvancedGit();
   const [writingAgent, setWritingAgent] = useState<AgentId | null>(null);
-  const displayedMessageAgent = writingAgent ?? messageWriter.agent;
+  const displayedMessageAgent = writingAgent ?? messageWriter?.agent;
   const messageRequest = useRef(0);
   useEffect(() => () => { messageRequest.current++; }, []);
   const loadOverview = useCallback((signal: AbortSignal) => api<GitOverview>(`/projects/${projectId}/git/overview`, undefined, signal), [projectId]);
@@ -308,6 +308,7 @@ function GitWorkspace({ projectId, navigation, git, onStatus, resolver, onChange
   // An empty box takes a message already written for them; a full one asks for a new one.
   async function generate() {
     if (busy || !chosen.length) return;
+    if (!messageWriter) { setError(errorText(noReadOnlyAgent)); return; }
     const request = ++messageRequest.current;
     setBusy('message'); setWritingAgent(messageWriter.agent); setError(''); setNotice('');
     try {
@@ -358,7 +359,7 @@ function GitWorkspace({ projectId, navigation, git, onStatus, resolver, onChange
   const syncTitle = !git.remote ? t('This repository has no remote.') : !git.branch ? t('Check out a branch before syncing.') : t('Sync committed changes with the remote. Uncommitted changes are kept.');
   const primaryDisabled = syncPrimary ? Boolean(busy) || !needsSync : commitDisabled;
   const submitPrimary = () => { if (!primaryDisabled) { if (syncPrimary) syncRemote(); else commit(); } };
-  const placeholder = busy === 'message' ? t('{agent} is writing a commit message…', { agent: agentLabel(displayedMessageAgent) })
+  const placeholder = busy === 'message' && displayedMessageAgent ? t('{agent} is writing a commit message…', { agent: agentLabel(displayedMessageAgent) })
     : git.branch && !touch() ? t('Message ({key} to commit on “{branch}”)', { key: '↵', branch: git.branch }) : t('Commit message');
   // One row per file and list. The staged list shows the index's status.
   const row = (file: GitFile, list: 'staged' | 'changes') => {
@@ -436,7 +437,7 @@ function GitWorkspace({ projectId, navigation, git, onStatus, resolver, onChange
         <div className="git-message-box">
           <textarea aria-label={t('Commit message')} placeholder={placeholder} rows={1} value={message} readOnly={busy === 'commit' || busy === 'message'} onChange={event => saveMessage(event.target.value)} onKeyDown={event => { if (sendsMessage(event.nativeEvent, touch())) { event.preventDefault(); commit(); } }}/>
           <div className="git-compose-bar">
-            <button type="button" className="icon-button git-generate" aria-label={t('Generate commit message')} title={t('Write a commit message for the chosen files with {agent}', { agent: agentLabel(displayedMessageAgent) })} disabled={Boolean(busy) || !chosen.length} onClick={() => void generate()}>{busy === 'message' ? <span className="spinner"/> : <Icon name="spark" size={15}/>}</button>
+            <button type="button" className="icon-button git-generate" aria-label={t('Generate commit message')} title={displayedMessageAgent ? t('Write a commit message for the chosen files with {agent}', { agent: agentLabel(displayedMessageAgent) }) : errorText(noReadOnlyAgent)} disabled={Boolean(busy) || !chosen.length} onClick={() => void generate()}>{busy === 'message' ? <span className="spinner"/> : <Icon name="spark" size={15}/>}</button>
             <div className={'git-commit-split has-menu' + (busy === 'commit' || syncing ? ' is-busy' : '')}>
               <button className="button primary git-commit-button" aria-label={primaryLabel} title={syncPrimary ? needsSync ? syncTitle : t('Up to date with the remote.') : commitTitle} disabled={primaryDisabled}>{busy === 'commit' || syncing ? <span className="spinner light"/> : <Icon name={syncPrimary && needsSync ? 'refresh' : 'check'} size={14}/>}<span>{primaryLabel}</span>{syncPrimary && needsSync && sync}</button>
               <ActionMenu label={t('More commit actions')} className="button primary git-commit-more" disabled={Boolean(busy)} actions={[
@@ -845,7 +846,7 @@ function PreparingTask({ task }: { task: Task }) {
 }
 
 type ManuscriptPanel = 'pdf' | 'task' | 'source';
-function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, showsChecks = false, onOpenTask, returnedPlace, onPlaceShown, notesRequest, taskCards, navigationGuard, collapsed, setCollapsed, project, data, error, view, setView, region, setRegion, active, setActive, actions, newTask, tools, share, navigation, onGit, writer, reportError, onFixProblems, diagnoseBuild, openFile, onOpened, onEditing }: { returnedPlace?: string; onPlaceShown: (id: string) => void; notesRequest?: number; openFile?: { file: string; line?: number } | null; onOpened?: () => void; onEditing?: (file: string | null) => void; navigationGuard: React.Ref<NotesHandle>; collapsed: boolean; setCollapsed: React.Dispatch<React.SetStateAction<boolean>>; taskCards: ReturnType<typeof useNoteCards>; onFixProblems?: (request: string) => void; diagnoseBuild?: (failureId: string) => Promise<BuildRepairResult>; navigation?: React.ReactNode; newTask: (notes: React.ReactNode) => React.ReactNode; tools?: React.ReactNode; share?: React.ReactNode; onGit: (status: GitStatus) => void; writer: CommitWriter; reportError: (error: unknown) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions; onOpenTask: (id: string) => void; evidenceActions?: EvidenceActions; evidenceFocus?: { id: string; at: number } | null; onEvidenceShown?: () => void; showsChecks?: boolean }) {
+function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, showsChecks = false, onOpenTask, returnedPlace, onPlaceShown, notesRequest, taskCards, navigationGuard, collapsed, setCollapsed, project, data, error, view, setView, region, setRegion, active, setActive, actions, newTask, tools, share, navigation, onGit, writer, reportError, onFixProblems, diagnoseBuild, openFile, onOpened, onEditing }: { returnedPlace?: string; onPlaceShown: (id: string) => void; notesRequest?: number; openFile?: { file: string; line?: number } | null; onOpened?: () => void; onEditing?: (file: string | null) => void; navigationGuard: React.Ref<NotesHandle>; collapsed: boolean; setCollapsed: React.Dispatch<React.SetStateAction<boolean>>; taskCards: ReturnType<typeof useNoteCards>; onFixProblems?: (request: string) => void; diagnoseBuild?: (failureId: string) => Promise<BuildRepairResult>; navigation?: React.ReactNode; newTask: (notes: React.ReactNode) => React.ReactNode; tools?: React.ReactNode; share?: React.ReactNode; onGit: (status: GitStatus) => void; writer?: CommitMessageChoice; reportError: (error: unknown) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions; onOpenTask: (id: string) => void; evidenceActions?: EvidenceActions; evidenceFocus?: { id: string; at: number } | null; onEvidenceShown?: () => void; showsChecks?: boolean }) {
   const build = data?.build, notes = data?.annotations || [], git = data?.git;
   // Marks are read only while a citation check of this paper is shown in it.
   const evidence = useEvidenceMarks(project.id, build?.key, api, !isPlayground && showsChecks);
@@ -992,8 +993,8 @@ function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, shows
       <div className="side-pane" hidden={side !== 'task'}>{newTask(<TaskNotes headerSlot={sideHeader ? taskActions : null} cards={taskCards} controller={taskNotes} notes={notes} currentKey={build?.key} actions={actions} onShow={show}/>)}</div>
       {source.panel && <div className="side-pane" hidden={side !== 'source'}>{source.panel}</div>}
     </aside>
-    {committing && <CommitDialog branch={git?.branch ?? null} files={staged} staged remote={Boolean(git?.remote)} agent={agentLabel(writer.agent)} onClose={() => setCommitting(false)}
-      generate={fresh => api<{ message: string }>(`/projects/${project.id}/git/message`, { paths: staged, staged: true, ...writer, language: commitMessageLanguage(), fresh }).then(result => result.message)}
+    {committing && <CommitDialog branch={git?.branch ?? null} files={staged} staged remote={Boolean(git?.remote)} agent={writer && agentLabel(writer.agent)} onClose={() => setCommitting(false)}
+      generate={writer && (fresh => api<{ message: string }>(`/projects/${project.id}/git/message`, { paths: staged, staged: true, ...writer, language: commitMessageLanguage(), fresh }).then(result => result.message))}
       commit={async (message, push) => {
         const result = await api<{ commit: string; git: GitStatus; pushError?: string }>(`/projects/${project.id}/git/commit`, { message, staged: true, push });
         onGit(result.git); setCommitting(false);
@@ -1089,7 +1090,11 @@ function App() {
     if (!project) return;
     const id = crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
     const quick = await api<{ choice: ModelChoice | null }>('/quick-model').then(result => result.choice, () => null);
-    const choice = quick ?? { agent: agentChoice, model: chosenModel || null, effort: null };
+    const fallback = readOnlyChoice(defaultSelection.agent);
+    const choice = quick ?? (fallback && { agent: fallback.agent, model: fallback.model || null, effort: null });
+    const runtime = choice && runtimes[choice.agent];
+    if (runtime?.supportsReadOnlyTasks === false) throw new Error(errorText('The selected agent does not support read-only tasks. Select another agent.'));
+    if (!choice || runtime?.hidden || runtime?.installed === false || (runtime?.connected && !runtime.authenticated)) throw new Error(errorText(noReadOnlyAgent));
     await api('/citation-checks', { id, projectId: project.id, agent: choice.agent, model: choice.model, effort: choice.effort, title: t('Check citations') });
     await refresh(true); setSelected(id); setSidebar(false);
   };
@@ -1394,33 +1399,69 @@ function App() {
   }), []);
   // Fallbacks keep saved preferences intact in case they become available again.
   const runtimes: Partial<Record<AgentId, RuntimeStatus>> = state?.runtimes || (state ? { codex: state.runtime } : {});
-  const offered = offeredAgents(runtimes).filter(id => id !== 'collaboration' || newSkill?.output !== 'annotations'), agentChoice = chosenAgent(savedAgent, offered, runtimes), missingAgent = noAgent(runtimes);
   const settled = agentsSettled(runtimes);
+  const isReviewDraft = newSkill?.output === 'annotations';
+  const taskAgents = offeredAgents(runtimes);
+  const offered = isReviewDraft ? taskAgents.filter(id => canReviewWith(id, runtimes[id])) : taskAgents;
+  const defaultAgent = chosenAgent(savedAgent, taskAgents, runtimes);
+  const agentChoice = isReviewDraft ? chosenAgent(savedAgent, offered, runtimes) : defaultAgent;
+  const missingReadOnlyAgent = isReviewDraft && settled && !offered.length;
+  const missingAgent = noAgent(runtimes) || missingReadOnlyAgent;
   useEffect(() => {
     // A later disconnect must keep the chosen agent and show its notice.
     // Nothing offered is not a choice: Codex is only the empty-state fallback.
-    if (savedAgent === null && settled && offered.includes(agentChoice)) {
-      setAgentChoice(agentChoice); browserStorage.setItem('papilot:agent', agentChoice);
+    if (savedAgent === null && settled && taskAgents.includes(defaultAgent)) {
+      setAgentChoice(defaultAgent); browserStorage.setItem('papilot:agent', defaultAgent);
     }
-  }, [savedAgent, settled, agentChoice, offered]);
+  }, [savedAgent, settled, defaultAgent, taskAgents]);
   // Authors who already picked another agent keep it; Papilot Writer is suggested once.
   const [writerDismissed, setWriterDismissed] = useState(() => browserStorage.getItem('papilot:writer-suggestion') === 'dismissed');
   const dismissWriter = () => { setWriterDismissed(true); browserStorage.setItem('papilot:writer-suggestion', 'dismissed'); };
   const writerReady = Boolean(runtimes.papilot?.connected && runtimes.papilot.authenticated);
   const suggestWriter = !writerDismissed && !missingAgent && savedAgent !== null && agentChoice !== 'papilot' && offered.includes('papilot');
   const effectivePermissions = readPermissionPreference(agentChoice, runtimes[agentChoice]);
-  const models = runtimes[agentChoice]?.models || [], preferredModel = agentModels[agentChoice];
-  const chosenModel = models.length && !models.some(m => m.id === preferredModel) ? '' : preferredModel;
-  const modelInfo = models.find(m => m.id === chosenModel) || defaultOfferedModel(runtimes[agentChoice]);
-  const pref = readModelPreferences(agentChoice, chosenModel, modelInfo) || { effort: isPlayground && agentChoice === 'codex' ? 'xhigh' : null, fast: false };
-  const agent = { agent: agentChoice, model: modelInfo?.id || chosenModel, effort: taskEffort(pref.effort, modelInfo), serviceTier: agentChoice === 'codex' ? (pref.fast && modelInfo?.fastMode ? modelInfo.fastMode.serviceTier : 'default') : undefined };
-  const conversationHelper: CommitMessageChoice = commitContext ? {
-    agent: commitContext.agent || 'codex', model: commitContext.model || '', effort: commitContext.effort || '',
-    ...(commitContext.serviceTier ? { serviceTier: commitContext.serviceTier } : {}),
-  } : agent;
-  const commitWriter = commitPreference === 'conversation' ? conversationHelper : commitPreference;
-  const conflictWriter = conflictPreference === 'conversation' ? conversationHelper : conflictPreference;
-  const remember = (change: Partial<{ effort: string; fast: boolean }>) => {
+  function modelSelection(id: AgentId) {
+    const runtime = runtimes[id], models = runtime?.models || [], preferred = agentModels[id];
+    const chosen = models.length && !models.some(model => model.id === preferred) ? '' : preferred;
+    const model = models.find(model => model.id === chosen) || defaultOfferedModel(runtime);
+    const pref = readModelPreferences(id, chosen, model) || { effort: isPlayground && id === 'codex' ? 'xhigh' : null, serviceTier: 'default' };
+    const serviceTier = id === 'codex' ? modelServiceTier(model, pref.serviceTier) : undefined;
+    return { chosen, pref, agent: { agent: id, model: model?.id || chosen, effort: taskEffort(pref.effort, model), serviceTier } };
+  }
+  const defaultSelection = modelSelection(defaultAgent);
+  const { agent, pref } = agentChoice === defaultAgent ? defaultSelection : modelSelection(agentChoice);
+  const readOnlyAgents = taskAgents.filter(id => id !== 'collaboration' && runtimes[id]?.supportsReadOnlyTasks !== false);
+  // A read-only helper follows the editing choice when that runtime supports
+  // it. Otherwise use an available read-only agent and its own model default.
+  function readOnlyChoice(choice: CommitMessageChoice): CommitMessageChoice | undefined {
+    if (readOnlyAgents.includes(choice.agent)) return choice;
+    const ready = readOnlyAgents.find(id => runtimes[id]?.connected && runtimes[id]?.authenticated);
+    if (ready) return { agent: ready, model: '', effort: '' };
+  }
+  function effectiveGitChoice(choice: CommitMessageChoice): CommitMessageChoice {
+    if (choice.agent !== 'codex' || !choice.serviceTier) return choice;
+    const runtime = runtimes.codex;
+    const model = choice.model ? runtime?.models.find(model => model.id === choice.model)
+      : defaultOfferedModel(runtime) ?? shownModels(runtime)[0];
+    const serviceTier = effectiveServiceTier(model, choice.serviceTier);
+    return serviceTier === choice.serviceTier ? choice : { ...choice, serviceTier };
+  }
+  const fallbackGitAgent = taskAgents.find(id => id !== 'collaboration') || 'codex';
+  const conversationHelper = commitContext
+    ? commitContext.agent === 'collaboration'
+      ? { agent: fallbackGitAgent, model: '', effort: '' }
+      : effectiveGitChoice({
+          agent: commitContext.agent || fallbackGitAgent, model: commitContext.model || '', effort: commitContext.effort || '',
+          ...(commitContext.serviceTier ? { serviceTier: commitContext.serviceTier } : {}),
+        })
+    : defaultSelection.agent.agent === 'collaboration'
+      ? { agent: fallbackGitAgent, model: '', effort: '' }
+      : defaultSelection.agent;
+  const commitWriter = commitPreference === 'conversation' ? readOnlyChoice(conversationHelper)
+    : runtimes[commitPreference.agent]?.supportsReadOnlyTasks === false ? undefined : effectiveGitChoice(commitPreference);
+  const diagnosisAgent = readOnlyChoice(defaultSelection.agent);
+  const conflictWriter = conflictPreference === 'conversation' ? conversationHelper : effectiveGitChoice(conflictPreference);
+  const remember = (change: Partial<{ effort: string; serviceTier: string }>) => {
     saveModelPreferences(agentChoice, agent.model, { ...pref, ...change });
   };
   // One choice in the picker sets both the agent and its model.
@@ -1428,7 +1469,7 @@ function App() {
     setAgentChoice(id); browserStorage.setItem('papilot:agent', id);
     setAgentModels(current => ({ ...current, [id]: model })); browserStorage.setItem(`papilot:model:${id}`, model);
   };
-  const agentOptions = (disabled: boolean) => <AgentPicker refreshUsage={refreshUsage} disabled={disabled} noAgent={missingAgent} agent={agentChoice} model={agent.model} effort={agent.effort} fast={pref.fast}
+  const agentOptions = (disabled: boolean) => <AgentPicker refreshUsage={refreshUsage} disabled={disabled} noAgent={missingAgent} agent={agentChoice} model={agent.model} effort={agent.effort} serviceTier={agent.serviceTier}
     agents={offered.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] }))}
     permissionMode={newSkill?.output !== 'annotations' ? effectivePermissions : undefined}
     permissions={newSkill?.output !== 'annotations' && <PermissionOptions runtime={runtimes[agentChoice]} value={effectivePermissions} disabled={disabled} onChange={value => savePermissionPreference(agentChoice, value)}/>}
@@ -2086,7 +2127,7 @@ function App() {
   }
   const saveTask = async (mode: 'workspace' | 'commit', message?: string, confirmation?: string) => {
     if (!task) return;
-    // An overlap with the manuscript is merged by the chosen conflict-resolution agent.
+    // A queued merge suggestion resolves the saved choice when its agent starts.
     const result = await api<{ git?: GitStatus; commitReview?: TaskCommitReview }>(`/tasks/${task.id}/apply`, { mode, message, confirmation, keepCurrent: mergeWaiting && merging?.ready,
       ...(conflictPreference === 'conversation' ? {} : { conflictAgent: conflictPreference }) });
     if (result.git) updateGit(task.projectId, result.git);
@@ -2097,7 +2138,7 @@ function App() {
     branch={projectGit?.branch ?? null} canCommit={Boolean(task.review?.files?.length || task.delivery?.mode === 'branch' || task.delivery?.pending)} preferred={merging?.intent?.mode}
     pending={pendingDelivery} autoGenerate={!isPlayground && online}
     apply={() => saveTask('workspace')} commit={(message, confirmation) => saveTask('commit', message, confirmation)}
-    agent={agentLabel(commitWriter.agent)} generate={fresh => api<{ message: string }>(`/tasks/${task.id}/commit-message`, { ...commitWriter, fresh, language: commitMessageLanguage() }).then(result => result.message)}
+    agent={commitWriter && agentLabel(commitWriter.agent)} generate={commitWriter && (fresh => api<{ message: string }>(`/tasks/${task.id}/commit-message`, { ...commitWriter, fresh, language: commitMessageLanguage() }).then(result => result.message))}
     shown={isPlayground ? undefined : () => void api(`/tasks/${task.id}/predict`, {}).catch(() => undefined)}/>
     : merging ? <TaskConflict status={task.status} waiting={mergeWaiting} onChat={() => selectLayout('conversation')}/>
     : saved === 'committed' && task.delivery ? savedResult(t('Committed {hash} to {branch}', { hash: task.delivery.commit?.slice(0, 7) || '', branch: task.delivery.branch || '' }))
@@ -2163,7 +2204,7 @@ function App() {
   const countDescription = totalNotes === undefined ? undefined : tn(totalNotes, '{n} annotation', '{n} annotations');
   const manuscriptShortcut = !sidebarShown && <button data-notes-home="manuscript" type="button" className="manuscript-shortcut"
     aria-label={t('Manuscript')} aria-description={countDescription} onClick={() => void switchWorkspace('')}>
-    <Icon name="pdf" size={16}/>{t('Manuscript')}{manuscriptCount}</button>;
+    <Icon name="pdf" size={16}/><span className="manuscript-shortcut-label">{t('Manuscript')}</span>{manuscriptCount}</button>;
   const taskControls = task && <>{taskStateActions}{manuscriptShortcut}{workspaceViews}</>;
   // Before the first comparison the task shows the manuscript PDF, so a turn
   // that stopped (for example on an agent error) builds one from the toolbar.
@@ -2199,7 +2240,7 @@ function App() {
     <div className="new-task-start">
     {!noteSelection.selected.length && <div className="new-task-welcome"><PapilotMark size={44}/><h2>{t('What are we revising next?')}</h2></div>}
     {newSkill?.output !== 'annotations' && attachments}
-    {missingAgent && <NoAgentNotice reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} onAdd={() => setSettings('agents')}/>}
+    {missingAgent && <NoAgentNotice message={missingReadOnlyAgent ? errorText(noReadOnlyAgent) : undefined} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} onAdd={() => setSettings('agents')}/>}
     {suggestWriter && <WriterSuggestion ready={writerReady} onUse={() => { chooseModel('papilot', runtimes.papilot?.models.find(model => model.isDefault)?.id || ''); dismissWriter(); }} onSetUp={() => setSettings('agents')} onDismiss={dismissWriter}/>}
     <Composer attachments={newSkill?.output === 'annotations' ? undefined : newFiles.draft} upload={(file, signal) => uploadAttachment(project!.id, file, signal)} imageHint={agentChoice === 'antigravity' && newFiles.files.some(file => file.mime.startsWith('image/'))} autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={noteSelection.selected.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
       skills={projectSkills} skill={newSkill} onSkill={setNewSkill}
@@ -2373,7 +2414,7 @@ function App() {
       </div>}
       {state && <RequirementsBanner state={requirements} onOpen={setSettings}/>}
       {state && !online && <div className="connection-banner" role="status"><Icon name="alert" size={15}/><span>{t('Connection lost. Showing the last update; your draft is kept.')}</span><button onClick={() => void refresh(true)}>{t('Retry connection')}</button></div>}
-      {task?.mode === 'citations' ? <CitationCheckView key={task.id} task={task} load={api} agents={offered.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] }))} reconnect={async () => { await api('/reconnect', {}); await refresh(true); }} lead={!mobile ? sidebarToggle : null} onOpen={(target, evidence) => evidenceActions.open?.(target, evidence)} onCite={suggestion => draftInvestigation(citeRequest(suggestion))}/>
+      {task?.mode === 'citations' ? <CitationCheckView key={task.id} task={task} load={api} agents={readOnlyAgents.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] }))} reconnect={async () => { await api('/reconnect', {}); await refresh(true); }} lead={!mobile ? sidebarToggle : null} onOpen={(target, evidence) => evidenceActions.open?.(target, evidence)} onCite={suggestion => draftInvestigation(citeRequest(suggestion))}/>
       : task ? <div className={`task-grid layout-${taskLayout} show-${taskTab}`} style={chatWidth ? { '--chat-width': `${chatWidth}px` } as React.CSSProperties : undefined}>
           {!mobile && taskLayout === 'split' && <div className="panel-resizer" role="separator" aria-orientation="vertical" aria-label={t('Resize chat panel')} aria-valuenow={chatWidth || undefined} aria-valuemin={300} tabIndex={0} title={t('Drag to resize · Double-click to reset')} onPointerDown={resizeChat} onDoubleClick={() => setChatWidth(0)} onKeyDown={nudgeChat}/>}
           <section id="review-panel" className="review-panel" aria-label={t('PDF review')}>
@@ -2386,7 +2427,7 @@ function App() {
           </div> : chatOnly && task.mode !== 'review' && ['failed', 'interrupted'].includes(task.status) ? <div className="task-error-actions">
             <button type="button" className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}><Icon name="diff" size={14}/>{task.review?.round ? t('Regenerate PDF comparison') : t('Generate PDF comparison')}</button>
           </div> : null} onTaskSaved={acceptSavedTask} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={chatOnly ? <>{reviewFeedback(true)}{completion && <div className="review-feedback card commit-card task-delivery">{completion}</div>}</> : null} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
-      : manuscriptOpen && project ? <ManuscriptView evidenceActions={evidenceActions} evidenceFocus={evidenceFocus} onEvidenceShown={() => setEvidenceFocus(null)} showsChecks={Boolean(state?.tasks.some(item => item.projectId === project.id && item.mode === 'citations' && item.citationCheck?.show))} onOpenTask={id => void switchWorkspace(id, true)} returnedPlace={returnedPlace} onPlaceShown={id => setReturnedPlace(current => id === current ? '' : current)} notesRequest={libraryRequest} taskCards={taskCards} key={project.id + project.path} navigationGuard={manuscriptNavigationGuard} collapsed={manuscriptCollapsed} setCollapsed={setManuscriptCollapsed} navigation={!mobile ? sidebarToggle : null} project={project} data={shownManuscript} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} newTask={newTaskPanel} tools={!mobile ? manuscriptTools : null} share={!mobile ? manuscriptShare : null} onFixProblems={fixProblems} diagnoseBuild={isPlayground ? undefined : failureId => api<BuildRepairResult>(`/projects/${project.id}/manuscript/repair`, { failureId, agent: agent.agent, model: agent.model })} onGit={status => updateGit(project.id, status)} writer={commitWriter} reportError={reportError} openFile={openFile} onOpened={() => setOpenFile(null)} onEditing={setEditingFile}/>
+      : manuscriptOpen && project ? <ManuscriptView evidenceActions={evidenceActions} evidenceFocus={evidenceFocus} onEvidenceShown={() => setEvidenceFocus(null)} showsChecks={Boolean(state?.tasks.some(item => item.projectId === project.id && item.mode === 'citations' && item.citationCheck?.show))} onOpenTask={id => void switchWorkspace(id, true)} returnedPlace={returnedPlace} onPlaceShown={id => setReturnedPlace(current => id === current ? '' : current)} notesRequest={libraryRequest} taskCards={taskCards} key={project.id + project.path} navigationGuard={manuscriptNavigationGuard} collapsed={manuscriptCollapsed} setCollapsed={setManuscriptCollapsed} navigation={!mobile ? sidebarToggle : null} project={project} data={shownManuscript} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} newTask={newTaskPanel} tools={!mobile ? manuscriptTools : null} share={!mobile ? manuscriptShare : null} onFixProblems={fixProblems} diagnoseBuild={isPlayground || !diagnosisAgent ? undefined : failureId => api<BuildRepairResult>(`/projects/${project.id}/manuscript/repair`, { failureId, agent: diagnosisAgent.agent, model: diagnosisAgent.model })} onGit={status => updateGit(project.id, status)} writer={commitWriter} reportError={reportError} openFile={openFile} onOpened={() => setOpenFile(null)} onEditing={setEditingFile}/>
       : gitOpen && project ? <GitWorkspace key={project.id + project.path} projectId={project.id} navigation={sidebarToggle} git={projectGit} onStatus={status => updateGit(project.id, status)} resolver={conflictWriter} resolution={resolution?.busy || resolution?.merge === mergeId ? resolution : undefined} setResolution={value => setGitResolutions(resolutions => {
         if (value) return { ...resolutions, [commitContextKey]: value };
         const { [commitContextKey]: _, ...others } = resolutions;
@@ -2400,7 +2441,7 @@ function App() {
       : <div className="home"><div className="home-inner"><PapilotMark size={52} className="home-logo"/><h1>{t('Add your first paper')}</h1><div className="home-paper-actions"><button className="button primary" onClick={createProject}><Icon name="plus" size={16}/>{t('New paper')}</button><button className="button secondary" onClick={importProject}><Icon name="download" size={16}/>{t('Import or open')}</button></div>{overleafEntry && <div className="home-integrations">{overleafEntry}</div>}</div></div>}
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
-    {settings && <SettingsDialog refreshUsage={refreshUsage} commitWriter={commitWriter} conflictWriter={conflictWriter} activity={loadActivity} memory={!isPlayground ? { project, api } : undefined} workflow={isPlayground ? undefined : { enabled: runtimes.collaboration?.hidden === false, online, runtimes, load: () => api<CollaborationSettingsState>('/collaboration'), save: async change => { const result = await api<CollaborationSettingsState>('/collaboration', change); await refresh(true); return result; } }} requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: offered.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] })), agent: agentChoice, model: chosenModel, effort: agent.effort, onSelect: chooseModel, onEffort: effort => remember({ effort }), ...(!isPlayground ? { quick: quickModelApi } : {}) }} updates={!isPlayground ? api : undefined} overleaf={!isPlayground ? { api, state: state?.overleaf } : undefined} zotero={!isPlayground ? zoteroApi : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, compiler: chooseCompiler, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body), agentSettings: async change => { await api('/agent-settings', change); await refresh(true); } } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
+    {settings && <SettingsDialog refreshUsage={refreshUsage} commitWriter={commitWriter} conflictWriter={conflictWriter} activity={loadActivity} memory={!isPlayground ? { project, api } : undefined} workflow={isPlayground ? undefined : { enabled: runtimes.collaboration?.hidden === false, online, runtimes, load: () => api<CollaborationSettingsState>('/collaboration'), save: async change => { const result = await api<CollaborationSettingsState>('/collaboration', change); await refresh(true); return result; } }} requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: taskAgents.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] })), agent: defaultAgent, model: defaultSelection.chosen, effort: defaultSelection.agent.effort, onSelect: chooseModel, onEffort: effort => saveModelPreferences(defaultAgent, defaultSelection.agent.model, { ...defaultSelection.pref, effort }), ...(!isPlayground ? { quick: quickModelApi } : {}) }} updates={!isPlayground ? api : undefined} overleaf={!isPlayground ? { api, state: state?.overleaf } : undefined} zotero={!isPlayground ? zoteroApi : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, compiler: chooseCompiler, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body), agentSettings: async change => { await api('/agent-settings', change); await refresh(true); } } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}
     {bulkTarget && <BulkTaskDialog target={bulkTarget}
       submit={target => api('/tasks/' + target.id + '/' + bulkTarget.action, bulkTarget.action === 'archive' ? { archived: true } : { confirm: true })}

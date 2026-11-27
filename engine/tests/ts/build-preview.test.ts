@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { Builder, type PassPreview } from "../../src/core/build.ts";
-import { loadProject } from "../../src/core/config.ts";
+import { loadProject, writeSettings } from "../../src/core/config.ts";
 import { Repo } from "../../src/core/git.ts";
 import * as processTools from "../../src/core/process.ts";
 import { Fixture } from "./helpers.ts";
@@ -11,6 +11,52 @@ const tex = Boolean(processTools.which("latexmk") && processTools.which("pdflate
 const version = tex ? /Version (\d+)\.(\d+)/.exec(processTools.run("latexmk", ["-version"]).stdout.toString()) : null;
 const hooks = version && (Number(version[1]) > 4 || Number(version[1]) === 4 && Number(version[2]) >= 84);
 afterEach(() => vi.restoreAllMocks());
+
+it("sends the outline trace and chapter preamble through a build-local latexmkrc", async () => {
+  const f = new Fixture();
+  try {
+    const preload = "macros/author's-$notes.tex";
+    f.write("paper/" + preload, "% Shared definitions\n");
+    f.write("paper/.latexmkrc", "# Project configuration\n");
+    f.repo.run(["add", "."]);
+    f.repo.run(["commit", "-qm", "Configure the build"]);
+    writeSettings(f.root, { source_dir: "", preload: { omitted: preload } });
+    const builder = new Builder(loadProject(f.root), f.repo);
+    vi.spyOn(processTools, "commandVersion").mockResolvedValue("fixture pdfTeX");
+    const run = vi.spyOn(processTools, "runAsync").mockImplementation(async (_command, _args, options) => {
+      fs.writeFileSync(path.join(options!.cwd!, "build", "main.pdf"), "%PDF-");
+      return Buffer.alloc(0);
+    });
+
+    const seed = await builder.build("HEAD");
+    // Exercise the former heredoc delimiter as data without requiring a file
+    // with a newline in its name or a TeX installation.
+    const target = "sections/章\nPAPILOT_PRETEX\ncontinued";
+    const build = await builder.build("HEAD", [target], seed);
+    const calls = run.mock.calls.filter(([command]) => command === "latexmk");
+    expect(calls).toHaveLength(2);
+    for (const [, args] of calls) {
+      expect(args.slice(0, 3)).toEqual(["-norc", "-r", ".latexmkrc"]);
+      const pretexOption = args.indexOf("-usepretex");
+      expect(pretexOption).toBeGreaterThan(3);
+      expect(args.slice(pretexOption - 2, pretexOption)).toEqual([
+        "-r", "../../papilot-pretex.latexmkrc",
+      ]);
+      expect(args.some(arg => arg.startsWith("-usepretex="))).toBe(false);
+    }
+    for (const [result, expected] of [
+      [seed, "\\input{../../papilot-trace.tex}"],
+      [build, "\\input{../../papilot-trace.tex}" + "\\includeonly{" + target + "}\\AtBeginDocument{\\input{" + preload + "}}"],
+    ] as const) {
+      const rc = fs.readFileSync(path.join(path.dirname(result.root), "papilot-pretex.latexmkrc"), "utf8");
+      const hex = /^\$pre_tex_code = pack\('H\*', '([0-9a-f]+)'\);\n$/.exec(rc)?.[1];
+      expect(hex).toBeDefined();
+      expect(Buffer.from(hex!, "hex").toString("utf8")).toBe(expected);
+    }
+  } finally {
+    await f.close();
+  }
+});
 
 it.skipIf(!hooks).each(["foreground", "background"] as const)(
   "keeps %s pass previews and project hooks without sending Perl code through the command line",
@@ -43,6 +89,9 @@ add_hook('after_xlatex', sub { print "Project hook ran\\n"; return 0; });
         ...(priority === "foreground" ? { pass: (preview: PassPreview) => previews.push(preview) } : {}),
       });
       expect(fs.readFileSync(result.pdf).subarray(0, 5).toString()).toBe("%PDF-");
+      const trace = fs.readFileSync(path.join(path.dirname(result.pdf), "main.papilot"), "utf8");
+      expect(trace).toMatch(/^H\|.*Introduction\r?$/m);
+      expect(trace).toMatch(/^L\|.*\|intro\r?$/m);
       const transcript = fs.readFileSync(path.join(path.dirname(result.root), "latexmk.log"), "utf8");
       expect(transcript).toContain("Project rc loaded");
       expect(transcript).toContain("Project hook ran");

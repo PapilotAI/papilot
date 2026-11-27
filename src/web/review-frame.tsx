@@ -53,7 +53,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
        The surrounding toolbar and workspace keep the application's theme. */
     .document{--pdf-filter:var(--review-filter);--pdf-page:var(--review-page);--before:var(--review-before);--after:var(--review-after)}
     :root[data-theme="dark"][data-review-theme="light"] :is(.sheet,.paper-page,.document .change){
-      color-scheme:light;--bg:#ffffff;--bg-subtle:#fafafa;--bg-muted:#f5f5f5;--bg-hover:#f0f0f0;--bg-active:#e6e6e6;--canvas:#f5f5f5;--raised:#ffffff;
+      color-scheme:light;--bg:#ffffff;--bg-subtle:#fafafa;--bg-muted:#f5f5f5;--bg-hover:#f0f0f0;--bg-active:#e6e6e6;--canvas:#f5f5f5;--raised:#ffffff;--thumb:#ffffff;
       --text:#1e1e1e;--text-2:#5e5e5e;--text-3:#8f8f8f;
       --line:#e6e6e6;--line-strong:#d9d9d9;--line-hover:#c4c4c4;
       --accent:#0b8af0;--accent-hover:#0a76d1;--accent-soft:#e5f3ff;--accent-line:#b3dbff;--primary:#0b8af0;--primary-hover:#0a76d1;
@@ -345,12 +345,8 @@ export function ReviewFrame({ task, changesOf, tools, lead, completion, onCommen
     if (!readingPdf || !ready) return;
     const key = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.defaultPrevented || !frame.current?.clientHeight) return;
-      if (event.key.toLowerCase() === 'f') {
-        event.preventDefault(); if (findInput.current) findInput.current.select(); else setFindOpen(true);
-      } else if (event.view === window) {
-        if (event.key === '0') { event.preventDefault(); readerCommand({ type: 'zoom', value: 'page-width' }); }
-        else if (['+', '=', '-'].includes(event.key)) { event.preventDefault(); readerCommand({ type: 'zoomBy', factor: event.key === '-' ? 1 / 1.1 : 1.1 }); }
-      }
+      // Only find: Ctrl/⌘ +/−/0 stay with the window zoom.
+      if (event.key.toLowerCase() === 'f') { event.preventDefault(); if (findInput.current) findInput.current.select(); else setFindOpen(true); }
     };
     window.addEventListener('keydown', key); document?.defaultView?.addEventListener('keydown', key);
     return () => { window.removeEventListener('keydown', key); document?.defaultView?.removeEventListener('keydown', key); };

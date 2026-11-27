@@ -1,5 +1,5 @@
 import { isPlayground } from './playground-mode.ts';
-const storageKey = (key: string) => isPlayground ? 'playground:' + key : key;
+export const storageKey = (key: string) => isPlayground ? 'playground:' + key : key;
 // A blocked or full browser store must not prevent the workspace from opening.
 // Keep this tab usable even when durable drafts/preferences are unavailable.
 const fallback = new Map<string, string>();

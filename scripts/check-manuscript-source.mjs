@@ -9,6 +9,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { chromium, expect } from './playwright.mjs';
+import { selectOption } from './select.mjs';
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-source-edit-'));
 process.env.PAPILOT_DATA = path.join(temp, 'data');
@@ -19,6 +20,7 @@ const [{ App, createServer }, { Store }, { Workspace }, { Manuscripts }, { build
 ]);
 class InertAgent extends EventEmitter { ready = false; close() {} }
 const root = path.join(temp, 'paper'), intro = path.join(root, 'sections/intro.tex');
+const longName = 'chapter-' + 'x'.repeat(80) + '.tex';
 const git = (...args) => execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
 // Filler between the passages keeps their changes apart in the Changes view.
 const FILLER = Array.from({ length: 10 }, (_, index) => `Filler sentence ${index + 1} keeps the changes apart.`).join('\n');
@@ -26,6 +28,7 @@ const ORIGINAL = `\\section{Introduction}\nAn opening paragraph that sets the sc
 fs.mkdirSync(path.join(root, 'sections'), { recursive: true });
 fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\n\\begin{document}\n\\input{sections/intro}\n\\end{document}\n');
 fs.writeFileSync(intro, ORIGINAL);
+fs.writeFileSync(path.join(root, longName), '% stray null byte\0\n');
 git('init', '-q'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@localhost');
 git('add', '.'); git('commit', '-qm', 'Paper');
 
@@ -69,6 +72,16 @@ try {
   await page.goto(origin);
   const word = text => page.locator('.pdf-view .textLayer span', { hasText: text }).first();
   await expect(word('pelicans')).toBeVisible({ timeout: 60000 });
+  // The zoom chip keeps one width across percentages, so the toolbar holds still.
+  // (The toolbar shows the chip only when there is room for it.)
+  const viewport = page.viewportSize();
+  await page.setViewportSize({ width: 1800, height: viewport.height });
+  const zoomChip = page.getByRole('combobox', { name: 'Zoom', exact: true });
+  const chipWidths = [];
+  for (const value of ['0.75', '1', '4']) { await selectOption(zoomChip, value); chipWidths.push(await zoomChip.evaluate(element => element.getBoundingClientRect().width)); }
+  assert.equal(new Set(chipWidths).size, 1, `zoom chip widths: ${chipWidths}`);
+  await selectOption(zoomChip, 'page-width');
+  await page.setViewportSize(viewport);
   const rail = page.getByRole('toolbar', { name: 'Marking tools' });
   const panel = page.locator('.source-panel'), field = panel.getByRole('textbox', { name: 'Edit LaTeX source' });
   const tabs = page.getByRole('tablist', { name: 'Manuscript panels' }), close = tabs.locator('.side-tab-close'), unsaved = tabs.locator('.side-tab-close[data-dirty]');
@@ -84,6 +97,39 @@ try {
       .observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
   });
   const flashed = () => page.evaluate(() => (window.flashedLines || []).join('\n'));
+
+  // A non-UTF-8 comment can compile successfully but prevents opening the source.
+  fs.writeFileSync(intro, Buffer.concat([Buffer.from('% café\n', 'latin1'), Buffer.from(ORIGINAL)]));
+  const encodingError = 'Could not read “sections/intro.tex” as UTF-8. Check its encoding in a text editor, then save a UTF-8 copy.';
+  const sourceAlert = panel.getByRole('alert');
+  await rail.getByRole('button', { name: 'Edit source', exact: true }).click();
+  await word('pelicans').click();
+  await expect(sourceAlert).toHaveText(encodingError);
+  await shot('encoding-error');
+  await close.click();
+
+  const fileMenu = page.locator('.manuscript-row').getByRole('button', { name: /^Files/ });
+  await fileMenu.click();
+  const files = page.getByRole('list', { name: 'Repository files' });
+  const sections = files.getByRole('button', { name: 'sections', exact: true });
+  await sections.click();
+  await files.getByRole('button', { name: 'intro.tex', exact: true }).click();
+  await expect(sourceAlert).toHaveText(encodingError);
+  await close.click();
+  fs.writeFileSync(intro, ORIGINAL);
+
+  await fileMenu.click();
+  await files.getByRole('button', { name: longName, exact: true }).click();
+  await expect(sourceAlert).toHaveText(`“${longName}” contains null bytes. Check its encoding and contents in a text editor.`);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect(page.locator('#task-sidebar')).toBeHidden();
+  await expect(sourceAlert).toBeVisible();
+  await expect.poll(() => sourceAlert.evaluate(el => el.scrollWidth === el.clientWidth)).toBe(true);
+  await shot('encoding-error-narrow');
+  await page.setViewportSize(viewport);
+  await page.emulateMedia({ colorScheme: 'light' });
+  await close.click();
 
   // Saved anchors bind to selected TeX, then update after actual recompilation.
   const anchors = page.getByRole('dialog', { name: 'Anchors', exact: true });
@@ -146,6 +192,45 @@ try {
   await expect(panel.locator('.cm-change-bar')).toHaveCount(0);
   await page.waitForTimeout(700);
   await shot('open');
+
+  // The editor's own font size comes from Settings and changes only the
+  // editor; Ctrl/⌘ +/− stay with the window zoom even while it is focused.
+  const editorFont = () => panel.locator('.cm-content').evaluate(content => [getComputedStyle(content).fontSize, getComputedStyle(content.closest('.cm-scroller')).lineHeight]);
+  const tabFont = () => tabs.getByRole('tab', { name: 'intro.tex' }).evaluate(tab => getComputedStyle(tab).fontSize);
+  const interfaceFont = await tabFont();
+  assert.deepEqual(await editorFont(), ['12px', '20px']);
+  await expect(field).toBeFocused();
+  // Ctrl/⌘ +/− belong to the window zoom: neither the editor nor the PDF
+  // beside it takes them, wherever the focus is.
+  const pageWidth = () => page.locator('.pdf-view .page').first().evaluate(element => element.getBoundingClientRect().width);
+  const pdfWidth = await pageWidth();
+  for (const target of [field, page.locator('.pdf-container')]) {
+    await target.focus();
+    const taken = await page.evaluate(() => {
+      const event = new KeyboardEvent('keydown', { key: '=', code: 'Equal', ctrlKey: true, metaKey: navigator.platform.startsWith('Mac'), bubbles: true, cancelable: true });
+      document.activeElement.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    assert.equal(taken, false, 'Ctrl/⌘ = is left to the window zoom');
+  }
+  assert.deepEqual(await editorFont(), ['12px', '20px'], 'zoom keys do not resize the editor');
+  assert.equal(await pageWidth(), pdfWidth, 'zoom keys do not resize the PDF');
+  await field.focus();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const settings = page.locator('.settings-dialog');
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await selectOption(settings.getByRole('combobox', { name: 'Editor font size', exact: true }), '18');
+  await expect.poll(editorFont).toEqual(['18px', '30px']);
+  await settings.getByRole('button', { name: 'Close', exact: true }).click();
+  await shot('editor-font-18');
+  assert.equal(await tabFont(), interfaceFont, 'the rest of the interface keeps its size');
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:editor-font-size')), '18');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await selectOption(settings.getByRole('combobox', { name: 'Editor font size', exact: true }), '12');
+  await expect.poll(editorFont).toEqual(['12px', '20px']);
+  await settings.getByRole('button', { name: 'Close', exact: true }).click();
+  await field.focus();
 
   // What changed since the last commit, as bars beside the lines while editing.
   await page.keyboard.press('End');
@@ -295,7 +380,7 @@ try {
   await shot('dark');
 
   assert.deepEqual(errors, []);
-  console.log('PASS: the source tool opens the clicked passage in an editor that marks its changes since the last commit, saves without an agent, flashes the saved lines in the new PDF and the editor, reports compile errors, refuses stale saves, keeps drafts, and follows the Changes view both ways');
+  console.log('PASS: the source tool opens the clicked passage in an editor that marks its changes since the last commit, saves without an agent, flashes the saved lines in the new PDF and the editor, reports encoding and compile errors, refuses stale saves, keeps drafts, and follows the Changes view both ways');
 } catch (error) {
   if (errors.length) console.error('Page errors:', errors);
   await shot('failure').catch(() => {});

@@ -12,7 +12,7 @@ const catalog: Partial<Record<AgentId, AgentModel[]>> = {
     model('gpt-6.1-sol', 'GPT-6.1 Sol', codexEfforts, 'high'),
     model('gpt-6.1-terra', 'GPT-6.1 Terra', codexEfforts, 'high'),
     model('gpt-6-luna', 'GPT-6 Luna', ['low', 'medium', 'high', 'xhigh', 'max'], 'medium'),
-  ].map(model => ({ ...model, fastMode: { serviceTier: 'priority', description: '' } })),
+  ].map(model => ({ ...model, serviceTiers: ['priority'] })),
   claude: [
     model('fable', 'Fable', claudeEfforts, 'high', true),
     model('opus', 'Opus', claudeEfforts, 'high'),
@@ -39,5 +39,6 @@ const permissions: Partial<Record<AgentId, TaskPermissionOption[]>> = {
 };
 export const demoRuntimes = Object.fromEntries(AGENT_IDS.map(id => [id, {
   permissionOptions: permissions[id] || [],
+  ...(id === 'zcode' ? { supportsReadOnlyTasks: false } : {}),
   installed: true, connected: true, authenticated: true, account: null, error: null, models: catalog[id] || [],
 }])) as Record<AgentId, RuntimeStatus>;

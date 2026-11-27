@@ -6,6 +6,9 @@ import { Changes } from './changes.ts';
 import { moveLegacyStates } from './state.ts';
 import { reviewClient } from './review.ts';
 
+// Give detached agents time to close their tools and finish process cleanup.
+export const RUNTIME_SHUTDOWN_TIMEOUT_MS = 11_000;
+
 /** Shared services for hosts that own Papilot's lifecycle. */
 export async function createRuntime(data: string, connectReview = reviewClient) {
   const store = new Store(path.join(data, 'papilot.sqlite'));

@@ -11,12 +11,12 @@ const model: AgentModel = { id: 'deep', name: 'Deep', isDefault: true, efforts: 
 
 test('model preferences preserve explicit defaults and isolate agent/model identities', () => {
   const store = storage();
-  saveModelPreferences('codex', 'deep', { effort: 'xhigh', fast: true }, store);
-  saveModelPreferences('codex', 'fast', { effort: 'low', fast: false }, store);
-  saveModelPreferences('claude', 'deep', { effort: '', fast: false }, store);
-  assert.deepEqual(readModelPreferences('codex', 'deep', model, store), { effort: 'xhigh', fast: true });
-  assert.deepEqual(readModelPreferences('codex', 'fast', undefined, store), { effort: 'low', fast: false });
-  assert.deepEqual(readModelPreferences('claude', 'deep', model, store), { effort: '', fast: false });
+  saveModelPreferences('codex', 'deep', { effort: 'xhigh', serviceTier: 'ultrafast' }, store);
+  saveModelPreferences('codex', 'fast', { effort: 'low', serviceTier: 'default' }, store);
+  saveModelPreferences('claude', 'deep', { effort: '', serviceTier: 'default' }, store);
+  assert.deepEqual(readModelPreferences('codex', 'deep', model, store), { effort: 'xhigh', serviceTier: 'ultrafast' });
+  assert.deepEqual(readModelPreferences('codex', 'fast', undefined, store), { effort: 'low', serviceTier: 'default' });
+  assert.deepEqual(readModelPreferences('claude', 'deep', model, store), { effort: '', serviceTier: 'default' });
   assert.equal(readModelPreferences('codex', 'unknown', undefined, store), null);
   store.setItem('papilot:model-preferences:["codex","deep"]', '{broken');
   assert.equal(readModelPreferences('codex', 'deep', model, store), null);
@@ -29,11 +29,12 @@ test('legacy choices migrate once to the selected model or resolved host default
     store.setItem('papilot:effort:codex', '');
     store.setItem('papilot:fast:codex', 'true');
     migrateAgentPreferences(store);
-    assert.deepEqual(readModelPreferences('codex', 'deep', model, store), { effort: '', fast: true });
+    assert.deepEqual(readModelPreferences('codex', 'deep', model, store), { effort: '', serviceTier: 'priority' });
+    assert.deepEqual(readModelPreferences('codex', 'deep', { ...model, serviceTiers: ['fast', 'ultrafast'] }, store), { effort: '', serviceTier: 'fast' });
     assert.equal(readModelPreferences('codex', 'fast', { ...model, id: 'fast', isDefault: false }, store), null);
-    saveModelPreferences('codex', 'deep', { effort: 'low', fast: false }, store);
+    saveModelPreferences('codex', 'deep', { effort: 'low', serviceTier: 'default' }, store);
     migrateAgentPreferences(store);
-    assert.deepEqual(readModelPreferences('codex', 'deep', model, store), { effort: 'low', fast: false });
+    assert.deepEqual(readModelPreferences('codex', 'deep', model, store), { effort: 'low', serviceTier: 'default' });
   }
 });
 

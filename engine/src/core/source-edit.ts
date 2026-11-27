@@ -117,16 +117,16 @@ export class SourceEdits {
       reviewed = true; reverted = rejected.map(unit => unit.id);
     }
     // An accepted note option puts its wording in the worktree as well.
-    const variants = this.app.review.variants(name, round.number), worded = round.units.filter(unit => unit.file === file && Object.hasOwn(variants, unit.id));
+    const variantEdits = this.app.review.variantEdits(name, round.number), worded = round.units.filter(unit => unit.file === file && Object.hasOwn(variantEdits, unit.id));
     if (!reviewed && after && worded.length) {
       let expected: Buffer | null | undefined;
       try {
-        expected = optionCandidate(round.units, worded.map(unit => ({ unit: unit.id, text: variants[unit.id] })), () => after.toString("utf8"),
+        expected = optionCandidate(round.units, worded.map(unit => variantEdits[unit.id]), () => after.toString("utf8"),
           { ids: new Set(rejected.map(unit => unit.id)), source: () => before }).files[file];
       } catch { expected = undefined; }
       if (expected && same(current, expected))
         return { round: round.number, file, revision: revision(current), text, base: base ? textOf(base) : null, before: before ? textOf(before) : null, reviewed: true,
-          reverted: rejected.map(unit => unit.id), worded: Object.fromEntries(worded.map(unit => [unit.id, variants[unit.id]])) };
+          reverted: rejected.map(unit => unit.id), worded: Object.fromEntries(worded.map(unit => [unit.id, variantEdits[unit.id].text])) };
     }
     return { round: round.number, file, revision: revision(current), text, base: base ? textOf(base) : null, before: before ? textOf(before) : null, reviewed, reverted };
   }

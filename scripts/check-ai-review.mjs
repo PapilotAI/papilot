@@ -15,7 +15,7 @@ const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, h
 const archives = [];
 const errors = []; page.on('pageerror', error => errors.push(error.message));
 const runtime = { connected: true, authenticated: true, models: [] };
-const state = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Review example', path: '/tmp/paper' }], tasks: [], requests: [], runtime };
+const state = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Review example', path: '/tmp/paper' }], tasks: [], requests: [], runtime, runtimes: { codex: runtime, zcode: { ...runtime, supportsReadOnlyTasks: false } } };
 const words = JSON.parse(fs.readFileSync('tests/fixtures/outline-words.json', 'utf8'));
 const text = words[0].words[1], rect = [text[1] / 612, (text[2] - text[3]) / 792, (text[1] + text[4]) / 612, text[2] / 792];
 const note = { id: 'ai-finding-1', projectId: 'paper', key: 'pdf', page: 0, rect, rects: [rect], quote: text[0], comment: 'State the assumptions under which this claim holds.', source: null, createdAt: Date.now(), aiReview: { taskId: 'review', agent: 'codex' } };
@@ -75,6 +75,7 @@ await page.route('**/api/**', async route => {
   throw Error(`Unexpected request ${url.pathname}`);
 });
 try {
+  await page.addInitScript(() => localStorage.setItem('papilot:agent', 'zcode'));
   await page.goto(`http://127.0.0.1:${server.server.address().port}`);
   const chooseReview = async () => {
     await page.getByRole('button', { name: 'Add files or skills', exact: true }).click();
@@ -89,6 +90,7 @@ try {
   await page.getByRole('textbox', { name: 'Describe the revision' }).fill(instructions);
   await page.getByRole('button', { name: 'Start task', exact: true }).click();
   await expect(page.getByText('Temporary failure. Try again.', { exact: true })).toBeVisible();
+  assert.equal(attempts[0].agent, 'codex', 'The read-only review skips the default editing agent');
   const savedRequest = await page.evaluate(() => localStorage.getItem('papilot:new-task-request'));
   assert.ok(savedRequest && savedRequest.length < 200, 'retry ID is durable without duplicating the long draft');
   assert.equal(JSON.parse(savedRequest).id, attempts[0].id);

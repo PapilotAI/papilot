@@ -44,12 +44,26 @@ async function fixture(latexInstallation: AppOptions['latexInstallation'] = asyn
   const diagnostics = new Diagnostics(async (repo, port) => { diagnosticRequests.push({ repo, port }); return { version: '9.9.9', ok: false, checks: [{ id: 'latexmk', ok: false, severity: 'error', detail: 'Not installed.', fix: 'Install TeX Live.' }] }; });
   const systemRequirements = async (): Promise<SystemRequirements> => ({ platform: 'linux', checks: [{ id: 'git', ok: true }, { id: 'latexmk', ok: false }, { id: 'synctex', ok: false }, { id: 'tex-engine', ok: false }] });
   const shared = { store, workspace, updates, diagnostics, systemRequirements, latexInstallation, phitexVersion: async () => '1.0.4', manuscripts: new Manuscripts(), csrf: 'local-csrf', serialGit: gitQueue(), dist, version: '9.9.9', connectReview: async () => review };
-  const local = await buildApp({ ...shared, listener: { kind: 'local', port: 7274, publicOrigin: PUBLIC, owner: 'owner@example' } });
+  const listener = { kind: 'local' as const, port: 7274, publicOrigin: PUBLIC, owner: 'owner@example' };
+  const local = await buildApp({ ...shared, listener });
   const state = (await local.inject({ url: '/api/state', headers: LOCAL })).json();
   const as = { ...LOCAL, origin: 'http://127.0.0.1:7274', 'x-papilot-token': state.csrf };
-  return { updates, diagnosticRequests, manuscripts: shared.manuscripts, store, workspace, review, local, state, as, async close() { updates.close(); await local.close(); workspace.close(); store.close(); fs.rmSync(dist, { recursive: true }); } };
+  return { updates, diagnosticRequests, manuscripts: shared.manuscripts, store, workspace, review, local, listener, state, as, async close() { updates.close(); await local.close(); workspace.close(); store.close(); fs.rmSync(dist, { recursive: true }); } };
 
 }
+
+test('closing the app ends an open workspace event stream', async () => {
+  const f = await fixture();
+  const controller = new AbortController();
+  try {
+    const url = await f.local.listen({ host: '127.0.0.1', port: 0 });
+    f.listener.port = Number(new URL(url).port);
+    const events = await fetch(url + '/api/events', { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]) });
+    assert.match(events.headers.get('content-type') || '', /^text\/event-stream/);
+    const [body] = await Promise.all([events.text(), f.local.close()]);
+    assert.match(body, /event: change/);
+  } finally { controller.abort(); await f.close(); }
+});
 
 test('changing task pins updates shared state without changing task activity', async () => {
   const f = await fixture();
@@ -2378,6 +2392,24 @@ test('quota refresh validates the agent and CSRF and never reconnects conversati
     Object.assign(f.workspace.runtimes.antigravity, { connected: true, authenticated: true });
     assert.deepEqual((await f.local.inject({ method: 'POST', url, headers: f.as, payload: {} })).json(), { usage: null });
     assert.equal(reads, 1);
+  } finally { await f.close(); }
+});
+
+test('task commit-message routes identify inherited speeds for catalog validation', async () => {
+  const f = await fixture();
+  try {
+    const taskId = 'thesis-task';
+    f.store.updateTask(taskId, { agent: 'codex', model: 'full', serviceTier: 'ultrafast' });
+    const speeds: [string | undefined, boolean | undefined][] = [];
+    f.workspace.commitMessage = async (_project, _paths, choice) => { speeds.push([choice?.serviceTier, choice?.inheritedSpeed]); return { message: 'Clarify the introduction', agent: 'codex' }; };
+    const send = (payload: Record<string, unknown>) => f.local.inject({ method: 'POST', url: '/api/tasks/' + taskId + '/commit-message', headers: f.as, payload });
+
+    assert.equal((await send({})).statusCode, 200);
+    assert.equal((await send({ serviceTier: 'ultrafast' })).statusCode, 200);
+    assert.equal((await send({ agent: 'codex' })).statusCode, 200);
+    f.store.updateTask(taskId, { serviceTier: undefined });
+    assert.equal((await send({})).statusCode, 200);
+    assert.deepEqual(speeds, [['ultrafast', true], ['ultrafast', undefined], [undefined, undefined], [undefined, undefined]]);
   } finally { await f.close(); }
 });
 

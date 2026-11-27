@@ -7,10 +7,20 @@ const setZoom = (factor: unknown) => {
   if (typeof factor === 'number' && interfaceSizes.includes(factor)) webFrame.setZoomFactor(factor);
 };
 
+// The main process passes the desktop's window button layout (Linux) as an
+// argument; see window-buttons.ts.
+const windowButtonsArgument = '--papilot-window-buttons=';
+let windowButtons: unknown;
+try {
+  const value = process.argv.find(arg => arg.startsWith(windowButtonsArgument));
+  if (value) windowButtons = JSON.parse(value.slice(windowButtonsArgument.length));
+} catch { /* the page keeps its default layout */ }
+
 // Expose specific window and user-selected folder actions, not generic IPC or
 // filesystem access. Papers open in place; their files stay on disk.
 contextBridge.exposeInMainWorld('papilotDesktop', {
   platform: process.platform,
+  windowButtons,
   typelessStatus: () => ipcRenderer.invoke('papilot:typeless-status'),
   typelessShortcut: (inputId: string) => ipcRenderer.invoke('papilot:typeless-shortcut', inputId),
   minimize: () => ipcRenderer.send('papilot:window', 'minimize'),

@@ -1,6 +1,8 @@
 import { AgentToolBridge, agentToolError } from './agent-tool-bridge.ts';
 import { PAPER_TOOLS, isPaperTool, paperToolInstructions, type PaperToolCall } from './paper-tools.ts';
 import { WORKFLOW_TOOLS, WORKER_STOPPED, workflowInstructions, workflowItem, workflowNotes, workflowRequests, delegateWorkflow, auditWorkflow, workflowSnapshot, runWorkflowHelper, workerName, type WorkflowActivityEvent, type WorkflowGenerate, type WorkflowStep, type WorkflowWorker } from './collaboration.ts';
+import { CollaborationRuntime, type CollaborationHost } from './collaboration-runtime.ts';
+import { collaborationReady, resolveCollaborationConfig } from './collaboration-auto.ts';
 import { CodexUsageTracker, normalizeCodexUsage, normalizeTurnUsage } from './activity.ts';
 import type { WorkflowChange } from './collaboration-edits.ts';
 import { aiReviewInstructions, parseAiReview, reviewPrompt, saveReviewText, type ReviewSnapshot } from './ai-review.ts';
@@ -23,6 +25,7 @@ import { GrokAgent } from './grok.ts';
 import { PiAgent } from './pi.ts';
 import { CodeBuddyAgent } from './codebuddy.ts';
 import { WorkBuddyAgent } from './workbuddy.ts';
+import { ZCodeAgent } from './zcode.ts';
 import { WriterAgent } from './writer/agent.ts';
 import { customModelUnavailable, isCustomProvider } from './writer/auth.ts';
 import type { CompiledPaper } from './writer/build-map.ts';
@@ -46,7 +49,7 @@ import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress, recentCommitSubjects } from './manuscript.ts';
 import { Memory, memoryDigest, memoryUpdate } from './memory.ts';
 import { MEMORY_EVIDENCE, MEMORY_LANGUAGE, MEMORY_LEARNING, MEMORY_SINCE, acceptedSuggestions, dismissedKey, evidenceHash, hasEvidence, learningPrompt, memoryLearningInstructions, taskEvidence, type EvidenceRecord, type MemoryEvidence } from './memory-learning.ts';
-import { AGENT_IDS, isAgentId, usesCodex, isTaskReviewNote, collaborationRoutes, type CollaborationRole, type CollaborationRoutes, type CollaborationSettings } from '../shared.ts';
+import { AGENT_IDS, COLLABORATION_WORKERS, DEFAULT_COLLABORATION_CONFIG, isAgentId, isCollaborationStrategy, usesCodex, effectiveServiceTier, modelServiceTier, isTaskReviewNote, collaborationConfig, collaborationRoutes, type CollaborationConfig, type CollaborationRole, type CollaborationRoute, type CollaborationRoutes, type CollaborationSettings, type CollaborationWorkerAgent, type PreparedNoteOptions } from '../shared.ts';
 import type { HelperChoice, Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, PendingBuild, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview, PageView, ToolPlace } from '../shared.ts';
 
 const execute = promisify(execFile);
@@ -57,15 +60,20 @@ const startsBuild = (route: string, value: unknown) => /\/source(?:\/file)?$/.te
 const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 // A Codex model/list entry with the reasoning efforts it supports.
 export const agentModel = (m: any): AgentModel => {
-  // New catalogs name the wire tier explicitly; older ones advertise only "fast".
-  const fast = Array.isArray(m.serviceTiers)
-    ? m.serviceTiers.find((tier: any) => typeof tier?.id === 'string' && (tier.name === 'Fast' || tier.id === 'fast' || tier.id === 'priority'))
-    : m.additionalSpeedTiers?.includes('fast') ? { id: 'priority' } : undefined;
+  // Use explicit wire IDs when the catalog provides them.
+  const catalog: { id: string; name: string }[] = m.serviceTiers;
+  const legacyTiers = Array.isArray(m.additionalSpeedTiers) ? m.additionalSpeedTiers : [];
+  const serviceTiers = Array.isArray(catalog)
+    ? [
+      catalog.find(tier => typeof tier?.id === 'string' && tier.id !== 'ultrafast' && (tier.name === 'Fast' || tier.id === 'fast' || tier.id === 'priority'))?.id,
+      catalog.find(tier => tier?.id === 'ultrafast')?.id,
+    ].filter((id): id is string => Boolean(id))
+    : [legacyTiers.includes('fast') ? 'priority' : '', legacyTiers.includes('ultrafast') ? 'ultrafast' : ''].filter(Boolean);
   return {
     id: m.model || m.id, name: m.displayName || m.model || m.id, ...(typeof m.source === 'string' && m.source ? { source: m.source } : {}), isDefault: Boolean(m.isDefault),
     efforts: (m.supportedReasoningEfforts || []).map((e: any) => e?.reasoningEffort).filter((e: unknown) => typeof e === 'string'),
     defaultEffort: typeof m.defaultReasoningEffort === 'string' ? m.defaultReasoningEffort : null,
-    ...(fast ? { fastMode: { serviceTier: fast.id, description: typeof fast.description === 'string' ? fast.description : '' } } : {}),
+    ...(serviceTiers.length ? { serviceTiers } : {}),
   };
 };
 // An account/rateLimits/read response as the usage Papilot shows; null when
@@ -157,7 +165,7 @@ export class Workspace extends EventEmitter {
   requests = new Map<string, PendingRequest & { rpcId: string | number; agent: AgentId }>();
   private active = new Map<string, Run>();
   private codexUsage = new CodexUsageTracker();
-  workflowGenerate: WorkflowGenerate = (worker, prompt, signal, edit, step, activity) => runWorkflowHelper(worker, prompt, signal, edit, step, undefined, activity);
+  workflowGenerate: WorkflowGenerate = (worker, prompt, signal, edit, step, activity, options) => runWorkflowHelper(worker, prompt, signal, edit, step, undefined, activity, options);
   private workflowAudits = new Map<string, string>();
   private workflowDelegations = new Map<string, { count: number }>();
   private workflowStops = new Map<string, AbortController>();
@@ -167,10 +175,55 @@ export class Workspace extends EventEmitter {
   setCollaborationEnabled(enabled: boolean) {
     this.store.savePreference('collaboration', enabled);
     this.runtimes.collaboration.hidden = !enabled;
+    this.syncCollaborationRuntime();
     this.emit('change');
     if (enabled) void this.refreshAgent('collaboration').then(() => this.schedule(), error => {
       this.runtimes.collaboration.error = errorText(error); this.runtimes.collaboration.connected = false; this.emit('change');
     });
+  }
+  supportsReadOnlyAgent(id: CollaborationWorkerAgent) { return this.agents[id]?.supportsReadOnlyTasks !== false; }
+  private readOnlyAgentMap(): Partial<Record<CollaborationWorkerAgent, boolean>> {
+    return Object.fromEntries(COLLABORATION_WORKERS.map(id => [id, this.supportsReadOnlyAgent(id)]));
+  }
+  get collaborationConfig(): CollaborationConfig {
+    return collaborationConfig(this.store.preference('collaboration-settings'), this.store.preference('collaboration-routes'));
+  }
+  get collaborationRoutes(): CollaborationRoutes { return this.collaborationConfig.routes; }
+  collaborationResolved() {
+    return resolveCollaborationConfig(this.collaborationConfig, this.runtimeStatus(), this.readOnlyAgentMap());
+  }
+  collaborationSettings(): CollaborationSettings {
+    return { enabled: this.collaborationEnabled, ...this.collaborationConfig, resolved: this.collaborationResolved(), readOnlyAgents: this.readOnlyAgentMap() };
+  }
+  setCollaborationConfig(patch: Partial<CollaborationConfig>) {
+    const next = collaborationConfig({ ...this.collaborationConfig, ...patch });
+    this.store.savePreference('collaboration-settings', next);
+    this.syncCollaborationRuntime();
+    this.emit('change');
+  }
+  setCollaborationRoutes(routes: CollaborationRoutes) { this.setCollaborationConfig({ routes: collaborationRoutes(routes) }); }
+  resetCollaborationConfig() {
+    this.store.savePreference('collaboration-settings', { ...DEFAULT_COLLABORATION_CONFIG, routes: { ...DEFAULT_COLLABORATION_CONFIG.routes }, racers: [], lanes: [] });
+    this.syncCollaborationRuntime();
+    this.emit('change');
+  }
+  private collaborationRefreshing = false;
+  private syncCollaborationRuntime() {
+    const rt = this.runtimes.collaboration;
+    if (!rt) return;
+    rt.hidden = !this.collaborationEnabled;
+    if (!(this.agents.collaboration instanceof CollaborationRuntime)) return;
+    const { installed, ready } = collaborationReady(this.runtimeStatus());
+    rt.installed = installed;
+    rt.connected = installed && this.agents.collaboration.ready;
+    rt.authenticated = ready;
+    rt.account = ready ? 'Papilot Collaboration Mode' : null;
+    rt.error = !installed ? 'Connect at least one agent in Settings → Agents.' : ready ? null : 'Connect and sign in to at least one agent to use Collaboration mode.';
+    if (installed && !this.agents.collaboration.ready && !this.collaborationRefreshing
+      && (this.collaborationEnabled || this.store.tasks().some(task => task.agent === 'collaboration'))) {
+      this.collaborationRefreshing = true;
+      void this.refreshAgent('collaboration').catch(() => {}).finally(() => { this.collaborationRefreshing = false; });
+    }
   }
   // Agents the author turned off in Settings → Agents are neither started nor
   // offered, and their hidden models are left out of the pickers. A task that
@@ -200,6 +253,7 @@ export class Workspace extends EventEmitter {
       }
     });
     this.woken.delete(id);
+    this.syncCollaborationRuntime();
     this.emit('change');
     if (enabled) this.startTurnedOn([id]);
   }
@@ -216,12 +270,14 @@ export class Workspace extends EventEmitter {
         this.store.savePreference('agents-off', [...others, id]);
       });
       this.woken.delete(id);
+      this.syncCollaborationRuntime();
       this.emit('change');
       return;
     }
     const hidden = { ...this.hiddenModels, [id]: unique };
     if (!unique.length) delete hidden[id];
     this.store.savePreference('hidden-models', Object.keys(hidden).length ? hidden : undefined);
+    this.syncCollaborationRuntime();
     this.emit('change');
   }
   // Turns every agent back on and shows every model.
@@ -229,6 +285,7 @@ export class Workspace extends EventEmitter {
     const off = this.agentsOff;
     this.store.transaction(() => { this.store.savePreference('agents-off', undefined); this.store.savePreference('hidden-models', undefined); });
     this.woken.clear();
+    this.syncCollaborationRuntime();
     this.emit('change');
     this.startTurnedOn(off);
   }
@@ -244,18 +301,94 @@ export class Workspace extends EventEmitter {
     this.woken.add(id);
     void this.connectAgent(id, true).catch(error => { this.runtimes[id].error = errorText(error); }).finally(() => { this.emit('change'); this.schedule(); });
   }
-  get collaborationRoutes(): CollaborationRoutes { return collaborationRoutes(this.store.preference('collaboration-routes')); }
-  collaborationSettings(): CollaborationSettings { return { enabled: this.collaborationEnabled, routes: this.collaborationRoutes }; }
-  setCollaborationRoutes(routes: CollaborationRoutes) { this.store.savePreference('collaboration-routes', collaborationRoutes(routes)); this.emit('change'); }
-  // The coordinator's model and reasoning effort, also used by Codex workers
-  // without their own model and by the final audit.
+  // The coordinator's model and reasoning effort, kept for legacy helper compatibility.
   private coordinator(task: Task): WorkflowWorker {
-    const models = this.runtimes.collaboration.models, model = task.model ? models.find(model => model.id === task.model) : models.find(model => model.isDefault);
-    return { agent: 'codex', model: task.model || null, effort: task.effort || model?.defaultEffort || null };
+    const resolved = this.collaborationResolved();
+    return resolved.routes.rigorous || resolved.router || { agent: 'codex', model: task.model || null, effort: task.effort || null };
   }
   private workflowWorker(task: Task, role: CollaborationRole): WorkflowWorker {
-    const route = this.collaborationRoutes[role];
-    return route.agent === 'codex' && !route.model ? this.coordinator(task) : route;
+    const resolved = this.collaborationResolved();
+    return resolved.routes[role] || this.coordinator(task);
+  }
+  private collaborationHost(): CollaborationHost {
+    return {
+      availability: () => collaborationReady(this.runtimeStatus()),
+      resolved: () => this.collaborationResolved(),
+      context: (threadId, clientId) => {
+        const task = this.store.taskByThread(threadId);
+        if (!task) return null;
+        const activeRun = this.active.get(task.id);
+        const run = activeRun && (!clientId || activeRun.id === clientId) ? activeRun : undefined;
+        if (!run) return null;
+        const items = this.store.items(task.id);
+        const userItem = items.find(item => item.id === run.id);
+        const prior = items
+          .filter(item => item.id !== run.id && (item.type === 'user' || item.type === 'assistant') && item.text?.trim())
+          .slice(-4)
+          .map(item => `${item.type === 'user' ? 'Author' : 'Assistant'}: ${item.text.trim().slice(0, 600)}`)
+          .join('\n\n');
+        return {
+          taskId: task.id,
+          runId: run.id,
+          worktree: task.worktree,
+          notes: userItem?.meta?.notes || [],
+          groupInstructions: userItem?.meta?.groupInstructions,
+          request: userItem?.meta?.request || (userItem?.meta?.notes?.length ? '' : userItem?.text || run.prompt),
+          history: prior,
+          memory: this.memoryPrompt(task),
+          resolved: this.collaborationResolved(),
+          runtimes: this.runtimeStatus(),
+          readOnlyAgents: this.readOnlyAgentMap(),
+        };
+      },
+      saveItem: (taskId, entry) => {
+        const task = this.store.findTask(taskId);
+        if (!task) return;
+        const previous = this.store.item(taskId, entry.id);
+        const changes = entry.changes?.length
+          ? (() => {
+            const outline = paperOutline(task.worktree, this.writerBuilds.get(taskId) || this.paperBuild(task));
+            return entry.changes!.map(c => fileEdit(c.file, c.diff, outline));
+          })()
+          : previous?.changes;
+        const meta = entry.meta !== undefined ? entry.meta : previous?.meta;
+        this.store.saveItem({
+          id: entry.id,
+          taskId,
+          createdAt: previous?.createdAt ?? Date.now(),
+          type: entry.type,
+          text: entry.text,
+          ...(entry.detail !== undefined ? { detail: entry.detail } : {}),
+          status: entry.status,
+          ...(entry.parent ? { parent: entry.parent } : {}),
+          ...(meta !== undefined ? { meta } : {}),
+          ...(changes ? { changes } : {}),
+        });
+      },
+      workerStep: (taskId, parent, step) => {
+        const task = this.store.findTask(taskId);
+        if (task) this.workerStep(task, parent, step);
+      },
+      settleWorker: (taskId, parent, runStopped) => this.settleWorker(taskId, parent, runStopped),
+      registerWorker: (itemId, taskId, controller) => {
+        this.workflowWorkers.set(itemId, { taskId, controller });
+        return () => { if (this.workflowWorkers.get(itemId)?.controller === controller) this.workflowWorkers.delete(itemId); };
+      },
+      onNoteOptions: (taskId, runId, options: PreparedNoteOptions[]) => {
+        const active = this.active.get(taskId);
+        if (active && active.id === runId) {
+          const updated = { ...active, noteOptions: options };
+          this.active.set(taskId, updated);
+          this.store.saveRun(updated);
+        }
+      },
+      activity: (taskId, event) => {
+        const task = this.store.findTask(taskId);
+        if (task) this.recordWorkflowActivity(task, event);
+      },
+      generate: (worker, prompt, signal, edit, step, activity, options) =>
+        this.workflowGenerate(worker, prompt, signal, edit, step, activity, options),
+    };
   }
   // A worker's step, nested under its delegation. Its paths are the task's.
   private workerStep(task: Task, parent: string, { item, completed }: WorkflowStep) {
@@ -291,7 +424,17 @@ export class Workspace extends EventEmitter {
     const index = items.findIndex(item => item.id === run.id);
     return workflowRequests(index < 0 ? items : items.slice(0, index + 1));
   }
-  private stopWorkflow(taskId: string) { this.workflowStops.get(taskId)?.abort(); this.workflowStops.delete(taskId); this.workflowAudits.delete(taskId); this.workflowDelegations.delete(taskId); }
+  private stopWorkflow(taskId: string) {
+    this.workflowStops.get(taskId)?.abort();
+    this.workflowStops.delete(taskId);
+    for (const [itemId, worker] of this.workflowWorkers) {
+      if (worker.taskId !== taskId) continue;
+      worker.controller.abort();
+      this.workflowWorkers.delete(itemId);
+    }
+    this.workflowAudits.delete(taskId);
+    this.workflowDelegations.delete(taskId);
+  }
   // Async tools must never answer a request from an earlier connection.
   private connectionEpochs = new Map<AgentId, number>();
   private loaded = new Set<string>();
@@ -366,10 +509,10 @@ export class Workspace extends EventEmitter {
     this.attachments = new Attachments(store);
     if (store.preference<number>(MEMORY_SINCE) === undefined) store.savePreference(MEMORY_SINCE, Date.now());
     this.agents = { papilot: others.papilot || new WriterAgent(), pi: others.pi || new PiAgent(), codex, claude: others.claude || new ClaudeAgent(), cursor: others.cursor || new CursorAgent(), copilot: others.copilot || new AcpAgent(ACP_PROFILES.copilot), grok: others.grok || new GrokAgent(), antigravity: others.antigravity || new AntigravityAgent(),
-      kimi: others.kimi || new AcpAgent(ACP_PROFILES.kimi), glm: others.glm || new GlmAgent(), deepseek: others.deepseek || new AcpAgent(ACP_PROFILES.deepseek),
+      kimi: others.kimi || new AcpAgent(ACP_PROFILES.kimi), glm: others.glm || new GlmAgent(), zcode: others.zcode || new ZCodeAgent(), deepseek: others.deepseek || new AcpAgent(ACP_PROFILES.deepseek),
       qwen: others.qwen || new AcpAgent(ACP_PROFILES.qwen), opencode: others.opencode || new AcpAgent(ACP_PROFILES.opencode),
       qoder: others.qoder || new AcpAgent(ACP_PROFILES.qoder), codebuddy: others.codebuddy || new CodeBuddyAgent(), workbuddy: others.workbuddy || new WorkBuddyAgent(),
-      collaboration: others.collaboration || new Codex() };
+      collaboration: others.collaboration || new CollaborationRuntime(this.collaborationHost()) };
     this.runtimes.collaboration.hidden = !this.collaborationEnabled;
     store.on('change', () => this.emit('change'));
     for (const id of AGENTS) {
@@ -382,8 +525,13 @@ export class Workspace extends EventEmitter {
     this.agents.papilot.on('credentials', () => void this.refreshAgent('papilot'));
   }
   private agentOf(task: Task): AgentId { return task.agent && AGENTS.includes(task.agent) ? task.agent : 'codex'; }
-  /** The agent that learns from a task's reviews: its own, or Codex for Collaboration mode. */
-  private learner(task: Task): AgentId { const agent = this.agentOf(task); return agent === 'collaboration' ? 'codex' : agent; }
+  /** The agent that learns from a task's reviews: its own, or Collaboration mode's resolved read-only helper. */
+  private learner(task: Task): AgentId {
+    const agent = this.agentOf(task);
+    if (agent !== 'collaboration') return agent;
+    const resolved = this.collaborationResolved();
+    return resolved.router?.agent || resolved.judge?.agent || resolved.routes.rigorous?.agent || resolved.routes.quick?.agent || 'codex';
+  }
   private projectName(projectId?: string | null) { return projectId ? this.store.findProject(projectId)?.name : undefined; }
   private recordWorkflowActivity(task: Task, event: WorkflowActivityEvent) {
     const projectName = this.projectName(task.projectId);
@@ -455,13 +603,19 @@ export class Workspace extends EventEmitter {
       this.holdForReview(taskId, { status: 'interrupted', turnId: null, error: `${AGENT_NAMES[id]} disconnected. You can resume the same task.` });
     }
     if (usesCodex(id)) { this.loaded.clear(); this.codexUsage.clear(); }
+    if (id !== 'collaboration') this.syncCollaborationRuntime();
     this.emit('change');
   }
   snapshot(): Snapshot { return { version: VERSION, projects: this.store.projects(), manuscriptNoteCounts: this.store.manuscriptNoteCounts(), tasks: this.store.tasks(), pinnedTaskIds: this.store.pinnedTaskIds(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimeStatus() }; }
   // Each agent's status with the author's choices in Settings → Agents.
   private runtimeStatus() {
     const off = this.agentsOff, hidden = this.hiddenModels;
-    return Object.fromEntries(AGENTS.map(id => [id, { ...this.runtimes[id], ...(off.includes(id) ? { hidden: true } : {}), ...(hidden[id] ? { hiddenModels: hidden[id] } : {}) }])) as Record<AgentId, RuntimeStatus>;
+    return Object.fromEntries(AGENTS.map(id => [id, {
+      ...this.runtimes[id],
+      ...(this.agents[id].supportsReadOnlyTasks === false ? { supportsReadOnlyTasks: false } : {}),
+      ...(off.includes(id) ? { hidden: true } : {}),
+      ...(hidden[id] ? { hiddenModels: hidden[id] } : {}),
+    }])) as Record<AgentId, RuntimeStatus>;
   }
   /** Loads the SDKs of the agents this host has before the server answers
    *  requests. Evaluating one blocks for up to a few hundred milliseconds,
@@ -477,12 +631,17 @@ export class Workspace extends EventEmitter {
   async connect() {
     if (this.connecting) return this.connecting;
     this.woken.clear();
-    this.connecting = Promise.all(AGENTS.map(id => this.connectAgent(id))).then(() => { this.emit('change'); this.schedule(); }).finally(() => { this.connecting = null; });
+    const real = AGENTS.filter(id => id !== 'collaboration');
+    this.connecting = Promise.all(real.map(id => this.connectAgent(id)))
+      .then(() => this.connectAgent('collaboration'))
+      .then(() => { this.syncCollaborationRuntime(); this.emit('change'); this.schedule(); })
+      .finally(() => { this.connecting = null; });
     return this.connecting;
   }
   /** Reads one agent's account and models again, after its credentials change. */
   async refreshAgent(id: AgentId) {
     await this.connectAgent(id);
+    this.syncCollaborationRuntime();
     this.emit('change');
   }
   private async connectAgent(id: AgentId, wake = false) {
@@ -513,6 +672,7 @@ export class Workspace extends EventEmitter {
       runtime.permissionOptions = agent.permissionOptions?.() || [];
       runtime.connected = true;
       runtime.authenticated = Boolean(account.account) || account.requiresOpenaiAuth === false;
+      runtime.authenticationUnchecked = account.authenticationUnchecked ? true : undefined;
       runtime.account = account.account?.email || account.account?.type || (runtime.authenticated ? `Local ${name} configuration` : null);
       runtime.error = runtime.authenticated ? null : account.reason || `Sign in to ${name} on this host, then select Refresh.`;
       const [catalog, configuration] = await Promise.allSettled([
@@ -543,6 +703,7 @@ export class Workspace extends EventEmitter {
   // it signed out offers Refresh, and holds queued tasks until it is back.
   private signedOut(id: AgentId) {
     Object.assign(this.runtimes[id], { connected: true, authenticated: false, account: null, error: 'Codex sign-in expired. Select Refresh to load the current sign-in on the Papilot host. If it is still signed out, run papilot codex login there first.' });
+    this.syncCollaborationRuntime();
     this.emit('change');
   }
   async projectRoot(input: string) {
@@ -658,6 +819,8 @@ export class Workspace extends EventEmitter {
     const existing = this.store.findTask(input.id);
     if (existing) { if (existing.projectId !== input.projectId || existing.mode !== 'citations') throw new Error('Invalid task ID.'); return existing; }
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
+    this.requireReadOnlyAgent(input.agent);
+    if (input.agent && (this.agentOff(input.agent) || this.runtimes[input.agent].installed === false)) throw new Error('Connect an agent that supports read-only tasks, such as Codex.');
     this.store.project(input.projectId);
     const now = Date.now(), task: Task = {
       id: input.id, projectId: input.projectId, name: `c-${input.id}`, title: 'Check citations', titleSource: 'prompt', instructions: '',
@@ -674,6 +837,7 @@ export class Workspace extends EventEmitter {
     const task = this.store.task(taskId);
     if (task.mode !== 'citations') throw new Error('This task does not check citations.');
     if (task.status === 'running') return task;
+    this.requireReadOnlyAgent(choice?.agent || task.agent);
     this.store.updateTask(task.id, { status: 'running', error: null, ...(choice ? { agent: choice.agent, model: choice.model ?? null, effort: choice.effort ?? null } : {}) });
     this.runCitationCheck?.(this.store.task(task.id));
     return this.store.task(task.id);
@@ -691,7 +855,7 @@ export class Workspace extends EventEmitter {
     }
     if (input.agent === 'collaboration' && !this.collaborationEnabled) throw new Error('Enable collaboration mode in Settings → Experiments first.');
     if (this.agentOff(input.agent || 'codex')) throw new Error('Turn this agent on in Settings → Agents first.');
-    if (input.agent === 'collaboration' && input.prepareReview) throw new Error('Choose Codex for an AI review. Collaboration mode edits annotations.');
+    if (input.agent === 'collaboration' && input.prepareReview) throw new Error('Choose another agent for an AI review. Collaboration mode edits annotations.');
     if (input.prepareReview) this.requireReviewAgent(input.agent || 'codex');
     this.validateTaskPermissions(input.permissions ?? 'workspace', input.agent || 'codex', Boolean(input.prepareReview));
     if (input.prepareReview && (input.annotations?.length || input.attachments?.length)) throw new Error('AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.');
@@ -704,7 +868,7 @@ export class Workspace extends EventEmitter {
       if (input.agent && input.agent !== 'codex') throw new Error('Service tiers are only available for Codex.');
       const models = this.runtimes.codex.models;
       const model = input.model ? models.find(model => model.id === input.model) : models.find(model => model.isDefault);
-      if (input.serviceTier !== 'default' && input.serviceTier !== model?.fastMode?.serviceTier) throw new Error('Fast mode is not available for this model.');
+      if (input.serviceTier !== modelServiceTier(model, input.serviceTier)) throw new Error('This speed is not available for this model.');
     }
       const project = this.store.project(input.projectId), skill = input.skill ? findSkill(project.path, input.skill) : undefined;
       if (skill?.output === 'annotations' && !input.prepareReview) throw new Error('Start a new task to run the AI review skill on the current PDF.');
@@ -766,14 +930,14 @@ export class Workspace extends EventEmitter {
     const destination = () => {
       if (input.agent === 'collaboration' && !this.collaborationEnabled) throw new Error('Enable collaboration mode before selecting it.');
       if (this.agentOff(input.agent)) throw new Error('Turn this agent on in Settings → Agents first.');
-      if (input.agent === 'collaboration' && task.mode === 'review') throw new Error('Choose Codex for an AI review. Collaboration mode edits annotations.');
+      if (input.agent === 'collaboration' && task.mode === 'review') throw new Error('Choose another agent for an AI review. Collaboration mode edits annotations.');
       if (task.mode === 'review') this.requireReviewAgent(input.agent);
       const runtime = this.runtimes[input.agent];
       if (!runtime?.connected || !runtime.authenticated) throw new Error('Connect and sign in to the destination agent before switching.');
       const model = runtime.models.find(model => input.model ? model.id === input.model : model.isDefault);
-      if (!model) throw new Error('Choose an available model for the destination agent.');
-      if (input.effort && !model.efforts.includes(input.effort)) throw new Error('This model does not support that reasoning effort.');
-      if (input.serviceTier && input.serviceTier !== 'default' && (input.agent !== 'codex' || input.serviceTier !== model.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
+      if (!model && (input.model || runtime.models.length)) throw new Error('Choose an available model for the destination agent.');
+      if (input.effort && !model?.efforts.includes(input.effort)) throw new Error('This model does not support that reasoning effort.');
+      if (input.serviceTier && input.serviceTier !== 'default' && (input.agent !== 'codex' || input.serviceTier !== modelServiceTier(model, input.serviceTier))) throw new Error('This speed is not available for this model.');
       this.validateTaskPermissions(permissions, input.agent, task.mode === 'review');
       return model;
     };
@@ -806,7 +970,7 @@ export class Workspace extends EventEmitter {
     }
     // Settings may have changed while the turn stopped.
     const model = destination();
-    return this.handOver(current(), from, { agent: input.agent, model: model.id, effort: input.effort || null, serviceTier: input.agent === 'codex' ? input.serviceTier || 'default' : undefined, permissions: permissions as string });
+    return this.handOver(current(), from, { agent: input.agent, model: model?.id ?? null, effort: input.effort || null, serviceTier: input.agent === 'codex' ? input.serviceTier || 'default' : undefined, permissions: permissions as string });
   }
   // The task continues on another agent, whose next turn starts a session of
   // its own and is given the conversation so far.
@@ -967,7 +1131,7 @@ export class Workspace extends EventEmitter {
       const snapshot = this.store.reviewInput(taskId);
       prompt = reviewPrompt(prompt, snapshot, await saveReviewText(task.worktree, snapshot));
     }
-    const noteOptionsRequested = task.mode !== 'review' && Boolean(options.notes?.length || options.reviewNotes?.length) && this.store.preference<boolean>('note-alternatives') === true;
+    const noteOptionsRequested = task.mode !== 'review' && this.agentOf(task) !== 'collaboration' && Boolean(options.notes?.length || options.reviewNotes?.length) && this.store.preference<boolean>('note-alternatives') === true;
     if (noteOptionsRequested) prompt += '\n\n' + preparedNoteOptionsInstructions(this.store.preference('note-alternative-range'));
     const run: Run = { id: randomUUID(), taskId, requestKey, prompt, ...(noteOptionsRequested ? { noteOptionsRequested } : {}), ...(files.length ? { attachments: files } : {}), feedbackCursor: cursor, status: 'queued', createdAt: Date.now(), finishedAt: null, reviewRound: 0 };
     const meta: MessageMeta = { ...(options.skill ? { skill: { id: options.skill.id, name: options.skill.name, ...(options.skill.icon ? { icon: options.skill.icon } : {}) } } : {}), ...(options.notes?.length ? { notes: summarizeNotes(options.notes) } : options.reviewNotes?.length ? { notes: options.reviewNotes } : {}), ...(summary ? { feedback: summary } : {}), ...(options.feedback ? { sendsFeedback: true } : {}), ...(options.build ? { build: options.build } : {}) };
@@ -1099,7 +1263,7 @@ ${permissionScope} Never edit other task worktrees or Papilot's own source/state
 ${scope.length ? `The review covers only ${scope.join(', ')} in this worktree, and an edit to any other file stops the PDF build. Leave other files unchanged even when project instructions ask for a matching update; mention that update in your summary instead.\n` : ''}Papilot owns the LaTeX review lifecycle: it compiles and publishes automatically AFTER your turn finishes, and delivers review feedback in a new turn. Do not create another review task, invoke publish, or wait on feedback --wait. This workflow replaces the publish-and-wait loop of any review skill you have. End your turn with a direct answer or, when you made edits, a concise summary of what changed and why; do not describe Papilot's review workflow.
 Preserve meaning and mathematical correctness. Read relevant project instructions. Treat reviewer comments as instructions tied to their round, file and changes. Rejected edits must not be reintroduced unless explicitly requested. If there is a conflict with accepted text, explain it and propose a revision for a new review round; do not overwrite accepted manuscript content unless the user explicitly requests that replacement.
 Never invent a bibliography entry or any of its details. Add a .bib entry only for a work you can identify, take its authors, title, year and venue from the published record, and include its doi or arXiv eprint when it has one. Papilot looks up every added or changed entry in Crossref, DBLP and arXiv and shows the author any it cannot confirm. Name the entries you added or changed in your summary.
-${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. Shell commands follow the current native permission policy; requests needing interactive approval are refused in this headless session.' : this.agentOf(task) === 'papilot' ? 'Use your paper tools to inspect and validate your changes, and view_pages when the look of the pages matters.' : 'You may run tools in the task worktree to inspect and validate your changes.'} ${viewPdf ? `When the look of the pages matters, such as line breaks, spacing, figures, tables or displayed formulas, use the ${VIEW_PDF} tool and open the pages it draws with your image viewer to see them as the author does. It compiles the paper, so do not call it for wording alone. ` : ''}If a decision requires the user, ask through the available user-input tool or explain it in your final response. Use English for your progress updates, questions, and final summaries unless the user explicitly requests another language. Preserve the manuscript language unless asked to translate it.` + remembered;
+${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for manuscript edits. Shell commands follow the current native permission policy; requests needing interactive approval are refused in this headless session.' : this.agentOf(task) === 'papilot' ? 'Use your paper tools to inspect and validate your changes, and view_pages when the look of the pages matters.' : 'You may run tools in the task worktree to inspect and validate your changes.'} ${viewPdf ? `When the look of the pages matters, such as line breaks, spacing, figures, tables or displayed formulas, use the ${VIEW_PDF} tool and open the pages it draws with your image viewer to see them as the author does. It compiles the paper, so do not call it for wording alone. ` : ''}If a decision requires the user, ask through the available user-input tool or explain it in your final response. Use English for your progress updates, questions, and final summaries unless the user explicitly requests another language. Preserve the manuscript language unless asked to translate it.` + remembered;
   }
   private async approvalReviewer(task: Task): Promise<{ approvalsReviewer?: 'user' | 'auto_review' | 'guardian_subagent' }> {
     if (!usesCodex(this.agentOf(task))) return {};
@@ -1127,6 +1291,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const projectName = this.projectName(task.projectId);
     this.earlyCompletions.delete(task.id); this.earlyRequests.delete(task.id);
     this.store.saveRun({ ...run, status: 'running' });
+    const isCollabV2 = this.agentOf(task) === 'collaboration' && this.agents.collaboration instanceof CollaborationRuntime;
+    const isLegacyCollab = this.agentOf(task) === 'collaboration' && !isCollabV2;
     this.store.recordActivity({
       key: `turn:${run.id}`,
       at: Date.now(),
@@ -1134,7 +1300,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       projectId: task.projectId,
       taskId: task.id,
       agent: this.agentOf(task),
-      model: task.model,
+      model: isCollabV2 ? null : task.model,
       data: { role: task.mode === 'review' ? 'review' : 'edit', status: 'running', ...(projectName ? { projectName } : {}) },
     }, true);
     this.store.updateTask(task.id, { status: 'running', turnId: null, error: null });
@@ -1147,20 +1313,21 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const memory = this.memoryPrompt(task);
     if (!task.threadId || !this.loaded.has(task.threadId)) {
       // Codex threads get the view_pdf tool when they start, and keep it when resumed.
-      const scope = task.mode === 'review' ? [] : await this.reviewScope(task), codex = usesCodex(this.agentOf(task));
+      const scope = task.mode === 'review' ? [] : await this.reviewScope(task), codex = usesCodex(this.agentOf(task)) || isLegacyCollab;
       const freshThread = !task.threadId;
       let viewPdf = task.mode !== 'review' && codex && (task.threadId ? Boolean(task.viewPdf) : !this.noViewPdf);
       // Agents that start MCP servers get Papilot's tools natively; the
       // others use the JSON client named in each turn's instructions.
-      const mcp = this.paperTools && task.mode !== 'review' && !codex && this.agentOf(task) !== 'papilot' ? { command: process.execPath, args: [path.join(ROOT, 'bin/papilot-mcp.mjs'), this.toolBridge.file(task.id)] } : undefined;
-      const options = (tool: boolean) => ({ cwd: task.worktree, approvalPolicy: 'on-request', sandbox: 'workspace-write', ...permissions?.thread, ...reviewer, ...(mcp ? { mcp } : {}), config: { web_search: 'live', 'sandbox_workspace_write.network_access': true }, developerInstructions: this.instructions(task, scope, tool, memory) + (this.agentOf(task) === 'collaboration' ? '\n\n' + workflowInstructions(this.collaborationRoutes) : ''), ...(task.model ? { model: task.model } : {}) });
+      const mcp = this.paperTools && task.mode !== 'review' && !codex && this.agentOf(task) !== 'papilot' && !isCollabV2 ? { command: process.execPath, args: [path.join(ROOT, 'bin/papilot-mcp.mjs'), this.toolBridge.file(task.id)] } : undefined;
+      const effectiveModel = isCollabV2 ? (isCollaborationStrategy(task.model) ? task.model : 'balanced') : task.model;
+      const options = (tool: boolean) => ({ cwd: task.worktree, approvalPolicy: 'on-request', sandbox: 'workspace-write', ...permissions?.thread, ...reviewer, ...(mcp ? { mcp } : {}), config: { web_search: 'live', 'sandbox_workspace_write.network_access': true }, developerInstructions: this.instructions(task, scope, tool, memory) + (isLegacyCollab ? '\n\n' + workflowInstructions(this.collaborationRoutes) : ''), ...(effectiveModel ? { model: effectiveModel } : {}) });
       let result;
       if (task.threadId) result = await agent.request('thread/resume', { ...options(viewPdf), threadId: task.threadId, excludeTurns: true });
       else {
-        try { result = await agent.request('thread/start', this.agentOf(task) === 'collaboration' ? { ...options(viewPdf), dynamicTools: [...WORKFLOW_TOOLS, ...(viewPdf ? [VIEW_PDF_TOOL] : []), ...(this.paperTools ? PAPER_TOOLS : [])] } : viewPdf ? { ...options(true), dynamicTools: [VIEW_PDF_TOOL, ...(this.paperTools ? PAPER_TOOLS : [])] } : options(false)); }
+        try { result = await agent.request('thread/start', isLegacyCollab ? { ...options(viewPdf), dynamicTools: [...WORKFLOW_TOOLS, ...(viewPdf ? [VIEW_PDF_TOOL] : []), ...(this.paperTools ? PAPER_TOOLS : [])] } : viewPdf ? { ...options(true), dynamicTools: [VIEW_PDF_TOOL, ...(this.paperTools ? PAPER_TOOLS : [])] } : options(false)); }
         catch (error) {
           // A Codex without the experimental tool API starts its threads without it.
-          if (this.agentOf(task) === 'collaboration' || !viewPdf || !(error instanceof RpcResponseError) || !VIEW_PDF_UNSUPPORTED.test(error.message)) throw error;
+          if (isLegacyCollab || !viewPdf || !(error instanceof RpcResponseError) || !VIEW_PDF_UNSUPPORTED.test(error.message)) throw error;
           this.noViewPdf = true; viewPdf = false;
           result = await agent.request('thread/start', options(false));
         }
@@ -1173,7 +1340,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       const started = task.threadId ? {} : { viewPdf, memoryDigest: memoryDigest(memory) };
       this.store.updateTask(task.id, { threadId: result.thread.id, ...(current.model === task.model ? { model: result.model || task.model } : {}), ...started });
       task = { ...task, threadId: result.thread.id, model: result.model || task.model, ...started };
-      if (task.model) {
+      if (task.model && !isCollabV2) {
         this.store.recordActivity({
           key: `turn:${run.id}`,
           at: Date.now(),
@@ -1199,7 +1366,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       ? `Papilot settings update: current permissions are ${permissionMode.label}. This supersedes earlier Papilot messages fixing the access mode, including claims that shell commands are unavailable. ${taskAccessInstructions}\n\n${message}`
       : message);
     let paperInstructions = '';
-    if (this.paperTools && task.mode !== 'review' && !(this.agentOf(task) === 'cursor' && task.permissions !== 'full')) {
+    if (this.paperTools && task.mode !== 'review' && !isCollabV2 && !(this.agentOf(task) === 'cursor' && task.permissions !== 'full')) {
       const epoch = this.connectionEpochs.get(this.agentOf(task));
       const current = () => !this.closing && agent.ready && this.active.get(task.id)?.id === run.id && this.connectionEpochs.get(this.agentOf(task)) === epoch;
       paperInstructions = '\n\n' + paperToolInstructions;
@@ -1211,17 +1378,21 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       if (!current()) return;
     }
     if (this.paperTools && task.mode !== 'review' && this.agentOf(task) === 'cursor' && task.permissions !== 'full') paperInstructions = '\n\nThe current Cursor sandbox blocks local network tools, so annotation operations are unavailable in this turn. Explain this limitation if asked to save annotations; never claim to have saved them.';
-    const input = [{ type: 'text', text: prompt + paperInstructions + (this.agentOf(task) === 'collaboration' ? '\n\nWorkflow annotation ledger (use these IDs in delegation and audit):\n' + JSON.stringify(this.workflowNotesFor(task, run)) : '') }, ...(run.attachments || []).filter(file => file.mime.startsWith('image/')).map(file => ({ type: 'localImage', path: this.attachments.path(file) }))];
+    const input = [{ type: 'text', text: prompt + paperInstructions + (isLegacyCollab ? '\n\nWorkflow annotation ledger (use these IDs in delegation and audit):\n' + JSON.stringify(this.workflowNotesFor(task, run)) : '') }, ...(run.attachments || []).filter(file => file.mime.startsWith('image/')).map(file => ({ type: 'localImage', path: this.attachments.path(file) }))];
     let result: any;
     run = { ...run, model: task.model };
     this.active.set(task.id, run);
     const models = this.runtimes[this.agentOf(task)].models;
     const model = task.model ? models.find(model => model.id === task.model) : models.find(model => model.isDefault);
     // Explicit defaults replace a previous turn's reasoning override.
-    const effort = task.effort || (usesCodex(this.agentOf(task)) ? model?.defaultEffort : undefined);
+    const codex = usesCodex(this.agentOf(task));
+    const effort = task.effort || (codex ? model?.defaultEffort : undefined);
+    // A catalog refresh can remove an accelerated speed from an existing task.
+    // Keep the saved choice and preserve host inheritance for tasks without one.
+    const serviceTier = effectiveServiceTier(model, task.serviceTier);
     // Apply the native policy (including configured roots and tmp exclusions)
     // and the current worktree reviewer even on already-loaded threads.
-    try { result = await agent.request('turn/start', { threadId: task.threadId, input, cwd: task.worktree, ...permissions?.turn, ...reviewer, clientUserMessageId: run.id, ...(task.model ? { model: task.model } : {}), ...(effort ? { effort } : {}), ...(usesCodex(this.agentOf(task)) && task.serviceTier ? { serviceTier: task.serviceTier } : {}) }); }
+    try { result = await agent.request('turn/start', { threadId: task.threadId, input, cwd: task.worktree, ...permissions?.turn, ...reviewer, clientUserMessageId: run.id, ...(task.model ? { model: task.model } : {}), ...(effort ? { effort } : {}), ...(codex && serviceTier ? { serviceTier } : {}) }); }
     catch (error) {
       if (this.active.get(task.id)?.id !== run.id) return;
       if (error instanceof RpcResponseError) throw error;
@@ -1256,7 +1427,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       projectId: task.projectId,
       taskId: task.id,
       agent: id,
-      model: turnModel(active, task),
+      model: id === 'collaboration' && this.agents.collaboration instanceof CollaborationRuntime ? null : turnModel(active, task),
       data: { role: task.mode === 'review' ? 'review' : 'edit', status: 'failed', finishedAt, ...(this.projectName(task.projectId) ? { projectName: this.projectName(task.projectId) } : {}) },
     }, true);
     this.holdForReview(run.taskId, { status: 'failed', turnId: null, pendingRunId: null, error: errorText(error) });
@@ -1444,7 +1615,8 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       }
       this.flush();
       let run = this.active.get(task.id); if (!run) return;
-      if (agent === 'collaboration' && p.turn.status === 'completed') {
+      const isCollabV2 = agent === 'collaboration' && this.agents.collaboration instanceof CollaborationRuntime;
+      if (agent === 'collaboration' && !isCollabV2 && p.turn.status === 'completed') {
         const controller = this.workflowStops.get(task.id), epoch = this.connectionEpochs.get(agent);
         const sameRun = () => !this.closing && this.active.get(task.id)?.id === run!.id && this.connectionEpochs.get(agent) === epoch && this.store.task(task.id).turnId === eventTurn;
         let failure: unknown;
@@ -1456,7 +1628,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         else if (failure) { this.failRun(run, failure); return; }
       }
       this.stopWorkflow(task.id);
-      if (run.noteOptionsRequested) {
+      if (run.noteOptionsRequested && !run.noteOptions?.length) {
         const items = this.store.items(task.id), count = items.find(item => item.id === run!.id)?.meta?.notes?.length || 0;
         const prepared = items.filter(item => item.type === 'assistant' && item.id.startsWith(`${task.id}:${eventTurn}:`))
           .flatMap(item => readPreparedNoteOptions(item.rawText || item.text, count));
@@ -1466,7 +1638,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       for (const [key, r] of this.requests) if (r.taskId === task.id) this.requests.delete(key);
       const status = p.turn.status === 'completed' ? 'completed' : p.turn.status === 'interrupted' ? 'interrupted' : 'failed';
       const finishedAt = Date.now(), latestTask = this.store.findTask(task.id) || task;
-      this.store.saveRun({ ...run, ...(agent === 'collaboration' ? { workflowAudit: this.store.runByKey(run.requestKey)?.workflowAudit } : {}), status, finishedAt });
+      const savedRun = this.store.runByKey(run.requestKey);
+      const mergedNoteOptions = run.noteOptions?.length ? run.noteOptions : savedRun?.noteOptions;
+      this.store.saveRun({ ...run, ...(mergedNoteOptions?.length ? { noteOptions: mergedNoteOptions } : {}), ...(agent === 'collaboration' && !isCollabV2 ? { workflowAudit: savedRun?.workflowAudit } : {}), status, finishedAt });
       this.store.recordActivity({
         key: `turn:${run.id}`,
         at: run.createdAt,
@@ -1474,7 +1648,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
         projectId: latestTask.projectId,
         taskId: latestTask.id,
         agent,
-        model: turnModel(run, latestTask),
+        model: isCollabV2 ? null : turnModel(run, latestTask),
         data: { role: latestTask.mode === 'review' ? 'review' : 'edit', status, finishedAt, ...(this.projectName(latestTask.projectId) ? { projectName: this.projectName(latestTask.projectId) } : {}) },
       }, true);
       this.settleHandoff(task, eventTurn, status === 'completed');
@@ -1868,7 +2042,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   // A build is automatic after the agent's run `after` completes. When its
   // edits break the build, the agent gets the error in a new turn, once.
   private async checkWorkflowAudit(task: Task, run?: Run) {
-    if (this.agentOf(task) !== 'collaboration') return;
+    if (this.agentOf(task) !== 'collaboration' || this.agents.collaboration instanceof CollaborationRuntime) return;
     const latest = run || this.store.runs().filter(item => item.taskId === task.id && item.status !== 'queued').at(-1);
     const audit = latest && this.store.runByKey(latest.requestKey)?.workflowAudit;
     const current = () => !this.workflowAudits.has(task.id) && !this.workflowDelegations.has(task.id) && latest && this.store.runByKey(latest.requestKey)?.workflowAudit?.fingerprint === audit?.fingerprint;
@@ -2227,7 +2401,10 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const choice = this.store.preference<QuickModel | null>(QUICK_MODEL);
     return choice && isAgentId(choice.agent) ? choice : null;
   }
-  setQuickModel(choice: QuickModel | null) { this.store.savePreference(QUICK_MODEL, choice); }
+  setQuickModel(choice: QuickModel | null) {
+    this.requireReadOnlyAgent(choice?.agent);
+    this.store.savePreference(QUICK_MODEL, choice);
+  }
   // The agent, model and effort for a quick job. The author's choice wins
   // while it is signed in; otherwise the fallback agent's small model does it.
   private quick(fallback: { agent?: AgentId; model?: string }, what: string) {
@@ -2253,6 +2430,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   /** One quick job's reply, from a read-only turn that has everything it
    * needs in its prompt, and the agent and model that wrote it. */
   async quickReply(options: { instructions: string; prompt: string; what: string; projectId?: string; signal?: AbortSignal; onText?: (text: string) => void; choice?: { agent?: AgentId; model?: string | null; effort?: string | null } }) {
+    this.requireReadOnlyAgent(options.choice?.agent);
     const { id, model, effort } = options.choice?.agent ? await this.chosen(options.choice as { agent: AgentId; model?: string | null; effort?: string | null }, options.what) : this.quick({}, options.what);
     const reply = await this.oneOff(id, { cwd: os.tmpdir(), sandbox: 'read-only', instructions: options.instructions, prompt: options.prompt, model, effort, what: options.what, projectId: options.projectId, signal: options.signal, onText: options.onText });
     return { reply, agent: id, model: model?.name || model?.id || null };
@@ -2261,17 +2439,25 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   // author chose, or else the first that is signed in, with the chosen model
   // or the default one; light asks for the agent's small model when it has one.
   private helper(choice: { agent?: AgentId; model?: string }, task: string, options: { light?: boolean; readOnly?: boolean; strict?: 'commit-message' | 'conflict-resolution' } = {}) {
-    const usable = (id: AgentId) => this.agents[id].ready && this.runtimes[id].authenticated && (!options.readOnly || this.agents[id].supportsReadOnlyTasks !== false);
+    if (choice.agent === 'collaboration') {
+      const resolved = this.collaborationResolved();
+      const candidates = options.readOnly
+        ? [resolved.router, resolved.judge, resolved.routes.quick, resolved.routes.rigorous, resolved.routes.polish].filter((r): r is CollaborationRoute => Boolean(r && this.supportsReadOnlyAgent(r.agent)))
+        : [resolved.routes.rigorous, resolved.routes.polish, resolved.routes.quick].filter((r): r is CollaborationRoute => Boolean(r));
+      const mapped = candidates[0];
+      choice = mapped ? { agent: mapped.agent, model: mapped.model || undefined } : {};
+    }
+    const usable = (id: AgentId) => id !== 'collaboration' && this.agents[id].ready && this.runtimes[id].authenticated && (!options.readOnly || this.agents[id].supportsReadOnlyTasks !== false);
     if (usesCustomModel(choice.agent, choice.model) && !usable('papilot')) throw customModelUnavailable();
     if (options.strict && choice.agent) {
-      if (!this.agents[choice.agent].ready || !this.runtimes[choice.agent].authenticated) {
+      if ((options.readOnly && this.agentOff(choice.agent)) || !this.agents[choice.agent].ready || !this.runtimes[choice.agent].authenticated) {
         throw new Error(options.strict === 'commit-message'
           ? 'The selected commit-message agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.'
           : 'The selected conflict-resolution agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.');
       }
       if (options.readOnly && this.agents[choice.agent].supportsReadOnlyTasks === false) throw new Error('The selected commit-message agent does not support read-only tasks. Choose another in Settings → Git.');
     }
-    const id = choice.agent && usable(choice.agent) ? choice.agent : AGENTS.find(id => !this.agentOff(id) && usable(id));
+    const id = choice.agent && usable(choice.agent) ? choice.agent : AGENTS.find(id => id !== 'collaboration' && !this.agentOff(id) && usable(id));
     if (!id) {
       if (options.readOnly) throw new Error('Connect an agent that supports read-only tasks, such as Codex.');
       throw new Error(`Sign in to an agent, such as Codex, to ${task}.`);
@@ -2280,11 +2466,17 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     return { id, model: (options.light ? lightModel(offered) : undefined) || models.find(item => item.id === choice.model) || offered.find(item => item.isDefault) || offered[0] || models.find(item => item.isDefault) };
   }
   async diagnoseLatexBuild(root: string, prompt: string, choice: { agent: AgentId; model?: string; projectId?: string }) {
-    const id = choice.agent, runtime = this.runtimes[id];
-    if (!this.agents[id].ready || !runtime.authenticated) throw new Error('Connect the selected agent before diagnosing compilation problems.');
+    const resolvedChoice = choice.agent === 'collaboration' ? (() => {
+      const resolved = this.collaborationResolved();
+      const r = [resolved.router, resolved.judge, resolved.routes.rigorous, resolved.routes.quick, resolved.routes.polish]
+        .find(candidate => candidate && this.supportsReadOnlyAgent(candidate.agent));
+      return r ? { ...choice, agent: r.agent as AgentId, model: r.model || undefined } : choice;
+    })() : choice;
+    const id = resolvedChoice.agent, runtime = this.runtimes[id];
+    if (this.agentOff(id) || !this.agents[id].ready || !runtime.authenticated) throw new Error('Connect the selected agent before diagnosing compilation problems.');
     if (this.agents[id].supportsReadOnlyTasks === false) throw new Error('The selected agent does not support read-only compilation diagnosis. Select another agent.');
-    const models = this.helperChoices(id, choice.model);
-    const model = models.find(item => item.id === choice.model) || models.find(item => item.isDefault);
+    const models = this.helperChoices(id, resolvedChoice.model);
+    const model = models.find(item => item.id === resolvedChoice.model) || models.find(item => item.isDefault);
     return this.oneOff(id, { cwd: root, sandbox: 'read-only', model, timeout: 120000, what: 'diagnose the LaTeX build', instructions: latexRepairInstructions, prompt, projectId: choice.projectId });
   }
   private helperChoices(id: AgentId, model: string | null | undefined) {
@@ -2450,12 +2642,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   // generate button: one read-only turn with the selected model and reasoning
   // effort. The same changes get the message already
   // written, or being written, for them unless the author asks for a fresh one.
-  async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; model?: string; effort?: string; serviceTier?: string; fresh?: boolean; staged?: boolean; taskId?: string; language?: CommitMessageLanguage } = {}) {
+  async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; model?: string; effort?: string; serviceTier?: string; inheritedSpeed?: boolean; fresh?: boolean; staged?: boolean; taskId?: string; language?: CommitMessageLanguage } = {}) {
     const project = this.store.project(projectId), { id, model } = this.helper(choice, 'write a commit message', { readOnly: true, strict: 'commit-message' });
     if (choice.model && model?.id !== choice.model) throw new Error('Choose an available model for this agent.');
     if (choice.effort && model && !model.efforts.includes(choice.effort)) throw new Error('This model does not support that reasoning effort.');
-    if (choice.serviceTier && choice.serviceTier !== 'default' && (id !== 'codex' || choice.serviceTier !== model?.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
-    const effort = choice.effort || model?.defaultEffort, serviceTier = id === 'codex' ? choice.serviceTier : undefined;
+    const speed = choice.inheritedSpeed && id === 'codex' ? effectiveServiceTier(model, choice.serviceTier) : choice.serviceTier;
+    if (speed && speed !== 'default' && (id !== 'codex' || speed !== modelServiceTier(model, speed))) throw new Error('This speed is not available for this model.');
+    const effort = choice.effort || model?.defaultEffort, serviceTier = id === 'codex' ? speed : undefined;
     const task = choice.taskId ? this.store.task(choice.taskId) : undefined;
     if (task && task.projectId !== projectId) throw new Error('Invalid task ID.');
     // Saving a task is when Papilot offers what it noticed in the author's reviews.
@@ -2552,9 +2745,15 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   private mergeHandover(task: Task, run: Run): HelperChoice | null {
     const choice = task.mergeAgent;
     if (!run.requestKey.startsWith('merge-review-') || !choice || task.mergeReturn) return null;
-    const differs = choice.agent !== this.agentOf(task) || Boolean(choice.model && choice.model !== task.model)
-      || Boolean(choice.effort && choice.effort !== task.effort) || Boolean(choice.serviceTier && choice.serviceTier !== task.serviceTier);
-    return differs ? choice : null;
+    const agent = this.agentOf(task);
+    const savedSpeed = (id: AgentId, modelId: string | null | undefined, tier?: string) => {
+      const model = id === 'codex' ? this.runtimes.codex.models.find(model => modelId ? model.id === modelId : model.isDefault) : undefined;
+      return effectiveServiceTier(model, tier);
+    };
+    const serviceTier = savedSpeed(choice.agent, choice.model, choice.serviceTier);
+    const differs = choice.agent !== agent || Boolean(choice.model && choice.model !== task.model)
+      || Boolean(choice.effort && choice.effort !== task.effort) || Boolean(serviceTier && serviceTier !== savedSpeed(agent, task.model, task.serviceTier));
+    return differs ? { ...choice, serviceTier } : null;
   }
   // Once no merge is left to resolve, the task's own agent takes over again
   // with its own settings, even if it is now off or offline: its next turn
@@ -2574,7 +2773,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const project = this.store.project(projectId), { id, model } = this.helper(choice, 'resolve conflicts', { strict: 'conflict-resolution' });
     if (choice.model && model?.id !== choice.model) throw new Error('Choose an available model for this agent.');
     if (choice.effort && !model?.efforts.includes(choice.effort)) throw new Error('This model does not support that reasoning effort.');
-    if (choice.serviceTier && choice.serviceTier !== 'default' && (id !== 'codex' || choice.serviceTier !== model?.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
+    if (choice.serviceTier && choice.serviceTier !== 'default' && (id !== 'codex' || choice.serviceTier !== modelServiceTier(model, choice.serviceTier))) throw new Error('This speed is not available for this model.');
     const effort = choice.effort || model?.defaultEffort, serviceTier = id === 'codex' ? choice.serviceTier : undefined;
     const { files, branch, upstream, ours, theirs } = await mergeConflicts(project.path);
     if (!files.length) throw new Error('No file has conflict markers left. Commit the merge.');
@@ -2598,6 +2797,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   }
   private requireReviewAgent(agent: AgentId) {
     if (this.agents[agent].supportsReadOnlyTasks === false) throw new Error('The selected agent does not support read-only AI review. Select another agent.');
+  }
+  private requireReadOnlyAgent(agent?: AgentId) {
+    if (agent && this.agents[agent].supportsReadOnlyTasks === false) throw new Error('The selected agent does not support read-only tasks. Select another agent.');
   }
   private validateTaskPermissions(value: unknown, agent: AgentId, reviewing: boolean) {
     if (typeof value !== 'string' || !value) throw new Error('Invalid task permissions.');
@@ -2624,12 +2826,12 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     // An existing choice can only reset when we know which model to send.
     if (change.model === '' && task.model && !model) throw new Error('Choose an available model for this agent.');
     if (change.model && change.model !== task.model && !model) throw new Error('Choose an available model for this agent.');
-    const effort = change.effort ?? (change.model !== undefined && model && !model.efforts.includes(task.effort || '') ? '' : task.effort);
+    const effort = change.effort ?? (change.model !== undefined && model && !model.efforts.includes(task.effort || '') ? '' : agent === 'collaboration' && !model?.efforts.length ? '' : task.effort);
     if (change.effort && model && !model.efforts.includes(change.effort)) throw new Error('This model does not support that reasoning effort.');
-    const serviceTier = change.serviceTier ?? (change.model !== undefined && task.serviceTier !== model?.fastMode?.serviceTier ? 'default' : task.serviceTier);
+    const serviceTier = agent === 'collaboration' ? undefined : (change.serviceTier ?? (task.serviceTier && (model || change.model !== undefined) ? modelServiceTier(model, task.serviceTier) : task.serviceTier));
     if (change.serviceTier !== undefined && agent !== 'codex') throw new Error('Service tiers are only available for Codex.');
-    if (serviceTier && serviceTier !== 'default' && serviceTier !== model?.fastMode?.serviceTier) throw new Error('Fast mode is not available for this model.');
-    return this.store.updateTask(taskId, { model: id || null, effort: effort || null, ...(serviceTier ? { serviceTier } : {}) });
+    if (change.serviceTier && change.serviceTier !== modelServiceTier(model, change.serviceTier)) throw new Error('This speed is not available for this model.');
+    return this.store.updateTask(taskId, { model: id || null, effort: effort || null, ...(serviceTier ? { serviceTier } : agent === 'collaboration' && task.serviceTier !== undefined ? { serviceTier: undefined } : {}) });
   }
   renameTask(taskId: string, title: string) {
     const task = this.store.task(taskId);
@@ -2714,7 +2916,17 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       throw error;
     } finally { this.deletions.delete(taskId); this.schedule(); }
   }
-  close() { this.closing = true; this.toolBridge.close(); for (const taskId of this.workflowStops.keys()) this.stopWorkflow(taskId); for (const stop of this.helperStops) stop(); for (const timer of this.usageTimers.values()) clearTimeout(timer); this.flush(); for (const id of AGENTS) this.agents[id].close(); this.attachments.close(); }
+  close() {
+    this.closing = true;
+    this.toolBridge.close();
+    for (const taskId of this.workflowStops.keys()) this.stopWorkflow(taskId);
+    for (const stop of this.helperStops) stop();
+    for (const timer of this.usageTimers.values()) clearTimeout(timer);
+    this.flush();
+    const agents = AGENTS.map(async id => this.agents[id].close());
+    this.attachments.close();
+    return Promise.allSettled(agents);
+  }
 }
 
 // A loaded Codex thread runs the user's stdio MCP servers in its working

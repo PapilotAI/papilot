@@ -8,6 +8,7 @@ import { chooseEnvironment } from './environment-window.js';
 import { readEnvironment, saveEnvironment, startWsl, linuxPath, type Environment } from './wsl.js';
 import { overleafSignIn } from './overleaf-sign-in.js';
 import { typelessControl } from './typeless-control.js';
+import { detectWindowButtons, windowButtonsArgument, type WindowButtons } from './window-buttons.js';
 
 const nix = process.env.PAPILOT_INSTALL_METHOD === 'nix';
 const packageUpdates = process.env.PAPILOT_DESKTOP_PACKAGE_UPDATES === '1' ||
@@ -35,6 +36,10 @@ const notifications = desktopNotifications({
 });
 const typeless = typelessControl();
 let typelessSending = false;
+// The running instance reads the desktop's window button layout while the
+// backend starts; the first window waits for it (see launch).
+let windowButtonsLayout: Promise<WindowButtons | null> = Promise.resolve(null);
+let windowButtons: WindowButtons | null = null;
 // papilot://new?template=<id>&version=<version> starts a paper from a Universe template.
 let pendingTemplate: { id: string; version: string } | null = null;
 function templateLink(url: string) {
@@ -68,7 +73,8 @@ function showWindow() {
       ? path.join(nix && process.env.PAPILOT_DESKTOP_ROOT ? process.env.PAPILOT_DESKTOP_ROOT : app.isPackaged ? process.resourcesPath : path.resolve(fileURLToPath(new URL('../..', import.meta.url))), 'desktop/assets/icon.ico')
       : process.platform === 'linux' ? path.join(nix && process.env.PAPILOT_DESKTOP_ROOT ? process.env.PAPILOT_DESKTOP_ROOT : app.isPackaged ? process.resourcesPath : path.resolve(fileURLToPath(new URL('../..', import.meta.url))), 'desktop/assets/icon.png') : undefined,
     show: false, backgroundColor: '#ffffff', webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true,
-      preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)) } });
+      preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)),
+      additionalArguments: windowButtons ? [windowButtonsArgument(windowButtons)] : [] } });
   window.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: 'deny' }; });
   window.webContents.on('will-navigate', (event, url) => {
     if (new URL(url).origin !== origin) { event.preventDefault(); external(url); }
@@ -85,6 +91,7 @@ function showWindow() {
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
+  if (process.platform === 'linux') windowButtonsLayout = detectWindowButtons();
   // macOS delivers links as events; Windows and Linux pass them as arguments.
   app.on('open-url', (event, url) => { event.preventDefault(); openLink(url); });
   app.on('second-instance', (_event, argv) => { if (!openLink(argv.find(arg => arg.startsWith('papilot://')))) showWindow(); });
@@ -266,6 +273,9 @@ else {
       });
       port = Number(new URL(url).port);
       fs.writeFileSync(portFile, JSON.stringify(port), { mode: 0o600 });
+      // A window opens only once the origin is known; by then the layout has
+      // long been read, so this rarely waits.
+      windowButtons = await windowButtonsLayout;
       if (url !== origin) { const moved = Boolean(origin); origin = url; if (moved) void window?.loadURL(origin); }
     };
     // Legacy npm activations (updates/active.json) are never used.

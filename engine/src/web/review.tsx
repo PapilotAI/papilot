@@ -1086,8 +1086,12 @@ export function ReviewApp({
   // option's own comparison, the one its preview showed, until the block is
   // decided with rejections too. The engine compiles each wording once.
   const optionKey = (units: string[]) => {
+    const spans = state?.variantSpans;
     const edits = (detail?.units ?? []).filter((unit) => units.includes(unit.id) && variants && Object.hasOwn(variants, unit.id))
-      .map((unit) => ({ unit: unit.id, text: variants![unit.id] }));
+      .map((unit) => {
+        const span = spans?.[unit.id];
+        return { unit: unit.id, text: variants![unit.id], ...(span?.[0] ? { before: span[0] } : {}), ...(span?.[1] ? { after: span[1] } : {}) };
+      });
     return edits.length ? JSON.stringify([detail!.round, edits]) : null;
   };
   const optionRequested = useRef(new Set<string>());

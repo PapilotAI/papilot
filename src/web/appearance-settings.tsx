@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from 'react';
 import { ACCENTS, DEFAULT_APPEARANCE, INTERFACE_SIZES, PRESETS, appearanceColors, appearanceVariables, hexColor, type AccentId, type Appearance, type ColorMode, type PresetId } from './appearance.ts';
 import { ChipSelect } from './chip-select.tsx';
+import { DEFAULT_EDITOR_FONT_SIZE, EDITOR_FONT_SIZES, setEditorFontSize, useEditorFontSize } from './editor-font.ts';
 import { Icon } from './icons.tsx';
 import { locale, t } from './i18n.ts';
 import type { Theme } from './theme.tsx';
@@ -51,6 +52,7 @@ function PaperAppearanceOptions<T extends Appearance['review']>({ label, name, v
 const nativeZoom = Boolean(window.papilotDesktop?.setZoom);
 
 export function AppearanceSettings({ theme, onTheme, resolved, appearance, onAppearance }: AppearanceSettingsProps) {
+  const editorFont = useEditorFontSize();
   const colors = appearanceColors(appearance, resolved);
   const customized = Object.values(appearance.colors).some(colors => colors.background || colors.foreground);
   // Each theme shows its surface and accent in the current mode; each accent its color.
@@ -82,6 +84,12 @@ export function AppearanceSettings({ theme, onTheme, resolved, appearance, onApp
           {nativeZoom && <ChipSelect label={t('Interface size')} value={String(appearance.size)} options={INTERFACE_SIZES.map(size => ({ value: String(size), label: new Intl.NumberFormat(locale(), { style: 'percent' }).format(size) }))} onChange={value => onAppearance({ ...appearance, size: Number(value) })}/>}
         </div>
       </div>
+      <div className="settings-card">
+        <div className="settings-row settings-choice">
+          <div className="settings-text"><span className="settings-name">{t('Editor font size')}</span><p>{t('Sizes the LaTeX source editor only. The PDF and the rest of the interface keep their size.')}</p></div>
+          <ChipSelect label={t('Editor font size')} value={String(editorFont)} options={EDITOR_FONT_SIZES.map(size => ({ value: String(size), label: size === DEFAULT_EDITOR_FONT_SIZE ? t('{size} px (default)', { size }) : t('{size} px', { size }) }))} onChange={value => setEditorFontSize(Number(value))}/>
+        </div>
+      </div>
       <div className="settings-card appearance-paper-card">
         <div className="settings-row settings-choice appearance-paper-row">
           <div className="settings-text"><span className="settings-name">{t('PDF appearance')}</span><p>{t('Auto matches the interface mode.')}</p></div>
@@ -109,6 +117,6 @@ export function AppearanceSettings({ theme, onTheme, resolved, appearance, onApp
       </div>
       <p className="appearance-hint">{resolved === 'light' ? t('Editing light mode colors. Changes are saved automatically.') : t('Editing dark mode colors. Changes are saved automatically.')}</p>
     </section>
-    <button type="button" className="appearance-reset" onClick={() => { onAppearance(DEFAULT_APPEARANCE); onTheme('system'); }}><Icon name="restore" size={15}/>{t('Reset appearance')}</button>
+    <button type="button" className="appearance-reset" onClick={() => { onAppearance(DEFAULT_APPEARANCE); onTheme('system'); setEditorFontSize(DEFAULT_EDITOR_FONT_SIZE); }}><Icon name="restore" size={15}/>{t('Reset appearance')}</button>
   </div>;
 }

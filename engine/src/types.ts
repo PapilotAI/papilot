@@ -121,6 +121,13 @@ export interface Round {
 }
 export type ActionKind = "accept" | "reject" | "comment";
 export type Decision = "accepted" | "rejected" | "commented" | "pending";
+export interface OptionEdit {
+  unit: string;
+  text: string;
+  /** Optional unchanged characters immediately before/after the unit absorbed by a cross-model alternative. */
+  before?: number;
+  after?: number;
+}
 export interface ActionDetail {
   accepted_before?: string;
   accepted_after?: string;
@@ -139,7 +146,7 @@ export interface ActionDetail {
   queued?: true;
   /** An accept of a note option: the wording each change was accepted with
    *  instead of the round's proposal. */
-  edits?: { unit: string; text: string }[];
+  edits?: OptionEdit[];
 }
 export interface Action {
   seq: number;
@@ -589,6 +596,8 @@ export interface PageState {
   comments: Record<string, string>;
   /** Changes accepted with a note option's wording: the accepted text. */
   variants?: Record<string, string>;
+  /** Optional expanded [before, after] character margins for accepted variants. */
+  variantSpans?: Record<string, [number, number]>;
   /** The round's own comparison is still rendering, or failed. */
   rendering?: "pending" | "failed";
   /** Changes still waiting for a comparison, even though the round exists. */

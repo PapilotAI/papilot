@@ -102,12 +102,13 @@ export function startBackend(options: { node: string; root: string; data: string
       };
       const ended = () => finish();
       const terminate = () => { try { terminateTree(child); } catch { /* The deadline still forces termination. */ } };
+      // Let the server finish its own agent shutdown before forcing termination.
       const timer = setTimeout(() => {
         try { terminateTree(child, 'SIGKILL'); } catch { /* Report failure if exit cannot be confirmed. */ }
         // Rollback may replace the database immediately after stop resolves.
         // Sending SIGKILL alone does not confirm that the process has exited.
         forced = setTimeout(() => finish(new BackendStopError('The local server did not exit after termination.')), 4000);
-      }, 4000);
+      }, 12000);
       child.once('exit', ended); child.once('close', ended);
       if (child.connected) {
         try { child.send({ type: 'papilot:shutdown' }, error => { if (error) terminate(); }); }

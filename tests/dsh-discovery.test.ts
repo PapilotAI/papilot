@@ -83,6 +83,8 @@ test('Windows treats unavailable or malformed installation records as not found'
 test('non-Windows executable lookup does not query the Windows registry', { skip: WINDOWS }, t => {
   const f = fixture(t);
   const query = f.registry(() => { throw new Error('Windows discovery must not run'); });
+  // Exercise the missing-executable path even when the host has dsh installed.
+  t.mock.method(fs, 'statSync', () => { throw new Error('ENOENT'); });
   assert.equal(findExecutable('dsh', f.env), null);
   assert.equal(query.mock.callCount(), 0);
 });

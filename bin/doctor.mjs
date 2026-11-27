@@ -1,4 +1,5 @@
 import { piExecutable, PI_MIN_VERSION, supportedPi } from './pi-cli.mjs';
+import { ZCODE_MIN_VERSION, zcodeLaunch, zcodeVersion } from './zcode-cli.mjs';
 import { agentPath, findExecutable, killTree, spawnCommand } from './agent-paths.mjs';
 import { codexInstallations } from './codex-lookup.mjs';
 import { agentSdkFolder, managedInstall } from './installation.mjs';
@@ -231,6 +232,15 @@ export async function doctor(args) {
     return process.env[variable] ? `${variable} does not resolve to a runnable executable in Papilot's environment.`
       : `${command} was not found on the PATH or in the standard agent folders available to Papilot. It may be installed for a different user or shell.`;
   }
+  async function zcodeCheck() {
+    const cli = zcodeLaunch();
+    const fix = `Install ZCode CLI ${ZCODE_MIN_VERSION} or newer and run zcode login or configure a provider. Set PAPILOT_ZCODE_BIN if needed.`;
+    if (!cli) { check('agent.zcode', false, 'info', missingAgent('zcode', 'PAPILOT_ZCODE_BIN'), fix); return false; }
+    const result = await command(cli.command, [...cli.args, 'doctor', '--json'], { env: cli.env });
+    const version = result.ok ? zcodeVersion(result.stdout) : null;
+    check('agent.zcode', Boolean(version), 'warn', version ? `ZCode CLI ${version} (${cli.file}): login and generation were not tested.` : `${cli.file}: ${result.reason || 'unsupported ZCode CLI version'}.`, fix);
+    return Boolean(version);
+  }
   async function acpCheck(id, name, bin, help, install, update, supported = /\bACP\b|Agent Client Protocol/i) {
     const file = agentExecutable(process.env[bin.env] || bin.name);
     if (!file) { check(`agent.${id}`, false, 'info', missingAgent(bin.name, bin.env), `${install}. If already installed, correct ${bin.env} or the server PATH, then restart Papilot.`); return false; }
@@ -275,7 +285,7 @@ export async function doctor(args) {
     check('agent.pi', ready, 'warn', `${file}: ${ready ? 'Pi CLI available; login and generation were not tested' : result.reason || `Pi ${PI_MIN_VERSION} or newer is required`}.`, 'Update Pi, run pi and use /login or configure a provider, then reconnect.');
     return ready;
   }
-  const agents = await Promise.all([piCheck(), codexCheck(), claudeCheck(), cursorCheck(), copilotCheck(), grokCheck(), agyCheck(), kimiCheck(), glmCheck(), deepseekCheck(), qwenCheck(), opencodeCheck(), qoderCheck(), codebuddyCheck(), workbuddyCheck()]);
+  const agents = await Promise.all([piCheck(), codexCheck(), claudeCheck(), cursorCheck(), copilotCheck(), grokCheck(), agyCheck(), kimiCheck(), glmCheck(), zcodeCheck(), deepseekCheck(), qwenCheck(), opencodeCheck(), qoderCheck(), codebuddyCheck(), workbuddyCheck()]);
   check('agents', agents.some(Boolean), 'warn', agents.some(Boolean) ? 'At least one agent passed its configuration check; live editing was not tested.' : 'No agent passed its configuration check. PDF reading can still be used with a working TeX installation.', 'Configure one agent before starting editing tasks.');
 
   if (repo) {
@@ -342,7 +352,7 @@ export async function doctor(args) {
     }
   }
   // Keep reports stable even though independent probes finish in any order.
-  const order = ['node', 'dependencies', 'frontend', 'review-engine', 'data', 'git', 'latexmk', 'synctex', 'tex-engines', 'agent.pi', 'agent.codex', 'agent.claude', 'agent.cursor', 'agent.copilot', 'agent.grok', 'agent.antigravity', 'agent.kimi', 'agent.glm', 'agent.deepseek', 'agent.qwen', 'agent.opencode', 'agent.qoder', 'agent.codebuddy', 'agent.workbuddy', 'agents', 'project', 'project.git', 'project.head', 'project.main', 'project.engine', 'project.worktrees', 'remote', 'server', 'service', 'service.tools', 'service.data'];
+  const order = ['node', 'dependencies', 'frontend', 'review-engine', 'data', 'git', 'latexmk', 'synctex', 'tex-engines', 'agent.pi', 'agent.codex', 'agent.claude', 'agent.cursor', 'agent.copilot', 'agent.grok', 'agent.antigravity', 'agent.kimi', 'agent.glm', 'agent.zcode', 'agent.deepseek', 'agent.qwen', 'agent.opencode', 'agent.qoder', 'agent.codebuddy', 'agent.workbuddy', 'agents', 'project', 'project.git', 'project.head', 'project.main', 'project.engine', 'project.worktrees', 'remote', 'server', 'service', 'service.tools', 'service.data'];
   checks.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   const report = { name: 'Papilot', version: pkg.version, ok: !checks.some(item => !item.ok && item.severity === 'error'), checks };
   if (json) console.log(JSON.stringify(report, null, 2));

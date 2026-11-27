@@ -5,7 +5,7 @@ import { t, tn } from './i18n.ts';
 
 // The manuscript's staged-change commit dialog. Task reviews save through
 // the inline TaskApply form instead.
-export function CommitDialog({ branch, files, staged, remote, agent, generate, commit, onClose }: { branch: string | null; files: string[]; staged?: boolean; remote: boolean; agent: string; generate: (fresh: boolean) => Promise<string>; commit: (message: string, push: boolean) => Promise<void>; onClose: () => void }) {
+export function CommitDialog({ branch, files, staged, remote, agent, generate, commit, onClose }: { branch: string | null; files: string[]; staged?: boolean; remote: boolean; agent?: string; generate?: (fresh: boolean) => Promise<string>; commit: (message: string, push: boolean) => Promise<void>; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [message, setMessage] = useState(''), [busy, setBusy] = useState<'' | 'writing' | 'commit' | 'push'>(''), [error, setError] = useState('');
   const typed = useRef(false);
@@ -13,6 +13,7 @@ export function CommitDialog({ branch, files, staged, remote, agent, generate, c
   const displayedAgent = busy === 'writing' ? writingAgent : agent;
   // The first message may already be written; the generate button asks for a new one.
   async function write(fresh: boolean) {
+    if (!generate) return;
     setBusy('writing'); setWritingAgent(agent); setError('');
     try { const text = await generate(fresh); if (!typed.current) setMessage(text); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -40,9 +41,9 @@ export function CommitDialog({ branch, files, staged, remote, agent, generate, c
       <ul className="commit-files">{files.map(file => <li key={file}><code>{file}</code></li>)}</ul>
       <form onSubmit={event => { event.preventDefault(); void submit(false); }}>
         <div className="git-message-box">
-          <textarea aria-label={t('Commit message')} rows={3} value={message} readOnly={busy === 'commit' || busy === 'push'} placeholder={busy === 'writing' ? t('{agent} is writing a commit message…', { agent: displayedAgent }) : t('Commit message')}
+          <textarea aria-label={t('Commit message')} rows={3} value={message} readOnly={busy === 'commit' || busy === 'push'} placeholder={busy === 'writing' && displayedAgent ? t('{agent} is writing a commit message…', { agent: displayedAgent }) : t('Commit message')}
             onChange={event => { typed.current = true; setMessage(event.target.value); }} onKeyDown={event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(false); } }}/>
-          <button type="button" className="icon-button git-generate" aria-label={t('Generate commit message')} title={t('Write a commit message for the chosen files with {agent}', { agent: displayedAgent })} disabled={Boolean(busy)} onClick={() => { typed.current = false; void write(true); }}>{busy === 'writing' ? <span className="spinner"/> : <Icon name="spark" size={15}/>}</button>
+          {generate && <button type="button" className="icon-button git-generate" aria-label={t('Generate commit message')} title={displayedAgent ? t('Write a commit message for the chosen files with {agent}', { agent: displayedAgent }) : undefined} disabled={Boolean(busy)} onClick={() => { typed.current = false; void write(true); }}>{busy === 'writing' ? <span className="spinner"/> : <Icon name="spark" size={15}/>}</button>}
         </div>
         {error && <p className="inline-error" role="alert">{error}</p>}
         <div className="button-row">

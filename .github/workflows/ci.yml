@@ -400,6 +400,7 @@ jobs:
             test-results/import-*.png
             test-results/overleaf-*.png
             test-results/task-agent-switch-*.png
+            test-results/zcode-setup-*.png
             test-results/task-commit-*.png
             test-results/section-comments-*.png
             test-results/anchors-*.png

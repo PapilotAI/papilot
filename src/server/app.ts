@@ -2,7 +2,7 @@ import { PaperTools, searchPaper } from './paper-tools.ts';
 import { buildActivityReport, type ActivityEventRow } from './activity.ts';
 import { canonicalGroup, isNoteGroup, regroupAnnotation, sameAnnotationGroup } from '../note-groups.ts';
 import { isCommitMessageLanguage, type CommitMessageLanguage } from '../commit.ts';
-import { noteAlternativeRange, NOTE_ALTERNATIVE_RANGES, validRoutes, taskFinished, type InFlightMark } from '../shared.ts';
+import { AGENT_NAMES, noteAlternativeRange, NOTE_ALTERNATIVE_RANGES, validLanes, validRacers, validRoute, validRoutes, taskFinished, type CollaborationRoute, type InFlightMark } from '../shared.ts';
 import Fastify from 'fastify';
 import compress from '@fastify/compress';
 import staticFiles from '@fastify/static';
@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+import type { ServerResponse } from 'node:http';
 import { registerFrontend } from './frontend.ts';
 import type { Store } from './store.ts';
 import type { TaskNoteContext, Workspace } from './workspace.ts';
@@ -264,7 +265,10 @@ export async function buildApp(options: AppOptions) {
   });
   app.addHook('onError', async request => { projectRequests.get(request)?.(); });
   await app.register(compress);
-  app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
+  app.setErrorHandler((error, _request, reply) => {
+    const { message, statusCode, errorValues } = error as Error & { statusCode?: number; errorValues?: Record<string, string | number> };
+    reply.code(statusCode || 400).send({ error: message, ...(errorValues && { errorValues }) });
+  });
   registerSkillRoutes(app, store);
   registerMemoryRoutes(app, store, () => workspace.memory, refreshManuscript);
   registerAiReviewRoutes(app, store, manuscripts);
@@ -415,11 +419,32 @@ export async function buildApp(options: AppOptions) {
   });
   app.get('/api/collaboration', () => workspace.collaborationSettings());
   app.post('/api/collaboration', (request, reply) => {
-    const { enabled, routes } = (request.body as any) || {};
-    if (enabled === undefined && routes === undefined) return reply.code(400).send({ error: 'Send enabled or routes.' });
+    const { enabled, router, judge, routes, racers, lanes, reset } = (request.body as any) || {};
+    if (enabled === undefined && router === undefined && judge === undefined && routes === undefined && racers === undefined && lanes === undefined && reset !== true) {
+      return reply.code(400).send({ error: 'Send collaboration settings to update.' });
+    }
     if (enabled !== undefined && typeof enabled !== 'boolean') return reply.code(400).send({ error: 'Send enabled as true or false.' });
+    if (router !== undefined && router !== null && !validRoute(router)) return reply.code(400).send({ error: 'Choose a valid router model.' });
+    if (judge !== undefined && judge !== null && !validRoute(judge)) return reply.code(400).send({ error: 'Choose a valid judge model.' });
     if (routes !== undefined && !validRoutes(routes)) return reply.code(400).send({ error: 'Choose a supported worker for each collaboration role.' });
-    if (routes !== undefined) workspace.setCollaborationRoutes(routes);
+    if (racers !== undefined && !validRacers(racers)) return reply.code(400).send({ error: 'Choose up to four supported models for the race pool.' });
+    if (lanes !== undefined && !validLanes(lanes)) return reply.code(400).send({ error: 'Configure valid task lanes with up to four models each.' });
+    const checkReadOnly = (slot: string, route: CollaborationRoute | null | undefined) => {
+      if (route && !workspace.supportsReadOnlyAgent(route.agent)) return `${AGENT_NAMES[route.agent]} does not support read-only ${slot} tasks. Choose another agent.`;
+      return null;
+    };
+    const roError = checkReadOnly('routing', router) || checkReadOnly('judging', judge);
+    if (roError) return reply.code(400).send({ error: roError });
+    if (reset === true) workspace.resetCollaborationConfig();
+    if (router !== undefined || judge !== undefined || routes !== undefined || racers !== undefined || lanes !== undefined) {
+      workspace.setCollaborationConfig({
+        ...(router !== undefined ? { router } : {}),
+        ...(judge !== undefined ? { judge } : {}),
+        ...(routes !== undefined ? { routes } : {}),
+        ...(racers !== undefined ? { racers } : {}),
+        ...(lanes !== undefined ? { lanes } : {}),
+      });
+    }
     if (enabled !== undefined) workspace.setCollaborationEnabled(enabled);
     return workspace.collaborationSettings();
   });
@@ -467,8 +492,11 @@ export async function buildApp(options: AppOptions) {
     store.savePreference('indirect-changes', value || undefined);
     return { indirectChanges: value };
   });
+  const eventStreams = new Set<ServerResponse>();
+  app.addHook('preClose', async () => { for (const stream of eventStreams) stream.end(); });
   app.get('/api/events', (request, reply) => {
     reply.hijack();
+    eventStreams.add(reply.raw);
     reply.raw.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
     reply.raw.write('event: change\ndata: {}\n\n');
     let timer: NodeJS.Timeout | undefined;
@@ -487,7 +515,8 @@ export async function buildApp(options: AppOptions) {
     overleaf.on('presence', presence);
     manuscripts.on('change', paper);
     const heartbeat = setInterval(() => reply.raw.write(': heartbeat\n\n'), 15000);
-    reply.raw.on('close', () => {
+    reply.raw.once('close', () => {
+      eventStreams.delete(reply.raw);
       clearInterval(heartbeat); if (timer) clearTimeout(timer); if (paperTimer) clearTimeout(paperTimer); if (presenceTimer) clearTimeout(presenceTimer); workspace.off('change', change); overleaf.off('change', change); overleaf.off('presence', presence); manuscripts.off('change', paper);
     });
   });
@@ -911,7 +940,8 @@ export async function buildApp(options: AppOptions) {
     const task = store.task(request.params.id), b = (request.body || {}) as Record<string, unknown>;
     if (b.agent !== undefined && !isAgentId(b.agent)) throw new Error('Invalid agent.');
     const settings = helperModelSettings({ ...(b.agent === undefined ? { model: task.model || undefined, effort: task.effort || undefined, serviceTier: task.serviceTier } : {}), ...b });
-    return workspace.commitMessage(task.projectId, task.review?.files || [], { taskId: task.id, agent: b.agent === undefined ? task.agent : agent(b.agent), ...settings, fresh: b.fresh === true, language: commitMessageLanguage(b.language) });
+    const inheritedSpeed = b.agent === undefined && b.serviceTier === undefined && Boolean(settings.serviceTier);
+    return workspace.commitMessage(task.projectId, task.review?.files || [], { taskId: task.id, agent: b.agent === undefined ? task.agent : agent(b.agent), ...settings, ...(inheritedSpeed ? { inheritedSpeed } : {}), fresh: b.fresh === true, language: commitMessageLanguage(b.language) });
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/permissions', task, request => workspace.updateTaskPermissions(request.params.id, (request.body as any)?.permissions));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/model', task, request => {

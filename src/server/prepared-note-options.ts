@@ -169,9 +169,12 @@ function projectPreparedSource(source: string, candidate: string, units: NoteRou
   return ranges.map(({ unit }, i) => ({ unit: unit.id, text: body.slice(i ? positions[i - 1] + gaps[i - 1].length : 0, i < gaps.length ? positions[i] : body.length) }));
 }
 
-// Resolve source patches to exactly the units linked to this note. Context may
-// identify a patch, but it cannot authorize changing another note's source.
-export function preparedOptionEdits(option: PreparedNoteOptions['options'][number], units: NoteRound['units'], files: Map<string, string>) {
+// Resolve source patches to the units linked to this note. Context may
+// identify a patch, and when an independent cross-model alternative varies a
+// few unchanged words immediately before/after a unit (without touching any
+// other unit in the round), absorb that margin into `before`/`after` so the
+// alternative can still be previewed and accepted cleanly.
+export function preparedOptionEdits(option: PreparedNoteOptions['options'][number], units: NoteRound['units'], files: Map<string, string>, allUnits: NoteRound['units'] = units, allowSpanExpansion = Boolean(option.meta)) {
   const changes = new Map<string, { start: number; end: number; text: string }[]>();
   for (const unit of units) {
     const op = unit.text_ops?.length === 1 && unit.text_ops[0], source = files.get(unit.file);
@@ -191,7 +194,7 @@ export function preparedOptionEdits(option: PreparedNoteOptions['options'][numbe
       changes.set(patch.file, edits);
     }
   }
-  const result = new Map(units.map(unit => [unit.id, unit.new_text]));
+  const result = new Map<string, { text: string; before?: number; after?: number }>(units.map(unit => [unit.id, { text: unit.new_text }]));
   for (const [file, edits] of changes) {
     const source = files.get(file)!, ranges = units.filter(unit => unit.file === file).sort((a, b) => a.text_ops![0][3] - b.text_ops![0][3]);
     if (ranges.some((unit, i) => i && ranges[i - 1].text_ops![0][4] > unit.text_ops![0][3])) throw new Error('The option source is missing or ambiguous.');
@@ -199,15 +202,58 @@ export function preparedOptionEdits(option: PreparedNoteOptions['options'][numbe
     const owners = edits.map(edit => ranges.filter(unit => unit.text_ops![0][3] <= edit.start && edit.end <= unit.text_ops![0][4]));
     if (owners.every(matches => matches.length === 1)) {
       edits.forEach((edit, i) => {
-        const unit = owners[i][0], offset = unit.text_ops![0][3], text = result.get(unit.id)!;
-        result.set(unit.id, text.slice(0, edit.start - offset) + edit.text + text.slice(edit.end - offset));
+        const unit = owners[i][0], offset = unit.text_ops![0][3], entry = result.get(unit.id)!;
+        entry.text = entry.text.slice(0, edit.start - offset) + edit.text + entry.text.slice(edit.end - offset);
       });
     } else {
       const candidate = edits.reduce((text, edit) => text.slice(0, edit.start) + edit.text + text.slice(edit.end), source);
-      for (const edit of projectPreparedSource(source, candidate, ranges)) result.set(edit.unit, edit.text);
+      try {
+        for (const edit of projectPreparedSource(source, candidate, ranges)) result.set(edit.unit, { text: edit.text });
+      } catch (error) {
+        // Cross-model race alternatives (marked with option.meta or explicit
+        // opt-in) can vary boundaries immediately outside one or more linked
+        // units' minimal diff spans. Expand into unchanged same-paragraph text
+        // only when all changes stay strictly clear of every other unit.
+        if (!allowSpanExpansion || !ranges.length) throw error;
+        const first = ranges[0], last = ranges.at(-1)!;
+        const firstOldStart = first.text_ops![0][1], firstStart = first.text_ops![0][3];
+        const lastEnd = last.text_ops![0][4];
+        const minStart = Math.min(firstStart, ...edits.map(edit => edit.start));
+        const maxEnd = Math.max(lastEnd, ...edits.map(edit => edit.end));
+        if (/\n\s*\n/.test(source.slice(minStart, firstStart)) || /\n\s*\n/.test(source.slice(lastEnd, maxEnd))) {
+          throw new Error('The option changes source outside this note.');
+        }
+        const rangeIds = new Set(ranges.map(unit => unit.id));
+        const others = allUnits.filter(other => other.file === file && !rangeIds.has(other.id));
+        const collides = others.some(other => other.whole_file || !other.text_ops?.length || other.text_ops.some(([, , , ox, oy]) => ox < maxEnd && minStart < oy));
+        if (collides) throw new Error('The option changes source outside this note.');
+        const beforeFirst = firstStart - minStart;
+        if (beforeFirst > firstOldStart || beforeFirst > 20000 || maxEnd - lastEnd > 20000) throw new Error('The option changes source outside this note.');
+        const expanded = edits.reduce((text, edit) => text.slice(0, edit.start - minStart) + edit.text + text.slice(edit.end - minStart), source.slice(minStart, maxEnd));
+        if (expanded.length > 20000) throw new Error('The option changes source outside this note.');
+        if (ranges.length === 1) {
+          const after = maxEnd - lastEnd;
+          result.set(first.id, { text: expanded, ...(beforeFirst ? { before: beforeFirst } : {}), ...(after ? { after } : {}) });
+        } else {
+          // Partition [minStart, maxEnd) across the linked units as adjacent
+          // non-overlapping spans so optionCandidate and review.accept apply them cleanly.
+          for (let idx = 0; idx < ranges.length; idx++) {
+            const unit = ranges[idx], [, , , uStart, uEnd] = unit.text_ops![0];
+            const spanStart = idx === 0 ? minStart : uStart;
+            const spanEnd = idx + 1 < ranges.length ? ranges[idx + 1].text_ops![0][3] : maxEnd;
+            const before = uStart - spanStart, after = spanEnd - uEnd;
+            if (before < 0 || after < 0 || before > 20000 || after > 20000) throw new Error('The option changes source outside this note.');
+            result.set(unit.id, {
+              text: idx === 0 ? expanded : '',
+              ...(before ? { before } : {}),
+              ...(after ? { after } : {}),
+            });
+          }
+        }
+      }
     }
   }
-  return units.map(unit => ({ unit: unit.id, text: result.get(unit.id)! }));
+  return units.map(unit => ({ unit: unit.id, ...result.get(unit.id)! }));
 }
 
 export async function savePreparedNoteOptions(store: Store, task: Task, run: Run, client: ReviewClient) {
@@ -225,7 +271,7 @@ export async function savePreparedNoteOptions(store: Store, task: Task, run: Run
       }
       const current = { ...context.options.options[0], ...prepared.current };
       const projected = prepared.options.flatMap(option => {
-        try { return [{ ...option, edits: preparedOptionEdits(option, context.units, files) }]; }
+        try { return [{ ...option, edits: preparedOptionEdits(option, context.units, files, context.detail.units) }]; }
         catch (error) {
           console.warn('Could not use prepared note option:', task.name, prepared.note, option.label, (error as Error).message);
           return [];

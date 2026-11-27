@@ -400,7 +400,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Done": {
-    "revision": "7b15610955a075cdc824a7a5c91b1b8d185ab1e9eb225f3753d4f1a626078cbc",
+    "revision": "f455889409343f716095599425a31c14ebd614710094671ec88b7ac198e5c24a",
     "textHash": "c0b3fbff51ccc40b8bf1a81666e7ecced016187cbe2ac6f1d627e0d7a287e04d",
     "model": "gemini-4-argon-medium"
   },
@@ -1174,6 +1174,11 @@
     "textHash": "d6593a8b962bce7efd2d4466dd3a36cdb4e015166212109c3ad4a821bde09658",
     "model": "gemini-4-argon-medium"
   },
+  "Sign-in not checked": {
+    "revision": "2f7fadf1e1fac72d19fe6efaebfb580c33ecd422e81395e4be6600dc8d84fff7",
+    "textHash": "7d5a290e608f774a329cb485eca6a0e677b76bc34682df12d27370db5f2dc757",
+    "model": "manual"
+  },
   "Signed out": {
     "revision": "536963ef038e9c9764e2a23f12e6b3f6f0b176cbc69e9f0270e420bc29d6b2e7",
     "textHash": "d0b8f27a7116688bf3ebdcf69bcf7c8302672b8e2d16fb387f56f9d35334270d",
@@ -1382,6 +1387,11 @@
   "Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.": {
     "revision": "92e8558aebff5eea871003b16e031f96a454b08ea6efb3861d2a17e2af77599e",
     "textHash": "5afaea8ea62bc02ee4ef235065218b02fdd1fe13fded9a76c69391a9a47949ab",
+    "model": "manual"
+  },
+  "Uses the local ZCode CLI and its configured default model.": {
+    "revision": "87c37dbda1d236923dac7e59e81a565082a618fe18aafa63660222a233b4c04c",
+    "textHash": "b9ef55ff4e1044fbc7acc7a1d57404e516fa2d11c1de6687140ba23decb69cf9",
     "model": "manual"
   },
   "Uses your Pi CLI, providers, skills and extensions. Tools run on the host with Pi’s permissions.": {

@@ -4,7 +4,7 @@ import { BrandIcon } from './brand-icon.tsx';
 import { PapilotMark } from './papilot-mark.tsx';
 import { ChipSelect } from './chip-select.tsx';
 import { keepDialogFocus } from './focus.ts';
-import { LANGUAGES, browserLanguage, setLanguage, t, useLanguage, type LanguageChoice } from './i18n.ts';
+import { LANGUAGES, browserLanguage, errorText, setLanguage, t, useLanguage, type LanguageChoice } from './i18n.ts';
 import { NotificationSettings } from './notification-settings.tsx';
 import { browserStorage } from './storage.ts';
 import { loadIndirectChanges, saveIndirectChanges, useIndirectChanges } from './effect-preferences.ts';
@@ -42,14 +42,14 @@ type SettingsEntry = { page: SettingsPage; label: string; icon: string; keywords
 // Shared with the review page's bibliography checks.
 const REFERENCE_CHECKS = 'papilot:review:references';
 
-export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppearance, onClose, diagnostics, requirements, skills, activity, updates, modelDefaults, workflow, overleaf, zotero, commitWriter, conflictWriter, refreshUsage, memory, initialPage = 'general' }: AppearanceSettingsProps & { onClose: () => void; diagnostics?: DiagnosticsSettingsProps; requirements?: { state: RequirementsState; online: boolean }; skills?: SkillLibraryOptions; activity?: LoadActivity; memory?: MemorySettingsOptions; updates?: UpdateApi; modelDefaults: ModelDefaultSettingsProps; commitWriter: CommitMessageChoice; conflictWriter: CommitMessageChoice; refreshUsage?: RefreshUsage; workflow?: CollaborationSettingsProps; overleaf?: { api: UpdateApi; state: OverleafState | undefined }; zotero?: ZoteroApi; initialPage?: SettingsInitialPage }) {
+export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppearance, onClose, diagnostics, requirements, skills, activity, updates, modelDefaults, workflow, overleaf, zotero, commitWriter, conflictWriter, refreshUsage, memory, initialPage = 'general' }: AppearanceSettingsProps & { onClose: () => void; diagnostics?: DiagnosticsSettingsProps; requirements?: { state: RequirementsState; online: boolean }; skills?: SkillLibraryOptions; activity?: LoadActivity; memory?: MemorySettingsOptions; updates?: UpdateApi; modelDefaults: ModelDefaultSettingsProps; commitWriter?: CommitMessageChoice; conflictWriter: CommitMessageChoice; refreshUsage?: RefreshUsage; workflow?: CollaborationSettingsProps; overleaf?: { api: UpdateApi; state: OverleafState | undefined }; zotero?: ZoteroApi; initialPage?: SettingsInitialPage }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const skillControls = useRef<SkillLibraryControls>(null);
   const focusConflictAgent = useRef(initialPage === 'git-conflicts');
   const { choice } = useLanguage();
   const indirectChanges = useIndirectChanges();
   const advancedGit = useAdvancedGit();
-  const gitAgents = diagnostics ? offeredAgents(diagnostics.runtimes).map(value => ({ value, label: agentLabel(value), runtime: diagnostics.runtimes[value] })) : modelDefaults.agents;
+  const gitAgents = (diagnostics ? offeredAgents(diagnostics.runtimes).map(value => ({ value, label: agentLabel(value), runtime: diagnostics.runtimes[value] })) : modelDefaults.agents).filter(item => item.value !== 'collaboration');
   const commitLanguage = useCommitMessageLanguage();
   useEffect(loadIndirectChanges, []);
   useEffect(loadNoteAlternatives, []);
@@ -91,7 +91,7 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
   const groups: { label: string; entries: SettingsEntry[] }[] = [
     { label: t('Personal'), entries: [
       { page: 'general', label: t('General'), icon: 'settings', keywords: `${t('Language')} ${t('Default model')} ${t('Default reasoning effort')}` },
-      { page: 'appearance', label: t('Appearance'), icon: 'sun', keywords: `${t('Light')} ${t('Dark')} ${t('System')} ${t('Theme')} ${t('Accent')} ${t('Background')} ${t('Foreground')} ${t('Interface size')} ${t('Text size')}` },
+      { page: 'appearance', label: t('Appearance'), icon: 'sun', keywords: `${t('Light')} ${t('Dark')} ${t('System')} ${t('Theme')} ${t('Accent')} ${t('Background')} ${t('Foreground')} ${t('Interface size')} ${t('Text size')} ${t('Editor font size')}` },
       { page: 'notifications', label: t('Notifications'), icon: 'bell' },
       { page: 'shortcuts', label: t('Keyboard shortcuts'), icon: 'keyboard' },
     ] },
@@ -189,7 +189,8 @@ export function SettingsDialog({ theme, onTheme, resolved, appearance, onAppeara
             <ConflictAgentSettings refreshUsage={refreshUsage} current={conflictWriter} agents={gitAgents} reconnect={diagnostics?.reconnect}/>
           </section>
           <section className="settings-card">
-            <CommitAgentSettings refreshUsage={refreshUsage} current={commitWriter} agents={gitAgents} reconnect={diagnostics?.reconnect}/>
+            {commitWriter ? <CommitAgentSettings refreshUsage={refreshUsage} current={commitWriter} agents={gitAgents.filter(option => option.runtime?.supportsReadOnlyTasks !== false)} reconnect={diagnostics?.reconnect}/>
+              : <div className="settings-row"><div className="settings-text"><span className="settings-name">{t('Commit-message agent')}</span><p>{errorText('Connect an agent that supports read-only tasks, such as Codex.')}</p></div></div>}
             <div className="settings-row settings-choice">
               <div className="settings-text"><span className="settings-name">{t('Commit message language')}</span><p>{t('For generated messages. Auto follows recent commits, or uses English when there are none.')}</p></div>
               <ChipSelect label={t('Commit message language')} value={commitLanguage} onChange={value => saveCommitMessageLanguage(value as CommitMessageLanguage)} options={[{ value: 'auto', label: t('Auto') }, ...LANGUAGES.map(item => ({ value: item.id, label: item.name }))]}/>

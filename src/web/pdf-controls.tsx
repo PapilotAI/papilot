@@ -50,9 +50,9 @@ export function PdfPageControls({ page, pages, zoom, preparing, onPage, onZoom, 
       <button type="button" className="icon-button" aria-label={t('Next page')} disabled={page >= pages} onClick={() => onPage(page + 1)}><Icon name="chevronDown" size={16}/></button>
     </div>
     <div className="pdf-zoom">
-      <button type="button" className="icon-button" aria-label={t('Zoom out')} title={t('Zoom out (⌘−)')} onClick={() => onZoomBy(1 / 1.1)}><Icon name="minus" size={16}/></button>
+      <button type="button" className="icon-button" aria-label={t('Zoom out')} title={t('Zoom out')} onClick={() => onZoomBy(1 / 1.1)}><Icon name="minus" size={16}/></button>
       <ChipSelect className="zoom-chip" label={t('Zoom')} value={value} options={options} onChange={onZoom}/>
-      <button type="button" className="icon-button" aria-label={t('Zoom in')} title={t('Zoom in (⌘+)')} onClick={() => onZoomBy(1.1)}><Icon name="plus" size={16}/></button>
+      <button type="button" className="icon-button" aria-label={t('Zoom in')} title={t('Zoom in')} onClick={() => onZoomBy(1.1)}><Icon name="plus" size={16}/></button>
     </div>
   </>;
 }

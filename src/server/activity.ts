@@ -163,7 +163,6 @@ function pricedCatalog() {
 
 const AGENT_PROVIDERS: Partial<Record<AgentId, KnownProvider[]>> = {
   codex: ['openai-codex', 'openai'],
-  collaboration: ['openai-codex', 'openai'],
   claude: ['anthropic'],
   deepseek: ['deepseek'],
   kimi: ['moonshotai', 'moonshotai-cn'],
