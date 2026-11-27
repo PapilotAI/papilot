@@ -89,6 +89,27 @@ test('a save replaces the file, keeps line endings, reports the changed lines, a
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('the manuscript editor reports the file and why its LaTeX bytes cannot be read', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-source-encoding-'));
+  const file = 'main.TeX', target = path.join(root, file);
+  try {
+    fs.writeFileSync(target, Buffer.from('% café\n', 'latin1'));
+    await assert.rejects(readFile(root, file), {
+      message: 'Could not read “{file}” as UTF-8. Check its encoding in a text editor, then save a UTF-8 copy.',
+      errorValues: { file },
+    });
+
+    fs.writeFileSync(target, 'café\0\n');
+    await assert.rejects(readFile(root, file), {
+      message: '“{file}” contains null bytes. Check its encoding and contents in a text editor.',
+      errorValues: { file },
+    });
+
+    fs.writeFileSync(target, '% café\n');
+    assert.equal((await readFile(root, file)).text, '% café\n');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 const latexmk = (() => {
   try {
     execFileSync('pdflatex', ['--version'], { stdio: 'ignore' });

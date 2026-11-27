@@ -264,7 +264,10 @@ export async function buildApp(options: AppOptions) {
   });
   app.addHook('onError', async request => { projectRequests.get(request)?.(); });
   await app.register(compress);
-  app.setErrorHandler((error, _request, reply) => { reply.code((error as any).statusCode || 400).send({ error: (error as Error).message }); });
+  app.setErrorHandler((error, _request, reply) => {
+    const { message, statusCode, errorValues } = error as Error & { statusCode?: number; errorValues?: Record<string, string | number> };
+    reply.code(statusCode || 400).send({ error: message, ...(errorValues && { errorValues }) });
+  });
   registerSkillRoutes(app, store);
   registerMemoryRoutes(app, store, () => workspace.memory, refreshManuscript);
   registerAiReviewRoutes(app, store, manuscripts);

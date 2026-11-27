@@ -449,6 +449,11 @@
     "textHash": "99b97ebc58aceb02d704346a774df3e63c8931312a8f93898be6a42e7fb4f81c",
     "model": "gemini-4-argon-medium"
   },
+  "Could not read “{file}” as UTF-8. Check its encoding in a text editor, then save a UTF-8 copy.": {
+    "revision": "80087cf14e3fb63bab0e48ee76d44ffefba089333bd2b6bd8fa80d447b70b8d3",
+    "textHash": "0cffdc8c777fc045b605ade0492e542dd18f6541894ca65ae2a3647c277992a9",
+    "model": "codex-manual"
+  },
   "Could not restart the background service.": {
     "revision": "7e19c4c9d21a6d369da8445a62d0c42916a9944b2a8d2d9228e51404146d9880",
     "textHash": "edbcf0bb67cf40c25c33668cc758dfde2ecdc670ca5dc25da0c1336bc9e48c3d",
@@ -2153,5 +2158,10 @@
     "revision": "281ece6951ae5326ec6aa5ebddf7876aa36ef14e0669c2fa0de2586bc2f48df1",
     "textHash": "ec03360cbfefefffc54971beef3d9f777cf1c98696237a2e82698ebacb600457",
     "model": "gemini-4-argon-medium"
+  },
+  "“{file}” contains null bytes. Check its encoding and contents in a text editor.": {
+    "revision": "eded4f60982fe2ca3172d79a8fba49ed9d182846290b374bda8e01ec9eaad2c8",
+    "textHash": "395d43c91f16b389d282825d55ae5cbe894b6a7b326db8dc5dccbd99315a97a5",
+    "model": "codex-manual"
   }
 }

@@ -105,6 +105,7 @@
   "Could not reach the source website. Check the internet connection and try again.": "Impossibile raggiungere il sito dei sorgenti. Controlla la connessione Internet e riprova.",
   "Could not reach zotero.org. Try again.": "Impossibile raggiungere zotero.org. Riprova.",
   "Could not read the LaTeX installation.": "Impossibile leggere l'installazione di LaTeX.",
+  "Could not read “{file}” as UTF-8. Check its encoding in a text editor, then save a UTF-8 copy.": "Impossibile leggere «{file}» come UTF-8. Controlla la codifica in un editor di testo e salva una copia in UTF-8.",
   "Could not restart the background service.": "Impossibile riavviare il servizio in background.",
   "Custom API setup is unavailable.": "La configurazione dell’API personalizzata non è disponibile.",
   "Delegated edits must stay within the selected source files.": "Le modifiche delegate devono limitarsi ai file sorgente selezionati.",
@@ -515,5 +516,6 @@
   "Zotero does not accept this key. Check it and try again.": "Zotero non accetta questa chiave. Verificala e riprova.",
   "npm is unavailable to Papilot.": "npm non è disponibile per Papilot.",
   "too large": "troppo grande",
-  "unsupported index": "indice non supportato"
+  "unsupported index": "indice non supportato",
+  "“{file}” contains null bytes. Check its encoding and contents in a text editor.": "«{file}» contiene byte nulli. Controlla la codifica e il contenuto in un editor di testo."
 }

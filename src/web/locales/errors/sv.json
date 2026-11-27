@@ -105,6 +105,7 @@
   "Could not reach the source website. Check the internet connection and try again.": "Källwebbplatsen kunde inte nås. Kontrollera internetanslutningen och försök igen.",
   "Could not reach zotero.org. Try again.": "Det gick inte att nå zotero.org. Försök igen.",
   "Could not read the LaTeX installation.": "Det gick inte att läsa LaTeX-installationen.",
+  "Could not read “{file}” as UTF-8. Check its encoding in a text editor, then save a UTF-8 copy.": "Det gick inte att läsa ”{file}” som UTF-8. Kontrollera kodningen i en textredigerare och spara sedan en kopia i UTF-8.",
   "Could not restart the background service.": "Det gick inte att starta om bakgrundstjänsten.",
   "Custom API setup is unavailable.": "Det går inte att konfigurera det anpassade API:et.",
   "Delegated edits must stay within the selected source files.": "Delegerade ändringar måste begränsas till de valda källfilerna.",
@@ -515,5 +516,6 @@
   "Zotero does not accept this key. Check it and try again.": "Zotero godkänner inte denna nyckel. Kontrollera den och försök igen.",
   "npm is unavailable to Papilot.": "npm är inte tillgängligt för Papilot.",
   "too large": "för stor",
-  "unsupported index": "indexet stöds inte"
+  "unsupported index": "indexet stöds inte",
+  "“{file}” contains null bytes. Check its encoding and contents in a text editor.": "”{file}” innehåller nollbyte. Kontrollera kodningen och innehållet i en textredigerare."
 }
