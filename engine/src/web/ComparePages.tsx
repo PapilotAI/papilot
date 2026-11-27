@@ -69,10 +69,17 @@ export function ComparePages({ before, after, files, changes, current, states, c
   const shown = deselected ? -1 : current;
   useEffect(() => {
     if (shown < 0) return;
+    // Only a click on the pages away from any change deselects: the bar,
+    // the change map and dialogs keep the change.
     const outside = (event: PointerEvent) => {
-      if (!(event.target as Element | null)?.closest?.(".compare-panel, .compare-bar, .compare-mark, .composer, .bar")) deselect();
+      const target = event.target as Element | null;
+      if (box.current?.contains(target) && !target?.closest(".compare-panel, .compare-bar, .compare-mark")) deselect();
     };
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented) deselect(); };
+    // Escape first closes what is open over the review: a dialog, the help
+    // or a comment being written.
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented && !document.querySelector("dialog[open], .help-backdrop, .composer")) deselect();
+    };
     document.addEventListener("pointerdown", outside);
     document.addEventListener("keydown", escape);
     return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
@@ -113,6 +120,17 @@ export function ComparePages({ before, after, files, changes, current, states, c
     return found;
   };
   const oldLines = extents(old, docs.before), newLines = extents(next, docs.after);
+  // A change with nothing to mark on the pages, such as an edit that prints
+  // the same, still has its bar: just below the change before it, as the
+  // full paper shows it after that change, or at the top of the first page.
+  let previous: { page: number; bottom: number; lines: typeof newLines } | null = null;
+  for (const { index } of changes) {
+    const placedLines = newLines.get(index) ? newLines : oldLines.get(index) ? oldLines : null;
+    if (placedLines) { const extent = placedLines.get(index)!; previous = { page: extent.page, bottom: extent.bottom, lines: placedLines }; continue; }
+    const top: number = previous ? previous.bottom + 0.012 : 0.03, bottom: number = top + 0.02;
+    (previous?.lines ?? newLines).set(index, { page: previous?.page ?? 0, top, bottom });
+    previous = { page: previous?.page ?? 0, bottom, lines: previous?.lines ?? newLines };
+  }
   const page = (side: Side, doc: Doc, number: number | null, placed: Placed[]) => {
     if (number === null) return <div className="compare-page compare-blank" style={{ aspectRatio: `${doc.width} / ${doc.height}` }} aria-hidden="true" />;
     return (
@@ -154,7 +172,7 @@ export function ComparePages({ before, after, files, changes, current, states, c
           <div key={index} className={`compare-spot${index === shown ? " current" : ""}`} data-stop={index} data-state={states(index)}
             style={{ top: `${top * 100}%`, height: `${(bottom - top) * 100}%` }}>
             <button type="button" className="compare-bar" aria-label={t("Change {n}", { n: index + 1 })} aria-current={index === shown || undefined}
-              aria-expanded={open} onClick={() => index === shown ? deselect() : choose(index)}>
+              aria-expanded={open} onClick={() => open ? deselect() : choose(index)}>
               <span className="compare-index">{index + 1}</span>
             </button>
             {open && <div className="compare-panel">{controls(index)}</div>}
@@ -185,7 +203,8 @@ function paint(container: HTMLElement, docs: { before: Doc; after: Doc }, root: 
     const entry = alive.get(element);
     alive.delete(element);
     entry?.task?.cancel();
-    if (entry?.canvas) { entry.canvas.remove(); entry.canvas.width = entry.canvas.height = 0; }
+    // A canvas painted before a resize is freed too, though its entry went.
+    element.querySelectorAll<HTMLCanvasElement>(":scope > canvas").forEach((canvas) => { canvas.remove(); canvas.width = canvas.height = 0; });
   };
   const draw = async (element: HTMLElement) => {
     const entry: { canvas?: HTMLCanvasElement; task?: RenderTask } = {};

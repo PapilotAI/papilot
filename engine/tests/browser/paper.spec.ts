@@ -253,17 +253,23 @@ test("side by side shows both versions' whole pages, paired with a blank page, a
     expect(Math.abs(before.top - after.top)).toBeLessThan(2);
     expect(before.right).toBeLessThan(after.left);
     // The review opens on the change, its lines shaded on both pages. A click
-    // on its bar deselects it; another selects it and opens its decisions.
+    // on its bar opens its decisions; another deselects it.
     const bar = page.getByRole("button", { name: "Change 1", exact: true }), decisions = page.locator(".compare-panel");
     await expect(page.locator(".compare-mark.current .compare-shade")).toHaveCount(2);
     await bar.click();
-    await expect(page.locator(".compare-mark.current")).toHaveCount(0);
-    await expect(decisions).toHaveCount(0);
-    await bar.click();
-    await expect(page.locator(".compare-mark.current .compare-shade")).toHaveCount(2);
     await expect(decisions.getByRole("button", { name: "Accept" })).toBeVisible();
     await expect(decisions.getByRole("button", { name: "Reject" })).toBeVisible();
     await page.screenshot({ path: ".cache/browser-compare-pages.png" });
+    await bar.click();
+    await expect(page.locator(".compare-mark.current")).toHaveCount(0);
+    await expect(decisions).toHaveCount(0);
+    // Escape closes the help over the review before it deselects anything.
+    await bar.click();
+    await page.keyboard.press("?");
+    await expect(page.locator(".help-backdrop")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".help-backdrop")).toHaveCount(0);
+    await expect(decisions).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.locator(".compare-mark.current")).toHaveCount(0);
     await expect(decisions).toHaveCount(0);
