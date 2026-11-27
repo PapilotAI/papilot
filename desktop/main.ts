@@ -8,6 +8,7 @@ import { chooseEnvironment } from './environment-window.js';
 import { readEnvironment, saveEnvironment, startWsl, linuxPath, type Environment } from './wsl.js';
 import { overleafSignIn } from './overleaf-sign-in.js';
 import { typelessControl } from './typeless-control.js';
+import { detectWindowButtons, windowButtonsArgument, type WindowButtons } from './window-buttons.js';
 
 const nix = process.env.PAPILOT_INSTALL_METHOD === 'nix';
 const packageUpdates = process.env.PAPILOT_DESKTOP_PACKAGE_UPDATES === '1' ||
@@ -35,6 +36,9 @@ const notifications = desktopNotifications({
 });
 const typeless = typelessControl();
 let typelessSending = false;
+// Read the desktop's window button layout while the backend starts.
+const windowButtonsLayout = process.platform === 'linux' ? detectWindowButtons() : Promise.resolve(null);
+let windowButtons: WindowButtons | null = null;
 // papilot://new?template=<id>&version=<version> starts a paper from a Universe template.
 let pendingTemplate: { id: string; version: string } | null = null;
 function templateLink(url: string) {
@@ -68,7 +72,8 @@ function showWindow() {
       ? path.join(nix && process.env.PAPILOT_DESKTOP_ROOT ? process.env.PAPILOT_DESKTOP_ROOT : app.isPackaged ? process.resourcesPath : path.resolve(fileURLToPath(new URL('../..', import.meta.url))), 'desktop/assets/icon.ico')
       : process.platform === 'linux' ? path.join(nix && process.env.PAPILOT_DESKTOP_ROOT ? process.env.PAPILOT_DESKTOP_ROOT : app.isPackaged ? process.resourcesPath : path.resolve(fileURLToPath(new URL('../..', import.meta.url))), 'desktop/assets/icon.png') : undefined,
     show: false, backgroundColor: '#ffffff', webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true,
-      preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)) } });
+      preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)),
+      additionalArguments: windowButtons ? [windowButtonsArgument(windowButtons)] : [] } });
   window.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: 'deny' }; });
   window.webContents.on('will-navigate', (event, url) => {
     if (new URL(url).origin !== origin) { event.preventDefault(); external(url); }
@@ -102,6 +107,7 @@ else {
     void backend.stop().finally(() => { stopped = true; app.quit(); });
   });
   void app.whenReady().then(async () => {
+    windowButtons = await windowButtonsLayout;
     const data = app.getPath('userData'), log = path.join(app.getPath('logs'), 'backend.log');
     const wslAssets = app.isPackaged ? path.join(process.resourcesPath, 'wsl') : path.resolve(fileURLToPath(new URL('../wsl', import.meta.url)));
     const openEnvironment = (error?: string) => chooseEnvironment({ parent: window || undefined, current: readEnvironment(data), assets: wslAssets, root: app.isPackaged ? path.join(process.resourcesPath, 'server') : path.resolve(fileURLToPath(new URL('../..', import.meta.url))), error,

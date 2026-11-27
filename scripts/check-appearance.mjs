@@ -245,6 +245,60 @@ try {
   await app.waitForFunction(() => window.zoomCalls.at(-1) === 1);
   await desktop.close();
 
+  // Window buttons follow the system: Windows on the right, Linux as the
+  // desktop app reports its desktop's layout, and a left-side close-first
+  // layout when that is unknown. Toolbar controls never sit under them.
+  const layouts = [
+    ['linux-default', 'linux', undefined, 'left', ['Close window', 'Minimize window', 'Maximize or restore window']],
+    ['linux-gnome', 'linux', { side: 'right', buttons: ['close'] }, 'right', ['Close window']],
+    ['linux-right', 'linux', { side: 'right', buttons: ['minimize', 'maximize', 'close'] }, 'right', ['Minimize window', 'Maximize or restore window', 'Close window']],
+    ['linux-left', 'linux', { side: 'left', buttons: ['close', 'maximize'] }, 'left', ['Close window', 'Maximize or restore window']],
+    ['windows', 'win32', undefined, 'right', ['Minimize window', 'Maximize or restore window', 'Close window']],
+  ];
+  for (const [name, platform, windowButtons, side, labels] of layouts) {
+    const chrome = await browser.newContext({ locale: 'en-US', colorScheme: 'light', viewport: { width: 1440, height: 960 } });
+    chrome.setDefaultTimeout(15000);
+    await chrome.addInitScript(([platform, windowButtons]) => {
+      window.papilotDesktop = { platform, windowButtons, minimize() {}, maximize() {}, close() {} };
+    }, [platform, windowButtons]);
+    await chrome.route('**/api/**', api);
+    await chrome.route('**/review/**', route => route.fulfill({ contentType: 'text/html', body: '<html><head></head><body><div class="bar">Review</div><main id="paper">Paper</main></body></html>' }));
+    const window = await chrome.newPage();
+    window.on('pageerror', error => errors.push(error.message));
+    await window.goto(origin);
+    await window.getByRole('button', { name: /^Refine the introduction/ }).click();
+    await expect(window.locator('html')).toHaveAttribute('data-desktop-controls', side);
+    const buttons = window.locator('.desktop-window-buttons button');
+    assert.deepEqual(await buttons.evaluateAll(list => list.map(button => button.getAttribute('aria-label'))), labels, `${name}: buttons and order`);
+    const clear = async state => {
+      const result = await window.evaluate(() => {
+        const controls = document.querySelector('.desktop-window-buttons').getBoundingClientRect();
+        const overlaps = [...document.querySelectorAll('button,a,input,select,[role="combobox"]')].filter(element => !element.closest('.desktop-window-buttons')).filter(element => {
+          const box = element.getBoundingClientRect();
+          return box.width > 0 && box.height > 0 && box.top < controls.bottom && box.bottom > controls.top && box.right > controls.left && box.left < controls.right;
+        }).map(element => element.getAttribute('aria-label') || element.textContent.trim());
+        return { left: controls.left, right: controls.right, width: innerWidth, overlaps };
+      });
+      assert.deepEqual(result.overlaps, [], `${name} (${state}): toolbar controls stay clear of the window buttons`);
+      if (side === 'right') assert.ok(Math.abs(result.right - result.width) <= 1, `${name} (${state}): buttons reach the right edge`);
+      else assert.ok(result.left < 20, `${name} (${state}): buttons start at the left edge`);
+    };
+    await clear('sidebar open');
+    await window.screenshot({ animations: 'disabled', path: `test-results/window-buttons-${name}.png` });
+    await window.getByRole('button', { name: 'Hide task list', exact: true }).click();
+    await expect(window.getByRole('button', { name: 'Show task list', exact: true })).toBeVisible();
+    await clear('sidebar hidden');
+    // Narrow windows show the task list as a drawer over the workspace, so
+    // check the toolbars with it closed.
+    for (const width of [900, 680]) {
+      await window.setViewportSize({ width, height: 700 });
+      await window.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'));
+      await clear(`${width}px`);
+    }
+    await window.screenshot({ animations: 'disabled', path: `test-results/window-buttons-${name}-680.png` });
+    await chrome.close();
+  }
+
   assert.deepEqual(errors, []);
-  console.log('Appearance: live colors, iframe sync, validation, per-mode persistence, system mode, cross-tab sync, reset, interface size and responsive layouts passed.');
+  console.log('Appearance: live colors, iframe sync, validation, per-mode persistence, system mode, cross-tab sync, reset, interface size, responsive layouts and system window button layouts passed.');
 } catch (error) { await page.screenshot({ animations: 'disabled', path: 'test-results/appearance-failure.png' }); console.error(await page.locator('body').innerText()); throw error; } finally { await browser.close(); await server.close(); }

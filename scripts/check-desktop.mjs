@@ -20,6 +20,15 @@ const data = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-desktop-test-'));
 if (process.platform === 'win32') fs.writeFileSync(path.join(data, 'environment.json'), JSON.stringify({ kind: 'native' }));
 const env = { ...process.env, PAPILOT_DESKTOP_DATA: data, PAPILOT_DESKTOP_NODE: process.execPath, PAPILOT_UPDATE_PROBE: '1', LANG: 'en_US.UTF-8' };
 delete env.ELECTRON_RUN_AS_NODE;
+// Linux window buttons follow the desktop's layout. Give the app a known one
+// (KDE's kwinrc: close, minimize, maximize on the left) so the checks below
+// cover reading it.
+if (process.platform === 'linux') {
+  env.XDG_CURRENT_DESKTOP = 'KDE';
+  env.XDG_CONFIG_HOME = path.join(data, 'config');
+  fs.mkdirSync(env.XDG_CONFIG_HOME);
+  fs.writeFileSync(path.join(env.XDG_CONFIG_HOME, 'kwinrc'), '[org.kde.kdecoration2]\nButtonsOnLeft=XIA\nButtonsOnRight=\n');
+}
 const packaged = process.env.PAPILOT_DESKTOP_EXECUTABLE;
 const packageManaged = process.env.PAPILOT_EXPECT_PACKAGE_MANAGED === '1';
 const layerUpdates = Boolean(packaged && !packageManaged);
@@ -78,6 +87,13 @@ try {
   assert.equal(pdf.status, 200); assert.match(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString(), /%PDF-/);
   assert.equal(await page.locator('.desktop-window-drag').evaluate(element => getComputedStyle(element).getPropertyValue('-webkit-app-region')), 'drag');
   assert.equal(await page.evaluate(() => window.papilotDesktop?.platform), process.platform);
+  if (process.platform === 'linux') {
+    assert.deepEqual(await page.evaluate(() => window.papilotDesktop?.windowButtons), { side: 'left', buttons: ['close', 'minimize', 'maximize'] });
+    const buttons = page.locator('.desktop-window-buttons button');
+    await expect(buttons).toHaveCount(3);
+    await expect(buttons.nth(0)).toHaveAttribute('aria-label', /^(Close window|关闭窗口)$/);
+    await expect(buttons.nth(1)).toHaveAttribute('aria-label', /^(Minimize window|最小化窗口)$/);
+  }
   await expect(page.locator('.pdf-toolbar')).toBeVisible();
   // The toolbar can re-render while the paper loads, so read its box until it settles.
   await expect.poll(async () => (await page.locator('.pdf-toolbar').boundingBox())?.y, { message: 'The content toolbar reaches the top of the window' }).toBe(0);
