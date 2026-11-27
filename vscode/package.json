@@ -1,8 +1,8 @@
 {
   "name": "papilot-vscode",
-  "displayName": "Papilot Research Workspace",
+  "displayName": "Papilot Workspace",
   "description": "Revise and review LaTeX papers alongside your code.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "PapilotAI",
   "license": "MIT",
   "icon": "media/icon.png",

@@ -1,4 +1,4 @@
-# Papilot Research Workspace
+# Papilot Workspace
 
 Keep LaTeX papers and project code in the same editor. Papilot discovers papers in the workspace's Git repositories and opens each PDF in its own tab. The conversation lives in a separate sidebar, so switching between source, PDFs and reviews keeps it open.
 
