@@ -32,13 +32,17 @@ function keys() {
 const placeholders = (text: string) =>
   [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
 
-it("reads the language from the page address only", () => {
+it("prefers the language from the page address and falls back to the document language", () => {
   expect(pageLanguage("?task=a&lang=zh-CN")).toBe("zh-Hans");
   expect(pageLanguage("?lang=zh")).toBe("zh-Hans");
   expect(pageLanguage("?task=a")).toBe("en");
   expect(pageLanguage("?lang=fr")).toBe("fr");
   expect(pageLanguage("?lang=zh-Hant")).toBe("zh-Hant");
   expect(pageLanguage("?lang=zh-Hans")).toBe("zh-Hans");
+  expect(pageLanguage("?task=a", "zh-tw")).toBe("zh-Hant");
+  expect(pageLanguage("?lang=invalid", "pt-br")).toBe("pt");
+  expect(pageLanguage("?lang=en", "de-CH")).toBe("en");
+  expect(pageLanguage("?task=a", "ru")).toBe("en");
   for (const { id } of LANGUAGES) expect(pageLanguage(`?lang=${id}`)).toBe(id);
 });
 

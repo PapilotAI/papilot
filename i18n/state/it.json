@@ -2905,7 +2905,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Loading PDF review…": {
-    "revision": "8ff5807038da31c1bdc46d59c2cf9430624caa4159bb3edf8f632971a0c0f439",
+    "revision": "7fe94f641725a3f7aa28b5499787779222efc871bc36fba4b44d1f17251df06e",
     "textHash": "92a64eb89590034f581ffd624ef21686f15351aba0c57188a5ca9698178727d3",
     "model": "gemini-4-argon-medium"
   },
@@ -2955,7 +2955,7 @@
     "model": "manual"
   },
   "Loading…": {
-    "revision": "a77746e9227001b942946220d37461e6e94a131fd959d6cf2cf604b005fe04e8",
+    "revision": "8540c21cba2a985ff8faa3b7eba1187356c6782217686c69381a46b5bbef6393",
     "textHash": "fda05aaadb2ca812517ae37df36dc657976d5add097c471880f44b191a4dd29f",
     "model": "gemini-4-argon-medium"
   },

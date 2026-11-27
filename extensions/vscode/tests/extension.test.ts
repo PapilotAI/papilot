@@ -29,8 +29,9 @@ test('review actions use the current task and protect aliased unsaved buffers', 
     async api(route: string) { apiCalls.push(route); return route === '/api/state' ? snapshot : {}; },
     async request(route: string) { requests.push(route); return { status: 200, body: Buffer.from('{}').toString('base64') }; },
   };
-  const git = { state: 'initialized', git: { path: 'git' }, repositories: [], onDidOpenRepository: disposable, onDidCloseRepository: disposable };
+  const git = { state: 'initialized', git: { path: 'git' }, repositories: [], getRepository: () => undefined, onDidOpenRepository: disposable, onDidCloseRepository: disposable };
   const vscode = {
+    env: { language: 'zh-tw' },
     l10n: { t: (source: string, args: Record<string, string> = {}) => source.replace(/\{(\w+)\}/g, (_, key) => args[key]) },
     Uri: { file: uri, joinPath: (base: any, ...parts: string[]) => uri(path.join(base.fsPath, ...parts)) },
     EventEmitter: class { event = disposable; fire() {} dispose() {} },
@@ -53,7 +54,7 @@ test('review actions use the current task and protect aliased unsaved buffers', 
       createWebviewPanel: () => { let handler: (message: any) => Promise<void>; return ({
         ...disposable(), visible: false, onDidDispose: disposable, onDidChangeViewState: disposable,
         reveal() { receive = handler; },
-        webview: { asWebviewUri: (uri: any) => uri, onDidReceiveMessage: (listener: any) => { handler = receive = listener; return disposable(); }, postMessage: async (message: any) => responses.push(message) },
+        webview: { set html(value: string) { assert.match(value, /<html lang="zh-Hant">/); }, asWebviewUri: (uri: any) => uri, onDidReceiveMessage: (listener: any) => { handler = receive = listener; return disposable(); }, postMessage: async (message: any) => responses.push(message) },
       }); },
     },
   };
@@ -88,6 +89,12 @@ test('review actions use the current task and protect aliased unsaved buffers', 
       assert.match((await send({ ...decide, route: decide.route.replace('decide', action) })).error, /Save your edited files/);
     }
     assert.deepEqual(requests, [], 'aliased unsaved task files must block writes');
+    const apply = commands.get('papilot.apply')!;
+    const applyRoute = `/api/tasks/${preparing.id}/apply`;
+    const saveError = 'Save your edited files before applying or rejecting changes.';
+    await apply();
+    assert.ok(!apiCalls.includes(applyRoute), 'a dirty task source buffer must block apply even if the manuscript is clean');
+    assert.deepEqual(errors.splice(0), [saveError]);
     const fileAlias = path.join(directory, 'task-file.tex');
     await fs.symlink(path.join(worktree, 'main.tex'), fileAlias);
     await fs.unlink(path.join(worktree, 'main.tex'));
@@ -110,11 +117,15 @@ test('review actions use the current task and protect aliased unsaved buffers', 
     await fs.symlink(manuscript, manuscriptAlias, 'dir');
     textDocuments[0].uri = uri(path.join(manuscriptAlias, 'main.tex'));
     await commands.get('papilot.build')!(paper);
-    await commands.get('papilot.apply')!();
-    assert.deepEqual(errors, Array(2).fill('Save your edited files before applying or rejecting changes.'));
-    assert.ok(!apiCalls.some(route => route.endsWith('/apply')));
+    await apply();
+    assert.deepEqual(errors.splice(0), [saveError, saveError]);
+    assert.ok(!apiCalls.includes(applyRoute));
     await commands.get('papilot.changes')!(paper);
     assert.match((await send({ ...decide, route: '/review/project/api/changes/decide' })).error, /Save your edited files/);
+    textDocuments[0].isDirty = false;
+    await apply();
+    assert.deepEqual(apiCalls.filter(route => route === applyRoute), [applyRoute]);
+    assert.deepEqual(errors, []);
 
     // The old task panel must not fall back to the manuscript after deletion.
     await commands.get('papilot.review')!();

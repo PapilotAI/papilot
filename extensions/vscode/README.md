@@ -8,13 +8,13 @@ Keep LaTeX papers and project code in the same editor. Papilot discovers papers 
 - Read compilation diagnostics in Problems and the TeX log in Papilot's Output channel. Recoverable errors can accompany a PDF.
 - Add PDF notes, include them in tasks, and review the resulting changes with Papilot's existing viewer.
 - Browse earlier review rounds and return to the current changes in the same tab. Source navigation opens the task's current worktree.
-- Apply a reviewed task to the working tree, then stage and commit in VS Code's Source Control. Unsaved edits block operations that could overwrite them.
+- Apply a reviewed task to the working tree, then stage and commit in VS Code's Source Control. Save edits in both the manuscript and the task worktree before applying.
 
 Requires VS Code 1.119 or newer, Git, a local TeX distribution, and a signed-in agent CLI for agent tasks. Open a trusted workspace containing a committed Git repository. Papilot lists independently buildable TeX roots and refreshes the list when TeX files change; included files stay with their paper.
 
 The extension starts and stops its bundled runtime. There is no separate application server to install or start. Remote workspaces run Papilot and TeX on the remote host. The standalone app keeps its current interface and selected document.
 
-PDF pages, changed passages, and review highlights follow VS Code's light or dark theme. Native commands and prompts use VS Code's display language.
+PDF pages, changed passages, and review highlights follow VS Code's light or dark theme. Review controls, native commands and prompts use VS Code's display language.
 
 ## Development
 

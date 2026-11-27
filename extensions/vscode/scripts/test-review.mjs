@@ -11,11 +11,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const artifacts = await fs.mkdtemp(path.join(os.tmpdir(), 'papilot-vscode-history-'));
 const app = Fastify();
 await app.register(staticFiles, { root: path.join(root, 'dist/web/review') });
-app.get('/', async (_, reply) => reply.type('text/html').send('<!doctype html><html><head><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="/view.css"></head><body class="vscode-light"><div id="root"></div><script type="module" src="/view.js"></script></body></html>'));
+const view = language => `<!doctype html><html lang="${language}"><head><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="/view.css"></head><body class="vscode-light"><div id="root"></div><script type="module" src="/view.js"></script></body></html>`;
+app.get('/', async (_, reply) => reply.type('text/html').send(view('en')));
+app.get('/german', async (_, reply) => reply.type('text/html').send(view('de')));
 app.get('/strip.svg', async (_, reply) => reply.type('image/svg+xml').send('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="40"><rect width="500" height="40" fill="white"/><text x="10" y="25">A revised sentence in the paper.</text></svg>'));
 await app.listen({ host: '127.0.0.1', port: 0 });
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
-const page = await browser.newPage({ viewport: { width: 1000, height: 800 } });
+const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1000, height: 800 } });
 const errors = [], requests = [];
 page.on('pageerror', error => errors.push(error.message));
 let latest = 2;
@@ -91,8 +93,17 @@ try {
   await page.getByRole('button', { name: 'LaTeX', exact: true }).click({ timeout: 10000 });
   await expect.poll(() => requests.filter(request => request.type === 'source').length).toBe(1);
   assert.equal(requests.filter(request => request.type === 'ready').length, 1, 'round navigation must not reload the webview');
+
+  // The webview language comes from its host even with English browser preferences.
+  await page.goto(url + 'german');
+  await expect(page.getByRole('button', { name: 'Annehmen', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ablehnen', exact: true })).toBeVisible();
+  latest = 2;
+  await page.getByRole('button', { name: 'Verlauf', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Überprüfungsverlauf' })).toHaveValue('2');
+  await expect(page.getByRole('button', { name: 'Zurück zur Überprüfung', exact: true })).toBeVisible();
   assert.deepEqual(errors, []);
-  console.log('Review history passed: earlier rounds, pinned polling, return to current changes and native source bridge. Screenshot: ' + artifacts);
+  console.log('Review history, native source bridge and host locale passed. Screenshots: ' + artifacts);
 } catch (error) {
   await page.screenshot({ path: path.join(artifacts, 'failure.png') });
   console.error('Review failure screenshot: ' + artifacts);

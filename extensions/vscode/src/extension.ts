@@ -7,6 +7,7 @@ import { Backend } from './backend.ts';
 import { reviewAssets } from './assets.ts';
 import { allowedCommand } from './commands.ts';
 import { inside, insideReal, routePath, sourcePath } from './paths.ts';
+import { supportedLanguage } from '../../../engine/src/locales.ts';
 import type { GitExtension, Repository } from './git.ts';
 import type { Manuscript, ManuscriptProblems, Project, Snapshot, Task } from '../../../src/shared.ts';
 
@@ -243,7 +244,8 @@ export async function activate(context: vscode.ExtensionContext) {
     }, undefined, context.subscriptions);
     const nonce = randomBytes(24).toString('base64');
     const uri = (name: string) => webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, `dist/web/${view.kind}`, name));
-    webview.html = `<!doctype html><html><head><meta charset="UTF-8"><meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}' ${webview.cspSource} 'wasm-unsafe-eval'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource} data:; connect-src ${webview.cspSource} blob:; worker-src ${webview.cspSource} blob:; object-src 'none'; base-uri 'none';"><link rel="stylesheet" href="${uri('view.css')}"></head><body><div id="root"></div><script type="module" nonce="${nonce}" src="${uri('view.js')}"></script></body></html>`;
+    const language = view.kind === 'review' ? ` lang="${supportedLanguage(vscode.env.language) || 'en'}"` : '';
+    webview.html = `<!doctype html><html${language}><head><meta charset="UTF-8"><meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}' ${webview.cspSource} 'wasm-unsafe-eval'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource} data:; connect-src ${webview.cspSource} blob:; worker-src ${webview.cspSource} blob:; object-src 'none'; base-uri 'none';"><link rel="stylesheet" href="${uri('view.css')}"></head><body><div id="root"></div><script type="module" nonce="${nonce}" src="${uri('view.js')}"></script></body></html>`;
   }
   async function push(webview: vscode.Webview, view: View) {
     if (view.kind === 'paper') {
@@ -328,6 +330,8 @@ export async function activate(context: vscode.ExtensionContext) {
     const task = snapshot?.tasks.find(task => task.id === selectedTask), project = papers.papers.find(paper => paper.project.id === task?.projectId)?.project;
     if (!task || !project) return;
     await requireSaved(project.path);
+    // Apply can also replace task files when it prepares a merge review.
+    if (task.worktree) await requireSaved(task.worktree);
     const result = await backend.api<Task>(`/api/tasks/${task.id}/apply`, { mode: 'workspace' });
     if (result.delivery?.pending) throw new Error(t('The task needs conflict resolution before it can be applied. See the conversation.'));
     await git.getRepository(vscode.Uri.file(project.path))?.status(); await poll();

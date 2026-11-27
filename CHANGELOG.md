@@ -29,6 +29,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 - Keep changed PDF text and highlights readable in the VS Code extension's dark theme.
 - Keep VS Code review navigation in its tab, resolve task source paths after preparation, protect unsaved files opened through symlinks, and translate native commands and prompts.
+- Use VS Code's display language in review tabs and protect unsaved task source when applying reviewed changes.
 - The `papilot` command uses the Codex it downloads on the same launch, even when an older copy is on `PATH`.
 
 ## [0.14.1] - 2026-11-23
