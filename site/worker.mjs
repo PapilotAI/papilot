@@ -67,10 +67,60 @@ async function stars(request) {
   }
 }
 
+const APT_PREFIX = '/apt';
+const APT_UPSTREAM = 'https://papilotai.github.io/apt';
+const APT_DEB_PATH = /^\/apt\/pool\/main\/p\/papilot-desktop\/Papilot-((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))-linux-amd64\.deb$/;
+const APT_META_PATH = /^\/apt\/(?:gpg\.key|papilot\.gpg|dists\/[A-Za-z0-9._/-]+)$/;
+
+async function apt(request, url) {
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'GET, HEAD' } });
+  }
+  const pathname = url.pathname;
+  if (pathname === APT_PREFIX || pathname === `${APT_PREFIX}/`) {
+    const response = await fetch(`${APT_UPSTREAM}/index.html`, {
+      method: request.method,
+      signal: AbortSignal.timeout(10_000),
+    });
+    return new Response(request.method === 'HEAD' ? null : response.body, {
+      status: response.status,
+      headers: {
+        'Content-Type': response.headers.get('Content-Type') || 'text/html; charset=utf-8',
+        'Cache-Control': 'public, max-age=300',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+  }
+  const debMatch = pathname.match(APT_DEB_PATH);
+  if (debMatch) {
+    const version = debMatch[1];
+    const target = `https://github.com/PapilotAI/papilot/releases/download/v${version}/Papilot-${version}-linux-amd64.deb`;
+    return Response.redirect(target, 302);
+  }
+  if (!APT_META_PATH.test(pathname) || pathname.includes('..')) {
+    return new Response('Not Found', { status: 404, headers: { 'X-Content-Type-Options': 'nosniff' } });
+  }
+  const upstreamUrl = `${APT_UPSTREAM}${pathname.slice(APT_PREFIX.length)}`;
+  const response = await fetch(upstreamUrl, {
+    method: request.method,
+    signal: AbortSignal.timeout(10_000),
+  });
+  const immutable = pathname.includes('/by-hash/');
+  const headers = new Headers();
+  const contentType = response.headers.get('Content-Type');
+  if (contentType) headers.set('Content-Type', contentType);
+  const contentLength = response.headers.get('Content-Length');
+  if (contentLength) headers.set('Content-Length', contentLength);
+  headers.set('Cache-Control', immutable ? 'public, max-age=31536000, immutable' : 'public, max-age=60');
+  headers.set('X-Content-Type-Options', 'nosniff');
+  return new Response(request.method === 'HEAD' ? null : response.body, { status: response.status, headers });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === STARS_PATH && request.method === 'GET') return stars(request);
+    if (url.pathname === APT_PREFIX || url.pathname.startsWith(`${APT_PREFIX}/`)) return apt(request, url);
     return env.ASSETS.fetch(request);
   },
 };

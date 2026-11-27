@@ -1,6 +1,17 @@
 # Windows setup
 
-Windows support is available from Papilot 0.9.1. Download the Windows x64 installer (`Papilot-VERSION-win-x64.exe`) or portable app (`Papilot-VERSION-win-x64-portable.exe`) from [GitHub Releases](https://github.com/PapilotAI/papilot/releases/latest). The installer lets you choose an installation folder and adds Start menu and desktop shortcuts; the portable app runs without installation. Both include Node.js and npm; install Codex yourself. Windows installers are unsigned. The desktop workflow builds and tests Windows x64 alongside macOS and Linux.
+Windows support is available from Papilot 0.9.1. Install the desktop app with **Scoop**, **WinGet**, or a direct download from [GitHub Releases](https://github.com/PapilotAI/papilot/releases/latest):
+
+```powershell
+# Scoop (official Papilot bucket)
+scoop bucket add papilot https://github.com/PapilotAI/scoop-bucket
+scoop install papilot/papilot
+
+# WinGet
+winget install PapilotAI.Papilot
+```
+
+You can also download the Windows x64 installer (`Papilot-VERSION-win-x64.exe`) or portable app (`Papilot-VERSION-win-x64-portable.exe`) directly. The installer lets you choose an installation folder and adds Start menu and desktop shortcuts; the portable app runs without installation. Both include Node.js and npm; install Codex yourself. Windows installers are unsigned. The desktop workflow builds and tests Windows x64 alongside macOS and Linux.
 
 ## Choose an environment
 
