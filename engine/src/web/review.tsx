@@ -27,6 +27,7 @@ import { sourceActionLabel, unavailableComparisonMessage, type UnavailableCompar
 import { placeable, type PlacedChange } from "./paper.ts";
 // pdf.js loads only when the full paper is shown.
 const FullPaper = lazy(() => import("./FullPaper.tsx").then((module) => ({ default: module.FullPaper })));
+const ComparePages = lazy(() => import("./ComparePages.tsx").then((module) => ({ default: module.ComparePages })));
 // A hidden tab or a locked phone still polls; the server then knows nobody reads it.
 const stateRoute = (round?: number | null) => {
   const query = new URLSearchParams();
@@ -36,6 +37,7 @@ const stateRoute = (round?: number | null) => {
   return `/state${text ? `?${text}` : ""}`;
 };
 import { EFFECTS_EVENT, EFFECTS_STORAGE, readExpandedEffects } from "./effect-preferences.ts";
+import { LAYOUT_STORAGE, readLayout, saveLayout, type ReviewLayout } from "./layout-preference.ts";
 import { language, locale, t, tn, withLanguage } from "./i18n.ts";
 import {
   ConfirmReferences,
@@ -170,6 +172,8 @@ function ReviewProgress({ value, total, label }: { value: number; total: number;
     </div>
   );
 }
+// Two versions side by side need a wide window.
+const NARROW = "(max-width: 720px)";
 export function ReviewApp({
   task,
   pinned,
@@ -336,6 +340,21 @@ export function ReviewApp({
     window.addEventListener('storage', stored);
     return () => { window.removeEventListener(SHORTCUT_EVENT, changed); window.removeEventListener('storage', stored); };
   }, []);
+  // Both versions of the whole paper, page beside page, when the host serves
+  // both; remembered, and followed by other open reviews.
+  const [chosenLayout, setChosenLayout] = useState<ReviewLayout>(readLayout);
+  useEffect(() => {
+    const stored = (event: StorageEvent) => { if (event.key === LAYOUT_STORAGE || event.key === null) setChosenLayout(readLayout()); };
+    window.addEventListener('storage', stored);
+    return () => window.removeEventListener('storage', stored);
+  }, []);
+  const [narrow, setNarrow] = useState(() => matchMedia(NARROW).matches);
+  useEffect(() => {
+    const query = matchMedia(NARROW), changed = () => setNarrow(query.matches);
+    query.addEventListener("change", changed);
+    return () => query.removeEventListener("change", changed);
+  }, []);
+  const [compareUnavailable, setCompareUnavailable] = useState(false);
   const selectUnitHandler = useRef<(stop: number, unit?: string) => void>(() => {});
   useEffect(() => {
     const changed = (event: Event) => setNoteFocus((event as CustomEvent).detail || null);
@@ -1572,10 +1591,15 @@ export function ReviewApp({
           };
         });
     const index = visibleStop(regions, current, box.top + 60, box.bottom - 100);
+    // Side by side, reading on selects nothing: a change is selected by a
+    // click or by moving to it.
+    if (compare) return;
     if (index !== current) { reached.current = "scroll"; select(index, false); }
     if (index >= 0) remember(index);
   }
-  const actionBar = (index: number) => {
+  // `buttons` alone: the decisions without the bar's navigation, as the
+  // side-by-side pages show them beside the change.
+  const actionBar = (index: number, buttons = false) => {
     if (index !== current || !state) return null;
     const meta = multiUnitAt(index),
       focusedUnit = focusedUnitAt(index),
@@ -1643,6 +1667,12 @@ export function ReviewApp({
           </button>
         );
       });
+    if (buttons)
+      return (
+        <nav className="compare-actions" aria-label={t("Review the current change")}>
+          {renderDecisionButtons(available)}
+        </nav>
+      );
     return (
       <div className="dock">
         <nav className="actions" aria-label={t("Review the current change")}>
@@ -2331,7 +2361,10 @@ export function ReviewApp({
     );
   }
   const fullPaper = Boolean(detail?.pdf) && !detail?.sourceOnly && !detail?.rendering && placeable(placed),
-    paperView = fullPaper && !paperUnavailable;
+    paperView = fullPaper && !paperUnavailable,
+    canCompare = paperView && Boolean(detail?.pdfBefore) && !compareUnavailable && !phoneDock && !narrow,
+    compare = canCompare && chosenLayout === "side-by-side";
+  useEffect(() => { setCompareUnavailable(false); }, [detail?.round, detail?.pdfBefore]);
   // The comparisons of the next few undecided changes are fetched and decoded
   // ahead, so the next one is on screen the moment a decision moves on. A
   // small window keeps a phone's memory free.
@@ -2377,10 +2410,11 @@ export function ReviewApp({
     && (detail?.rendering === "pending" || Boolean(state?.job && ["queued", "running"].includes(state.job.status)));
   useEffect(() => {
     const root = document.documentElement;
-    if (paperView) root.dataset.fullPaper = "available";
+    // The host's page controls follow the single paper, not the comparison.
+    if (paperView && !compare) root.dataset.fullPaper = "available";
     else if (paperPending) root.dataset.fullPaper = "pending";
     else delete root.dataset.fullPaper;
-  }, [paperView, paperPending]);
+  }, [paperView, paperPending, compare]);
   useEffect(() => {
     const root = document.documentElement;
     if (detail?.round) {
@@ -2588,6 +2622,25 @@ export function ReviewApp({
               onClick={() => void undo()}
             >
               {t("Undo revert")}
+            </button>
+          )}
+          {canCompare && (
+            <button
+              type="button"
+              className="ghost layout-toggle"
+              aria-pressed={compare}
+              aria-label={t("Side by side")}
+              title={t("Show before and after side by side")}
+              onClick={() => {
+                const next = compare ? "stacked" : "side-by-side";
+                saveLayout(next);
+                setChosenLayout(next);
+              }}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <path d="M12 4v16" />
+              </svg>
             </button>
           )}
           <button
@@ -2838,8 +2891,32 @@ export function ReviewApp({
                 onRetry={references.retry}
               />
             )}
-          <div className="document">
-            {detail && paperView ? (
+          <div className={`document${compare ? " compare-view" : ""}`}>
+            {detail && compare ? (
+              <Suspense fallback={<div className="paper-status" role="status"><div className="pulse" /></div>}>
+                <div className="compare-head" aria-hidden="true">
+                  <span>{t("Before")}</span>
+                  <span>{t("After")}</span>
+                </div>
+                <ComparePages
+                  key={`${detail.round}:${detail.pdfBefore}:${detail.pdf}`}
+                  before={detail.pdfBefore!}
+                  after={detail.pdf!}
+                  files={detail.files}
+                  changes={placed}
+                  current={current}
+                  states={(at) => stopState(stops[at]?.units ?? [], decisions)}
+                  controls={(at) => actionBar(at, true)}
+                  onSelect={(at) => { if (!composer && at !== current) { reached.current = "pick"; select(at, false); } }}
+                  scrollRoot={paper}
+                  onReady={() => {
+                    const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${snapshot.current.current}"]`);
+                    if (article) reveal(article);
+                  }}
+                  onUnavailable={() => setCompareUnavailable(true)}
+                />
+              </Suspense>
+            ) : detail && paperView ? (
               <>
                 <Suspense fallback={<div className="paper-status" role="status"><div className="pulse" /></div>}>
                 <FullPaper

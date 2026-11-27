@@ -184,3 +184,100 @@ test("full-paper review preserves unchanged ink beside a column change", async (
     fs.rmSync(folder, { recursive: true, force: true });
   }
 });
+
+test("side by side shows both versions' whole pages, paired with a blank page, and a change's bar opens its decisions", async ({ page }) => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "review-compare-pages-"));
+  // The old version has one page; the new one rewords a line and adds a page.
+  const write = (name: string, pages: string[][]) => {
+    const raw = new mupdf.PDFDocument(), font = new mupdf.Font("Helvetica"), resource = raw.addSimpleFont(font);
+    for (const lines of pages) {
+      const content = lines.map((line, row) => `BT /F1 12 Tf 60 ${740 - row * 24} Td (${line}) Tj ET\n`).join("");
+      const sheet = raw.addPage([0, 0, 612, 792], 0, { Font: { F1: resource } }, content);
+      raw.insertPage(-1, sheet);
+      sheet.destroy();
+    }
+    const bytes = raw.saveToBuffer("");
+    fs.writeFileSync(path.join(folder, name), bytes.asUint8Array());
+    const document = new PdfDocument(bytes.asUint8Array());
+    bytes.destroy(); resource.destroy(); font.destroy(); raw.destroy();
+    return document;
+  };
+  const lines = (changed: string) => Array.from({ length: 12 }, (_, row) => row === 5 ? changed : `Unchanged line ${row} of the paper`);
+  const oldDocument = write("old.pdf", [lines("The OLD wording of this sentence")]),
+    newDocument = write("new.pdf", [lines("The NEW wording of this sentence"), ["Appendix on a page of its own"]]);
+  let block: ChangeBlock;
+  try {
+    const oldRect = oldDocument.page(0).search("OLD wording")[0], newRect = newDocument.page(0).search("NEW wording")[0];
+    const line = (rect: Rect): Rect => [0, rect[1] - 4, 612, rect[3] + 4];
+    block = renderDocument(
+      { document: oldDocument, outline: [] } as unknown as Build,
+      { document: newDocument, outline: [] } as unknown as Build,
+      [{ id: "fixture", file: "paper.tex", comparison: "text", aligned: true, pairs: [{
+        old: { page: 0, clip: line(oldRect), label: "1" }, new: { page: 0, clip: line(newRect), label: "1" }, group: 0,
+        before_marks: [{ kind: "removed", rect: oldRect }], after_marks: [{ kind: "added", rect: newRect }],
+      }] }],
+      new Strips(folder),
+      () => false,
+    ).loose[0];
+  } finally {
+    oldDocument.close(); newDocument.close();
+  }
+  try {
+    await page.route("**/compare-fixture/*", async (route) => {
+      const name = path.basename(new URL(route.request().url()).pathname);
+      await route.fulfill({ body: fs.readFileSync(path.join(folder, name)), contentType: name.endsWith(".pdf") ? "application/pdf" : "image/svg+xml" });
+    });
+    await page.route(/\/api\/tasks\/tighten-design\/rounds\/\d+$/, async (route) => {
+      const detail = (await (await route.fetch()).json()) as RoundDetail;
+      const unit = { ...detail.units[0], visual: "text" as const, effects: undefined };
+      await route.fulfill({ json: { ...detail, units: [unit], sections: [], loose: [{ ...block, units: [unit.id] }],
+        pdf: "/compare-fixture/new.pdf", pdfBefore: "/compare-fixture/old.pdf", files: "/compare-fixture/", passes: undefined, references: undefined } });
+    });
+    await page.goto("/?task=tighten-design");
+    await expect(page.locator(".paper .change")).toBeVisible();
+    const toggle = page.getByRole("button", { name: "Side by side", exact: true });
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await toggle.click();
+    // Two rows of pages: the changed pages together, then the new appendix
+    // beside a blank page.
+    const rows = page.locator(".compare-row");
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0).locator(".compare-page:not(.compare-blank)")).toHaveCount(2);
+    await expect(rows.nth(1).locator('.compare-blank')).toHaveCount(1);
+    await expect(rows.nth(1).locator('.compare-page[data-side="after"]')).toHaveCount(1);
+    await expect.poll(() => page.locator(".compare-page > canvas").count()).toBe(3);
+    // The change is marked on both pages, level with each other.
+    const marks = page.locator(".compare-mark");
+    await expect(marks).toHaveCount(2);
+    const [before, after] = await marks.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().toJSON()));
+    expect(Math.abs(before.top - after.top)).toBeLessThan(2);
+    expect(before.right).toBeLessThan(after.left);
+    // The review opens on the change, its lines shaded on both pages. A click
+    // on its bar deselects it; another selects it and opens its decisions.
+    const bar = page.getByRole("button", { name: "Change 1", exact: true }), decisions = page.locator(".compare-panel");
+    await expect(page.locator(".compare-mark.current .compare-shade")).toHaveCount(2);
+    await bar.click();
+    await expect(page.locator(".compare-mark.current")).toHaveCount(0);
+    await expect(decisions).toHaveCount(0);
+    await bar.click();
+    await expect(page.locator(".compare-mark.current .compare-shade")).toHaveCount(2);
+    await expect(decisions.getByRole("button", { name: "Accept" })).toBeVisible();
+    await expect(decisions.getByRole("button", { name: "Reject" })).toBeVisible();
+    await page.screenshot({ path: ".cache/browser-compare-pages.png" });
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".compare-mark.current")).toHaveCount(0);
+    await expect(decisions).toHaveCount(0);
+    // Reading on selects nothing.
+    await page.locator("#paper").evaluate((root) => root.scrollBy(0, 600));
+    await page.waitForTimeout(300);
+    await expect(page.locator(".compare-spot.current")).toHaveCount(0);
+    // The choice is remembered; narrow windows keep the stacked layout.
+    await page.reload();
+    await expect(page.locator(".compare-row")).toHaveCount(2);
+    await page.setViewportSize({ width: 600, height: 1000 });
+    await expect(page.locator(".compare-row")).toHaveCount(0);
+    await expect(toggle).toHaveCount(0);
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { paperPlan, type PlacedChange } from "../../src/web/paper.ts";
+import { pairPages, paperPlan, scope, type PlacedChange } from "../../src/web/paper.ts";
 import type { Rect, Strip } from "../../src/types.ts";
 
 const strip = ([left, top, right, bottom]: Rect, page = 1): Strip => ({
@@ -75,4 +75,30 @@ it("shows a multi-page change once and preserves source-only change placement", 
       .flatMap((p) => p.context ?? [])
       .some((r) => r[0] <= 400 && r[2] >= 400 && r[1] <= 220 && r[3] >= 220),
   ).toBe(true);
+});
+
+it("pairs old and new pages around changes, with blank pages for the shorter version", () => {
+  // Same length, no changes: page by page.
+  expect(pairPages(3, 3, [])).toEqual([[0, 0], [1, 1], [2, 2]]);
+  // A page inserted before the change on new page 2: the change's pages
+  // share a row, and the old side gets a blank before them.
+  expect(pairPages(3, 4, [[1, 2]])).toEqual([[0, 0], [null, 1], [1, 2], [2, 3]]);
+  // A page removed: the new side gets the blank.
+  expect(pairPages(4, 3, [[2, 1]])).toEqual([[0, 0], [1, null], [2, 1], [3, 2]]);
+  // Extra pages at the end of one version.
+  expect(pairPages(2, 4, [[0, 0]])).toEqual([[0, 0], [1, 1], [null, 2], [null, 3]]);
+  // Several changes on the same pages, and one that would go back.
+  expect(pairPages(3, 3, [[1, 1], [1, 1], [2, 2], [0, 0]])).toEqual([[0, 0], [1, 1], [2, 2]]);
+  // A change whose old lines are on the page just paired, and new lines on
+  // a later page: that new page gets a blank beside it.
+  expect(pairPages(2, 3, [[0, 0], [0, 1]])).toEqual([[0, 0], [null, 1], [1, 2]]);
+});
+
+it("shades exactly a crop's lines, or the whole crop when it has no words", () => {
+  const crop: Strip = { ...strip([0, 100, 600, 160]), text: [
+    { text: "ab", chars: [{ text: "a", rect: [72, 10, 80, 20] }, { text: "b", rect: [80, 10, 88, 20] }] },
+    { text: "c", chars: [{ text: "c", rect: [72, 30, 300, 42] }] },
+  ] };
+  expect(scope(crop)).toEqual([69, 8, 303, 44]);
+  expect(scope(strip([0, 100, 600, 160]))).toEqual([0, 0, 600, 60]);
 });

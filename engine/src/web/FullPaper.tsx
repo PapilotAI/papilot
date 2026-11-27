@@ -24,7 +24,7 @@ import { CompilationErrors } from './CompilationErrors.tsx';
 const besideChunk = (url: string) =>
   import.meta.env.DEV ? url : new URL(url.split("/").pop()!, import.meta.url).href;
 pdfjs.GlobalWorkerOptions.workerSrc = besideChunk(worker);
-const CMapData = cMapData(
+export const CMapData = cMapData(
   import.meta.glob<string>("../../node_modules/pdfjs-dist/cmaps/*.bcmap", {
     eager: true,
     import: "default",

@@ -315,4 +315,7 @@ export const zhCN: Record<string, string> = {
   "This PDF has compilation errors.": "此 PDF 有编译错误。",
   "Rejected; reverted when the agent stops": "已拒绝；智能体停下后撤回",
   "Rejected · reverted when the agent stops": "已拒绝 · 智能体停下后撤回",
+  "Side by side": "并排",
+  "Show before and after side by side": "并排显示修改前后",
+  "Opening both versions…": "正在打开两个版本…",
 };

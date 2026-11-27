@@ -24,7 +24,7 @@ export interface Cut {
 // The page of this PDF that shows a strip of the round's PDF. A round may
 // compile only the changed chapters, so pages are matched by their labels,
 // moving forward through the paper.
-function locator(count: number, labels: string[] | null) {
+export function locator(count: number, labels: string[] | null) {
   let cursor = 0;
   return (strip: Strip) => {
     if (!labels) return strip.page - 1 < count ? strip.page - 1 : -1;
@@ -130,4 +130,42 @@ export function paperPlan({
       return result;
     }),
   };
+}
+
+// Both versions side by side (ComparePages).
+
+// The lines a crop shows, within it: its words' box, a little wider, or the
+// whole crop when it has no words, such as a figure.
+export function scope(strip: Strip): [number, number, number, number] {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const line of strip.text ?? []) for (const { rect } of line.chars) {
+    x0 = Math.min(x0, rect[0]); y0 = Math.min(y0, rect[1]); x1 = Math.max(x1, rect[2]); y1 = Math.max(y1, rect[3]);
+  }
+  if (!(x1 > x0 && y1 > y0)) return [0, 0, strip.width, strip.height];
+  return [Math.max(0, x0 - 3), Math.max(0, y0 - 2), Math.min(strip.width, x1 + 3), Math.min(strip.height, y1 + 2)];
+}
+
+// Old and new pages, paired in order as Draftable's comparison does: a
+// change printed on old page b and new page a puts those two in one row, the
+// pages before it pair up to it, and a blank page (null) fills in for the
+// version with fewer of them. Pages after the last change pair from the
+// start. A change that would go back to earlier pages is not an anchor.
+export type PagePair = [number | null, number | null];
+export function pairPages(before: number, after: number, anchors: [number, number][]): PagePair[] {
+  const rows: PagePair[] = [];
+  let b = 0, a = 0;
+  // Pages up to old page toB and new page toA, paired from the start.
+  const run = (toB: number, toA: number) => {
+    for (let i = 0; i < Math.max(toB - b, toA - a); i++) rows.push([b + i < toB ? b + i : null, a + i < toA ? a + i : null]);
+    b = Math.max(b, toB); a = Math.max(a, toA);
+  };
+  for (const [ob, na] of anchors) {
+    if (ob < b - 1 || na < a - 1 || (ob < b && na < a)) continue;
+    run(Math.max(b, ob), Math.max(a, na));
+    // A side already paired with the previous change gets a blank here.
+    rows.push([ob >= b ? ob : null, na >= a ? na : null]);
+    b = Math.max(b, ob + 1); a = Math.max(a, na + 1);
+  }
+  run(before, after);
+  return rows;
 }
