@@ -1,15 +1,18 @@
-/* Window controls share the existing toolbar: macOS/Linux on the left,
-   Windows on the right, with no second title row. */
+/* Window controls share the existing toolbar with no second title row.
+   macOS keeps them on the left and Windows on the right; Linux follows the
+   desktop's own button layout. Widths follow the number of buttons. */
 .desktop-window-drag{position:fixed;top:0;left:0;width:240px;height:var(--toolbar-height);z-index:20;-webkit-app-region:drag;user-select:none}
 /* The title row above the sidebar carries the traffic lights; its rule lines
    up with the toolbars' bottom rules, so the header below needs none. */
-[data-desktop] .sidebar{position:relative;padding-top:var(--toolbar-height);background-image:linear-gradient(var(--line),var(--line));background-size:100% 1px;background-position:0 calc(var(--toolbar-height) - 1px);background-repeat:no-repeat}
-[data-desktop] .sidebar-header{border-bottom:0}
-[data-desktop] .sidebar-header>.icon-button{position:absolute;top:7px;right:12px;z-index:21;-webkit-app-region:no-drag}
+[data-desktop-controls="left"] .sidebar{position:relative;padding-top:var(--toolbar-height);background-image:linear-gradient(var(--line),var(--line));background-size:100% 1px;background-position:0 calc(var(--toolbar-height) - 1px);background-repeat:no-repeat}
+[data-desktop-controls="left"] .sidebar-header{border-bottom:0}
+[data-desktop-controls="left"] .sidebar-header>.icon-button{position:absolute;top:7px;right:12px;z-index:21;-webkit-app-region:no-drag}
+[data-desktop]{--desktop-controls-width:calc(20px + 32px * var(--desktop-window-buttons))}
+[data-desktop="win32"]{--desktop-controls-width:calc(46px * var(--desktop-window-buttons))}
 [data-desktop="darwin"]{--desktop-leading-space:92px}
-[data-desktop="linux"]{--desktop-leading-space:112px}
-.sidebar-collapsed .desktop-window-drag{width:var(--desktop-leading-space)}
-[data-desktop] .sidebar-collapsed .sidebar-toggle{margin-left:var(--desktop-leading-space,0px)}
+[data-desktop-controls="left"]:not([data-desktop="darwin"]){--desktop-leading-space:var(--desktop-controls-width)}
+[data-desktop-controls="left"] .sidebar-collapsed .desktop-window-drag{width:var(--desktop-leading-space)}
+[data-desktop-controls="left"] .sidebar-collapsed .sidebar-toggle{margin-left:var(--desktop-leading-space,0px)}
 [data-desktop] :is(.pdf-toolbar,.workspace-navigation,.review-placeholder-toolbar,.git-toolbar,.git-details-toolbar,.git-diff-toolbar,.review-host-bar,.panel-heading,.manuscript-side-header){-webkit-app-region:drag}
 /* Over the changes the host bar lets clicks through to the viewer's own bar,
    whose controls it marks with these holes. They take no clicks themselves. */
@@ -23,34 +26,36 @@
 .desktop-window-buttons button:hover{background:var(--bg-muted);color:var(--text)}
 .desktop-window-buttons .desktop-window-close:hover{background:var(--red-soft);color:var(--red)}
 .desktop-window-buttons svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.25}
-/* Only the panel touching the right edge reserves room for Windows controls.
+/* Only the panel touching the right edge reserves room for right-side controls.
    The review host measures its tools, including this space, for its iframe. */
-[data-desktop="win32"] .desktop-window-drag{left:auto;right:0;width:138px}
+[data-desktop-controls="right"] .desktop-window-drag{left:auto;right:0;width:var(--desktop-controls-width)}
 [data-desktop="win32"] .desktop-window-buttons{gap:0;padding:0;background:var(--bg)}
 [data-desktop="win32"] .desktop-window-buttons button{width:46px;height:var(--toolbar-height);border-radius:0}
 [data-desktop="win32"] .desktop-window-close:hover{background:#c42b1c;color:#fff}
-[data-desktop="win32"] .sidebar{padding-top:0;background-image:none}
-[data-desktop="win32"] .sidebar-header{border-bottom:1px solid var(--line)}
-[data-desktop="win32"] .sidebar-header{-webkit-app-region:drag}
-[data-desktop="win32"] .sidebar-header>.icon-button{position:static}
-[data-desktop="win32"] .sidebar-collapsed .sidebar-toggle{margin-left:0}
-[data-desktop="win32"] .main{--desktop-window-space:138px}
-[data-desktop="win32"] .manuscript:not(.panel-collapsed)>.manuscript-pages,
-[data-desktop="win32"] .task-grid.layout-split>.review-panel{--desktop-window-space:0px}
-[data-desktop="win32"] :is(.pdf-toolbar,.workspace-navigation,.review-placeholder-toolbar,.panel-heading,.manuscript-side-header,.git-details-toolbar,.git-diff-toolbar,.review-tools){padding-right:calc(8px + var(--desktop-window-space,0px))}
-[data-desktop="win32"] .review-host-bar.pdf-toolbar{padding-right:0}
-[data-desktop="win32"] .git-workspace .git-panel{--desktop-window-space:0px}
+[data-desktop-controls="right"] .sidebar-header{border-bottom:1px solid var(--line);-webkit-app-region:drag}
+[data-desktop-controls="right"] .main{--desktop-window-space:var(--desktop-controls-width)}
+[data-desktop-controls="right"] .manuscript:not(.panel-collapsed)>.manuscript-pages,
+[data-desktop-controls="right"] .task-grid.layout-split>.review-panel{--desktop-window-space:0px}
+[data-desktop-controls="right"] :is(.pdf-toolbar,.workspace-navigation,.review-placeholder-toolbar,.panel-heading,.manuscript-side-header,.git-details-toolbar,.git-diff-toolbar,.review-tools){padding-right:calc(8px + var(--desktop-window-space,0px))}
+[data-desktop-controls="right"] .review-host-bar.pdf-toolbar{padding-right:0}
+[data-desktop-controls="right"] .git-workspace .git-panel{--desktop-window-space:0px}
 @media(max-width:680px){
-  [data-desktop="win32"] .workspace-navigation>.view-selector>button>span{display:none}
-  [data-desktop="win32"] .git-workspace .git-panel{--desktop-window-space:138px}
-  [data-desktop="win32"] .git-toolbar{padding-right:calc(8px + var(--desktop-window-space,0px))}
-  [data-desktop="win32"] .git-details{--desktop-window-space:0px}
+  [data-desktop-controls="right"] .workspace-navigation>.view-selector>button>span{display:none}
+  [data-desktop-controls="right"] .git-workspace .git-panel{--desktop-window-space:var(--desktop-controls-width)}
+  [data-desktop-controls="right"] .git-toolbar{padding-right:calc(8px + var(--desktop-window-space,0px))}
+  [data-desktop-controls="right"] .git-details{--desktop-window-space:0px}
 }
-@container (max-width:180px){[data-desktop="win32"] .side-tabs>button .tab-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}}
+@container (max-width:180px){[data-desktop-controls="right"] .side-tabs>button .tab-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}}
 @media(max-width:900px){
   [data-desktop] .sidebar{position:fixed}
-  [data-desktop]:not([data-desktop="win32"]) .desktop-window-drag{width:var(--desktop-leading-space)}
-  [data-desktop] .main .sidebar-toggle{margin-left:var(--desktop-leading-space,0px)}
-  [data-desktop="win32"] .manuscript:not(.panel-collapsed)>.manuscript-pages{--desktop-window-space:138px}
-  [data-desktop="win32"] .manuscript-side{--desktop-window-space:0px}
+  [data-desktop-controls="left"] .desktop-window-drag{width:var(--desktop-leading-space)}
+  [data-desktop-controls="left"] .main .sidebar-toggle{margin-left:var(--desktop-leading-space,0px)}
+  [data-desktop-controls="right"] .manuscript:not(.panel-collapsed)>.manuscript-pages{--desktop-window-space:var(--desktop-controls-width)}
+  [data-desktop-controls="right"] .manuscript-side{--desktop-window-space:0px}
+}
+/* The phone-width bar leads with the manuscript shortcut, so the whole bar
+   clears left-side controls rather than only the task list toggle. */
+@media(max-width:680px){
+  [data-desktop-controls="left"] .workspace-navigation{padding-left:calc(4px + var(--desktop-leading-space))}
+  [data-desktop-controls="left"] .workspace-navigation>.sidebar-toggle{margin-left:0}
 }

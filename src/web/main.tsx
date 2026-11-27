@@ -2541,7 +2541,7 @@ function App() {
   const countDescription = totalNotes === undefined ? undefined : tn(totalNotes, '{n} annotation', '{n} annotations');
   const manuscriptShortcut = !sidebarShown && <button data-notes-home="manuscript" type="button" className="manuscript-shortcut"
     aria-label={t('Manuscript')} aria-description={countDescription} onClick={() => void switchWorkspace('')}>
-    <Icon name="pdf" size={16}/>{t('Manuscript')}{manuscriptCount}</button>;
+    <Icon name="pdf" size={16}/><span className="manuscript-shortcut-label">{t('Manuscript')}</span>{manuscriptCount}</button>;
   const taskControls = task && <>{taskStateActions}{manuscriptShortcut}{workspaceViews}</>;
   // Before the first comparison the task shows the manuscript PDF, so a turn
   // that stopped (for example on an agent error) builds one from the toolbar.

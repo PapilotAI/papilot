@@ -25,6 +25,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Changed
 
+- On Linux, the desktop app's window buttons follow your desktop's button layout: the buttons it shows, their order and their side, read from GNOME, Cinnamon, MATE, KDE Plasma or Xfce settings when the app starts. GNOME's default, for example, shows a single close button on the right. Windows keeps its buttons on the right and macOS its traffic lights on the left.
 - Ctrl/⌘ +, − and 0 now always zoom the whole interface (desktop **Interface size**, or the browser's zoom), including when a PDF or review is shown. Zoom the PDF itself with its toolbar, a pinch or Ctrl/⌘ + scroll. ([#345](https://github.com/PapilotAI/papilot/issues/345))
 - Rename **Settings → Check references online** to **Look up references online**. It now also controls PDF downloads. A new **Settings → Zotero** page shows the Zotero library Papilot found on this computer, with its data directory and how many items have a PDF and a citation key, lets you choose another data directory, and holds the **Use PDFs from Zotero** switch; turned off, PDFs from Zotero are no longer used.
 
