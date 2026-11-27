@@ -7,6 +7,9 @@ function theme() {
 theme();
 new MutationObserver(theme).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 let sequence = 0;
+export class HostResponseError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
 const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
 const listeners = new Set<(state: any) => void>();
 let current: any;
@@ -17,7 +20,8 @@ window.addEventListener('message', event => {
   if (message.type === 'state') { current = message; for (const listener of listeners) listener(message); }
   if (typeof message.id !== 'number') return;
   const request = pending.get(message.id); pending.delete(message.id);
-  if (message.error) request?.reject(new Error(message.error)); else request?.resolve(message.value);
+  if (message.error) request?.reject(typeof message.status === 'number' ? new HostResponseError(message.error, message.status) : new Error(message.error));
+  else request?.resolve(message.value);
 });
 export function call<T = any>(type: string, values: Record<string, unknown> = {}): Promise<T> {
   const id = ++sequence;

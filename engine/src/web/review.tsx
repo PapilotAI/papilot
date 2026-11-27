@@ -47,7 +47,7 @@ import {
 import { bindingLabel, readShortcuts, resolveShortcuts, shortcutAction, SHORTCUT_EVENT, SHORTCUT_STORAGE } from "./shortcuts.ts";
 import { sendsMessage } from "./send-key.ts";
 import { CURRENT_CHANGE_EVENT, DECIDE_EVENT, OPEN_SOURCE_EVENT, RETRY_COMPARISON_EVENT, REVIEW_CHANGES_EVENT, SELECT_SOURCE_EVENT, SOURCE_SAVED_EVENT, UNDO_EVENT, type CurrentChange, type DecideChange, type OpenSource, type ReviewChanges, type SelectSource, type SourceSaved } from "./review-events.ts";
-import { DecisionQueue, Unreachable, withQueued, type QueuedDecision } from "./decision-queue.ts";
+import { DecisionQueue, Unreachable, reviewResponseError, withQueued, type QueuedDecision } from "./decision-queue.ts";
 import {
   STATE,
   buildStops,
@@ -178,6 +178,7 @@ export function ReviewApp({
   resource,
   live = !transport,
   onNavigate,
+  onOpenSource,
 }: {
   task: string;
   pinned: number | null;
@@ -189,6 +190,8 @@ export function ReviewApp({
   live?: boolean;
   /** Hosts can select a round without navigating the page; null resumes the current review. */
   onNavigate?: (round: number | null) => void;
+  /** A native editor can open the current file using line ranges alone. */
+  onOpenSource?: (source: OpenSource) => void;
 }) {
   const [state, setState] = useState<PageState | null>(null),
     [publishedDetail, setDetail] = useState<RoundDetail | null>(null),
@@ -550,14 +553,7 @@ export function ReviewApp({
       if (response.ok) throw error;
       return {};
     });
-    if (!response.ok) {
-      const message = value.error || `HTTP ${response.status}`;
-      // A gateway or a restarting host did not answer for the server. The
-      // same decision sent again by a page that came back, while the server
-      // still applies the first send, is refused for now: it is sent again
-      // too, and then confirmed as applied.
-      throw [502, 503, 504].includes(response.status) || (response.status === 400 && /review action is already in progress/i.test(message)) ? new Unreachable(message) : new Error(message);
-    }
+    if (!response.ok) throw reviewResponseError(response.status, value.error || `HTTP ${response.status}`);
     return value as T;
   }
   function select(index: number, scroll = true) {
@@ -661,24 +657,24 @@ export function ReviewApp({
     window.addEventListener(DECIDE_EVENT, chosen);
     return () => window.removeEventListener(DECIDE_EVENT, chosen);
   });
+  const hasCurrentText = (unit: Unit) => unit.kind === "text" && unit.status !== "deleted";
   // A change's source, offered to the workspace's editor: true when it opened there.
   function offerSource(chosen: Unit[]) {
-    // The editor shows the task's files as they are now, with the latest
-    // round's changes. An earlier round, a closed task or a previewed option
-    // keeps the inline LaTeX, and so do changes without character-level
-    // operations, such as a new file or a bibliography entry, which have no
-    // card in the editor.
     if (!latest || !detail) return false;
-    const shown = chosen.filter((item) => item.kind === "text" && item.status !== "deleted");
-    if (!shown.length || shown.some((item) => !item.text_ops?.length)) return false;
-    // Nor can the editor place cards in a file with CRLF line endings, whose
-    // offsets count the carriage returns; its context shows them.
-    if (shown.some((item) => /\r/.test(item.old_text + item.new_text + (item.old_context?.text ?? "")))) return false;
+    const shown = chosen.filter(hasCurrentText);
+    if (!shown.length) return false;
+    // The workspace's LaTeX editor requires character-level operations to
+    // place its cards, and its offsets do not count carriage returns.
+    if (!onOpenSource && shown.some((item) => !item.text_ops?.length || /\r/.test(item.old_text + item.new_text + (item.old_context?.text ?? "")))) return false;
     const unit = shown[0];
     const marks = chosen.filter((item) => item.file === unit.file && item.kind === "text").flatMap(unitLines);
-    if (!marks.length) return false;
+    if (!marks.length) {
+      if (!onOpenSource) return false;
+      marks.push([Math.max(0, unit.new_start - 1), unit.new_end]);
+    }
     const request: OpenSource = { round: detail.round, change: unit.id, file: unit.file, marks,
       lines: [Math.min(...marks.map((range) => range[0])), Math.max(...marks.map((range) => Math.max(range[1], range[0] + 1)))] };
+    if (onOpenSource) { onOpenSource(request); return true; }
     // The editor shows the changes of the round it opens in.
     announceChanges();
     return !window.dispatchEvent(new CustomEvent(OPEN_SOURCE_EVENT, { detail: request, cancelable: true }));
@@ -2266,7 +2262,7 @@ export function ReviewApp({
                 key={unit.id}
               >
                 <SourceEditor key={`${detail!.round}:${unit.id}`} task={task} round={detail!.round} change={unit.id} api={api}
-                  editable={Boolean(!previewing && state?.sourceEditing && !changes && !pinned && unit.kind !== "binary")}
+                  editable={Boolean(!previewing && state?.sourceEditing && !changes && !pinned && unit.kind !== "binary" && (!onOpenSource || hasCurrentText(unit)))}
                   building={Boolean(state?.job && ["queued", "running"].includes(state.job.status))}
                   locked={!latest ? t("A newer round is available. Reload the page.") : decisions[unit.id] === "rejected" ? t("This change was rejected. Undo that decision before editing it.") : actionLock("source") || (waiting.has(unit.id) && detail!.rendering !== "failed" ? t("PDF comparison in progress") : null)}
                   onSaving={saving => { snapshot.current.busy = saving; setBusy(saving); }}

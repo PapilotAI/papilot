@@ -244,9 +244,14 @@ export async function activate(context: vscode.ExtensionContext) {
           if (view.kind === 'review' && message.body !== undefined && /\/(?:decide|undo)$/.test(routePath(message.route))) await requireSaved(reviewRoot(view));
           const scopedRoute = view.kind === 'review' && view.document ? message.route + (message.route.includes('?') ? '&' : '?') + 'document=' + encode(view.document) : message.route;
           const response = await backend.request(scopedRoute, message.body, message.file);
-          const data = JSON.parse(Buffer.from(response.body, 'base64').toString());
-          if (response.status >= 400) throw new Error(data.error || t('Papilot request failed ({status}).', { status: response.status }));
-          value = await mapAssets(webview, data, view);
+          const body = Buffer.from(response.body, 'base64').toString();
+          if (response.status >= 400) {
+            let error: unknown;
+            try { error = JSON.parse(body)?.error; } catch { /* The status still describes the failure. */ }
+            await webview.postMessage({ id: message.id, status: response.status, error: typeof error === 'string' && error ? error : t('Papilot request failed ({status}).', { status: response.status }) });
+            return;
+          }
+          value = await mapAssets(webview, JSON.parse(body), view);
         } else if (message.type === 'source' && view.kind === 'paper') {
           const located = await backend.api(`/api/projects/${view.paper.project.id}/manuscript/source/locate`, message.target);
           if (!located.source) throw new Error(t('No LaTeX source was found at this position.'));

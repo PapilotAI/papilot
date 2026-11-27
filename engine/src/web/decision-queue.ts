@@ -29,6 +29,12 @@ export function withQueued(
 }
 /** A request that may not have reached the server, which can be sent again. */
 export class Unreachable extends Error {}
+export function reviewResponseError(status: number, message: string): Error {
+  // A gateway or a restarting host did not answer for the server. A replay
+  // made while the earlier request is still applying must also wait and retry.
+  return [502, 503, 504].includes(status) || (status === 400 && /review action is already in progress/i.test(message))
+    ? new Unreachable(message) : new Error(message);
+}
 const wait = (attempt: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
 

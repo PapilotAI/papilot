@@ -21,16 +21,22 @@ const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1000, h
 const errors = [], requests = [];
 page.on('pageerror', error => errors.push(error.message));
 let latest = 2;
+let sourceUnit = {}, retryDecisions = false;
+const decisions = {};
 const strip = { src: 'strip.svg', clean: 'strip.svg', width: 500, height: 40, page: 1, label: '1', top: 100 };
+const reviewUnit = (round, id = 'u1') => ({
+  id, file: id === 'u1' ? 'main.tex' : 'appendix.tex', status: 'modified', kind: 'text', whole_file: false, truncated: false,
+  old_start: 0, old_end: 1, new_start: 0, new_end: 1, old_text: 'Original sentence', new_text: 'Revised sentence ' + round,
+  ops: [['replace', 0, 1, 0, 1]], text_ops: [['replace', 0, 17, 0, 18]], ...sourceUnit,
+});
 const detail = round => ({
   task: 'task', round, before: 'base', after: 'revision-' + round, files: '/', warnings: [],
-  units: [{ id: 'u1', file: 'main.tex', status: 'modified', kind: 'text', whole_file: false, truncated: false,
-    old_start: 0, old_end: 1, new_start: 0, new_end: 1, old_text: 'Original sentence', new_text: 'Revised sentence ' + round,
-    ops: [['replace', 0, 1, 0, 1]], text_ops: [['replace', 0, 17, 0, 18]] }],
+  units: retryDecisions ? [reviewUnit(round), reviewUnit(round, 'u2')] : [reviewUnit(round)],
   sections: [{ node: 'intro', number: '1', title: 'Version ' + round, blocks: [{ kind: 'change', units: ['u1'], identical: false, before: [strip], after: [strip] }] }], loose: [],
 });
 const state = round => ({ task: 'task', title: 'Review the paper', state: 'reviewing', latest, round, revision: 'revision-' + round,
-  closed: false, decisions: { u1: round < 3 ? 'accepted' : 'pending' }, comments: {}, csrf: 'test', undo: null, job: null,
+  closed: false, sourceEditing: true, decisions: { u1: round < 3 ? 'accepted' : 'pending', ...(retryDecisions ? { u2: 'pending' } : {}), ...decisions },
+  comments: {}, csrf: 'test', undo: null, job: null,
   history: Array.from({ length: latest }, (_, i) => ({ number: i + 1, created: 1700000000 + i * 1000 })) });
 await page.exposeFunction('hostRequest', message => {
   requests.push(message);
@@ -39,6 +45,12 @@ await page.exposeFunction('hostRequest', message => {
   if (message.type !== 'api') throw new Error('Unexpected bridge request: ' + message.type);
   const url = new URL(message.route, 'http://test');
   if (url.pathname.endsWith('/state')) return { value: state(Number(url.searchParams.get('round')) || latest) };
+  if (retryDecisions && url.pathname.endsWith('/decide')) {
+    const attempts = requests.filter(request => request.route === message.route);
+    if (attempts.length === 1) return { status: 400, error: 'A review action is already in progress. Wait for it to finish.' };
+    for (const change of message.body.changes) decisions[change] = message.body.action === 'accept' ? 'accepted' : 'rejected';
+    return { value: state(message.body.round) };
+  }
   const match = url.pathname.match(/\/rounds\/(\d+)$/);
   if (match) return { value: detail(Number(match[1])) };
   throw new Error('Unexpected bridge route: ' + message.route);
@@ -102,8 +114,58 @@ try {
   await page.getByRole('button', { name: 'Verlauf', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Überprüfungsverlauf' })).toHaveValue('2');
   await expect(page.getByRole('button', { name: 'Zurück zur Überprüfung', exact: true })).toBeVisible();
+
+  latest = 3;
+  retryDecisions = true;
+  requests.length = 0;
+  const key = 'papilot:review:queue:/:task';
+  const queued = [
+    { id: 'first-saved-decision', kind: 'accept', changes: ['u1'] },
+    { id: 'second-saved-decision', kind: 'reject', changes: ['u2'] },
+  ].map(entry => ({ ...entry, round: latest, body: '', stop: 0, done: '' }));
+  await page.evaluate(({ key, queued }) => localStorage.setItem(key, JSON.stringify(queued)), { key, queued });
+  await page.goto(url);
+  await expect.poll(() => requests.filter(request => request.route?.endsWith('/decide')).map(request => request.body.id)).toEqual([
+    queued[0].id, queued[0].id, queued[1].id,
+  ]);
+  await expect.poll(() => page.evaluate(key => localStorage.getItem(key), key)).toBeNull();
+  retryDecisions = false;
+  delete decisions.u1;
+  delete decisions.u2;
+
+  const latex = page.getByRole('button', { name: 'LaTeX', exact: true });
+  for (const [unit, lines] of [
+    [{ file: 'new.tex', status: 'added', whole_file: true, new_start: 1, new_end: 3, ops: [], text_ops: undefined }, [0, 3]],
+    [{ file: 'windows.tex', old_text: 'Original\r\n', new_text: 'Revised\r\n', ops: [['replace', 0, 1, 6, 7]] }, [6, 7]],
+  ]) {
+    sourceUnit = unit;
+    requests.length = 0;
+    await page.goto(url);
+    await latex.click();
+    await expect.poll(() => requests.find(request => request.type === 'source')?.lines).toEqual(lines);
+    assert.equal(requests.find(request => request.type === 'source').file, unit.file);
+    assert.ok(!requests.some(request => /\/source\?/.test(request.route || '')));
+  }
+
+  // Historical and deleted sources stay available as excerpts.
+  sourceUnit = { file: 'deleted.tex', status: 'deleted', new_text: '', text_ops: undefined };
+  requests.length = 0;
+  await page.goto(url);
+  await latex.click();
+  await expect(page.locator('.source-unit')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
+  assert.ok(!requests.some(request => request.type === 'source'));
+  sourceUnit = {};
+  latest = 2;
+  await page.goto(url);
+  await page.getByRole('button', { name: 'History', exact: true }).click();
+  await history.selectOption('1');
+  await expect(page.getByRole('heading', { name: '1Version 1', exact: true })).toBeVisible();
+  await latex.click();
+  await expect(page.locator('.source-unit')).toBeVisible();
+  assert.ok(!requests.some(request => request.type === 'source'));
   assert.deepEqual(errors, []);
-  console.log('Review history, native source bridge and host locale passed. Screenshots: ' + artifacts);
+  console.log('Review history, decision recovery, native source bridge and host locale passed. Screenshots: ' + artifacts);
 } catch (error) {
   await page.screenshot({ path: path.join(artifacts, 'failure.png') });
   console.error('Review failure screenshot: ' + artifacts);

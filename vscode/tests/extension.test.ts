@@ -28,6 +28,7 @@ test('review actions use the current task and protect aliased unsaved buffers', 
   let resolveChat: () => Promise<void> = async () => assert.fail('Conversation was not registered');
   let publish = async () => {};
   const publishRoute = '/api/tasks/task/publish';
+  let requestReply = { status: 200, text: '{}' };
   const paperChoices: string[][] = [];
   const textDocuments: any[] = [];
   let manuscriptReads = 0, staleTaskPdf = false;
@@ -50,7 +51,10 @@ test('review actions use the current task and protect aliased unsaved buffers', 
       }
       return {};
     },
-    async request(route: string) { requests.push(route); return { status: 200, headers: {}, body: Buffer.from('{}').toString('base64') }; },
+    async request(route: string) {
+      requests.push(route);
+      return { status: requestReply.status, headers: {}, body: Buffer.from(requestReply.text).toString('base64') };
+    },
   };
   const git = {
     state: 'initialized', git: { path: 'git' }, repositories: [],
@@ -155,6 +159,16 @@ test('review actions use the current task and protect aliased unsaved buffers', 
     textDocuments[0].uri = uri(path.join(manuscript, 'main.tex'));
     assert.equal((await send(decide)).error, undefined, 'task review should not guard the manuscript instead');
     assert.deepEqual(requests, [decide.route]);
+    const busy = 'A review action is already in progress. Wait for it to finish.';
+    requestReply = { status: 400, text: JSON.stringify({ error: busy }) };
+    const busyResponse = await send(decide);
+    assert.equal(busyResponse.status, 400);
+    assert.equal(busyResponse.error, busy);
+    requestReply = { status: 503, text: 'Service unavailable' };
+    const unavailable = await send(decide);
+    assert.equal(unavailable.status, 503);
+    assert.match(unavailable.error, /503/);
+    requestReply = { status: 200, text: '{}' };
 
     const manuscriptAlias = path.join(directory, 'paper-alias');
     await fs.symlink(manuscript, manuscriptAlias, 'dir');
