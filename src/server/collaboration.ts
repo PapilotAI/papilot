@@ -52,7 +52,7 @@ const ROLE_WORK: Record<CollaborationRole, string> = {
 };
 export function workerName(worker: WorkflowWorker) {
   const model = worker.model || (worker.agent === 'codex' ? "the task's model" : 'its default model');
-  const attrs = [worker.effort ? `${worker.effort} reasoning effort` : null, worker.serviceTier && worker.serviceTier !== 'default' ? 'fast mode' : null].filter(Boolean);
+  const attrs = [worker.effort ? `${worker.effort} reasoning effort` : null, worker.serviceTier && worker.serviceTier !== 'default' ? (worker.serviceTier === 'ultrafast' ? 'ultrafast mode' : 'fast mode') : null].filter(Boolean);
   return `${AGENT_NAMES[worker.agent]} (${model}${attrs.length ? `, ${attrs.join(', ')}` : ''})`;
 }
 export function workflowInstructions(routes: CollaborationRoutes) {
@@ -245,20 +245,30 @@ function approvalTargetPaths(message: any): string[] {
   return [];
 }
 
-function pathInsideRoot(rootReal: string, rawPath: string): string | null {
+function pathInsideRoot(rootReal: string, rawPath: string, rawRoot?: string): string | null {
   if (!rawPath || rawPath.includes('\0')) return null;
-  const candidate = path.resolve(rootReal, rawPath);
+  // Reject traversal segments before lexical normalization so `symlink/../outside` cannot bypass lstat checks.
+  if (rawPath.split(/[\\/]/).some(part => part === '..')) return null;
+  let normalizedInput = rawPath;
+  if (rawRoot && path.isAbsolute(rawPath)) {
+    const cleanRoot = path.resolve(rawRoot);
+    const cleanInput = path.resolve(rawPath);
+    if (cleanInput.startsWith(cleanRoot + path.sep)) {
+      normalizedInput = cleanInput.slice(cleanRoot.length + 1);
+    }
+  }
+  const candidate = path.resolve(rootReal, normalizedInput);
   const relRaw = path.relative(rootReal, candidate);
   if (!relRaw || relRaw === '..' || relRaw.startsWith('..' + path.sep) || path.isAbsolute(relRaw)) return null;
   const parts = relRaw.split(path.sep);
   if (parts.some(part => !part || part === '.' || part === '..' || part.toLowerCase() === '.git')) return null;
-  // Walk existing path prefix to block symlink escapes while allowing new files in fullWorkspace.
+  // Walk existing path prefix to block symlink and hardlink escapes while allowing new files in fullWorkspace.
   let cur = rootReal;
   for (const part of parts) {
     cur = path.join(cur, part);
     try {
       const stat = fs.lstatSync(cur);
-      if (stat.isSymbolicLink()) return null;
+      if (stat.isSymbolicLink() || (stat.isFile() && stat.nlink > 1)) return null;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') break;
       return null;
@@ -276,10 +286,11 @@ function allowScopedApproval(message: any, edit?: WorkflowEdit, fullWorkspace = 
   if (!targets.length) return false;
   let rootReal: string;
   try { rootReal = realPath(edit.cwd); } catch { return false; }
+  const allowed = new Set(edit.files.map(file => file.replaceAll('\\', '/')));
   for (const raw of targets) {
-    const rel = pathInsideRoot(rootReal, raw);
+    const rel = pathInsideRoot(rootReal, raw, edit.cwd);
     if (!rel) return false;
-    if (!fullWorkspace && !edit.files.includes(rel)) return false;
+    if (!fullWorkspace && !allowed.has(rel)) return false;
   }
   return true;
 }
@@ -310,8 +321,12 @@ export async function runWorkflowHelper(
     let rejectStopped!: (error: Error) => void;
     const stopped = new Promise<never>((_, reject) => { rejectStopped = reject; });
     const activeRuntime = runtime;
-    const check = () => { if (cancelled || signal.aborted) { activeRuntime.close(); throw new Error('The workflow helper was stopped.'); } };
-    stop = () => { cancelled = true; activeRuntime.close(); rejectStopped(new Error('The workflow helper was stopped.')); };
+    const safeClose = (rt: AgentRuntime | null) => {
+      if (!rt) return Promise.resolve();
+      return Promise.resolve().then(() => rt.close()).catch(() => {});
+    };
+    const check = () => { if (cancelled || signal.aborted) { void safeClose(activeRuntime); throw new Error('The workflow helper was stopped.'); } };
+    stop = () => { cancelled = true; void safeClose(activeRuntime); rejectStopped(new Error('The workflow helper was stopped.')); };
     signal.addEventListener('abort', stop, { once: true });
     const output = await Promise.race([stopped, (async () => {
       if (activeRuntime.detect && !await activeRuntime.detect()) throw new Error(`Install and sign in to ${AGENT_NAMES[worker.agent]} on the Papilot host, then retry.`);
@@ -400,17 +415,18 @@ export async function runWorkflowHelper(
   } finally {
     if (stop) signal.removeEventListener('abort', stop);
     if (runtime) {
+      const active = runtime;
       const cleanup = async () => {
-        if (threadId && !cancelled) await runtime!.closeThread?.(threadId).catch(() => {});
-        if (tempDir && !cancelled) await runtime!.closeWorktree?.(tempDir).catch(() => {});
-        const closable = runtime as AgentRuntime & { shutdown?: () => Promise<void> };
+        if (threadId && !cancelled) await active.closeThread?.(threadId).catch(() => {});
+        if (tempDir && !cancelled) await active.closeWorktree?.(tempDir).catch(() => {});
+        const closable = active as AgentRuntime & { shutdown?: () => Promise<void> };
         if (closable.shutdown) await closable.shutdown().catch(() => {});
-        else runtime!.close();
+        else await Promise.resolve().then(() => active.close()).catch(() => {});
       };
       let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
         cleanup(),
-        new Promise<void>(resolve => { timer = setTimeout(() => { runtime?.close(); resolve(); }, 3000); timer.unref(); }),
+        new Promise<void>(resolve => { timer = setTimeout(() => { void Promise.resolve().then(() => active.close()).catch(() => {}); resolve(); }, 3000); timer.unref(); }),
       ]).finally(() => clearTimeout(timer));
     }
     if (tempDir) await fs.promises.rm(tempDir, { recursive: true, force: true, maxRetries: 5 }).catch(() => {});

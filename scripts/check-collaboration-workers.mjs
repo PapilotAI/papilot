@@ -122,8 +122,24 @@ try {
   }
 
   // Collaboration v2 dispatch card: shows Router, per-annotation lane & assigned agent(s),
-  // live race vs judge progress, winner badge, and collapsible raw tool details.
+  // live race vs judge progress, winner badge, multi-turn isolation, and collapsible raw tool details.
   const dispatchItems = [
+    { id: 'u0', taskId: task.id, type: 'user', text: 'Earlier turn', createdAt: at - 10 },
+    {
+      id: 'collab-task:turn1:route', taskId: task.id, type: 'tool', text: 'workflow_route', status: 'completed', createdAt: at - 9,
+      detail: 'Antigravity · Gemini 4 Flash\n#1 (main.tex): Simple edits → Gemini 4 Flash',
+      meta: {
+        dispatch: {
+          strategy: 'balanced',
+          router: { agent: 'antigravity', model: 'Gemini 4 Flash' },
+          entries: [
+            { clusterId: 't1c1', notes: [1], file: 'main.tex', laneId: 'quick', laneName: 'Simple edits', mode: 'assign', itemId: 'collab-task:turn1:assign:t1c1', workers: [{ itemId: 'collab-task:turn1:assign:t1c1', agent: 'antigravity', model: 'Gemini 4 Flash' }] },
+          ],
+        },
+      },
+    },
+    { id: 'collab-task:turn1:assign:t1c1', taskId: task.id, type: 'tool', text: 'workflow_delegate · quick', detail: 'Antigravity · Gemini 4 Flash\nNotes: 1\nDone.', status: 'completed', createdAt: at - 8 },
+    { id: 'a0', taskId: task.id, type: 'assistant', text: 'Finished turn 1.', createdAt: at - 7 },
     { id: 'u1', taskId: task.id, type: 'user', text: 'Address 4 PDF notes', createdAt: at },
     {
       id: 'collab-task:turn2:route', taskId: task.id, type: 'tool', text: 'workflow_route', status: 'completed', createdAt: at + 1,
@@ -172,7 +188,11 @@ try {
     await page.goto(`http://127.0.0.1:${server.server.address().port}`);
     const zh = language === 'zh-CN';
     await page.getByRole('button', { name: zh ? '对话' : 'Chat', exact: true }).click();
-    const card = page.locator('.collab-dispatch-card');
+    const cards = page.locator('.collab-dispatch-card');
+    await expect(cards).toHaveCount(2);
+    // Turn 1's finished card must remain Done even while Turn 2 is running.
+    await expect(cards.nth(0).locator('.collab-dispatch-status')).toContainText(zh ? '完成' : 'Done');
+    const card = cards.nth(1);
     await expect(card).toBeVisible();
     await expect(card.locator('.collab-dispatch-row')).toHaveCount(4);
     await expect(card.locator('.collab-dispatch-status')).toContainText(zh ? '1 个运行中' : '1 running');

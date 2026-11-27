@@ -190,7 +190,7 @@ export class Workspace extends EventEmitter {
   }
   get collaborationRoutes(): CollaborationRoutes { return this.collaborationConfig.routes; }
   collaborationResolved() {
-    return resolveCollaborationConfig(this.collaborationConfig, this.runtimes, this.readOnlyAgentMap());
+    return resolveCollaborationConfig(this.collaborationConfig, this.runtimeStatus(), this.readOnlyAgentMap());
   }
   collaborationSettings(): CollaborationSettings {
     return { enabled: this.collaborationEnabled, ...this.collaborationConfig, resolved: this.collaborationResolved(), readOnlyAgents: this.readOnlyAgentMap() };
@@ -213,7 +213,7 @@ export class Workspace extends EventEmitter {
     if (!rt) return;
     rt.hidden = !this.collaborationEnabled;
     if (!(this.agents.collaboration instanceof CollaborationRuntime)) return;
-    const { installed, ready } = collaborationReady(this.runtimes);
+    const { installed, ready } = collaborationReady(this.runtimeStatus());
     rt.installed = installed;
     rt.connected = installed && this.agents.collaboration.ready;
     rt.authenticated = ready;
@@ -312,7 +312,7 @@ export class Workspace extends EventEmitter {
   }
   private collaborationHost(): CollaborationHost {
     return {
-      availability: () => collaborationReady(this.runtimes),
+      availability: () => collaborationReady(this.runtimeStatus()),
       resolved: () => this.collaborationResolved(),
       context: (threadId, clientId) => {
         const task = this.store.taskByThread(threadId);
@@ -337,7 +337,7 @@ export class Workspace extends EventEmitter {
           history: prior,
           memory: this.memoryPrompt(task),
           resolved: this.collaborationResolved(),
-          runtimes: this.runtimes,
+          runtimes: this.runtimeStatus(),
           readOnlyAgents: this.readOnlyAgentMap(),
         };
       },
@@ -641,7 +641,7 @@ export class Workspace extends EventEmitter {
   /** Reads one agent's account and models again, after its credentials change. */
   async refreshAgent(id: AgentId) {
     await this.connectAgent(id);
-    if (id !== 'collaboration') this.syncCollaborationRuntime();
+    this.syncCollaborationRuntime();
     this.emit('change');
   }
   private async connectAgent(id: AgentId, wake = false) {
@@ -703,6 +703,7 @@ export class Workspace extends EventEmitter {
   // it signed out offers Refresh, and holds queued tasks until it is back.
   private signedOut(id: AgentId) {
     Object.assign(this.runtimes[id], { connected: true, authenticated: false, account: null, error: 'Codex sign-in expired. Select Refresh to load the current sign-in on the Papilot host. If it is still signed out, run papilot codex login there first.' });
+    this.syncCollaborationRuntime();
     this.emit('change');
   }
   private async projectRoot(input: string) {

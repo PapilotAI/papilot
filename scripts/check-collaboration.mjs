@@ -17,7 +17,7 @@ const errors = [];
 try {
   for (const [width, dark, language] of [[1360, false, 'en'], [390, true, 'en'], [390, false, 'zh-CN']]) {
     const context = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: dark ? 'dark' : 'light', hasTouch: width < 600 });
-    const runtime = { connected: true, authenticated: true, installed: true, account: 'Fixture', error: null, models: [{ id: 'gpt-test', name: 'Test model', isDefault: true, efforts: ['medium', 'high'], defaultEffort: 'high', serviceTiers: ['fast'] }] };
+    const runtime = { connected: true, authenticated: true, installed: true, account: 'Fixture', error: null, models: [{ id: 'gpt-test', name: 'Test model', isDefault: true, efforts: ['medium', 'high'], defaultEffort: 'high', serviceTiers: ['fast', 'ultrafast'] }] };
     const gemini = { ...runtime, models: [{ id: 'gemini-test', name: 'Gemini Test', isDefault: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' }] };
     const opencode = { ...runtime, models: [{ id: 'provider/flash-test', name: 'Flash Test', isDefault: false, efforts: ['low', 'high', 'max'], defaultEffort: null }] };
     const collabRuntime = { connected: true, authenticated: true, installed: true, account: 'Papilot Collaboration Mode', error: null, hidden: true, models: [{ id: 'balanced', name: 'Balanced · Auto route & race', isDefault: true, efforts: [], defaultEffort: null }, { id: 'fast', name: 'Fast · Route only', isDefault: false, efforts: [], defaultEffort: null }, { id: 'thorough', name: 'Thorough · Race & verify', isDefault: false, efforts: [], defaultEffort: null }] };
@@ -109,7 +109,12 @@ try {
     const inspector = disclosure.locator('.collab-inspector');
     await expect(inspector).toBeVisible();
     await expect(inspector).toHaveAttribute('data-inspecting', 'polish:1');
-    await expect(inspector.locator('.collaboration-fast [role="switch"]')).toBeVisible();
+    await expect(inspector.locator('.collaboration-speed [type="radio"]')).toHaveCount(3);
+    // Pressing Escape closes ONLY the inspector, keeping Settings dialog open.
+    await inspector.locator('.collaboration-speed [type="radio"]').first().focus();
+    await page.keyboard.press('Escape');
+    await expect(inspector).toHaveCount(0);
+    await expect(disclosure).toBeVisible();
 
     // Edit polish:0 model & effort, verifying serialized saves so an earlier reply cannot overwrite a later one.
     await disclosure.locator('[data-lane-model="polish:0"]').click();
@@ -135,11 +140,13 @@ try {
     await inspector.getByRole('slider').focus(); await page.keyboard.press('End');
     await expect.poll(() => config.router).toEqual({ agent: 'opencode', model: 'provider/flash-test', effort: 'max' });
 
-    // Add a custom lane, pick its icon via IconPicker, rename it, set its Router rule, and save.
+    // Add a custom lane, pick its icon via keyboard arrow in IconPicker, rename it, set its Router rule, and save.
     await disclosure.locator('.collab-add-lane-btn').click();
     await expect(disclosure.locator('.collab-lane')).toHaveCount(5);
     await expect(inspector).toHaveAttribute('data-inspecting', 'lane:custom-1');
     await inspector.locator('.skill-icon-trigger').click();
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('.skill-icon-popover')).toBeVisible();
     await page.locator('.skill-icon-popover .skill-icon-grid button[role="radio"]').nth(15).click();
     await expect.poll(() => Boolean(config.lanes.find(l => l.id === 'custom-1')?.icon)).toBe(true);
     await inspector.locator('input[type="text"]').fill('TikZ diagrams');

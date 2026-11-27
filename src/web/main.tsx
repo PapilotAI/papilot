@@ -1824,7 +1824,7 @@ function App() {
     const serviceTier = effectiveServiceTier(model, choice.serviceTier);
     return serviceTier === choice.serviceTier ? choice : { ...choice, serviceTier };
   }
-  const fallbackGitAgent = offered.find(id => id !== 'collaboration') || 'codex';
+  const fallbackGitAgent = taskAgents.find(id => id !== 'collaboration') || 'codex';
   const conversationHelper = commitContext
     ? commitContext.agent === 'collaboration'
       ? { agent: fallbackGitAgent, model: '', effort: '' }

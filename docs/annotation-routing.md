@@ -12,7 +12,7 @@ Select **Collaboration mode** in the task model picker and choose a strategy:
 | --- | --- |
 | **Balanced · Auto route & race** *(default)* | Fast router classifies each annotation cluster into its matching task lane; lanes with 1 model run directly, lanes with 2+ models race with blind rigorous judging, and pure questions go to read-only answers. |
 | **Fast · Route only** | Fast router assigns each annotation cluster to the lead model of its matching lane without racing. |
-| **Thorough · Race & verify** | Races every editing cluster across its lane's models (falling back to the cross-family race pool when a lane has 1 model) with blind rigorous judging and fidelity checks. |
+| **Thorough · Race & verify** | Races every editing cluster (except single-model **Simple edits**) across its lane's models—pairing the lane's model with the cross-family race pool when a lane has 1 model—with blind rigorous judging and fidelity checks. |
 
 Tasks with no localized PDF annotations (such as whole-paper restructuring or follow-up build fixes) run directly on the rigorous worker in the task worktree.
 
@@ -40,7 +40,7 @@ By default, every slot is set to **Auto**, and Papilot builds a complementary cr
 
 When Collaboration mode processes annotations, the conversation timeline displays a live **Routing & dispatch** card showing:
 
-- The active **Router** and overall progress (`Routing…`, `N running`, `Done`, or `N failed`).
+- The active **Router** and overall progress (`Routing…`, `N running`, `Done`, `Stopped`, or `N failed`).
 - One row per annotation cluster (`#1`, `#2`, …) with its target file, task lane badge (including custom lane icons), and the exact assigned agent(s) and models with live status indicators.
 - For raced clusters, competing models (`vs`), the blind **Judge**, and a `★` winner highlight once judged.
 - A collapsible **Details & steps** drawer underneath with raw tool output, worker sub-steps, diffs, and per-worker **Stop worker** controls.

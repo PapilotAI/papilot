@@ -158,7 +158,7 @@ export class CollaborationRuntime extends Adapter {
   }
   protected account() {
     const { ready } = this.host.availability();
-    return { account: ready ? { type: 'Papilot Collaboration Mode' } : null, requiresOpenaiAuth: false };
+    return { account: ready ? { type: 'Papilot Collaboration Mode' } : null, requiresOpenaiAuth: !ready };
   }
   protected models() { return { data: STRATEGY_MODELS }; }
 
@@ -201,7 +201,11 @@ export class CollaborationRuntime extends Adapter {
     // Ephemeral / read-only fallback when invoked outside a stored task turn.
     if (!ctx || thread.ephemeral || thread.readOnly) {
       const resolved = this.host.resolved();
-      const worker = resolved.router || resolved.routes.rigorous || resolved.routes.quick || resolved.routes.polish;
+      const candidates = [resolved.router, resolved.judge, resolved.routes.rigorous, resolved.routes.quick, resolved.routes.polish]
+        .filter((r): r is CollaborationRoute => Boolean(r));
+      const worker = ctx
+        ? candidates.find(r => ctx.readOnlyAgents[r.agent] !== false)
+        : resolved.router || resolved.judge || candidates[0];
       if (!worker) throw new Error('Connect at least one agent to use Collaboration mode.');
       return await this.invoke(worker, text, signal, undefined, undefined, undefined, { instructions: thread.instructions || undefined });
     }
@@ -256,7 +260,12 @@ export class CollaborationRuntime extends Adapter {
     const laneRacers = (laneId: string) => {
       const lane = laneOf(laneId);
       if (lane && lane.models.length >= 2) return lane.models;
-      return resolved.racers.length >= 2 ? resolved.racers : [lane?.models[0] || primaryWorker];
+      const lead = lane?.models[0];
+      if (lead && resolved.racers.length >= 2) {
+        const extras = resolved.racers.filter(r => routeKey(r) !== routeKey(lead));
+        if (extras.length) return [lead, ...extras].slice(0, resolved.racers.length);
+      }
+      return resolved.racers.length >= 2 ? resolved.racers : [lead || primaryWorker];
     };
     const answerWorkerOf = () => {
       const answerCandidates = [resolved.routes.rigorous, resolved.judge, routerWorker, resolved.routes.polish, resolved.routes.quick]
@@ -416,12 +425,13 @@ export class CollaborationRuntime extends Adapter {
         });
         return { candidate, changes };
       } catch (error) {
+        const stopped = own.signal.aborted || signal.aborted;
         const userStopped = own.signal.aborted && !signal.aborted;
-        const msg = userStopped ? 'Stopped by author.' : errorMessage(error);
+        const msg = stopped ? 'Stopped by author.' : errorMessage(error);
         this.host.saveItem(taskId, {
           id: itemId, ...(parentId ? { parent: parentId } : {}), type: 'tool', text: title,
           detail: `${labelOf(worker)}\nNotes: ${noteNums}\n${msg}`,
-          status: userStopped ? 'interrupted' : 'failed',
+          status: stopped ? 'interrupted' : 'failed',
         });
         return { error: msg, stopped: userStopped };
       } finally {
@@ -583,10 +593,11 @@ export class CollaborationRuntime extends Adapter {
       completedRaces.push({ cluster, base, verdict });
 
       const warnAlts = verdict.alternatives.filter(a => a.rigor === 'warn');
-      const winnerFile = verdict.winner.candidate.files[cluster.file];
+      const normText = (s?: string) => (s || '').replace(/\r\n/g, '\n').split('\n').map(l => l.trimEnd()).join('\n').trim();
+      const winnerNorm = normText(verdict.winner.candidate.files[cluster.file]);
       const winnerItemIds = verdict.winner.candidate.synthesized
         ? []
-        : results.flatMap((r, idx) => ('candidate' in r && !r.candidate.fidelity.hardFail && r.candidate.files[cluster.file] === winnerFile ? [`${raceItemId}:r${idx}`] : []));
+        : results.flatMap((r, idx) => ('candidate' in r && !r.candidate.fidelity.hardFail && normText(r.candidate.files[cluster.file]) === winnerNorm ? [`${raceItemId}:r${idx}`] : []));
       this.host.saveItem(taskId, {
         id: raceItemId, type: 'tool', text: `workflow_race · Notes ${cluster.notes.map(n => n.noteNumber).join(', ')}`,
         detail: `Selected: ${verdict.winner.label}\n${verdict.judgeSummary}`,
@@ -735,8 +746,9 @@ export class CollaborationRuntime extends Adapter {
       this.host.saveItem(ctx.taskId, { id: itemId, type: 'tool', text: 'workflow_delegate · rigorous', detail: `${label}\nCompleted`, status: 'completed' });
       return reply;
     } catch (error) {
+      const stopped = own.signal.aborted || signal.aborted;
       const userStopped = own.signal.aborted && !signal.aborted;
-      this.host.saveItem(ctx.taskId, { id: itemId, type: 'tool', text: 'workflow_delegate · rigorous', detail: `${label}\n${userStopped ? 'Stopped by author.' : errorMessage(error)}`, status: userStopped ? 'interrupted' : 'failed' });
+      this.host.saveItem(ctx.taskId, { id: itemId, type: 'tool', text: 'workflow_delegate · rigorous', detail: `${label}\n${stopped ? 'Stopped by author.' : errorMessage(error)}`, status: stopped ? 'interrupted' : 'failed' });
       if (userStopped) {
         const stoppedErr = new Error('Stopped by author.');
         stoppedErr.name = 'CollaborationStoppedError';

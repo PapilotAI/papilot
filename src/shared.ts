@@ -303,14 +303,17 @@ export function validRoutes(value: unknown): value is CollaborationRoutes {
 export function validRacers(value: unknown): value is CollaborationRoute[] {
   return Array.isArray(value) && value.length <= MAX_COLLABORATION_RACERS && value.every(validRoute);
 }
+export const MAX_CUSTOM_COLLABORATION_LANES = MAX_COLLABORATION_LANES - BUILTIN_COLLABORATION_LANES.length;
 export function validLanes(value: unknown): value is CollaborationLane[] {
   if (!Array.isArray(value) || value.length > MAX_COLLABORATION_LANES) return false;
   const ids = new Set<string>();
+  let customCount = 0;
   for (const entry of value) {
     if (!entry || typeof entry !== 'object') return false;
     const lane = entry as Record<string, unknown>;
     if (typeof lane.id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,39}$/.test(lane.id) || ids.has(lane.id)) return false;
     ids.add(lane.id);
+    if (!(BUILTIN_COLLABORATION_LANES as string[]).includes(lane.id) && ++customCount > MAX_CUSTOM_COLLABORATION_LANES) return false;
     if (typeof lane.name !== 'string' || !lane.name.trim() || lane.name.length > 60 || lane.name.includes('\0')) return false;
     if (typeof lane.description !== 'string' || lane.description.length > 260 || lane.description.includes('\0')) return false;
     if (lane.icon !== undefined && !isSkillIcon(lane.icon)) return false;
@@ -322,13 +325,16 @@ export function normalizeLanes(value: unknown): CollaborationLane[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
   const out: CollaborationLane[] = [];
+  let customCount = 0;
   for (const entry of value) {
     if (!entry || typeof entry !== 'object') continue;
     const lane = entry as Record<string, unknown>;
     const rawId = typeof lane.id === 'string' ? lane.id.trim().toLowerCase() : '';
     if (!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(rawId) || seen.has(rawId)) continue;
-    seen.add(rawId);
     const builtin = (BUILTIN_COLLABORATION_LANES as string[]).includes(rawId);
+    if (!builtin && customCount >= MAX_CUSTOM_COLLABORATION_LANES) continue;
+    seen.add(rawId);
+    if (!builtin) customCount++;
     const def = builtin ? DEFAULT_COLLABORATION_LANE_DEFS[rawId as BuiltinCollaborationLaneId] : null;
     const name = typeof lane.name === 'string' && lane.name.trim() ? lane.name.trim().slice(0, 60) : (def?.name || rawId);
     const description = typeof lane.description === 'string' ? lane.description.trim().slice(0, 260) : (def?.description || '');

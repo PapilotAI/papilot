@@ -408,6 +408,8 @@
 .collab-inspector .settings-row{border-top:1px solid color-mix(in srgb,var(--line) 80%,transparent);padding:8px 0 0}
 .collab-inspector .settings-effort{padding-top:8px}
 .settings-content .settings-row.collaboration-fast{display:flex;flex-direction:row;justify-content:space-between;align-items:center;gap:12px;padding-block:8px 0}
+.settings-content .settings-row.collaboration-speed{display:block;min-height:0;margin:0;padding:8px 0 0;border:0;border-top:1px solid color-mix(in srgb,var(--line) 80%,transparent)}
+.settings-content .settings-row.collaboration-speed .agent-speed-option:has(input:disabled){opacity:.5;cursor:not-allowed}
 .collaboration-fast-text{display:flex;flex-direction:column;gap:2px;min-width:0}
 .collaboration-fast-label{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:500;color:var(--text-2);cursor:pointer}
 .collaboration-fast-label>svg{color:var(--amber-text)}
@@ -421,7 +423,7 @@
 .collab-pipeline-head .button.compact{height:28px;min-height:28px;padding:0 10px;gap:5px;font-size:12px}
 @media(prefers-reduced-motion:reduce){.collab-inspector,.collab-node,.collab-icon-btn,.collab-lane-title{animation:none;transition:none}}
 @media(forced-colors:active){
-  .collab-node[aria-expanded="true"],.collab-lane-title[aria-expanded="true"]{outline:2px solid Highlight;forced-color-adjust:none}
+  .collab-node[aria-expanded="true"],.collab-lane-title[aria-expanded="true"]{background:SelectedItem;color:SelectedItemText;border-color:SelectedItem;outline:2px solid Highlight;forced-color-adjust:none}
   .collab-inspector{border-color:Highlight}
 }
 @media(pointer:coarse){

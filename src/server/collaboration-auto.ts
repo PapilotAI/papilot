@@ -45,6 +45,7 @@ export function modelFamily(agent: CollaborationWorkerAgent, id: string, name = 
   if (agent === 'glm') return 'zhipu';
   if (agent === 'grok') return 'xai';
   if (agent === 'antigravity') return 'google';
+  if (agent === 'zcode') return 'other';
   return 'other';
 }
 
@@ -90,7 +91,7 @@ function pickEffort(model: AgentModel, preferred: string[]): string | null {
 function toRoute(candidate: CandidateModel, effortPreference: string[], wantFastTier = false): CollaborationRoute {
   const effort = pickEffort(candidate.model, effortPreference);
   const serviceTier = wantFastTier && candidate.agent === 'codex' && candidate.model.serviceTiers?.length
-    ? (candidate.model.serviceTiers.includes('fast') ? 'fast' : candidate.model.serviceTiers[0])
+    ? candidate.model.serviceTiers.find(tier => tier !== 'ultrafast')
     : undefined;
   return { agent: candidate.agent, model: candidate.model.id, effort, ...(serviceTier ? { serviceTier } : {}) };
 }
@@ -197,7 +198,16 @@ function hydrateExplicit(route: CollaborationRoute, runtimes: Partial<Record<Age
   const runtime = runtimes[route.agent];
   if (!runtime) return route;
   const model = route.model ? runtime.models.find(item => item.id === route.model) : runtime.models.find(item => item.isDefault);
-  const serviceTier = route.agent === 'codex' && route.serviceTier && model?.serviceTiers?.includes(route.serviceTier) ? route.serviceTier : undefined;
+  const tier = route.serviceTier && route.serviceTier !== 'default' ? route.serviceTier : undefined;
+  const serviceTier = route.agent === 'codex' && tier
+    ? !model
+      ? tier
+      : model.serviceTiers?.includes(tier)
+        ? tier
+        : tier === 'fast'
+          ? model.serviceTiers?.find(candidate => candidate !== 'ultrafast')
+          : undefined
+    : undefined;
   return { agent: route.agent, model: route.model, effort: route.effort, ...(serviceTier ? { serviceTier } : {}) };
 }
 
@@ -342,7 +352,10 @@ export function routeDisplayName(route: CollaborationRoute | null, runtimes: Par
   const runtime = runtimes[route.agent];
   const model = route.model ? runtime?.models.find(item => item.id === route.model) : runtime?.models.find(item => item.isDefault);
   const label = model?.name || route.model || 'Default';
-  const tags = [route.effort, route.serviceTier && route.serviceTier !== 'default' ? 'fast' : null].filter(Boolean);
+  const speedTag = route.serviceTier && route.serviceTier !== 'default'
+    ? (route.serviceTier === 'ultrafast' ? 'ultrafast' : 'fast')
+    : null;
+  const tags = [route.effort, speedTag].filter(Boolean);
   return tags.length ? `${label} (${tags.join(', ')})` : label;
 }
 

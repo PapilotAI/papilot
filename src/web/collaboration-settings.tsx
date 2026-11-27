@@ -122,9 +122,11 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
   const [state, setState] = useState<Settings | null>(null);
   const [selected, setSelected] = useState<NodeSelection | null>(null);
   const [draftName, setDraftName] = useState(''), [draftDesc, setDraftDesc] = useState('');
+  const initialDraft = useRef({ name: '', desc: '' });
   const inspectorRef = useRef<HTMLDivElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
   const shown = useRef<Settings | null>(null), confirmed = useRef<Settings | null>(null);
-  const queue = useRef<Promise<unknown>>(Promise.resolve()), latest = useRef(0);
+  const queue = useRef<Promise<unknown>>(Promise.resolve()), latest = useRef(0), pendingSaves = useRef(0);
   shown.current = state;
 
   useEffect(() => {
@@ -164,6 +166,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
       shown.current = optimistic;
       setState(optimistic);
     }
+    pendingSaves.current++;
     setSaving(true); setError('');
     const saved = queue.current.then(() => save(update));
     queue.current = saved.catch(() => {});
@@ -180,7 +183,10 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
         setState(confirmed.current);
         setError(errorText(err instanceof Error ? err.message : String(err)));
       }
-    } finally { if (request === latest.current) setSaving(false); }
+    } finally {
+      pendingSaves.current = Math.max(0, pendingSaves.current - 1);
+      if (pendingSaves.current === 0) setSaving(false);
+    }
   }
 
   // Offer every connected/installed real agent on the host, excluding Collaboration mode itself.
@@ -227,7 +233,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
   const lanes: CollaborationLane[] = [
     ...baseLanes.filter(l => (BUILTIN_COLLABORATION_LANES as string[]).includes(l.id)).map(l => {
       const saved = savedLaneById.get(l.id);
-      return saved ? { ...l, name: saved.name || l.name, description: saved.description ?? l.description, models: saved.models.length ? saved.models : l.models } : l;
+      return saved ? { ...l, name: saved.name || l.name, description: saved.description.trim() || l.description, models: saved.models.length ? saved.models : l.models } : l;
     }),
     ...savedLanes.filter(l => !(BUILTIN_COLLABORATION_LANES as string[]).includes(l.id)),
   ];
@@ -342,6 +348,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
     const cfg = currentConfig();
     setDraftName(created.name);
     setDraftDesc(created.description);
+    initialDraft.current = { name: created.name, desc: created.description };
     setSelected({ kind: 'laneMeta', laneId: newId });
     void change({ lanes: [...(cfg.lanes || []), created] });
   };
@@ -370,7 +377,20 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
   }, [selected, lanes]);
 
   useEffect(() => {
-    if (selected) inspectorRef.current?.scrollIntoView({ block: 'nearest' });
+    if (!selected) return;
+    const el = inspectorRef.current;
+    el?.scrollIntoView({ block: 'nearest' });
+    if (!el) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      // Ignore Escape when a nested popover (e.g. SkillIconPicker or ChipSelect) is open.
+      if (el.querySelector(':popover-open')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeInspector(true);
+    };
+    el.addEventListener('keydown', onKeyDown);
+    return () => el.removeEventListener('keydown', onKeyDown);
   }, [selected]);
 
   const isSelected = (candidate: NodeSelection) => {
@@ -380,13 +400,23 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
     return true;
   };
 
-  const toggleNode = (candidate: NodeSelection) => {
+  const closeInspector = (restoreFocus = false) => {
+    setSelected(null);
+    if (restoreFocus && openerRef.current?.isConnected) {
+      const target = openerRef.current;
+      requestAnimationFrame(() => { if (target.isConnected) target.focus({ preventScroll: true }); });
+    }
+  };
+
+  const toggleNode = (candidate: NodeSelection, trigger?: HTMLElement | null) => {
+    if (trigger) openerRef.current = trigger;
     if (candidate.kind === 'laneMeta') {
       const lane = lanes.find(l => l.id === candidate.laneId);
       if (lane) {
         const vis = laneVisual(lane);
         setDraftName(vis.name);
         setDraftDesc(vis.description);
+        initialDraft.current = { name: vis.name.trim(), desc: vis.description.trim() };
       }
     }
     setSelected(prev => {
@@ -411,10 +441,13 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
       const vis = laneVisual(lane);
       const isCustomLane = Boolean(lane.custom);
       const isCustomizedBuiltin = !isCustomLane && savedLaneById.has(lane.id);
-      const commitMeta = () => {
+      const commitMeta = (blurTarget?: EventTarget | null) => {
+        if (blurTarget instanceof Node && inspectorRef.current?.contains(blurTarget)) return;
         const cleanName = draftName.trim();
         const cleanDesc = draftDesc.trim();
-        if (!cleanName) return;
+        if (isCustomLane && !cleanName) return;
+        if (cleanName === initialDraft.current.name && cleanDesc === initialDraft.current.desc) return;
+        initialDraft.current = { name: cleanName, desc: cleanDesc };
         saveLaneUpdate(lane.id, cur => ({
           ...cur,
           name: isCustomLane ? cleanName : cur.name,
@@ -422,14 +455,14 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
         }));
       };
       return <div ref={inspectorRef} id={inspectorId} className="collab-inspector" data-inspecting={`lane:${lane.id}`} role="region" aria-labelledby={`${inspectorId}-title`}
-        onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setSelected(null); } }}>
+        onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeInspector(true); } }}>
         <div className="collab-inspector-head">
           {isCustomLane ? (
             <div className="collab-lane-icon-picker">
               <SkillIconPicker
                 value={(lane.icon || 'tag') as SkillIcon}
                 onChange={icon => saveLaneUpdate(lane.id, cur => ({ ...cur, icon }))}
-                disabled={!online || saving}
+                disabled={!online}
                 name={vis.name}
               />
             </div>
@@ -443,7 +476,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
           <div className="collab-inspector-actions">
             {isCustomizedBuiltin && <button type="button" className="collab-icon-btn" aria-label={t('Auto')} title={t('Auto')} disabled={!online || saving} onClick={() => resetBuiltinLane(lane.id)}><Icon name="restore" size={15}/></button>}
             {isCustomLane && <button type="button" className="collab-icon-btn collab-icon-danger" aria-label={t('Delete')} title={t('Delete')} disabled={!online || saving} onClick={() => deleteCustomLane(lane.id)}><Icon name="trash" size={15}/></button>}
-            <button type="button" className="collab-icon-btn" aria-label={t('Close')} title={t('Close')} onClick={() => setSelected(null)}><Icon name="close" size={15}/></button>
+            <button type="button" className="collab-icon-btn" aria-label={t('Close')} title={t('Close')} onClick={() => closeInspector(true)}><Icon name="close" size={15}/></button>
           </div>
         </div>
         <form className="collab-lane-form" onSubmit={event => { event.preventDefault(); commitMeta(); }}>
@@ -452,14 +485,14 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
             <input id={`${inspectorId}-name`} type="text" maxLength={60} value={draftName} disabled={!online || saving}
               placeholder={t('e.g. TikZ diagrams, Citations')}
               onChange={event => setDraftName(event.target.value)}
-              onBlur={commitMeta}/>
+              onBlur={event => commitMeta(event.relatedTarget)}/>
           </div>}
           <div className="collab-field">
             <label htmlFor={`${inspectorId}-desc`}>{t('When to use this lane')}</label>
             <textarea id={`${inspectorId}-desc`} rows={2} maxLength={260} value={draftDesc} disabled={!online || saving}
               placeholder={t('Describe what kind of annotations Router should route here…')}
               onChange={event => setDraftDesc(event.target.value)}
-              onBlur={commitMeta}/>
+              onBlur={event => commitMeta(event.relatedTarget)}/>
           </div>
           <div className="collab-lane-form-foot">
             <button type="submit" className="collab-icon-btn collab-icon-save" aria-label={t('Save')} title={t('Save')} disabled={!online || saving || (isCustomLane && !draftName.trim())}><Icon name="check" size={15}/></button>
@@ -538,7 +571,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
     const fastId = `${id}-${slotKey}-fast`;
 
     return <div ref={inspectorRef} id={inspectorId} className="collab-inspector" data-inspecting={slotKey} role="region" aria-labelledby={`${inspectorId}-title`}
-      onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setSelected(null); } }}>
+      onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeInspector(true); } }}>
       <div className="collab-inspector-head">
         <span className="collab-role-badge" data-tone={tone} aria-hidden="true"><Icon name={icon} size={14}/></span>
         <div className="collab-inspector-copy">
@@ -548,7 +581,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
         <div className="collab-inspector-actions">
           {allowAuto && route && <button type="button" className="collab-icon-btn" aria-label={t('Auto')} title={t('Auto')} disabled={!online || saving} onClick={() => onUpdate(null)}><Icon name="restore" size={15}/></button>}
           {onRemove && <button type="button" className="collab-icon-btn collab-icon-danger" aria-label={t('Remove')} title={t('Remove')} disabled={!online || saving} onClick={onRemove}><Icon name="trash" size={15}/></button>}
-          <button type="button" className="collab-icon-btn" aria-label={t('Close')} title={t('Close')} onClick={() => setSelected(null)}><Icon name="close" size={15}/></button>
+          <button type="button" className="collab-icon-btn" aria-label={t('Close')} title={t('Close')} onClick={() => closeInspector(true)}><Icon name="close" size={15}/></button>
         </div>
       </div>
 
@@ -634,7 +667,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
           </div>
           <div className="collab-stage-models">
             <button type="button" className="collab-node" data-role="router" aria-expanded={isSelected({ kind: 'router' })} aria-controls={isSelected({ kind: 'router' }) ? inspectorId : undefined}
-              disabled={!online} onClick={() => toggleNode({ kind: 'router' })} title={formatRoute(displayRouter, runtimes)}>
+              disabled={!online} onClick={event => toggleNode({ kind: 'router' }, event.currentTarget)} title={formatRoute(displayRouter, runtimes)}>
               <NodePillContent route={displayRouter} runtimes={runtimes} custom={Boolean(state.router)} iconSize={16}/>
             </button>
           </div>
@@ -658,7 +691,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
               return <div key={lane.id} className="collab-lane" data-lane={lane.id} data-racing={racing ? 'true' : undefined}>
                 <div className="collab-lane-head">
                   <button type="button" className="collab-lane-title" aria-expanded={metaActive} aria-controls={metaActive ? inspectorId : undefined}
-                    disabled={!online} onClick={() => toggleNode({ kind: 'laneMeta', laneId: lane.id })} title={vis.description || vis.name}>
+                    disabled={!online} onClick={event => toggleNode({ kind: 'laneMeta', laneId: lane.id }, event.currentTarget)} title={vis.description || vis.name}>
                     <span className="collab-role-badge collab-role-badge-sm" data-tone={vis.tone} aria-hidden="true"><Icon name={vis.icon} size={11}/></span>
                     <span className="collab-lane-name">{vis.name}</span>
                     <span className="collab-lane-mode" data-racing={racing ? 'true' : undefined}>{racing ? t('Race') : t('Direct')}</span>
@@ -679,7 +712,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
                       {idx > 0 && <span className="collab-vs" aria-hidden="true">vs</span>}
                       <div className="collab-race-node-wrap">
                         <button type="button" className="collab-node collab-lane-node" data-lane-model={`${lane.id}:${idx}`} aria-expanded={active} aria-controls={active ? inspectorId : undefined}
-                          disabled={!online} onClick={() => toggleNode({ kind: 'laneModel', laneId: lane.id, index: idx })} title={formatRoute(racer, runtimes)}>
+                          disabled={!online} onClick={event => toggleNode({ kind: 'laneModel', laneId: lane.id, index: idx }, event.currentTarget)} title={formatRoute(racer, runtimes)}>
                           <NodePillContent route={racer} runtimes={runtimes} custom={customized}/>
                         </button>
                         {lane.models.length > 1 && <button type="button" className="collab-icon-btn collab-remove-btn" aria-label={t('Remove model {n} from {lane}', { n: idx + 1, lane: vis.name })} title={t('Remove')}
@@ -701,7 +734,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
           </div>
           <div className="collab-stage-models">
             <button type="button" className="collab-node" data-role="judge" aria-expanded={isSelected({ kind: 'judge' })} aria-controls={isSelected({ kind: 'judge' }) ? inspectorId : undefined}
-              disabled={!online} onClick={() => toggleNode({ kind: 'judge' })} title={formatRoute(displayJudge, runtimes)}>
+              disabled={!online} onClick={event => toggleNode({ kind: 'judge' }, event.currentTarget)} title={formatRoute(displayJudge, runtimes)}>
               <NodePillContent route={displayJudge} runtimes={runtimes} custom={Boolean(state.judge)} iconSize={16}/>
             </button>
           </div>

@@ -49,15 +49,17 @@ export function optionCandidate(units: Unit[], edits: OptionInput["edits"], sour
       const ops = unit.text_ops ?? unit.ops.map(([tag, i, j, x, y]): Op => [tag, offset(old, i), offset(old, j), offset(original, x), offset(original, y)]);
       for (const [, i, j, start, end] of ops) patches.push({ id: unit.id, start, end, text: old.slice(i, j), expandBefore: 0, expandAfter: 0, origStart: start, origEnd: end, oldStart: i, oldEnd: j });
     }
-    patches.sort((a, b) => a.start - b.start);
-    let text = original, boundary = original.length + 1;
+    patches.sort((a, b) => a.start - b.start || a.end - b.end);
+    let text = original, boundary = original.length, prevZeroAt = -1;
     for (const patch of [...patches].reverse()) {
-      if (patch.start < 0 || patch.end > original.length || patch.start > patch.end || patch.end >= boundary)
+      if (patch.start < 0 || patch.end > original.length || patch.start > patch.end || patch.end > boundary
+        || (patch.start === patch.end && patch.start === prevZeroAt))
         throw new Error("These changes overlap and must be revised together.");
       text = text.slice(0, patch.start) + patch.text + text.slice(patch.end);
-      // Adjacent nonempty replacements are independent; two insertions at
-      // the same point are not.
-      boundary = patch.start + (patch.start < patch.end ? 1 : 0);
+      // Adjacent nonempty replacements and a replacement abutting a pure deletion
+      // are independent; two zero-length insertions at the same offset are not.
+      boundary = patch.start;
+      prevZeroAt = patch.start === patch.end ? patch.start : -1;
     }
     files[file] = Buffer.from(text);
     const line = (value: string, offset: number) => value.slice(0, offset).split("\n").length - 1;

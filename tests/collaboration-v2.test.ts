@@ -484,6 +484,37 @@ test('preparedOptionEdits supports multi-unit notes and optionCandidate adjusts 
   const expanded = optionCandidate([lineUnit] as any, [{ unit: 'u3', text: 'xxx\nyyy', after: 3 }], () => multi);
   assert.equal(expanded.units[0].ops[0][2], 2, 'old_end half-open line count includes absorbed line 2');
   assert.equal(expanded.units[0].old_end, 2);
+
+  // Multi-unit span ending in a pure zero-length deletion unit ([7, 25] + [25, 25]) must not false-overlap
+  const delSrc = 'Header old body text here. Tail.';
+  const d1 = { id: 'd1', file: 'main.tex', kind: 'text' as const, old_start: 1, old_end: 1, new_start: 1, new_end: 1, old_text: 'orig', new_text: 'old body text here', ops: [['replace', 0, 1, 0, 1]] as any, text_ops: [['replace', 7, 11, 7, 25]] as any };
+  const d2 = { id: 'd2', file: 'main.tex', kind: 'text' as const, old_start: 1, old_end: 1, new_start: 1, new_end: 1, old_text: ' removed', new_text: '', ops: [['delete', 0, 1, 0, 1]] as any, text_ops: [['delete', 11, 19, 25, 25]] as any };
+  const delCandidate = optionCandidate([d1, d2] as any, [{ unit: 'd1', text: 'revised body' }, { unit: 'd2', text: '' }], () => delSrc);
+  assert.equal(delCandidate.files['main.tex']!.toString('utf8'), 'Header revised body. Tail.');
+});
+
+test('validLanes caps custom lanes, hydrateExplicit preserves/maps Codex serviceTiers, and routeDisplayName shows ultrafast', async () => {
+  const { validLanes, normalizeLanes } = await import('../src/shared.ts');
+  const { routeDisplayName } = await import('../src/server/collaboration-auto.ts');
+  const fiveCustom = Array.from({ length: 5 }, (_, i) => ({ id: `custom-${i + 1}`, name: `Lane ${i + 1}`, description: '', models: [] }));
+  assert.equal(validLanes(fiveCustom), false, 'rejects more than 4 custom lanes so resolution never drops them');
+  assert.equal(normalizeLanes(fiveCustom).length, 4);
+
+  // Legacy 'fast' maps to Codex wire ID 'priority', unknown model preserves tier, and 'ultrafast' displays accurately
+  const priorityRuntimes: Partial<Record<AgentId, RuntimeStatus>> = {
+    codex: {
+      connected: true, authenticated: true, account: 'test', error: null,
+      models: [{ id: 'gpt-6.2-sol', name: 'GPT-6.2-Sol', isDefault: true, efforts: ['high'], defaultEffort: 'high', serviceTiers: ['priority', 'ultrafast'] }],
+    },
+  };
+  const hydrated = resolveCollaborationConfig({
+    ...DEFAULT_COLLABORATION_CONFIG,
+    router: { agent: 'codex', model: 'gpt-6.2-sol', effort: 'high', serviceTier: 'fast' },
+    judge: { agent: 'codex', model: 'gpt-6.2-sol', effort: 'high', serviceTier: 'ultrafast' },
+  }, priorityRuntimes);
+  assert.equal(hydrated.router?.serviceTier, 'priority');
+  assert.equal(hydrated.judge?.serviceTier, 'ultrafast');
+  assert.ok(routeDisplayName(hydrated.judge, priorityRuntimes).includes('ultrafast'));
 });
 
 test('clusterCurrentNotes relocates SyncTeX anchors shifted across blank lines and numbered theorem headers', () => {

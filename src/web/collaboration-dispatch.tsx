@@ -81,8 +81,8 @@ function noteNumsKey(notes: number[]) {
 }
 
 function parseItemNotes(item: TimelineItem): number[] {
-  const fromDetail = item.detail?.match(/^Notes:\s*([0-9,\s]+)/m)?.[1];
-  const fromTitle = item.text.match(/Notes\s+([0-9,\s]+)/)?.[1];
+  const fromDetail = item.detail?.match(/^Notes:[ \t]*([0-9,\t ]+)/m)?.[1];
+  const fromTitle = item.text.match(/Notes[ \t]+([0-9,\t ]+)/)?.[1];
   const raw = fromDetail || fromTitle || '';
   return raw.split(',').map(part => Number(part.trim())).filter(n => Number.isFinite(n) && n > 0);
 }
@@ -179,7 +179,7 @@ function shortFile(file: string) {
 }
 
 function StateGlyph({ state, winner }: { state: ItemState; winner?: boolean }) {
-  if (state === 'running') return <span className="spinner collab-chip-spinner" aria-label={t('Running')}/>;
+  if (state === 'running') return <span className="spinner collab-chip-spinner" aria-hidden="true"/>;
   if (winner) return <Icon name="star" size={11}/>;
   if (state === 'done') return <Icon name="check" size={11}/>;
   if (state === 'failed') return <Icon name="alert" size={11}/>;
@@ -218,9 +218,10 @@ function AgentChip({
       <BrandIcon name={agent} size={13}/>
       {roleLabel && <span className="collab-agent-role">{roleLabel}</span>}
       <span className="collab-agent-name">{model}</span>
-      <span className="collab-agent-state" aria-label={statusText}>
+      <span className="collab-agent-state" aria-hidden="true">
         <StateGlyph state={state} winner={winner}/>
       </span>
+      <span className="sr-only">{statusText}</span>
     </span>
   );
 }
@@ -241,10 +242,16 @@ export function CollaborationDispatchCard({
   const routeItem = items.find(item => workflowKind(item) === 'workflow_route')!;
   const dispatch = routeItem.meta?.dispatch ?? parseFallbackDispatch(routeItem, items, steps);
 
+  // Only walk items belonging to THIS turn and their nested descendants so
+  // concurrent/later turns in the same task never leak into an older card.
   const byId = new Map<string, TimelineItem>();
-  for (const item of items) byId.set(item.id, item);
-  for (const list of steps.values()) {
-    for (const child of list) byId.set(child.id, child);
+  const queue: TimelineItem[] = [...items];
+  while (queue.length) {
+    const current = queue.shift()!;
+    if (byId.has(current.id)) continue;
+    byId.set(current.id, current);
+    const children = steps.get(current.id);
+    if (children) queue.push(...children);
   }
 
   const routeState = stateOf(routeItem);
@@ -254,6 +261,7 @@ export function CollaborationDispatchCard({
   const anyTopRunning = items.some(item => item.id !== routeItem.id && stateOf(item) === 'running');
   const activeCount = runningWorkers || (anyTopRunning ? items.filter(item => item.id !== routeItem.id && stateOf(item) === 'running').length : 0);
   const failedCount = items.filter(item => stateOf(item) === 'failed').length;
+  const hasQueued = routeState === 'done' && dispatch.entries.some(entry => entry.workers.some(w => stateOf(byId.get(w.itemId)) === 'queued'));
   const stoppedOnly = routeState === 'stopped' || (activeCount === 0 && failedCount === 0 && items.some(item => stateOf(item) === 'stopped') && !items.some(item => item.id !== routeItem.id && stateOf(item) === 'done'));
 
   const headerStatus = routeState === 'running'
@@ -264,7 +272,9 @@ export function CollaborationDispatchCard({
         ? <span className="collab-dispatch-status" data-state="stopped"><span>{t('Stopped')}</span></span>
         : failedCount > 0
           ? <span className="collab-dispatch-status" data-state="failed"><Icon name="alert" size={12}/><span>{t('{n} failed', { n: failedCount })}</span></span>
-          : <span className="collab-dispatch-status" data-state="done"><Icon name="check" size={12}/><span>{t('Done')}</span></span>;
+          : hasQueued
+            ? <span className="collab-dispatch-status" data-state="running"><span className="spinner collab-chip-spinner" aria-hidden="true"/><span>{t('Queued')}</span></span>
+            : <span className="collab-dispatch-status" data-state="done"><Icon name="check" size={12}/><span>{t('Done')}</span></span>;
 
   // Map turn prefix to detect optional rigorous fallback items for assign entries.
   const routePrefix = routeItem.id.endsWith(':route') ? routeItem.id.slice(0, -':route'.length) : '';
@@ -352,13 +362,13 @@ export function CollaborationDispatchCard({
                   </span>
                 </div>
                 <div className="collab-dispatch-agents">
-                  {entry.mode === 'race' && <span className="collab-mode-badge">{t('Race')}</span>}
+                  {entry.mode === 'race' && <span className="collab-dispatch-race">{t('Race')}</span>}
                   {entry.workers.map((worker, idx) => {
                     const item = byId.get(worker.itemId);
                     const state = stateOf(item);
                     return (
                       <span key={worker.itemId} className="collab-agent-slot">
-                        {idx > 0 && <span className="collab-vs" aria-hidden="true">vs</span>}
+                        {idx > 0 && <span className="collab-dispatch-vs" aria-hidden="true">vs</span>}
                         <AgentChip
                           agent={worker.agent}
                           model={worker.model}
