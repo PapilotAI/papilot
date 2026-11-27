@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import * as pdfjs from "pdfjs-dist";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import type { Strip } from "../types.ts";
@@ -48,10 +48,41 @@ function place(doc: Doc, changes: PlacedChange[], side: Side): Placed[] {
   return placed;
 }
 
-export function ComparePages({ active, before, after, resource, files, changes, current, states, controls, onSelect, scrollRoot, readingPlace, onReady, onUnavailable }: {
+// Where each change prints on both versions' pages, and its bar's extent.
+function layout(docs: { before: Doc; after: Doc }, changes: PlacedChange[]) {
+  const old = place(docs.before, changes, "before"), next = place(docs.after, changes, "after");
+  // Each change's lines on a page, as a share of the page's height: where
+  // its bar in the middle column runs.
+  const extents = (list: Placed[], doc: Doc) => {
+    const found = new Map<number, { page: number; top: number; bottom: number }>();
+    for (const { index, strip, page } of list) {
+      const [, y0, , y1] = scope(strip), top = (strip.top! + y0) / doc.height, bottom = (strip.top! + y1) / doc.height, extent = found.get(index);
+      if (!extent) found.set(index, { page, top, bottom });
+      else if (extent.page === page) { extent.top = Math.min(extent.top, top); extent.bottom = Math.max(extent.bottom, bottom); }
+    }
+    return found;
+  };
+  const oldLines = extents(old, docs.before), newLines = extents(next, docs.after);
+  // A change with nothing to mark on the pages, such as an edit that prints
+  // the same, still has its bar: just below the change before it, as the
+  // full paper shows it after that change, or at the top of the first page.
+  let previous: { page: number; bottom: number; lines: typeof newLines } | null = null;
+  for (const { index } of changes) {
+    const placedLines = newLines.get(index) ? newLines : oldLines.get(index) ? oldLines : null;
+    if (placedLines) { const extent = placedLines.get(index)!; previous = { page: extent.page, bottom: extent.bottom, lines: placedLines }; continue; }
+    const top: number = previous ? previous.bottom + 0.012 : 0.03, bottom: number = top + 0.02;
+    (previous?.lines ?? newLines).set(index, { page: previous?.page ?? 0, top, bottom });
+    previous = { page: previous?.page ?? 0, bottom, lines: previous?.lines ?? newLines };
+  }
+  return { old, next, oldLines, newLines };
+}
+
+export function ComparePages({ active, restorePlace = true, before, after, resource, files, changes, current, states, controls, onSelect, scrollRoot, readingPlace, onReady, onUnavailable }: {
   /** False while the full paper is shown: both PDFs stay loaded, their pages
    *  are not rendered. */
   active: boolean;
+  /** False when the review opens at a change rather than where it was read. */
+  restorePlace?: boolean;
   before: string;
   after: string;
   /** A host's own way to load the PDFs, as for the full paper. */
@@ -79,7 +110,9 @@ export function ComparePages({ active, before, after, resource, files, changes, 
   // elsewhere or Escape deselects it: its shade and decisions go until a
   // change is selected again, by a click or by moving through the review.
   const [panel, setPanel] = useState<number | null>(null), [deselected, setDeselected] = useState(false);
-  useEffect(() => { setDeselected(false); }, [current]);
+  // Moving on, by the keyboard or after a decision, keeps the decisions open
+  // for the next change when they were open.
+  useEffect(() => { setDeselected(false); setPanel((open) => open === null ? null : current); }, [current]);
   const deselect = () => { setPanel(null); setDeselected(true); };
   const shown = deselected ? -1 : current;
   useEffect(() => {
@@ -100,7 +133,12 @@ export function ComparePages({ active, before, after, resource, files, changes, 
     return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
   }, [shown, active]);
   const choose = (index: number) => { onSelect(index); setDeselected(false); setPanel(index); };
+  // Nothing loads until the view is shown: a review that stays stacked never
+  // compiles or opens the old version.
+  const [wanted, setWanted] = useState(active);
+  useEffect(() => { if (active) setWanted(true); }, [active]);
   useEffect(() => {
+    if (!wanted) return;
     let live = true;
     const tasks: ReturnType<typeof pdfjs.getDocument>[] = [];
     setDocs(null); setError("");
@@ -109,46 +147,26 @@ export function ComparePages({ active, before, after, resource, files, changes, 
       (failure: Error) => { if (!live) return; setError(failure.message); unavailable.current(); },
     );
     return () => { live = false; tasks.forEach((task) => void task.destroy()); };
-  }, [before, after, resource]);
+  }, [before, after, resource, wanted]);
   useEffect(() => { if (docs && active) return paint(box.current!, docs, scrollRoot.current); }, [docs, scrollRoot, active]);
   useLayoutEffect(() => { if (active) return holdReader(window); }, [active]);
   // The workspace's page, outline, zoom and find controls read the new
   // version's pages, as in the full paper; fit to width fits both versions.
   useLayoutEffect(() => {
     if (!docs || !active) return;
-    const reader = fullPaperReader(box.current!, scrollRoot.current!, docs.after.pdf, readingPlace, true);
+    const reader = fullPaperReader(box.current!, scrollRoot.current!, docs.after.pdf, readingPlace, restorePlace);
     ready.current(reader.restored);
     return () => reader.dispose();
-  }, [docs, readingPlace, scrollRoot, active]);
+  }, [docs, readingPlace, scrollRoot, active, restorePlace]);
+  // The pages are paired once per pair of PDFs, and the changes placed once
+  // per round: a click re-renders the view without either.
+  const pairs = useMemo(() => docs && alignPages(docs.before.words, docs.after.words), [docs]);
+  const marks = useMemo(() => docs && layout(docs, changes), [docs, changes]);
   if (!active) return null;
   if (error) return <p className="empty" role="alert">{error}</p>;
   // Not the full paper's loading status: the review stays shown meanwhile.
   if (!docs) return <div className="compare-status" role="status"><div className="pulse" /><span>{t("Opening both versions…")}</span></div>;
-  const old = place(docs.before, changes, "before"), next = place(docs.after, changes, "after");
-  const rows = alignPages(docs.before.words, docs.after.words);
-  // Each change's lines on a page, as a share of the page's height: where
-  // its bar in the middle column runs.
-  const extents = (list: Placed[], doc: Doc) => {
-    const found = new Map<number, { page: number; top: number; bottom: number }>();
-    for (const { index, strip, page } of list) {
-      const [, y0, , y1] = scope(strip), top = (strip.top! + y0) / doc.height, bottom = (strip.top! + y1) / doc.height, extent = found.get(index);
-      if (!extent) found.set(index, { page, top, bottom });
-      else if (extent.page === page) { extent.top = Math.min(extent.top, top); extent.bottom = Math.max(extent.bottom, bottom); }
-    }
-    return found;
-  };
-  const oldLines = extents(old, docs.before), newLines = extents(next, docs.after);
-  // A change with nothing to mark on the pages, such as an edit that prints
-  // the same, still has its bar: just below the change before it, as the
-  // full paper shows it after that change, or at the top of the first page.
-  let previous: { page: number; bottom: number; lines: typeof newLines } | null = null;
-  for (const { index } of changes) {
-    const placedLines = newLines.get(index) ? newLines : oldLines.get(index) ? oldLines : null;
-    if (placedLines) { const extent = placedLines.get(index)!; previous = { page: extent.page, bottom: extent.bottom, lines: placedLines }; continue; }
-    const top: number = previous ? previous.bottom + 0.012 : 0.03, bottom: number = top + 0.02;
-    (previous?.lines ?? newLines).set(index, { page: previous?.page ?? 0, top, bottom });
-    previous = { page: previous?.page ?? 0, bottom, lines: previous?.lines ?? newLines };
-  }
+  const { old, next, oldLines, newLines } = marks!, rows = pairs!;
   const page = (side: Side, doc: Doc, number: number | null, placed: Placed[]) => {
     if (number === null) return <div className="compare-page compare-blank" style={{ aspectRatio: `${doc.width} / ${doc.height}` }} aria-hidden="true" />;
     return (

@@ -92,6 +92,13 @@ it("pairs old and new pages by what they say, with blank pages where one version
   expect(alignPages([a.concat(b), b.concat(c), c.concat(d)], [page("alpha", "alpha", "beta"), ...shifted.slice(1)])).toEqual([[0, 0], [1, 1], [2, 2]]);
   // One more page at the end.
   expect(alignPages([a, b], [a, b, c])).toEqual([[0, 0], [1, 1], [null, 2]]);
+  // A long thesis with a page inserted in its middle: the search keeps near
+  // the diagonal and still finds it.
+  const long = Array.from({ length: 240 }, (_, i) => page(`p${i}`, `q${i}`)), inserted = page("appendix");
+  const rows = alignPages(long, [...long.slice(0, 120), inserted, ...long.slice(120)]);
+  expect(rows).toHaveLength(241);
+  expect(rows[120]).toEqual([null, 120]);
+  expect(rows.every(([b, a], i) => b === null || a === (i < 120 ? b : b + 1))).toBe(true);
 });
 
 it("shades exactly a crop's lines, or the whole crop when it has no words", () => {

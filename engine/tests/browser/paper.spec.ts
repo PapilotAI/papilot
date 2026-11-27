@@ -223,8 +223,10 @@ test("side by side shows both versions' whole pages, paired with a blank page, a
     oldDocument.close(); newDocument.close();
   }
   try {
+    let oldRequests = 0;
     await page.route("**/compare-fixture/*", async (route) => {
       const name = path.basename(new URL(route.request().url()).pathname);
+      if (name === "old.pdf") oldRequests++;
       await route.fulfill({ body: fs.readFileSync(path.join(folder, name)), contentType: name.endsWith(".pdf") ? "application/pdf" : "image/svg+xml" });
     });
     await page.route(/\/api\/tasks\/tighten-design\/rounds\/\d+$/, async (route) => {
@@ -237,6 +239,9 @@ test("side by side shows both versions' whole pages, paired with a blank page, a
     await expect(page.locator(".paper .change")).toBeVisible();
     const toggle = page.getByRole("button", { name: "Side by side", exact: true });
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    // A review that stays stacked never asks for the old version.
+    await page.waitForTimeout(500);
+    expect(oldRequests).toBe(0);
     // The workspace's page controls follow either layout and are never
     // cleared while switching.
     await page.evaluate(() => {

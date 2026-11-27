@@ -159,20 +159,34 @@ function bag(words: string[]) {
   return { counts, size: words.length };
 }
 export function alignPages(before: string[][], after: string[][]): PagePair[] {
-  const old = before.map(bag), next = after.map(bag);
+  const old = before.map(bag), next = after.map(bag), n = old.length, m = next.length;
+  // Pages a long way off the diagonal never pair: the search keeps to a band
+  // around it, wide enough for the difference in length and a margin, so a
+  // long thesis aligns in time linear in its length.
+  const band = Math.abs(n - m) + 24, near = (i: number, j: number) => Math.abs(i * Math.max(1, m) - j * Math.max(1, n)) <= band * Math.max(n, m, 1);
+  const likes = new Map<number, number>();
   const like = (i: number, j: number) => {
+    const key = i * (m + 1) + j, known = likes.get(key);
+    if (known !== undefined) return known;
     const a = old[i], b = next[j];
-    if (!a.size && !b.size) return 1;
     let shared = 0;
-    for (const [word, count] of a.counts) shared += Math.min(count, b.counts.get(word) ?? 0);
-    return (2 * shared) / (a.size + b.size);
+    if (a.size && b.size) for (const [word, count] of a.counts) shared += Math.min(count, b.counts.get(word) ?? 0);
+    const value = !a.size && !b.size ? 1 : (2 * shared) / (a.size + b.size);
+    likes.set(key, value);
+    return value;
   };
-  const n = old.length, m = next.length, score = Array.from({ length: n + 1 }, () => new Float64Array(m + 1));
-  for (let i = 1; i <= n; i++) score[i][0] = -GAP * i;
-  for (let j = 1; j <= m; j++) score[0][j] = -GAP * j;
-  for (let i = 1; i <= n; i++)
-    for (let j = 1; j <= m; j++)
-      score[i][j] = Math.max(score[i - 1][j - 1] + like(i - 1, j - 1), score[i - 1][j] - GAP, score[i][j - 1] - GAP);
+  const score = Array.from({ length: n + 1 }, () => new Float64Array(m + 1).fill(-Infinity));
+  score[0][0] = 0;
+  for (let i = 0; i <= n; i++)
+    for (let j = 0; j <= m; j++) {
+      if (!i && !j) continue;
+      if (!near(i, j) && i && j) continue;
+      score[i][j] = Math.max(
+        i && j ? score[i - 1][j - 1] + like(i - 1, j - 1) : -Infinity,
+        i ? score[i - 1][j] - GAP : -Infinity,
+        j ? score[i][j - 1] - GAP : -Infinity,
+      );
+    }
   const rows: PagePair[] = [];
   let i = n, j = m;
   while (i > 0 || j > 0) {

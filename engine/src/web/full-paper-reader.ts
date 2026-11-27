@@ -20,7 +20,7 @@ export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: 
   const document = container.ownerDocument, view = document.defaultView!;
   const documentBox = container.closest<HTMLElement>('.document')!;
   // The other view was read here a moment ago: this one opens at that line.
-  const handed = spot && spot.pdf === (pdf.fingerprints[0] ?? '') ? spot : null;
+  const handed = restore && spot && spot.pdf === (pdf.fingerprints[0] ?? '') ? spot : null;
   let alive = true, initialized = false, tick = 0, timer: ReturnType<typeof setTimeout> | undefined;
   let saved = read(key), position: Place | undefined, globalZoom: string | null = null;
   try { globalZoom = localStorage.getItem(PDF_ZOOM_STORAGE); } catch { /* Optional storage. */ }

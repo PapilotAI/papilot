@@ -2955,6 +2955,7 @@ export function ReviewApp({
                     <ComparePages
                       key={`${detail.round}:${detail.pdfBefore}:${detail.pdf}`}
                       active={compare}
+                      restorePlace={linkedChange < 0}
                       before={detail.pdfBefore!}
                       after={detail.pdf!}
                       resource={resource}
