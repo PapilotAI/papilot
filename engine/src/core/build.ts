@@ -9,11 +9,21 @@ import { cleanPath, Repo } from "./git.ts";
 import { acquireLock, readJson, writeJsonAsync, withLock, now } from "./files.ts";
 import { stripComments } from "./outline.ts";
 import { signature, type Project } from "./config.ts";
-import { Cancelled, ProcessError, capture, commandVersion, runAsync } from "./process.ts";
+import { Cancelled, ProcessError, capture, commandVersion, runAsync, which } from "./process.ts";
 import { Lease } from "./pool.ts";
 import { progressReader, writtenPages } from "./progress.ts";
 import { unwrapLog } from "./tex-log.ts";
 import type { BuildInfo, BuildProgress } from "../types.ts";
+
+function latexmkPerlEnv(): NodeJS.ProcessEnv | undefined {
+  if (process.platform !== "win32") return;
+  const perl = which("perl.exe");
+  if (!perl || !fs.existsSync(path.join(path.dirname(perl), "msys-2.0.dll"))) return;
+  // MSYS Perl misinterprets native Windows paths when latexmk opens auxiliary
+  // files or starts BibTeX. Use TeX Live's bundled Perl for latexmk only.
+  return { TEXLIVE_WINDOWS_TRY_EXTERNAL_PERL_latexmk: "0" };
+}
+
 export class BuildError extends Error {
   constructor(
     message: string,
@@ -516,7 +526,11 @@ export class Builder {
       // for both sides, including a previously cached chapter baseline.
       fixedDate = process.env.SOURCE_DATE_EPOCH ? buildDate() : null,
       dated = Boolean(options.date || partial || fixedDate),
-      context = hash(JSON.stringify([signature(p), version, ...(fixedDate ? [fixedDate] : [])])),
+      perlEnv = p.compiler === "latexmk" ? latexmkPerlEnv() : undefined,
+      // Full review seeds can survive app upgrades. Rebuild them when they
+      // were compiled with the old Perl selection and could miss citations.
+      perlContext = perlEnv ? [perlEnv] : [],
+      context = hash(JSON.stringify([signature(p), version, ...(fixedDate ? [fixedDate] : []), ...perlContext])),
       cacheKey = hash(
         JSON.stringify([
           tree,
@@ -526,11 +540,12 @@ export class Builder {
           version,
           dated ? date : null,
           SELF,
+          ...perlContext,
           // Existing keys stay valid: only a build past errors adds this.
           ...(options.pastErrors ? ["past errors"] : []),
         ]),
       ).slice(0, 32);
-    return { partial, tree, date, dated, context, cacheKey };
+    return { partial, tree, date, dated, context, cacheKey, perlEnv };
   }
   /** The completed build of `rev`, if there is one, without compiling. */
   async cached(rev: string, targets: string[], seed: BuildInfo | null, options: { date?: ReturnType<typeof buildDate>; pastErrors?: boolean } = {}) {
@@ -566,7 +581,8 @@ export class Builder {
   ): Promise<BuildInfo> {
     const p = this.project,
       priority = options.priority ?? "normal",
-      { partial, tree, date, dated, context, cacheKey } = await this.resolve(rev, targets, seed, options),
+      { partial, tree, date, dated, context, cacheKey, perlEnv } = await this.resolve(rev, targets, seed, options),
+      compileOptions = { ...options, perlEnv },
       // Manual recompilation gets a fresh output directory. Other previews
       // and review rounds may still be reading the previous cached PDF.
       key = options.force ? hash(JSON.stringify([cacheKey, randomUUID()])).slice(0, 32) : cacheKey,
@@ -631,13 +647,13 @@ export class Builder {
               if (recovered) return recovered;
               const recovery = hash(JSON.stringify([cacheKey, randomUUID()])).slice(0, 32);
               return withLock(path.join(this.cache, recovery + ".lock"), () =>
-                this.compileOnce(rev, tree, recovery, cacheKey, context, targets, seed, date, dated, partial, { ...options, force: true }, key, stop.signal));
+                this.compileOnce(rev, tree, recovery, cacheKey, context, targets, seed, date, dated, partial, { ...compileOptions, force: true }, key, stop.signal));
             });
           }
         }
         return (await this.finished(folder)) ??
           withLock(path.join(this.cache, key + ".lock"), async () =>
-            (await this.finished(folder)) ?? this.compileOnce(rev, tree, key, cacheKey, context, targets, seed, date, dated, partial, options, key, stop.signal),
+            (await this.finished(folder)) ?? this.compileOnce(rev, tree, key, cacheKey, context, targets, seed, date, dated, partial, compileOptions, key, stop.signal),
           );
       })();
       building.set(key, attempt);
@@ -664,7 +680,7 @@ export class Builder {
     date: ReturnType<typeof buildDate>,
     dated: boolean,
     partial: boolean,
-    options: { force?: boolean; progress?: (progress: BuildProgress) => void; pastErrors?: boolean },
+    options: { force?: boolean; progress?: (progress: BuildProgress) => void; pastErrors?: boolean; perlEnv?: NodeJS.ProcessEnv },
     requestKey = key,
     signal?: AbortSignal,
   ) {
@@ -697,7 +713,7 @@ export class Builder {
     try {
       for (;;) {
         try {
-          result = await this.compile(rev, tree, key, targets, seed, date, dated, continuation, tikzDirectories, progress, run, signal, pastErrors);
+          result = await this.compile(rev, tree, key, targets, seed, date, dated, continuation, tikzDirectories, progress, run, signal, pastErrors, options.perlEnv);
           break;
         } catch (error) {
           if (error instanceof Cancelled || signal?.aborted) throw error;
@@ -825,6 +841,7 @@ export class Builder {
     scheduled?: Active,
     signal?: AbortSignal,
     pastErrors = false,
+    perlEnv?: NodeJS.ProcessEnv,
   ): Promise<BuildInfo> {
     const p = this.project,
       haltOnError = p.halt_on_error && !pastErrors,
@@ -1038,6 +1055,7 @@ export class Builder {
         cwd,
         env: {
           ...process.env,
+          ...perlEnv,
           ...date,
           ...(keeping ? { PAPILOT_PASS_DIR: passes.replaceAll("\\", "/"), PAPILOT_PASS_FILES: ["xdv", "pdf", "synctex.gz"].map((ext) => `build/${job}.${ext}`).join("\n") } : {}),
         },
