@@ -294,6 +294,9 @@ try {
     for (const selector of ['.nav', '.hero-note', '.footer nav']) {
       assert.equal(await staticVisitor.locator(`${selector} a[href="${universe}"]`).count(), 1, `${locale}: ${selector} links to Universe`);
     }
+    const wechat = 'https://papilot.ai/wechat/';
+    assert.equal(await staticVisitor.locator(`.topbar a.wechat-link[href="${wechat}"]`).count(), locale === 'zh-CN' ? 1 : 0, `${locale}: WeChat header link only on zh-CN`);
+    assert.equal(await staticVisitor.locator(`.footer nav a[href="${wechat}"]`).count(), locale === 'zh-CN' ? 1 : 0, `${locale}: WeChat footer link only on zh-CN`);
     assert.equal(await staticVisitor.locator('.hero-universe').isVisible(), true, `${locale}: templates remain discoverable on phones`);
     assert.equal(await staticVisitor.locator('.hero-star').isVisible(), true, `${locale}: GitHub star CTA remains discoverable on phones`);
     assert.equal(await staticVisitor.locator('.hero-star').getAttribute('href'), 'https://github.com/PapilotAI/papilot');

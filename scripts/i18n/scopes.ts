@@ -71,6 +71,19 @@ export function renderReadme(root: string, translations: Record<string, string>,
     const localized = url.replace(/(\.(?:png|jpe?g|gif|svg|webp))$/i, `.${locale}$1`);
     return localized !== url && fs.existsSync(path.join(root, localized)) ? `${attribute}="${localized}"` : match;
   });
+  // Chinese readers get direct entry points to the WeChat discussion group
+  // (served by PapilotAI/wechat at papilot.ai/wechat/) without affecting the
+  // English README or other locale catalogs.
+  if (locale === 'zh-CN') {
+    result = result.replace(
+      '\n<!-- END BADGES -->',
+      '\n[![微信群](https://img.shields.io/badge/%E5%BE%AE%E4%BF%A1%E7%BE%A4-%E6%89%AB%E7%A0%81%E5%8A%A0%E5%85%A5-07C160?style=flat&logo=wechat&logoColor=white)](https://papilot.ai/wechat/)\n<!-- END BADGES -->',
+    );
+    result = result.replace(
+      /(<a id="community"><\/a>[\s\S]*?<\/p>)/,
+      '$1\n\n<p align="center"><sub>中文用户也可以直接扫码加入 <a href="https://papilot.ai/wechat/">Papilot 微信讨论群</a>。</sub></p>',
+    );
+  }
   const directory = 'docs/readme';
   fs.mkdirSync(path.join(root, directory), { recursive: true });
   fs.writeFileSync(path.join(root, directory, `README.${locale}.md`), readmeLinks(result, directory));

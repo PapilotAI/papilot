@@ -1,6 +1,6 @@
 # Serves the website that scripts/build-site.mjs writes to _site at papilot.ai.
 # worker.mjs also serves the GitHub star count through a 15-minute cache.
-# papilot.ai/universe* belongs to the PapilotAI/universe Worker; its more specific route wins.
+# papilot.ai/universe* and papilot.ai/wechat* belong to their own Workers; their more specific routes win.
 name = "papilot-site"
 main = "worker.mjs"
 compatibility_date = "2026-11-01"
