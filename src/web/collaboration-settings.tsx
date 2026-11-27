@@ -7,7 +7,6 @@ import {
   type AgentId,
   type CollaborationConfig,
   type CollaborationResolved,
-  type CollaborationRole,
   type CollaborationRoute,
   type CollaborationSettings as Settings,
   type CollaborationWorkerAgent,
@@ -39,14 +38,7 @@ export interface CollaborationSettingsProps {
 type NodeSelection =
   | { kind: 'router' }
   | { kind: 'judge' }
-  | { kind: 'role'; role: CollaborationRole }
   | { kind: 'racer'; index: number };
-
-const roleMeta = (role: CollaborationRole) => ({
-  quick: { short: t('Quick'), name: t('Quick & routing'), detail: t('Fast dispatcher and simple mechanical edits'), icon: 'bolt', tone: 'quick' },
-  polish: { short: t('Polish'), name: t('Polishing'), detail: t('Natural, readable prose and flow'), icon: 'sparkles', tone: 'polish' },
-  rigorous: { short: t('Rigorous'), name: t('Rigorous & judging'), detail: t('Math, formal claims, blind race judging and conflict resolution'), icon: 'scale', tone: 'rigorous' },
-})[role];
 
 const AUTO_VALUE = '__auto__';
 
@@ -196,7 +188,6 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
     return rt?.models.find(m => m.isDefault)?.id || rt?.models[0]?.id || '';
   };
 
-  // Clamp racer selection if racers shrunk.
   useEffect(() => {
     if (selected?.kind === 'racer' && selected.index >= displayedRacers.length) {
       setSelected(displayedRacers.length ? { kind: 'racer', index: displayedRacers.length - 1 } : null);
@@ -209,14 +200,12 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
 
   const isSelected = (candidate: NodeSelection) => {
     if (!selected || selected.kind !== candidate.kind) return false;
-    if (candidate.kind === 'role' && selected.kind === 'role') return selected.role === candidate.role;
     if (candidate.kind === 'racer' && selected.kind === 'racer') return selected.index === candidate.index;
     return true;
   };
   const toggleNode = (candidate: NodeSelection) => {
     setSelected(prev => {
       if (prev && prev.kind === candidate.kind) {
-        if (candidate.kind === 'role' && prev.kind === 'role' && prev.role === candidate.role) return null;
         if (candidate.kind === 'racer' && prev.kind === 'racer' && prev.index === candidate.index) return null;
         if (candidate.kind === 'router' || candidate.kind === 'judge') return null;
       }
@@ -251,7 +240,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
     if (candidate) {
       const next = [...basePool, candidate].slice(0, MAX_COLLABORATION_RACERS);
       setSelected({ kind: 'racer', index: next.length - 1 });
-      void change({ racers: next });
+      void change({ racers: next, routes: { ...cfg.routes, polish: null } });
     }
   };
 
@@ -260,22 +249,24 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
     const basePool = cfg.racers.length ? [...cfg.racers] : [...resolvedRacers];
     const next = basePool.filter((_, i) => i !== index);
     if (selected?.kind === 'racer') {
-      if (next.length === 0) setSelected(null);
-      else if (selected.index === index) setSelected(null);
+      if (next.length === 0 || selected.index === index) setSelected(null);
       else if (selected.index > index) setSelected({ kind: 'racer', index: selected.index - 1 });
     }
-    void change({ racers: next });
+    void change({ racers: next, routes: { ...cfg.routes, polish: null } });
   };
 
   const updateRacer = (index: number, nextRoute: CollaborationRoute) => {
     const cfg = currentConfig();
     const basePool = cfg.racers.length ? [...cfg.racers] : [...resolvedRacers];
     basePool[index] = nextRoute;
-    void change({ racers: basePool });
+    void change({ racers: basePool, routes: { ...cfg.routes, polish: null } });
   };
 
   const isEnabled = state?.enabled ?? enabled;
   const inspectorId = `${id}-inspector`;
+  const routerCustom = Boolean(state && (state.router || state.routes.quick));
+  const judgeCustom = Boolean(state && (state.judge || state.routes.rigorous));
+  const raceCustom = Boolean(state && (racers.length > 0 || state.routes.polish));
 
   function renderInspector() {
     if (!selected || !state) return null;
@@ -293,41 +284,33 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
 
     if (selected.kind === 'router') {
       slotKey = 'router';
-      title = t('Router');
-      detail = t('Fast read-only dispatcher that assigns or races each annotation cluster.');
-      icon = 'network';
+      title = t('Router & quick');
+      detail = t('Dispatches each annotation and handles simple mechanical edits directly.');
+      icon = 'bolt';
       tone = 'quick';
-      route = state.router ?? null;
-      resolvedRoute = resolved?.router || null;
+      route = state.router ?? state.routes.quick ?? null;
+      resolvedRoute = resolved?.router || resolved?.routes.quick || null;
       readOnlyOnly = true;
-      onUpdate = next => void change({ router: next });
+      onUpdate = next => void change({ router: next, routes: { ...currentConfig().routes, quick: next } });
     } else if (selected.kind === 'judge') {
       slotKey = 'judge';
-      title = t('Judge');
-      detail = t('Rigorous read-only evaluator that blind-compares race candidates and catches claim drift.');
-      icon = 'shield';
+      title = t('Judge & rigorous');
+      detail = t('Blind-judges race candidates, catches claim drift, and handles rigorous tasks.');
+      icon = 'scale';
       tone = 'rigorous';
-      route = state.judge ?? null;
-      resolvedRoute = resolved?.judge || null;
+      route = state.judge ?? state.routes.rigorous ?? null;
+      resolvedRoute = resolved?.judge || resolved?.routes.rigorous || null;
       readOnlyOnly = true;
-      onUpdate = next => void change({ judge: next });
-    } else if (selected.kind === 'role') {
-      const meta = roleMeta(selected.role);
-      slotKey = selected.role;
-      title = meta.name;
-      detail = meta.detail;
-      icon = meta.icon;
-      tone = meta.tone;
-      route = state.routes[selected.role];
-      resolvedRoute = resolved?.routes[selected.role] || null;
-      onUpdate = next => void change({ routes: { ...currentConfig().routes, [selected.role]: next } });
+      onUpdate = next => void change({ judge: next, routes: { ...currentConfig().routes, rigorous: next } });
     } else if (selected.kind === 'racer') {
       const idx = selected.index;
       const current = displayedRacers[idx];
       if (!current) return null;
       slotKey = `racer-${idx}`;
       title = t('Race model {n}', { n: idx + 1 });
-      detail = t('Models competing in parallel on raced annotations.');
+      detail = displayedRacers.length >= 2
+        ? t('Competes in parallel on substantive annotations.')
+        : t('Handles substantive annotations directly; click + to add a second model to race.');
       icon = 'sparkles';
       tone = 'race';
       route = current;
@@ -432,23 +415,24 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
       <div className="collab-stages">
         <div className="collab-stage">
           <div className="collab-stage-head">
-            <span className="collab-stage-label"><Icon name="bolt" size={11}/>{t('Router')}</span>
+            <span className="collab-stage-label"><span className="collab-role-badge collab-role-badge-sm" data-tone="quick" aria-hidden="true"><Icon name="bolt" size={11}/></span>{t('Router & quick')}</span>
           </div>
           <div className="collab-stage-models">
             <button type="button" className="collab-node" data-role="router" aria-expanded={isSelected({ kind: 'router' })} aria-controls={isSelected({ kind: 'router' }) ? inspectorId : undefined}
               disabled={!online} onClick={() => toggleNode({ kind: 'router' })} title={formatRoute(resolved.router, runtimes)}>
-              <NodePillContent route={resolved.router} runtimes={runtimes} custom={Boolean(state.router)}/>
+              <NodePillContent route={resolved.router} runtimes={runtimes} custom={routerCustom}/>
             </button>
           </div>
+          <span className="collab-stage-foot">{t('Simple edits finish here')}</span>
         </div>
 
         <span className="collab-stage-arrow" aria-hidden="true"><Icon name="arrowRight" size={13}/></span>
 
         <div className="collab-stage collab-stage-race" data-role="racers">
           <div className="collab-stage-head">
-            <span className="collab-stage-label"><Icon name="sparkles" size={11}/>{t('Race')}</span>
+            <span className="collab-stage-label"><span className="collab-role-badge collab-role-badge-sm" data-tone="race" aria-hidden="true"><Icon name="sparkles" size={11}/></span>{t('Race')}</span>
             <div className="collab-stage-controls">
-              {racers.length > 0 && <button type="button" className="collab-stage-reset" disabled={!online || saving} onClick={() => { if (selected?.kind === 'racer') setSelected(null); void change({ racers: [] }); }}>{t('Auto')}</button>}
+              {raceCustom && <button type="button" className="collab-stage-reset" disabled={!online || saving} onClick={() => { if (selected?.kind === 'racer') setSelected(null); void change({ racers: [], routes: { ...currentConfig().routes, polish: null } }); }}>{t('Auto')}</button>}
               <button type="button" className="collab-step-btn collab-add-btn" aria-label={t('Add model')} title={t('Add model')}
                 disabled={!online || saving || displayedRacers.length >= MAX_COLLABORATION_RACERS || !offered.length}
                 onClick={addRacer}><Icon name="plus" size={12}/></button>
@@ -463,52 +447,32 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
                 <div className="collab-race-node-wrap">
                   <button type="button" className="collab-node" data-racer={index} aria-expanded={active} aria-controls={active ? inspectorId : undefined}
                     disabled={!online} onClick={() => toggleNode({ kind: 'racer', index })} title={formatRoute(racer, runtimes)}>
-                    <NodePillContent route={racer} runtimes={runtimes} custom={racers.length > 0}/>
+                    <NodePillContent route={racer} runtimes={runtimes} custom={raceCustom}/>
                   </button>
                   {canRemove && <button type="button" className="collab-step-btn collab-remove-btn" aria-label={t('Remove race model {n}', { n: index + 1 })} title={t('Remove')}
                     disabled={!online || saving} onClick={() => removeRacer(index)}><Icon name="minus" size={12}/></button>}
                 </div>
               </div>;
             }) : <span className="collab-stage-empty">{t('Connect at least two models to race annotations in parallel.')}</span>}
-            {displayedRacers.length === 1 && <span className="collab-stage-note">{t('Add a second model to race annotations in parallel.')}</span>}
           </div>
+          <span className="collab-stage-foot">
+            {displayedRacers.length >= 2 ? t('Parallel race on key notes') : t('Single model · click + to race')}
+          </span>
         </div>
 
         <span className="collab-stage-arrow" aria-hidden="true"><Icon name="arrowRight" size={13}/></span>
 
         <div className="collab-stage">
           <div className="collab-stage-head">
-            <span className="collab-stage-label"><Icon name="scale" size={11}/>{t('Judge')}</span>
+            <span className="collab-stage-label"><span className="collab-role-badge collab-role-badge-sm" data-tone="rigorous" aria-hidden="true"><Icon name="scale" size={11}/></span>{t('Judge & rigorous')}</span>
           </div>
           <div className="collab-stage-models">
             <button type="button" className="collab-node" data-role="judge" aria-expanded={isSelected({ kind: 'judge' })} aria-controls={isSelected({ kind: 'judge' }) ? inspectorId : undefined}
               disabled={!online} onClick={() => toggleNode({ kind: 'judge' })} title={formatRoute(resolved.judge, runtimes)}>
-              <NodePillContent route={resolved.judge} runtimes={runtimes} custom={Boolean(state.judge)}/>
+              <NodePillContent route={resolved.judge} runtimes={runtimes} custom={judgeCustom}/>
             </button>
           </div>
-        </div>
-      </div>
-
-      <div className="collab-direct-branch">
-        <div className="collab-direct-head">
-          <span className="collab-stage-label"><Icon name="branch" size={11}/>{t('Direct roles')}</span>
-          <span className="collab-direct-sub">{t('Used when an annotation is routed directly to one model')}</span>
-        </div>
-        <div className="collab-direct-grid">
-          {COLLABORATION_ROLES.map(role => {
-            const meta = roleMeta(role);
-            const active = isSelected({ kind: 'role', role });
-            const resolvedRole = resolved.routes[role];
-            const isCustom = Boolean(state.routes[role]);
-            return <button key={role} type="button" className="collab-node collab-direct-node" data-role={role} aria-expanded={active} aria-controls={active ? inspectorId : undefined}
-              disabled={!online} onClick={() => toggleNode({ kind: 'role', role })} title={`${meta.name}: ${formatRoute(resolvedRole, runtimes)}`}>
-              <span className="collab-direct-role-head">
-                <span className="collab-role-badge collab-role-badge-sm" data-tone={meta.tone} aria-hidden="true"><Icon name={meta.icon} size={11}/></span>
-                <span className="collab-direct-role-name">{meta.short}</span>
-              </span>
-              <NodePillContent route={resolvedRole} runtimes={runtimes} custom={isCustom}/>
-            </button>;
-          })}
+          <span className="collab-stage-foot">{t('Blind judge & rigorous tasks')}</span>
         </div>
       </div>
 

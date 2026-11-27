@@ -204,42 +204,56 @@ export function resolveCollaborationConfig(
   const readOnly = all.filter(candidate => candidate.readOnly);
 
   const autoRigorous = bestOf(readOnly.length ? readOnly : all, rigorousScore);
+  const explicitJudge = config.judge ? hydrateExplicit(config.judge, runtimes) : null;
   const rigorousRoute = config.routes.rigorous
     ? hydrateExplicit(config.routes.rigorous, runtimes)
-    : autoRigorous ? toRoute(autoRigorous, ['xhigh', 'high', 'medium'], true) : null;
+    : explicitJudge
+      ? explicitJudge
+      : autoRigorous ? toRoute(autoRigorous, ['xhigh', 'high', 'medium'], true) : null;
 
   const rigorousFamily = rigorousRoute
     ? modelFamily(rigorousRoute.agent, rigorousRoute.model || '', runtimes[rigorousRoute.agent]?.models.find(m => m.id === rigorousRoute.model)?.name || '')
     : autoRigorous?.family;
 
-  const autoPolish = bestOf(all, c => polishScore(c, rigorousFamily));
-  const polishRoute = config.routes.polish
-    ? hydrateExplicit(config.routes.polish, runtimes)
-    : autoPolish ? toRoute(autoPolish, ['xhigh', 'high', 'medium'], true) : rigorousRoute;
-
   const autoQuick = bestOf(readOnly.length ? readOnly : all, fastScore);
+  const explicitRouter = config.router ? hydrateExplicit(config.router, runtimes) : null;
   const quickRoute = config.routes.quick
     ? hydrateExplicit(config.routes.quick, runtimes)
-    : autoQuick ? toRoute(autoQuick, ['low', 'off', 'medium'], true) : rigorousRoute;
+    : explicitRouter
+      ? explicitRouter
+      : autoQuick ? toRoute(autoQuick, ['low', 'off', 'medium'], true) : rigorousRoute;
 
   // Router defaults to Quick when Quick is read-only; otherwise picks the fastest read-only model.
   const autoRouter = bestOf(readOnly, fastScore);
-  const routerRoute = config.router
-    ? hydrateExplicit(config.router, runtimes)
+  const routerRoute = explicitRouter
+    ? explicitRouter
     : routeAvailable(quickRoute, runtimes, true, readOnlyAgents) ? quickRoute
       : autoRouter ? toRoute(autoRouter, ['low', 'off', 'medium'], true) : null;
 
   // Judge defaults to Rigorous when Rigorous is read-only; otherwise picks the strongest read-only model.
   const autoJudge = bestOf(readOnly, rigorousScore);
-  const judgeRoute = config.judge
-    ? hydrateExplicit(config.judge, runtimes)
+  const judgeRoute = explicitJudge
+    ? explicitJudge
     : routeAvailable(rigorousRoute, runtimes, true, readOnlyAgents) ? rigorousRoute
       : autoJudge ? toRoute(autoJudge, ['xhigh', 'high', 'medium'], true) : routerRoute;
 
+  // When a custom race pool is configured without an explicit Polish override,
+  // derive Polish from the race pool (preferring a racer distinct from Judge).
+  const hydratedRacers = config.racers.map(route => hydrateExplicit(route, runtimes)).slice(0, MAX_COLLABORATION_RACERS);
+  const judgeKey = judgeRoute ? routeKey(judgeRoute) : '';
+  const racerPolish = hydratedRacers.find(r => routeKey(r) !== judgeKey) || hydratedRacers[0] || null;
+
+  const autoPolish = bestOf(all, c => polishScore(c, rigorousFamily));
+  const polishRoute = config.routes.polish
+    ? hydrateExplicit(config.routes.polish, runtimes)
+    : racerPolish
+      ? racerPolish
+      : autoPolish ? toRoute(autoPolish, ['xhigh', 'high', 'medium'], true) : rigorousRoute;
+
   // Race pool defaults to cross-family [Rigorous, Polishing] when distinct.
   let racers: CollaborationRoute[] = [];
-  if (config.racers.length) {
-    racers = config.racers.map(route => hydrateExplicit(route, runtimes)).slice(0, MAX_COLLABORATION_RACERS);
+  if (hydratedRacers.length) {
+    racers = hydratedRacers;
   } else {
     const pool: CollaborationRoute[] = [];
     const pushUnique = (route: CollaborationRoute | null) => {

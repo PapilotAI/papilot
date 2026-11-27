@@ -75,22 +75,24 @@ try {
     }
     await toggle.focus(); await page.keyboard.press('Space'); await expect(toggle).toBeChecked();
     await expect(disclosure.getByRole('alert')).toHaveCount(0);
-    // Active team interactive board: Router, Race pool (+ / -), Judge, and Direct roles all live in the graph.
+    // Unified 3-stage interactive team graph: Router & quick -> Race (+ / -) -> Judge & rigorous.
     await expect(disclosure.locator('.collab-board')).toBeVisible();
     await expect(disclosure.locator('[data-role="router"]')).toBeVisible();
+    await expect(disclosure.locator('[data-role="racers"]')).toBeVisible();
     await expect(disclosure.locator('[data-role="judge"]')).toBeVisible();
-    await expect(disclosure.locator('[data-role="quick"], [data-role="polish"], [data-role="rigorous"]')).toHaveCount(3);
-    // Clicking Polish node opens the docked inspector with its model picker, Fast mode toggle, and effort slider.
-    await disclosure.locator('[data-role="polish"]').click();
+    // Clicking Judge node opens the docked inspector with its model picker, Fast mode toggle, and effort slider.
+    await disclosure.locator('[data-role="judge"]').click();
     const inspector = disclosure.locator('.collab-inspector');
     await expect(inspector).toBeVisible();
+    await expect(inspector).toHaveAttribute('data-inspecting', 'judge');
     await expect(inspector.locator('[role="combobox"]')).toContainText('Codex');
     await expect(inspector.locator('.collaboration-fast [role="switch"]')).toBeVisible();
     await selectOption(inspector.locator('[role="combobox"]'), JSON.stringify(['antigravity', 'gemini-test']));
-    await expect.poll(() => config.routes.polish).toEqual({ agent: 'antigravity', model: 'gemini-test', effort: 'medium' });
+    await expect.poll(() => config.judge).toEqual({ agent: 'antigravity', model: 'gemini-test', effort: 'medium' });
+    await expect.poll(() => config.routes.rigorous).toEqual({ agent: 'antigravity', model: 'gemini-test', effort: 'medium' });
     const effort = inspector.getByRole('slider');
     await effort.focus(); await page.keyboard.press('ArrowRight');
-    await expect.poll(() => config.routes.polish.effort).toBe('high');
+    await expect.poll(() => config.judge.effort).toBe('high');
     // Saves go one at a time, so a slow answer for an earlier level cannot undo a later one.
     let release; hold = new Promise(resolve => { release = resolve; });
     const before = saves;
@@ -100,14 +102,15 @@ try {
     await expect(effort).toHaveValue('0');
     hold = null; release();
     await expect.poll(() => saves).toBe(before + 2);
-    await expect.poll(() => config.routes.polish.effort).toBe('low');
+    await expect.poll(() => config.judge.effort).toBe('low');
     await page.waitForTimeout(300); await expect(effort).toHaveValue('0');
-    // Switch to Quick node on the graph and configure effort.
-    await disclosure.locator('[data-role="quick"]').click();
+    // Switch to Router & quick node on the graph and configure effort.
+    await disclosure.locator('[data-role="router"]').click();
+    await expect(inspector).toHaveAttribute('data-inspecting', 'router');
     await selectOption(inspector.locator('[role="combobox"]'), JSON.stringify(['opencode', 'provider/flash-test']));
     await inspector.getByRole('slider').focus(); await page.keyboard.press('End');
+    await expect.poll(() => config.router).toEqual({ agent: 'opencode', model: 'provider/flash-test', effort: 'max' });
     await expect.poll(() => config.routes.quick).toEqual({ agent: 'opencode', model: 'provider/flash-test', effort: 'max' });
-    assert.deepEqual(config.routes.rigorous, codexRoute);
     // Race pool: + button adds a 3rd model right on the graph, and - removes it cleanly.
     await expect(disclosure.locator('.collaboration-racer-row')).toHaveCount(2);
     await disclosure.locator('.collab-add-btn').click();
@@ -115,11 +118,9 @@ try {
     await expect(inspector).toHaveAttribute('data-inspecting', 'racer-2');
     await disclosure.locator('.collab-remove-btn').nth(2).click();
     await expect(disclosure.locator('.collaboration-racer-row')).toHaveCount(2);
-    // Router and Judge nodes are directly clickable on the graph.
-    await disclosure.locator('[data-role="router"]').click();
-    await expect(inspector).toHaveAttribute('data-inspecting', 'router');
-    await disclosure.locator('[data-role="judge"]').click();
-    await expect(inspector).toHaveAttribute('data-inspecting', 'judge');
+    // Clicking the first racer highlights it in the inspector.
+    await disclosure.locator('[data-racer="0"]').click();
+    await expect(inspector).toHaveAttribute('data-inspecting', 'racer-0');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.screenshot({ path: `test-results/collaboration-${width}-${language}.png`, animations: 'disabled' });
     await page.locator('.modal-close').click(); await page.reload(); if (width < 600) await page.locator('.sidebar-toggle').click(); await page.locator('.settings-link').click();
@@ -133,7 +134,7 @@ try {
     await page.locator('[data-settings-page="experiments"]').click();
     await expect(toggle).toBeChecked();
     // Saved on the host: the routes come back after reloading.
-    await expect(disclosure.locator('[data-role="polish"]')).toContainText('Gemini Test');
+    await expect(disclosure.locator('[data-role="judge"]')).toContainText('Gemini Test');
     await toggle.click(); await expect(toggle).not.toBeChecked(); await expect(disclosure.locator('.collab-board')).toHaveCount(0);
     if (width < 600) await page.locator('.settings-mobile-back').click();
     await page.locator('[data-settings-page="general"]').click();

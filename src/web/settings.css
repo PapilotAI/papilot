@@ -372,15 +372,8 @@
 .collab-node[aria-expanded="true"] .collab-micro-tag:not(.collab-micro-fast){background:var(--bg)}
 .collab-micro-fast{background:var(--amber-soft);color:var(--amber-text)}
 .collab-stage-empty{font-size:11.5px;color:var(--text-3)}
-.collab-stage-note{font-size:11px;color:var(--amber-text);line-height:1.4}
+.collab-stage-foot{margin-block-start:auto;font-size:10.5px;color:var(--text-3);line-height:1.35}
 .collab-stage-arrow{display:inline-flex;align-items:center;justify-content:center;align-self:center;justify-self:center;color:var(--text-3);flex:none;pointer-events:none}
-.collab-direct-branch{margin-block-start:10px;padding-block-start:10px;border-top:1px dashed color-mix(in srgb,var(--line) 90%,transparent)}
-.collab-direct-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px;margin-block-end:8px}
-.collab-direct-sub{font-size:11px;color:var(--text-3)}
-.collab-direct-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.collab-direct-node{background:var(--bg)}
-.collab-direct-role-head{display:flex;align-items:center;gap:5px;width:100%;min-width:0}
-.collab-direct-role-name{font-size:11px;font-weight:500;color:var(--text-2)}
 .collab-inspector{margin-block-start:12px;padding:12px 14px;border:1px solid var(--accent-line);border-radius:8px;background:var(--bg);box-shadow:var(--shadow-xs);animation:runtime-agent-open .14s ease-out}
 .collab-inspector-head{display:flex;align-items:flex-start;gap:10px;margin-block-end:10px}
 .collab-inspector-copy{flex:1 1 auto;min-width:0}
@@ -411,7 +404,6 @@
   .collab-stages{grid-template-columns:1fr;gap:4px}
   .collab-stage-arrow{padding:2px 0}
   .collab-stage-arrow>svg{transform:rotate(90deg)}
-  .collab-direct-grid{grid-template-columns:1fr;gap:6px}
   .collab-inspector{padding:12px}
   .collaboration-fast-label{font-size:13px}
 }

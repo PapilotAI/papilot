@@ -118,6 +118,24 @@ test('auto-team builds cross-family racers even on a single multi-provider agent
   );
 });
 
+test('3-stage config derives direct quick/polish/rigorous routes from router, racers, and judge', () => {
+  const customRouter: CollaborationRoute = { agent: 'antigravity', model: 'gemini-3.8-flash', effort: 'low' };
+  const customJudge: CollaborationRoute = { agent: 'codex', model: 'gpt-6.2-sol', effort: 'xhigh', serviceTier: 'fast' };
+  const customRacers: CollaborationRoute[] = [
+    customJudge,
+    { agent: 'antigravity', model: 'gemini-4-neon', effort: 'high' },
+  ];
+  const resolved = resolveCollaborationConfig({
+    router: customRouter,
+    judge: customJudge,
+    routes: { quick: null, polish: null, rigorous: null },
+    racers: customRacers,
+  }, hostRuntimes);
+  assert.deepEqual(resolved.routes.quick, customRouter);
+  assert.deepEqual(resolved.routes.rigorous, customJudge);
+  assert.deepEqual(resolved.routes.polish, customRacers[1]);
+});
+
 test('legacy collaboration-routes migration turns untouched Codex defaults into Auto while keeping explicit choices', () => {
   const migrated = collaborationConfig(undefined, {
     quick: { agent: 'codex', model: null, effort: null },
