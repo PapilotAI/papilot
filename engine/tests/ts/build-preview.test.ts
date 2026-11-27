@@ -10,7 +10,44 @@ import { Fixture } from "./helpers.ts";
 const tex = Boolean(processTools.which("latexmk") && processTools.which("pdflatex"));
 const version = tex ? /Version (\d+)\.(\d+)/.exec(processTools.run("latexmk", ["-version"]).stdout.toString()) : null;
 const hooks = version && (Number(version[1]) > 4 || Number(version[1]) === 4 && Number(version[2]) >= 84);
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
+
+it.skipIf(process.platform !== "win32")("uses bundled Perl for Windows latexmk with MSYS Perl and rebuilds cached seeds", async () => {
+  const f = new Fixture();
+  try {
+    f.write("msys/perl.exe", "", f.base);
+    f.write("msys/msys-2.0.dll", "", f.base);
+    f.write("native/perl.exe", "", f.base);
+    const native = path.join(f.base, "native"), msys = path.join(f.base, "msys"), original = process.env.PATH;
+    vi.stubEnv("PATH", [native, msys, original].join(path.delimiter));
+    vi.stubEnv("TEXLIVE_WINDOWS_TRY_EXTERNAL_PERL", "1");
+    vi.stubEnv("TEXLIVE_WINDOWS_TRY_EXTERNAL_PERL_latexmk", undefined);
+    vi.spyOn(processTools, "commandVersion").mockResolvedValue("fixture pdfTeX");
+    const run = vi.spyOn(processTools, "runAsync").mockImplementation(async (_command, _args, options) => {
+      fs.writeFileSync(path.join(options!.cwd!, "build", "main.pdf"), "%PDF-");
+      fs.writeFileSync(path.join(options!.cwd!, "build", "main.aux"), "");
+      return Buffer.alloc(0);
+    });
+
+    const builder = new Builder(loadProject(f.root), f.repo);
+    const previous = await builder.build("HEAD");
+    expect((await builder.buildSeed("HEAD")).key).toBe(previous.key);
+    vi.stubEnv("PATH", [msys, native, original].join(path.delimiter));
+    const refreshed = await builder.buildSeed("HEAD");
+    expect(refreshed.key).not.toBe(previous.key);
+    expect((await builder.buildSeed("HEAD")).key).toBe(refreshed.key);
+
+    const calls = run.mock.calls.filter(([command]) => command === "latexmk");
+    expect(calls.map(([, , options]) => options?.env?.TEXLIVE_WINDOWS_TRY_EXTERNAL_PERL_latexmk)).toEqual([undefined, "0"]);
+    expect(calls.map(([, , options]) => options?.env?.TEXLIVE_WINDOWS_TRY_EXTERNAL_PERL)).toEqual(["1", "1"]);
+    expect(process.env.TEXLIVE_WINDOWS_TRY_EXTERNAL_PERL_latexmk).toBeUndefined();
+  } finally {
+    await f.close();
+  }
+});
 
 it("sends the outline trace and chapter preamble through a build-local latexmkrc", async () => {
   const f = new Fixture();
