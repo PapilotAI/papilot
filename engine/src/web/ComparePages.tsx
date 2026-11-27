@@ -4,7 +4,7 @@ import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import type { Strip } from "../types.ts";
 import { t } from "./i18n.ts";
 import { CMapData } from "./FullPaper.tsx";
-import { alignPages, BAR_HEIGHT, BAR_SPACING, freeSlot, locator, scope, type PlacedChange } from "./paper.ts";
+import { alignPages, BAR_HEIGHT, BAR_SPACING, freeSlot, locator, scope, type PagePair, type PlacedChange } from "./paper.ts";
 import { fullPaperReader } from "./full-paper-reader.ts";
 
 // Both versions of the paper, whole, side by side: the old version's pages
@@ -49,7 +49,7 @@ function place(doc: Doc, changes: PlacedChange[], side: Side): Placed[] {
 }
 
 // Where each change prints on both versions' pages, and its bar's extent.
-function layout(docs: { before: Doc; after: Doc }, changes: PlacedChange[]) {
+function layout(docs: { before: Doc; after: Doc }, changes: PlacedChange[], pairs: PagePair[]) {
   const old = place(docs.before, changes, "before"), next = place(docs.after, changes, "after");
   // Each change's lines on a page, as a share of the page's height: where
   // its bar in the middle column runs.
@@ -71,7 +71,11 @@ function layout(docs: { before: Doc; after: Doc }, changes: PlacedChange[]) {
     const placedLines = newLines.get(index) ? newLines : oldLines.get(index) ? oldLines : null;
     if (placedLines) { const extent = placedLines.get(index)!; previous = { page: extent.page, top: extent.top, bottom: extent.bottom, lines: placedLines }; continue; }
     const lines: typeof newLines = previous?.lines ?? newLines, page: number = previous?.page ?? 0,
-      top = freeSlot(lines, page, previous ? previous.bottom + BAR_SPACING : 0.03), bottom = top + BAR_HEIGHT;
+      // The row's bars, beside the old page and the new page it is paired with.
+      mate = pairs.find(([b, a]) => (lines === oldLines ? b : a) === page),
+      other = lines === oldLines ? newLines : oldLines, otherPage = mate ? (lines === oldLines ? mate[1] : mate[0]) : null,
+      taken = [...[...lines.values()].filter((extent) => extent.page === page), ...[...other.values()].filter((extent) => extent.page === otherPage)],
+      top = freeSlot(taken, previous ? previous.bottom + BAR_SPACING : 0.03), bottom = top + BAR_HEIGHT;
     lines.set(index, { page, top, bottom });
     previous = { page, top, bottom, lines };
   }
@@ -166,7 +170,7 @@ export function ComparePages({ active, restorePlace = true, before, after, resou
   // The pages are paired once per pair of PDFs, and the changes placed once
   // per round: a click re-renders the view without either.
   const pairs = useMemo(() => docs && alignPages(docs.before.words, docs.after.words), [docs]);
-  const marks = useMemo(() => docs && layout(docs, changes), [docs, changes]);
+  const marks = useMemo(() => docs && pairs && layout(docs, changes, pairs), [docs, changes, pairs]);
   if (!active) return null;
   if (error) return <p className="empty" role="alert">{error}</p>;
   // Not the full paper's loading status: the review stays shown meanwhile.

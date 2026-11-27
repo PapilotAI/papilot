@@ -112,15 +112,16 @@ it("shades exactly a crop's lines, or the whole crop when it has no words", () =
 
 it("puts the bars of changes with nothing to mark in free places, never on another bar", () => {
   // A change near the page's foot, then two with nothing to mark after it.
-  const lines = new Map([[0, { page: 0, top: 0.9, bottom: 0.98 }]]);
-  for (const index of [1, 2]) {
-    const top = freeSlot(lines, 0, lines.get(index - 1)!.bottom + BAR_SPACING);
-    lines.set(index, { page: 0, top, bottom: top + BAR_HEIGHT });
+  // The row also holds a bar beside the other version's page.
+  const bars = [{ top: 0.9, bottom: 0.98 }, { top: 0.8, bottom: 0.83 }];
+  for (let i = 0; i < 2; i++) {
+    const top = freeSlot(bars, 0.98 + BAR_SPACING);
+    bars.push({ top, bottom: top + BAR_HEIGHT });
   }
-  const bars = [...lines.values()].sort((a, b) => a.top - b.top);
+  bars.sort((a, b) => a.top - b.top);
   for (let i = 1; i < bars.length; i++) expect(bars[i].top).toBeGreaterThanOrEqual(bars[i - 1].bottom + BAR_SPACING - 1e-9);
   for (const bar of bars) expect(bar.bottom).toBeLessThanOrEqual(1);
   // On an empty page, the first goes where it was asked.
-  expect(freeSlot(new Map(), 0, 0.03)).toBeCloseTo(BAR_SPACING);
-  expect(freeSlot(new Map(), 0, 0.5)).toBeCloseTo(0.5);
+  expect(freeSlot([], 0.03)).toBeCloseTo(BAR_SPACING);
+  expect(freeSlot([], 0.5)).toBeCloseTo(0.5);
 });

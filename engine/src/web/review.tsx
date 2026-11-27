@@ -2453,12 +2453,15 @@ export function ReviewApp({
   // Switching layouts hands the workspace's page controls from one view's
   // reader to the other's without clearing them; a new round still clears
   // them while its PDF loads, as the workspace expects.
-  const shownLayout = useRef(compare);
+  // Only the author's switch within a round counts: a new round that
+  // renders, or the paper going away, clears them as before.
+  const shownLayout = useRef({ compare, round: detail?.round, paperView });
   useLayoutEffect(() => {
-    if (shownLayout.current === compare) return;
-    shownLayout.current = compare;
+    const before = shownLayout.current;
+    shownLayout.current = { compare, round: detail?.round, paperView };
+    if (before.compare === compare || before.round !== detail?.round || !before.paperView || !paperView) return;
     return holdReader(window);
-  }, [compare]);
+  }, [compare, detail?.round, paperView]);
   const [compareOpened, setCompareOpened] = useState(false);
   useEffect(() => { if (compare) setCompareOpened(true); }, [compare]);
   // The comparisons of the next few undecided changes are fetched and decoded

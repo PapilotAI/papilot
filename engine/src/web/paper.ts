@@ -197,12 +197,12 @@ export function alignPages(before: string[][], after: string[][]): PagePair[] {
   return rows.reverse();
 }
 
-// The nearest place on a page, as shares of its height, for a short bar that
-// keeps clear of the other bars and of their numbers above them: below
-// `from` while the page has room, otherwise above it.
+// The nearest place in a row of pages, as shares of their height, for a short
+// bar that keeps clear of the row's other bars (`taken`, from either page)
+// and of their numbers above them: below `from` while there is room,
+// otherwise above it.
 export const BAR_HEIGHT = 0.02, BAR_SPACING = 0.025;
-export function freeSlot(lines: Map<number, { page: number; top: number; bottom: number }>, page: number, from: number) {
-  const taken = [...lines.values()].filter((extent) => extent.page === page);
+export function freeSlot(taken: { top: number; bottom: number }[], from: number) {
   const fits = (top: number) => taken.every((extent) => top + BAR_HEIGHT + BAR_SPACING <= extent.top || top >= extent.bottom + BAR_SPACING);
   for (let top = Math.max(BAR_SPACING, from); top + BAR_HEIGHT <= 1; top += 0.005) if (fits(top)) return top;
   for (let top = Math.min(from, 1 - BAR_HEIGHT); top >= BAR_SPACING; top -= 0.005) if (fits(top)) return top;
