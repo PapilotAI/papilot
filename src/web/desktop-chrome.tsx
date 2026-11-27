@@ -34,7 +34,7 @@ function windowButtons(): WindowButtons {
   const platform = window.papilotDesktop!.platform, system = window.papilotDesktop!.windowButtons;
   if (platform === 'win32') return { side: 'right', buttons: ['minimize', 'maximize', 'close'] };
   if (platform === 'darwin') return { side: 'left', buttons: [] };
-  const buttons = Array.isArray(system?.buttons) ? system.buttons.filter(button => ['minimize', 'maximize', 'close'].includes(button)) : [];
+  const buttons = Array.isArray(system?.buttons) ? [...new Set(system.buttons.filter(button => ['minimize', 'maximize', 'close'].includes(button)))] : [];
   return (system?.side === 'left' || system?.side === 'right') && buttons.length ? { side: system.side, buttons } : { side: 'left', buttons: ['close', 'minimize', 'maximize'] };
 }
 const layout = desktopWindow ? windowButtons() : null;

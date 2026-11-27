@@ -26,6 +26,8 @@ delete env.ELECTRON_RUN_AS_NODE;
 if (process.platform === 'linux') {
   env.XDG_CURRENT_DESKTOP = 'KDE';
   env.XDG_CONFIG_HOME = path.join(data, 'config');
+  // No system kwinrc from the test machine.
+  env.XDG_CONFIG_DIRS = path.join(data, 'system-config');
   fs.mkdirSync(env.XDG_CONFIG_HOME);
   fs.writeFileSync(path.join(env.XDG_CONFIG_HOME, 'kwinrc'), '[org.kde.kdecoration2]\nButtonsOnLeft=XIA\nButtonsOnRight=\n');
 }

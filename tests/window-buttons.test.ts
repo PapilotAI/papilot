@@ -1,5 +1,7 @@
 import test from 'node:test';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import { detectWindowButtons, gtkLayout, kwinLayout, windowButtonsArgument, xfwmLayout, WINDOW_BUTTONS_ARGUMENT } from '../desktop/window-buttons.ts';
 
@@ -27,6 +29,7 @@ test('KDE and Xfce layouts map their button letters', () => {
   assert.deepEqual(kwinLayout('[org.kde.kdecoration2]\nButtonsOnLeft=X\nButtonsOnRight=\n[org.kde.kdecoration2][Extra]\nButtonsOnLeft=IA\n'), { side: 'left', buttons: ['close'] }, 'Subgroups are other groups');
   assert.deepEqual(kwinLayout('[org.kde.kdecoration2]\nButtonsOnLeft=X\nButtonsOnRight=\nButtonsOnLeft[fr]=IA\n'), { side: 'left', buttons: ['close'] }, 'Localized entries are other keys');
   assert.deepEqual(kwinLayout(['[org.kde.kdecoration2][Extra][$i]\n', '[org.kde.kdecoration2]\nButtonsOnLeft=X\nButtonsOnRight=\n']), { side: 'left', buttons: ['close'] }, "A locked subgroup does not lock its parent");
+  assert.deepEqual(kwinLayout('[org.kde.kdecoration2]\n[$i]\nButtonsOnLeft=X\nButtonsOnRight=\n'), { side: 'left', buttons: ['close'] }, 'A nameless header inside a file is not a group');
   assert.deepEqual(xfwmLayout('O|HMC\n'), { side: 'right', buttons: ['minimize', 'maximize', 'close'] }, 'Xfce default');
   assert.deepEqual(xfwmLayout('CHM|O'), { side: 'left', buttons: ['close', 'minimize', 'maximize'] });
 });
@@ -64,10 +67,20 @@ test('detection reads the layout from the current desktop', async () => {
   assert.equal(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'GNOME' }, exec: async () => { throw Error('no gsettings'); } }), null, 'Unreadable layouts fall back to the page default');
 });
 
-test('detection gives up on a stalled lookup', async () => {
-  const stalled = () => new Promise<string>(() => {});
-  assert.equal(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'KDE' }, read: stalled, timeout: 10 }), null);
-  assert.equal(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'GNOME' }, exec: stalled, timeout: 10 }), null);
+test('detection gives up on a stalled or failed lookup', async () => {
+  const stalled = () => new Promise<string>(() => {}), failed = async () => { throw Error('unavailable'); };
+  const plasma = { side: 'right', buttons: ['minimize', 'maximize', 'close'] };
+  assert.deepEqual(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'KDE' }, read: stalled, timeout: 10 }), plasma, 'KDE keeps its own default');
+  assert.deepEqual(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'XFCE' }, exec: stalled, timeout: 10 }), plasma, 'Xfce keeps its own default');
+  assert.deepEqual(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'XFCE' }, exec: failed }), plasma);
+  assert.equal(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'GNOME' }, exec: stalled, timeout: 10 }), null, 'Others keep the page default');
+});
+
+test('relative XDG directories are ignored', async () => {
+  const files: string[] = [];
+  await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'KDE', XDG_CONFIG_HOME: '.config', XDG_CONFIG_DIRS: 'etc:/opt/xdg' }, read: async file => { files.push(file); return ''; } });
+  assert.deepEqual(files.slice(0, -1), ['/opt/xdg/kwinrc']);
+  assert.equal(files.at(-1), path.posix.join(os.homedir(), '.config', 'kwinrc'), 'A relative XDG_CONFIG_HOME falls back to ~/.config');
 });
 
 test('the layout reaches the preload as one JSON argument', () => {

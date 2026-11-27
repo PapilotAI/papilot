@@ -44,8 +44,9 @@ export function kwinLayout(files: string | string[]): WindowButtons | null {
         const segments = header[1].slice(1, -1).split('][');
         const flags = segments.filter(segment => segment.startsWith('$')).join('');
         const name = segments.filter(segment => !segment.startsWith('$')).join('/');
-        // A lone [$i] before any group locks the whole file.
-        if (!name && !group) { if (flags.includes('i')) locked.add('*'); continue; }
+        // A lone [$i] at the top locks the whole file; elsewhere a header
+        // without a name is not a group.
+        if (!name) { if (!group && flags.includes('i')) locked.add('*'); continue; }
         group = name;
         // A locked group holds its keys even where this file leaves them out.
         if (flags.includes('i') && group === 'org.kde.kdecoration2') lockAfter.push('ButtonsOnLeft', 'ButtonsOnRight');
@@ -79,30 +80,36 @@ const run: Run = (command, args) => new Promise((resolve, reject) => {
 const gnomeDesktops = ['GNOME', 'UNITY', 'BUDGIE', 'PANTHEON'];
 // Resolves to null when the desktop's layout is unknown; the page then keeps
 // its own default.
+type Options = { env?: NodeJS.ProcessEnv; exec?: Run; read?: (file: string) => Promise<string>; timeout?: number };
+const desktopsOf = (env: NodeJS.ProcessEnv) => (env.XDG_CURRENT_DESKTOP || '').toUpperCase().split(':');
 // The first window waits for this, so a stalled command or file read (a
-// hung network home folder) gives up after two seconds.
-export function detectWindowButtons(options: { env?: NodeJS.ProcessEnv; exec?: Run; read?: (file: string) => Promise<string>; timeout?: number } = {}): Promise<WindowButtons | null> {
+// hung network home folder) gives up after two seconds. KDE and Xfce then
+// keep their own default layouts; other desktops the page's.
+export function detectWindowButtons(options: Options = {}): Promise<WindowButtons | null> {
+  const desktops = desktopsOf(options.env ?? process.env);
+  const fallback = desktops.includes('KDE') ? kwinLayout('') : desktops.includes('XFCE') ? xfwmLayout('O|HMC') : null;
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), options.timeout ?? 2000); });
-  return Promise.race([readWindowButtons(options), timeout]).finally(() => clearTimeout(timer));
+  return Promise.race([readWindowButtons(options).catch(() => null), timeout])
+    .then(layout => layout ?? fallback).finally(() => clearTimeout(timer));
 }
-async function readWindowButtons({ env = process.env, exec = run, read = (file: string) => readFile(file, 'utf8') }: { env?: NodeJS.ProcessEnv; exec?: Run; read?: (file: string) => Promise<string> }): Promise<WindowButtons | null> {
-  const desktops = (env.XDG_CURRENT_DESKTOP || '').toUpperCase().split(':');
+// XDG directories must be absolute; others are ignored.
+const absolute = (directories: (string | undefined)[]) => directories.filter((directory): directory is string => Boolean(directory && path.posix.isAbsolute(directory)));
+async function readWindowButtons({ env = process.env, exec = run, read = (file: string) => readFile(file, 'utf8') }: Options): Promise<WindowButtons | null> {
+  const desktops = desktopsOf(env);
   const gsettings = (schema: string) => exec('gsettings', ['get', schema, 'button-layout']).then(gtkLayout);
-  try {
-    if (desktops.includes('KDE')) {
-      // KDE layers the user's kwinrc over system ones (XDG_CONFIG_DIRS, most
-      // important first).
-      const directories = [...(env.XDG_CONFIG_DIRS || '/etc/xdg').split(':').filter(Boolean).reverse(), env.XDG_CONFIG_HOME || path.posix.join(os.homedir(), '.config')];
-      const files = await Promise.all(directories.map(directory => read(path.posix.join(directory, 'kwinrc')).catch(() => '')));
-      return kwinLayout(files);
-    }
-    if (desktops.includes('XFCE')) return xfwmLayout(await exec('xfconf-query', ['-c', 'xfwm4', '-p', '/general/button_layout']).catch(() => 'O|HMC'));
-    if (desktops.includes('X-CINNAMON')) return await gsettings('org.cinnamon.desktop.wm.preferences');
-    if (desktops.includes('MATE')) return await gsettings('org.mate.Marco.general');
-    if (desktops.some(desktop => gnomeDesktops.includes(desktop))) return await gsettings('org.gnome.desktop.wm.preferences');
-    return null;
-  } catch { return null; }
+  if (desktops.includes('KDE')) {
+    // KDE layers the user's kwinrc over system ones (XDG_CONFIG_DIRS, most
+    // important first).
+    const system = absolute((env.XDG_CONFIG_DIRS || '').split(':'));
+    const directories = [...(system.length ? system : ['/etc/xdg']).reverse(), absolute([env.XDG_CONFIG_HOME])[0] ?? path.posix.join(os.homedir(), '.config')];
+    return kwinLayout(await Promise.all(directories.map(directory => read(path.posix.join(directory, 'kwinrc')).catch(() => ''))));
+  }
+  if (desktops.includes('XFCE')) return xfwmLayout(await exec('xfconf-query', ['-c', 'xfwm4', '-p', '/general/button_layout']));
+  if (desktops.includes('X-CINNAMON')) return gsettings('org.cinnamon.desktop.wm.preferences');
+  if (desktops.includes('MATE')) return gsettings('org.mate.Marco.general');
+  if (desktops.some(desktop => gnomeDesktops.includes(desktop))) return gsettings('org.gnome.desktop.wm.preferences');
+  return null;
 }
 // The sandboxed preload cannot import this module; it reads the layout back
 // from this argument as JSON.
