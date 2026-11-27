@@ -1,6 +1,6 @@
 {
   "name": "papilot-vscode",
-  "displayName": "Papilot for VS Code",
+  "displayName": "Papilot LaTeX PDF Review",
   "description": "Revise and review LaTeX papers alongside your code.",
   "version": "0.1.0",
   "publisher": "PapilotAI",
