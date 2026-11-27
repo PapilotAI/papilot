@@ -99,7 +99,7 @@ O <a href="https://papilot.ai/universe/">Papilot Universe</a> reúne modelos par
 </p>
 
 <details>
-<summary><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/pm-bar-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact.png"><img src="../assets/readme-downloads/pm-bar.png" alt="Gerenciadores de pacotes: Homebrew, Scoop, APT, AUR e Nix — mostrar comandos de instalação" width="96%" align="absmiddle"></picture></summary>
+<summary><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/pm-bar-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact.png"><img src="../assets/readme-downloads/pm-bar.png" alt="Gerenciadores de pacotes: Homebrew, Scoop, APT, AUR, Nix e npm — mostrar comandos de instalação" width="96%" align="absmiddle"></picture></summary>
 
 <br>
 
@@ -148,6 +148,15 @@ nix run github:PapilotAI/papilot -- demo
 ```
 
 <sub>Veja o <a href="../nix.md">guia Nix</a> para flakes, perfis e shells de desenvolvimento.</sub>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/npm-dark.svg"><img src="../assets/readme-icons/npm.svg" width="16" height="16" align="absmiddle" alt=""></picture>&nbsp;**Node.js CLI · [npm](https://www.npmjs.com/package/papilot)**
+
+```sh
+npm install -g papilot
+papilot demo
+```
+
+<sub>Requer Node.js 22.22+ — veja o <a href="../guide.md#install-and-run">guia de instalação</a>.</sub>
 
 </details>
 

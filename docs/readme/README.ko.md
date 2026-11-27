@@ -99,7 +99,7 @@
 </p>
 
 <details>
-<summary><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/pm-bar-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact.png"><img src="../assets/readme-downloads/pm-bar.png" alt="패키지 관리자: Homebrew, Scoop, APT, AUR 및 Nix — 설치 명령 보기" width="96%" align="absmiddle"></picture></summary>
+<summary><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/pm-bar-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact.png"><img src="../assets/readme-downloads/pm-bar.png" alt="패키지 관리자: Homebrew, Scoop, APT, AUR, Nix 및 npm — 설치 명령 보기" width="96%" align="absmiddle"></picture></summary>
 
 <br>
 
@@ -148,6 +148,15 @@ nix run github:PapilotAI/papilot -- demo
 ```
 
 <sub>Flake, 프로필 및 개발 셸은 <a href="../nix.md">Nix 가이드</a>를 참고하세요.</sub>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/npm-dark.svg"><img src="../assets/readme-icons/npm.svg" width="16" height="16" align="absmiddle" alt=""></picture>&nbsp;**Node.js CLI · [npm](https://www.npmjs.com/package/papilot)**
+
+```sh
+npm install -g papilot
+papilot demo
+```
+
+<sub>Node.js 22.22+ 필요 — <a href="../guide.md#install-and-run">설치 가이드</a>를 참고하세요.</sub>
 
 </details>
 

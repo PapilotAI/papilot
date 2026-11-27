@@ -99,7 +99,7 @@
 </p>
 
 <details>
-<summary><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/pm-bar-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact.png"><img src="../assets/readme-downloads/pm-bar.png" alt="パッケージマネージャー：Homebrew、Scoop、APT、AUR、Nix — インストールコマンドを表示" width="96%" align="absmiddle"></picture></summary>
+<summary><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-downloads/pm-bar-dark.png"><source media="(max-width: 600px)" srcset="../assets/readme-downloads/pm-bar-compact.png"><img src="../assets/readme-downloads/pm-bar.png" alt="パッケージマネージャー：Homebrew、Scoop、APT、AUR、Nix、npm — インストールコマンドを表示" width="96%" align="absmiddle"></picture></summary>
 
 <br>
 
@@ -148,6 +148,15 @@ nix run github:PapilotAI/papilot -- demo
 ```
 
 <sub>Flake・プロファイル・開発シェルは <a href="../nix.md">Nix ガイド</a>を参照。</sub>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../assets/readme-icons/npm-dark.svg"><img src="../assets/readme-icons/npm.svg" width="16" height="16" align="absmiddle" alt=""></picture>&nbsp;**Node.js CLI · [npm](https://www.npmjs.com/package/papilot)**
+
+```sh
+npm install -g papilot
+papilot demo
+```
+
+<sub>Node.js 22.22+ が必要です — <a href="../guide.md#install-and-run">インストールガイド</a>を参照。</sub>
 
 </details>
 

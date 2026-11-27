@@ -160,6 +160,7 @@ function drawSystems({ text, icons, surface }) {
     pmChip(pmIcon(icons.debian, 12) + pmIcon(icons.ubuntu, 12), 'APT'),
     pmChip(pmIcon(icons.archlinux, 12), 'AUR'),
     pmChip(pmIcon(icons.nixos, 13), 'Nix'),
+    pmChip(pmIcon(icons.npm, 13), 'npm'),
   ].join('');
   const chevron = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
   row.innerHTML +=
@@ -304,6 +305,7 @@ const systemIcons = {
   mac: iconPath('apple'), windows: iconPath('windows'), linux: iconPath('linux'),
   homebrew: iconPath('homebrew'), scoop: iconPath('scoop'), debian: iconPath('debian'),
   ubuntu: iconPath('ubuntu'), archlinux: iconPath('archlinux'), nixos: iconPath('nixos'),
+  npm: iconPath('npm'),
 };
 const lineIcon = name => fs.readFileSync(path.join(root, `docs/assets/readme-icons/${name}.svg`), 'utf8').replace(/ width="24" height="24"/, ' width="26" height="26"').replaceAll('#3b82f6', 'var(--accent)');
 const communityIcons = {

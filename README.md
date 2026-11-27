@@ -95,7 +95,7 @@ Open Papilot on your phone or tablet over <a href="docs/guide.md#remote-access-w
 </p>
 
 <details>
-<summary><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="docs/assets/readme-downloads/pm-bar-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme-downloads/pm-bar-dark.png"><source media="(max-width: 600px)" srcset="docs/assets/readme-downloads/pm-bar-compact.png"><img src="docs/assets/readme-downloads/pm-bar.png" alt="Package managers: Homebrew, Scoop, APT, AUR and Nix — show install commands" width="96%" align="absmiddle"></picture></summary>
+<summary><picture><source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="docs/assets/readme-downloads/pm-bar-compact-dark.png"><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme-downloads/pm-bar-dark.png"><source media="(max-width: 600px)" srcset="docs/assets/readme-downloads/pm-bar-compact.png"><img src="docs/assets/readme-downloads/pm-bar.png" alt="Package managers: Homebrew, Scoop, APT, AUR, Nix and npm — show install commands" width="96%" align="absmiddle"></picture></summary>
 
 <br>
 
@@ -144,6 +144,15 @@ nix run github:PapilotAI/papilot -- demo
 ```
 
 <sub>See the <a href="docs/nix.md">Nix guide</a> for flakes, profiles and dev shells.</sub>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme-icons/npm-dark.svg"><img src="docs/assets/readme-icons/npm.svg" width="16" height="16" align="absmiddle" alt=""></picture>&nbsp;**Node.js CLI · [npm](https://www.npmjs.com/package/papilot)**
+
+```sh
+npm install -g papilot
+papilot demo
+```
+
+<sub>Requires Node.js 22.22+ — see the <a href="docs/guide.md#install-and-run">install guide</a>.</sub>
 
 </details>
 
