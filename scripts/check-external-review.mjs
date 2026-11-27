@@ -211,13 +211,22 @@ try {
       await expect(composer.locator('input[name="files"]')).toHaveCount(0);
       await expect(composer.getByRole('button', { name: text('Start task') })).toBeEnabled();
       const question = text('Review the selected PDF annotations and suggest focused changes.');
+      await page.locator('.manuscript').evaluate(element => { globalThis.manuscriptBeforePro = element; });
       await composer.getByRole('button', { name: text('Start task') }).click();
-      const conversation = page.locator('.external-conversation');
+      const conversation = page.locator('.manuscript-side .external-conversation');
       await expect(conversation.getByText(question)).toBeVisible();
+      assert.equal(await page.locator('.manuscript').evaluate(element => element === globalThis.manuscriptBeforePro), true);
+      if (width >= 600) await expect(page.locator('.manuscript-pages')).toBeVisible();
       await expect(conversation.locator('.external-base')).toHaveCount(0);
       await expect(conversation.locator('input[type="radio"], select')).toHaveCount(0);
       await expect(conversation.getByLabel(text('Reply from ChatGPT'))).toBeHidden();
       assert.ok(composerId && !settings.reviews[0].git, 'Starting the task does not publish files');
+      if (width >= 600) {
+        await page.locator('.manuscript-link').click();
+        await expect(conversation).toHaveCount(0);
+        await page.locator('.task-row').filter({ hasText: question }).getByRole('button').click();
+        await expect(conversation.getByText(question)).toBeVisible();
+      }
       await page.reload(); await expect(conversation.getByText(question)).toBeVisible();
       await expect(page.locator('.task-row').filter({ hasText: question })).toHaveCount(1);
       await shot('composer-conversation');
@@ -225,7 +234,8 @@ try {
       await expect(conversation.getByText(selected.comment)).toBeVisible();
       await expect(conversation.getByText('Keep this note private.')).toHaveCount(0);
       const copyPrompt = conversation.getByRole('button', { name: text('Copy prompt'), exact: true });
-      await expect(conversation.getByRole('link', { name: text('Open ChatGPT') })).toBeVisible();
+      await expect(conversation.getByText(text('Paste into your existing ChatGPT conversation.'))).toBeVisible();
+      await expect(conversation.getByRole('link', { name: text('Open ChatGPT') })).toHaveCount(0);
       await copyPrompt.click();
       await expect(conversation.getByRole('status')).toContainText('Temporary prompt problem');
       await copyPrompt.click();
@@ -245,6 +255,13 @@ try {
       await conversation.getByText(text('Paste reply'), { exact: true }).click();
       const reply = conversation.getByLabel(text('Reply from ChatGPT'));
       await reply.fill('incomplete');
+      if (width < 600) {
+        const manuscriptView = page.getByRole('group', { name: text('Manuscript view'), exact: true });
+        await manuscriptView.getByRole('button', { name: 'PDF', exact: true }).click();
+        await expect(conversation).toBeHidden();
+        await manuscriptView.getByRole('button', { name: text('Chat'), exact: true }).click();
+        await expect(reply).toHaveValue('incomplete');
+      }
       await conversation.getByRole('button', { name: text('Check reply') }).click();
       await expect(reply).toHaveAccessibleDescription('Copy the complete JSON block.');
       await reply.fill(JSON.stringify(proposalFor(composerId)));
@@ -252,6 +269,8 @@ try {
       await expect(conversation.getByText(text('Proposal checked'))).toBeFocused();
       await conversation.getByRole('button', { name: text('Start local agent') }).click();
       await expect(conversation).toHaveCount(0);
+      await expect(page.locator('.task-grid')).toHaveClass(/\blayout-conversation\b/);
+      if (width >= 600) await expect(page.locator('#conversation-panel')).toBeFocused();
       await expect(page.locator('.task-row').filter({ hasText: question })).toHaveCount(1);
       const result = page.locator('.external-result-disclosure');
       await result.locator('summary').click();
@@ -259,7 +278,8 @@ try {
       await expect(result.getByText(text('Receipt ready'))).toBeVisible();
       await expect(result.getByRole('button', { name: text('Copy result'), exact: true })).toBeVisible();
       await expect(result.getByRole('button', { name: text('Publish result branch') })).toHaveCount(0);
-      await expect(result.getByRole('link', { name: text('Open ChatGPT'), exact: true })).toHaveAttribute('href', 'https://chatgpt.com/');
+      await expect(result.getByRole('link', { name: text('Open ChatGPT'), exact: true })).toHaveCount(0);
+      assert.equal(context.pages().length, 1);
       if (width < 600 && !await sidebar.evaluate(element => element.classList.contains('is-open'))) await page.locator('.sidebar-toggle').click();
       await entry.click();
       await button('Send to reviewer').click();

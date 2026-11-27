@@ -466,7 +466,7 @@ function Activity({ runtimes, relatedTasks, onOpenTask, source, onRevealQuote, t
   const hint = task.status === 'deleting' ? t('This task is being deleted') : task.status === 'uncertain' ? t('Check task status before sending') : task.preparation ? t('Send more instructions once the task has started.') : sending ? t('Sending…')
     : emptyNotes ? canSend ? tn(emptyNotes, '{n} empty comment will stay in drafts', '{n} empty comments will stay in drafts') : t('Write a comment or message to send.') : active ? t('{agent} is working · new instructions run next', { agent: agentName(task) }) : '';
   // A source tab beside the chat hides the chat while it is selected; both stay as they were.
-  return <section id="conversation-panel" className="activity-panel" data-side={source?.selected ? 'source' : undefined} aria-label={t('{agent} conversation', { agent: agentName(task) })}><div className="panel-heading">{lead}{source?.tabs}{tools && <div className="panel-tools">{tools}</div>}</div>
+  return <section id="conversation-panel" tabIndex={-1} className="activity-panel" data-side={source?.selected ? 'source' : undefined} aria-label={t('{agent} conversation', { agent: agentName(task) })}><div className="panel-heading">{lead}{source?.tabs}{tools && <div className="panel-tools">{tools}</div>}</div>
     {source && <div className="side-pane" hidden={!source.selected}>{source.panel}</div>}
     <div className="conversation-history"><div className="messages" ref={scroller} onScroll={() => { if (scroller.current && back.current === undefined) { const el = scroller.current; shouldFollow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; setFollowing(shouldFollow.current); savePlace(place, shouldFollow.current ? undefined : Math.round(el.scrollTop)); } }}><div className="thread">
       {loading && <p className="muted" role="status">{t('Loading conversation…')}</p>}
@@ -1191,7 +1191,7 @@ function PreparingTask({ task }: { task: Task }) {
 }
 
 type ManuscriptPanel = 'pdf' | 'task' | 'source';
-function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, showsChecks = false, onOpenTask, returnedPlace, onPlaceShown, notesRequest, taskCards, navigationGuard, collapsed, setCollapsed, project, data, error, view, setView, region, setRegion, active, setActive, actions, newTask, tools, share, navigation, onGit, writer, reportError, onFixProblems, diagnoseBuild, openFile, onOpened, onEditing }: { returnedPlace?: string; onPlaceShown: (id: string) => void; notesRequest?: number; openFile?: { file: string; line?: number } | null; onOpened?: () => void; onEditing?: (file: string | null) => void; navigationGuard: React.Ref<NotesHandle>; collapsed: boolean; setCollapsed: React.Dispatch<React.SetStateAction<boolean>>; taskCards: ReturnType<typeof useNoteCards>; onFixProblems?: (request: string) => void; diagnoseBuild?: (failureId: string) => Promise<BuildRepairResult>; navigation?: React.ReactNode; newTask: (notes: React.ReactNode) => React.ReactNode; tools?: React.ReactNode; share?: React.ReactNode; onGit: (status: GitStatus) => void; writer: CommitWriter; reportError: (error: unknown) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions; onOpenTask: (id: string) => void; evidenceActions?: EvidenceActions; evidenceFocus?: { id: string; at: number } | null; onEvidenceShown?: () => void; showsChecks?: boolean }) {
+function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, showsChecks = false, onOpenTask, returnedPlace, onPlaceShown, notesRequest, taskCards, navigationGuard, collapsed, setCollapsed, project, data, error, view, setView, region, setRegion, active, setActive, actions, newTask, taskPanelLabel, tools, share, navigation, onGit, writer, reportError, onFixProblems, diagnoseBuild, openFile, onOpened, onEditing }: { returnedPlace?: string; onPlaceShown: (id: string) => void; notesRequest?: number; openFile?: { file: string; line?: number } | null; onOpened?: () => void; onEditing?: (file: string | null) => void; navigationGuard: React.Ref<NotesHandle>; collapsed: boolean; setCollapsed: React.Dispatch<React.SetStateAction<boolean>>; taskCards: ReturnType<typeof useNoteCards>; onFixProblems?: (request: string) => void; diagnoseBuild?: (failureId: string) => Promise<BuildRepairResult>; navigation?: React.ReactNode; newTask: (notes: React.ReactNode) => React.ReactNode; taskPanelLabel: string; tools?: React.ReactNode; share?: React.ReactNode; onGit: (status: GitStatus) => void; writer: CommitWriter; reportError: (error: unknown) => void; project: Project; data: Manuscript | null; error: string; view: ManuscriptPanel; setView: (view: ManuscriptPanel) => void; region: boolean; setRegion: (on: boolean) => void; active: string; setActive: (id: string) => void; actions: NoteActions; onOpenTask: (id: string) => void; evidenceActions?: EvidenceActions; evidenceFocus?: { id: string; at: number } | null; onEvidenceShown?: () => void; showsChecks?: boolean }) {
   const build = data?.build, notes = data?.annotations || [], git = data?.git;
   // Marks are read only while a citation check of this paper is shown in it.
   const evidence = useEvidenceMarks(project.id, build?.key, api, !isPlayground && showsChecks);
@@ -1330,7 +1330,7 @@ function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, shows
       <div className="manuscript-side-header">
         {!hidden && togglePanel}
         <div className="side-tabs" role="tablist" aria-label={t('Manuscript panels')}>
-          <button ref={taskTab} role="tab" data-task-home aria-selected={side === 'task'} title={t('New task')} onClick={() => setView('task')}><Icon name="compose" size={14}/><span className="tab-label">{t('New task')}</span>{actions.selection.selected.length > 0 && <span className="count" aria-hidden="true">{actions.selection.selected.length}</span>}</button>
+          <button type="button" ref={taskTab} role="tab" data-task-home aria-selected={side === 'task'} title={taskPanelLabel} onClick={() => setView('task')}><Icon name="compose" size={14}/><span className="tab-label">{taskPanelLabel}</span>{actions.selection.selected.length > 0 && <span className="count" aria-hidden="true">{actions.selection.selected.length}</span>}</button>
           {source.tab && <SourceTab tab={source.tab} selected={side === 'source'} onSelect={() => setView('source')} onClose={source.close}/>}
         </div>
         <div ref={setTaskActions} className="side-header-actions" hidden={side !== 'task'}/>
@@ -1653,6 +1653,11 @@ function App() {
   }, [selected, refreshTimeline, timelineRequest]);
   const task = state?.tasks.find(t => t.id === selected);
   const webConversation = state?.externalReviewConversations?.find(review => reviewSelection(review.id) === selected);
+  const webConversationId = webConversation?.id;
+  useEffect(() => {
+    if (!webConversationId) return;
+    setManuscriptView('task'); setManuscriptCollapsed(false);
+  }, [webConversationId]);
   const demoRunning = isPlayground && state?.tasks.some(task => task.status === 'running' || task.status === 'building');
   useEffect(() => {
     if (!demoRunning) return;
@@ -1826,7 +1831,7 @@ function App() {
         noteSelection.set(annotations, false);
         browserStorage.removeItem(key); setNewDraft(''); setTaskSearch(''); setShowArchived(false);
         setSelected(review.taskId && snapshotRef.current?.tasks.some(task => task.id === review.taskId) ? review.taskId : reviewSelection(review.request.requestId));
-        setPage('manuscript'); setMobileTab('conversation'); setLayout('split'); setSidebar(false);
+        setPage('manuscript'); setMobileTab('conversation'); setLayout('conversation'); setSidebar(false);
       } catch (error) { setCreateError(error instanceof Error ? error.message : String(error)); }
       finally { setCreating(false); }
       return;
@@ -1984,20 +1989,20 @@ function App() {
   // supplies it; never restore a saved Git page when Git is missing there.
   const gitAvailable = Boolean(state) && state?.gitAvailable !== false;
   useEffect(() => { if (state?.gitAvailable === false) setPage(current => current === 'git' ? 'manuscript' : current); }, [state?.gitAvailable]);
-  const manuscriptOpen = !task && !webConversation && Boolean(project) && (page === 'manuscript' || page === 'git' && !gitAvailable);
+  const manuscriptOpen = !task && Boolean(project && (webConversation || page === 'manuscript' || page === 'git' && !gitAvailable));
   useEffect(() => { if (!manuscriptOpen) setLibraryRequest(0); }, [manuscriptOpen]);
   const libraryOpen = !task && !webConversation && Boolean(project) && page === 'library';
   const gitOpen = !task && !webConversation && Boolean(project) && page === 'git' && gitAvailable;
-  const switchContext = useRef({ project: project?.id, path: project?.path, task: task?.id, page });
-  if (switchContext.current.project !== project?.id || switchContext.current.path !== project?.path || switchContext.current.task !== task?.id || switchContext.current.page !== page) {
-    switchContext.current = { project: project?.id, path: project?.path, task: task?.id, page };
+  const switchContext = useRef({ project: project?.id, path: project?.path, selected, page });
+  if (switchContext.current.project !== project?.id || switchContext.current.path !== project?.path || switchContext.current.selected !== selected || switchContext.current.page !== page) {
+    switchContext.current = { project: project?.id, path: project?.path, selected, page };
   }
   const switchRequest = useRef(0);
   async function switchWorkspace(id: string, openReview = false) {
     try {
       const request = ++switchRequest.current, context = switchContext.current;
       const returned = !id && project && lastReturned.current.get(project.id);
-      if (!returned && id === (task?.id ?? (manuscriptOpen ? '' : null))) { setSidebar(false); return; }
+      if (!returned && id === (task?.id ?? (manuscriptOpen && !webConversation ? '' : null))) { setSidebar(false); return; }
       if (manuscriptNavigationGuard.current && !await manuscriptNavigationGuard.current.save()) return;
       // A later shortcut or mouse navigation supersedes a slow note save.
       if (request !== switchRequest.current || context !== switchContext.current) return;
@@ -2106,13 +2111,19 @@ function App() {
     const skill = projectSkills.find(item => item.id === 'latex-warnings');
     if (skill) setNewSkill(skill);
     setNewDraft(draft => draft.trim() ? `${draft.trimEnd()}\n\n${request}` : request);
+    showDraftFromReview();
     setTimeout(() => newTaskInput.current?.focus(), 0);
+  }
+  function showDraftFromReview() {
+    if (!webConversation || selectedRef.current !== reviewSelection(webConversation.id)) return;
+    setSelected(''); setPage('manuscript'); setManuscriptView('task'); setManuscriptCollapsed(false); setRegion(false);
   }
   const updateGit = (projectId: string, status: GitStatus) => { setGit({ projectId, status }); setManuscript(current => current.projectId === projectId && current.data ? { ...current, data: { ...current.data, git: status } } : current); };
   const manuscriptData = manuscript.projectId === project?.id ? manuscript : { data: null, error: '' };
   const [openFile, setOpenFile] = useState<{ file: string; line?: number } | null>(null), [editingFile, setEditingFile] = useState<string | null>(null);
   function openRepositoryFile(file: string, line?: number) {
-    setSelected(''); setPage('manuscript'); setSidebar(false); setOpenFile({ file, line });
+    if (!webConversation) setSelected('');
+    setPage('manuscript'); setSidebar(false); setOpenFile({ file, line });
   }
   async function compileDocument(file: string) {
     if (!project) return;
@@ -2122,7 +2133,8 @@ function App() {
       if (request !== switchRequest.current || context !== switchContext.current) return;
       await api(`/projects/${project.id}/document`, { main: file });
       if (request !== switchRequest.current || context !== switchContext.current) return;
-      setSelected(''); setPage('manuscript'); setSidebar(false);
+      if (!webConversation) setSelected('');
+      setPage('manuscript'); setSidebar(false);
       window.dispatchEvent(new Event('papilot:manuscript'));
     } catch (error) { reportError(error); }
   }
@@ -2211,7 +2223,7 @@ function App() {
         // Quick marks stay on the page without opening a card.
         const quick = Boolean(group || stamp || kind === 'delete');
         if (quick) setActiveNote(''); else if (options?.reveal !== false) setActiveNote(note.id);
-        if (options?.quote) noteSelection.set([note.id], true);
+        if (options?.quote) { noteSelection.set([note.id], true); showDraftFromReview(); }
         recordAnnotation({ kind: 'add', note });
       } finally { setMarking(value => value - 1); }
     },
@@ -2574,15 +2586,26 @@ function App() {
   const manuscriptTools = project && <>
     <CompileButton key={project.id} label={t('Recompile PDF')} status={pendingManuscriptBuilds.has(project.id) ? 'building' : manuscriptData.error ? 'unknown' : manuscriptData.data?.build.status || 'unknown'} disabled={!manuscriptData.data && !manuscriptData.error} onCompile={async () => isPlayground ? requestPlaygroundDownload() : loadManuscript(project.id, true)}/>
   </>;
+  const manuscriptTaskLabel = webConversation ? t('Chat') : t('New task');
+  const manuscriptNoteActions: NoteActions = webConversation ? {
+    ...noteActions,
+    selection: { ...noteActions.selection, selected: [], has: () => false, set(ids, checked) {
+      noteActions.selection.set(ids, checked);
+      if (checked) showDraftFromReview();
+    } },
+  } : noteActions;
   const manuscriptNavigation = manuscriptOpen && project && <>
     <div className="view-selector manuscript-view-selector" role="group" aria-label={t('Manuscript view')}>
           <button aria-label="PDF" data-notes-home="pdf" aria-pressed={manuscriptView === 'pdf'} onClick={() => setManuscriptView('pdf')}><Icon name="pdf" size={16}/><span>PDF</span></button>
-          <button aria-label={t('New task')} data-task-home aria-pressed={manuscriptView === 'task'} onClick={() => { setManuscriptView('task'); setRegion(false); }}><Icon name="compose" size={16}/><span>{t('New task')}</span>{noteSelection.selected.length > 0 && <b className="view-count" aria-hidden="true">{noteSelection.selected.length}</b>}</button>
+          <button aria-label={manuscriptTaskLabel} data-task-home aria-pressed={manuscriptView === 'task'} onClick={() => { setManuscriptView('task'); setRegion(false); }}><Icon name="compose" size={16}/><span>{manuscriptTaskLabel}</span>{manuscriptNoteActions.selection.selected.length > 0 && <b className="view-count" aria-hidden="true">{manuscriptNoteActions.selection.selected.length}</b>}</button>
         </div>
     {manuscriptView === 'pdf' && <div className="workspace-nav-end">{manuscriptTools}{manuscriptShare}</div>}
   </>;
   const overleafEntry = !isPlayground && gitAvailable && <button type="button" className="button secondary" onClick={syncOverleaf}><BrandIcon name="overleaf" size={16}/>{overleafSync ? t('Overleaf sync…') : t('Sync with Overleaf')}</button>;
-  const newTaskPanel = (attachments: React.ReactNode) => <section className={'new-task-panel' + (noteSelection.selected.length ? ' has-notes' : '')} aria-label={t('New task')}>
+  const newTaskPanel = (attachments: React.ReactNode) => webConversation && project ? <div className="external-conversation">
+    <ExternalReviewDialog key={webConversation.id} api={api} projectId={project.id} projectName={project.name} runtimes={runtimes} preferredAgent={agentChoice} tasks={state?.tasks ?? []}
+      conversation={{ id: webConversation.id }} saveNotes={() => manuscriptNavigationGuard.current?.save()} onTask={openExternalTask} onAgentSettings={() => setSettings('agents')}/>
+  </div> : <section className={'new-task-panel' + (noteSelection.selected.length ? ' has-notes' : '')} aria-label={t('New task')}>
     <div className="new-task-start">
     {!noteSelection.selected.length && <div className="new-task-welcome"><PapilotMark size={44}/><h2>{t('What are we revising next?')}</h2></div>}
     {newSkill?.output !== 'annotations' && attachments}
@@ -2607,10 +2630,14 @@ function App() {
     </div>
   </section>;
 
-  function openExternalTask(id: string) {
-    setExternalReviewOpen(false);
+  function openExternalTask(id: string, inChat = false) {
+    if (!inChat || selectedRef.current === selected) setExternalReviewOpen(false);
     void refresh(true).then(() => {
-      setTaskSearch(''); setShowArchived(false); setSelected(id); setPage('manuscript'); setMobileTab('conversation'); setLayout('split'); setSidebar(false);
+      if (inChat && selectedRef.current !== selected && selectedRef.current !== id) return;
+      setTaskSearch(''); setShowArchived(false); setSelected(id); setPage('manuscript'); setMobileTab('conversation'); setLayout(inChat ? 'conversation' : 'split'); setSidebar(false);
+      if (inChat) requestAnimationFrame(() => {
+        if (document.activeElement === document.body) document.getElementById('conversation-panel')?.focus({ preventScroll: true });
+      });
     });
   }
   const externalResult = task?.externalReview && task.status === 'reviewing' && state?.externalReviews
@@ -2709,7 +2736,7 @@ function App() {
       </div>
       <div className="sidebar-actions">
         {project && <>
-          <div className="manuscript-row"><button data-notes-home="manuscript" aria-label={t('Manuscript')} aria-description={countDescription} className={'nav-link manuscript-link' + (manuscriptOpen ? ' active' : '')} aria-current={manuscriptOpen ? 'page' : undefined} title={t('Switch tasks and manuscript') + ' (' + workspaceShortcutLabel + ')'} aria-keyshortcuts={workspaceModifier + '+`'} onClick={() => void switchWorkspace('')}><Icon name="pdf" size={16}/><span className="nav-label">{t('Manuscript')}</span>{manuscriptCount}</button>{!isPlayground && gitAvailable && <RepositoryFilesMenu key={project.id} api={api} projectId={project.id} version={`${manuscriptData.data?.build?.tree}:${manuscriptData.data?.build?.document}`} shownDocument={manuscriptData.data?.build?.document} editing={manuscriptOpen ? editingFile : null} onOpen={openRepositoryFile} onCompile={compileDocument}/>}</div>
+          <div className="manuscript-row"><button data-notes-home="manuscript" aria-label={t('Manuscript')} aria-description={countDescription} className={'nav-link manuscript-link' + (manuscriptOpen && !webConversation ? ' active' : '')} aria-current={manuscriptOpen && !webConversation ? 'page' : undefined} title={t('Switch tasks and manuscript') + ' (' + workspaceShortcutLabel + ')'} aria-keyshortcuts={workspaceModifier + '+`'} onClick={() => void switchWorkspace('')}><Icon name="pdf" size={16}/><span className="nav-label">{t('Manuscript')}</span>{manuscriptCount}</button>{!isPlayground && gitAvailable && <RepositoryFilesMenu key={project.id} api={api} projectId={project.id} version={`${manuscriptData.data?.build?.tree}:${manuscriptData.data?.build?.document}`} shownDocument={manuscriptData.data?.build?.document} editing={manuscriptOpen ? editingFile : null} onOpen={openRepositoryFile} onCompile={compileDocument}/>}</div>
           <button className={'nav-link git-link' + (gitOpen ? ' active' : '')} disabled={!gitAvailable} aria-describedby={!gitAvailable ? 'git-install-hint' : undefined} aria-label={gitAvailable && projectGit?.files?.length ? t('Version Management, {n} changed', { n: projectGit.files.length }) : t('Version Management')} aria-current={gitOpen ? 'page' : undefined} title={gitAvailable ? t('Version management of the manuscript') + '\n' + gitSummary(projectGit) : t('Install Git in this environment to use version management.')} onClick={openGit}><Icon name="restore" size={16}/><span className="nav-label">{t('Version Management')}</span><span className="nav-meta">{gitAvailable && projectGit?.files?.length ? <span className="count">{projectGit.files.length}</span> : null}</span></button>
           {overleafSync && <OverleafRow sync={overleafSync} onOpen={() => { setOverleafOpen(true); setSidebar(false); }}/>}
           {!isPlayground && state?.externalReviews && gitAvailable && <button ref={externalReviewButton} type="button" className="nav-link" onClick={() => setExternalReviewOpen(true)}><Icon name="workflow" size={16}/><span className="nav-label">{t('External review')}</span></button>}
@@ -2727,7 +2754,7 @@ function App() {
       </div>
       <nav className="task-list" aria-label={t('Task list')}>{visibleTasks.length ? visibleTasks.map(row => {
         if (!('instructions' in row)) return <div key={row.id} data-task={row.id} className={'task-row ' + (row.id === selected ? 'active' : '')}>
-          <button className="task-link" aria-current={row.id === selected ? 'page' : undefined} onClick={() => { setSelected(row.id); setSidebar(false); }}>
+          <button className="task-link" aria-current={row.id === selected ? 'page' : undefined} onClick={() => { setSelected(row.id); setPage('manuscript'); setSidebar(false); }}>
             <span className="task-title" title={row.title}>{row.title}</span><span className="task-meta"><span>{t('ChatGPT Pro (web)')}</span><span className="task-time">{ago(row.createdAt)}</span></span>
           </button>
         </div>;
@@ -2796,9 +2823,7 @@ function App() {
           </div> : chatOnly && task.mode !== 'review' && ['failed', 'interrupted'].includes(task.status) ? <div className="task-error-actions">
             <button type="button" className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}><Icon name="diff" size={14}/>{task.review?.round ? t('Regenerate PDF comparison') : t('Generate PDF comparison')}</button>
           </div> : null} onTaskSaved={acceptSavedTask} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={<>{externalResult}{chatOnly && <>{reviewFeedback(true)}{completion && <div className="review-feedback card commit-card task-delivery">{completion}</div>}</>}</>} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
-      : webConversation && project ? <div className="external-conversation"><ExternalReviewDialog key={webConversation.id} api={api} projectId={project.id} projectName={project.name} runtimes={runtimes} preferredAgent={agentChoice} tasks={state?.tasks ?? []}
-        conversation={{ id: webConversation.id }} onTask={openExternalTask} onAgentSettings={() => setSettings('agents')}/></div>
-      : manuscriptOpen && project ? <ManuscriptView evidenceActions={evidenceActions} evidenceFocus={evidenceFocus} onEvidenceShown={() => setEvidenceFocus(null)} showsChecks={Boolean(state?.tasks.some(item => item.projectId === project.id && item.mode === 'citations' && item.citationCheck?.show))} onOpenTask={id => void switchWorkspace(id, true)} returnedPlace={returnedPlace} onPlaceShown={id => setReturnedPlace(current => id === current ? '' : current)} notesRequest={libraryRequest} taskCards={taskCards} key={project.id + project.path} navigationGuard={manuscriptNavigationGuard} collapsed={manuscriptCollapsed} setCollapsed={setManuscriptCollapsed} navigation={!mobile ? sidebarToggle : null} project={project} data={shownManuscript} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} newTask={newTaskPanel} tools={!mobile ? manuscriptTools : null} share={!mobile ? manuscriptShare : null} onFixProblems={fixProblems} diagnoseBuild={isPlayground ? undefined : failureId => api<BuildRepairResult>(`/projects/${project.id}/manuscript/repair`, { failureId, agent: agent.agent, model: agent.model })} onGit={status => updateGit(project.id, status)} writer={commitWriter} reportError={reportError} openFile={openFile} onOpened={() => setOpenFile(null)} onEditing={setEditingFile}/>
+      : manuscriptOpen && project ? <ManuscriptView evidenceActions={evidenceActions} evidenceFocus={evidenceFocus} onEvidenceShown={() => setEvidenceFocus(null)} showsChecks={Boolean(state?.tasks.some(item => item.projectId === project.id && item.mode === 'citations' && item.citationCheck?.show))} onOpenTask={id => void switchWorkspace(id, true)} returnedPlace={returnedPlace} onPlaceShown={id => setReturnedPlace(current => id === current ? '' : current)} notesRequest={libraryRequest} taskCards={taskCards} key={project.id + project.path} navigationGuard={manuscriptNavigationGuard} collapsed={manuscriptCollapsed} setCollapsed={setManuscriptCollapsed} navigation={!mobile ? sidebarToggle : null} project={project} data={shownManuscript} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={manuscriptNoteActions} newTask={newTaskPanel} taskPanelLabel={manuscriptTaskLabel} tools={!mobile ? manuscriptTools : null} share={!mobile ? manuscriptShare : null} onFixProblems={fixProblems} diagnoseBuild={isPlayground ? undefined : failureId => api<BuildRepairResult>(`/projects/${project.id}/manuscript/repair`, { failureId, agent: agent.agent, model: agent.model })} onGit={status => updateGit(project.id, status)} writer={commitWriter} reportError={reportError} openFile={openFile} onOpened={() => setOpenFile(null)} onEditing={setEditingFile}/>
       : gitOpen && project ? <GitWorkspace key={project.id + project.path} projectId={project.id} navigation={sidebarToggle} git={projectGit} onStatus={status => updateGit(project.id, status)} resolver={conflictWriter} resolution={resolution?.busy || resolution?.merge === mergeId ? resolution : undefined} setResolution={value => setGitResolutions(resolutions => {
         if (value) return { ...resolutions, [commitContextKey]: value };
         const { [commitContextKey]: _, ...others } = resolutions;

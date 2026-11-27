@@ -8,8 +8,8 @@ Enable **External reviews** under **Settings → Experiments**. Start a new task
 
 To review your PDF annotations, add them to the task from the PDF or **My notes**. You can send the selected notes by themselves or add an overall request. The prompt includes the selected notes, their marked PDF text, color-group instructions, and source locations when Papilot can match them to the committed text. Open **PDF notes** in the saved request to check the selected notes. The PDF page number refers to the build you marked. The proposal still needs to quote the exact committed text it proposes to change.
 
-1. **Send to ChatGPT.** Choose **Copy prompt**, then **Open ChatGPT**, select **Pro**, and paste. The prompt includes the selected committed source and asks for a reply in chat.
-2. **Import the proposal.** Open **Paste reply** in the Papilot conversation and paste the ChatGPT reply, including the proposal block. Choose **Check reply**. Papilot verifies the request, the files, and the exact original passages.
+1. **Send to ChatGPT.** Choose **Copy prompt** from the manuscript's chat panel and paste it into your existing ChatGPT Pro conversation. The prompt includes the selected committed source and asks for a reply in chat.
+2. **Import the proposal.** Open **Paste reply** in the same Papilot panel and paste the ChatGPT reply, including the proposal block. Choose **Check reply**. Papilot verifies the request, the files, and the exact original passages.
 3. **Implement locally.** Choose a local agent and start it. Papilot gives the agent a copy of the requested commit and shows its changes in the normal PDF review. Accept or reject the changes you want to share.
 4. **Return result.** In the task's conversation, expand **Return result**, prepare a receipt, and use **Copy result** to paste the accepted changes back into the ChatGPT conversation. Use the ordinary Papilot task controls to apply changes to the manuscript.
 

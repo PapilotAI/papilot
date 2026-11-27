@@ -52,7 +52,7 @@
 .external-proposal li + li { margin-block-start: 8px; }
 .external-proposal blockquote { padding-inline-start: 8px; border-inline-start: 2px solid var(--line-strong); color: var(--text-2); }
 .external-proposal small, .external-copy [role="status"] { color: var(--text-2); }
-.external-conversation { flex: 1; min-block-size: 0; overflow: auto; padding: 16px clamp(0px, 2.5vw, 32px); }
+.external-conversation { flex: 1; min-block-size: 0; min-inline-size: 0; overflow: auto; }
 .external-review-inline { max-inline-size: 700px; margin-inline: auto; font-size: 13px; }
 .external-review-inline select { inline-size: 100%; }
 .external-question { white-space: pre-wrap; padding: 10px 12px; background: var(--bg-muted); border-radius: var(--r-md); }
