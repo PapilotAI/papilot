@@ -69,14 +69,22 @@ export async function activate(context: vscode.ExtensionContext) {
   const register = (command: string, run: (...args: any[]) => unknown) => context.subscriptions.push(vscode.commands.registerCommand(command, (...args) => Promise.resolve().then(() => run(...args)).catch(errors)));
   context.subscriptions.push(output, backend, diagnostics, papers.changed, vscode.window.registerTreeDataProvider('papilot.papers', papers));
 
-  async function choosePaper(node?: Paper): Promise<Paper | undefined> {
+  async function choosePaper(node?: Paper, source?: { uri: vscode.Uri; file: string }): Promise<Paper | undefined> {
     if (node && isPaper(node)) return node;
-    const file = vscode.window.activeTextEditor?.document.uri.fsPath;
-    const exact = papers.papers.find(paper => path.join(paper.project.path, paper.document) === file);
+    const file = source?.file ?? vscode.window.activeTextEditor?.document.uri.fsPath;
+    let candidates = papers.papers;
+    if (source) {
+      const repository = git.getRepository(source.uri) ?? git.getRepository(vscode.Uri.file(source.file));
+      const root = repository ? await fs.realpath(repository.rootUri.fsPath) : undefined;
+      candidates = candidates.filter(paper => root ? path.relative(root, paper.project.path) === '' : inside(paper.project.path, source.file));
+      if (!candidates.length) throw new Error(t('No PDF position was found for these lines.'));
+    }
+    const exact = candidates.find(paper => path.join(paper.project.path, paper.document) === file);
     if (exact) return exact;
-    if (selectedPaper && papers.papers.includes(selectedPaper)) return selectedPaper;
-    if (papers.papers.length === 1) return papers.papers[0];
-    return (await vscode.window.showQuickPick(papers.papers.map(paper => ({ label: paper.document, description: paper.project.name, paper })), { placeHolder: t('Choose a paper') }))?.paper;
+    const selected = candidates.find(paper => paper.key === selectedPaper?.key);
+    if (selected) return selected;
+    if (candidates.length === 1) return candidates[0];
+    return (await vscode.window.showQuickPick(candidates.map(paper => ({ label: paper.document, description: paper.project.name, paper })), { placeHolder: t('Choose a paper') }))?.paper;
   }
   async function refresh() {
     return refreshing ??= (async () => {
@@ -274,12 +282,14 @@ export async function activate(context: vscode.ExtensionContext) {
     try {
       snapshot = await backend.api<Snapshot>('/api/state');
       const projectIds = new Set(papers.papers.map(paper => paper.project.id));
-      for (const id of savedTasks) {
+      for (const id of [...savedTasks]) {
         const task = snapshot.tasks.find(task => task.id === id);
-        if (!task) { savedTasks.delete(id); continue; }
-        if (task.preparation || ['running', 'waiting_input', 'queued', 'building', 'deleting'].includes(task.status)) continue;
+        if (!task || task.mode === 'review') { savedTasks.delete(id); continue; }
+        if (task.preparation || ['preparing', 'running', 'waiting_input', 'queued', 'building', 'uncertain', 'deleting'].includes(task.status)) continue;
+        // A save made during this request must be queued separately.
         savedTasks.delete(id);
-        await backend.api(`/api/tasks/${id}/publish`, {});
+        try { await backend.api(`/api/tasks/${id}/publish`, {}); }
+        catch (error) { savedTasks.add(id); output.appendLine(String(error)); }
       }
       papers.tasks = snapshot.tasks.filter(task => projectIds.has(task.projectId));
       papers.changed.fire();
@@ -373,7 +383,8 @@ export async function activate(context: vscode.ExtensionContext) {
       await push(pdf.webview, view);
       return;
     }
-    const paper = await choosePaper();
+    if (!unchanged()) return;
+    const paper = await choosePaper(undefined, { uri: document.uri, file });
     if (!paper || !unchanged()) return;
     const root = await fs.realpath(paper.project.path);
     if (!inside(root, file)) throw new Error(t('No PDF position was found for these lines.'));
@@ -408,11 +419,11 @@ export async function activate(context: vscode.ExtensionContext) {
   const watcher = vscode.workspace.createFileSystemWatcher('**/*.tex');
   let discovery: ReturnType<typeof setTimeout> | undefined;
   function scheduleDiscovery() { clearTimeout(discovery); discovery = setTimeout(() => void refresh().catch(errors), 500); }
-  context.subscriptions.push(watcher, watcher.onDidCreate(scheduleDiscovery), watcher.onDidDelete(scheduleDiscovery), watcher.onDidChange(scheduleDiscovery), vscode.workspace.onDidSaveTextDocument(document => {
-    void (async () => {
+  context.subscriptions.push(watcher, watcher.onDidCreate(scheduleDiscovery), watcher.onDidDelete(scheduleDiscovery), watcher.onDidChange(scheduleDiscovery), vscode.workspace.onDidSaveTextDocument(async document => {
+    try {
       if (document.uri.scheme === 'file') for (const task of papers.tasks) if (task.worktree && await insideReal(task.worktree, document.uri.fsPath)) savedTasks.add(task.id);
       await poll();
-    })().catch(errors);
+    } catch (error) { errors(error); }
   }), vscode.workspace.onDidChangeWorkspaceFolders(() => void refresh().catch(errors)));
   const timer = setInterval(() => void poll(), 2000);
   context.subscriptions.push({ dispose() { closed = true; clearInterval(timer); clearTimeout(discovery); for (const disposable of repositories.values()) disposable.dispose(); for (const { panel } of panels.values()) panel.dispose(); void fs.rm(assetRoot, { recursive: true, force: true }); } });

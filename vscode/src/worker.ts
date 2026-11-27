@@ -12,10 +12,6 @@ const csrf = randomBytes(32).toString('base64url');
 const app = await buildApp({ store, workspace, manuscripts, changes, connectReview, csrf, serialGit: gitQueue(),
   listener: { kind: 'local', port: 0, publicOrigin: '', owner: '' }, dist: null, version: VERSION });
 await app.ready();
-for (const task of store.tasks()) if (task.document) manuscripts.session(task.projectId, task.document);
-store.recover();
-resumeTasks(store, workspace);
-void workspace.connect();
 
 function send(message: object) {
   // A request may finish after the editor disconnects. A failed reply must
@@ -48,4 +44,11 @@ function close() {
 process.on('disconnect', close);
 process.on('SIGTERM', close);
 process.on('SIGINT', close);
-send({ type: 'ready' });
+if (!process.connected) close();
+else {
+  for (const task of store.tasks()) if (task.document) manuscripts.session(task.projectId, task.document);
+  store.recover();
+  resumeTasks(store, workspace);
+  void workspace.connect();
+  send({ type: 'ready' });
+}

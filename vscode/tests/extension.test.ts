@@ -21,28 +21,44 @@ test('review actions use the current task and protect aliased unsaved buffers', 
   await fs.symlink(worktree, alias, 'dir');
   const project = { id: 'project', path: manuscript, name: 'Paper' };
   const paper = { project, document: 'main.tex', key: 'project:main.tex' };
+  const discovered = [paper];
   const preparing = { id: 'task', projectId: project.id, name: 'task', title: 'Revise', document: paper.document, worktree: '', status: 'preparing', review: { round: 1 } };
   let snapshot = { projects: [project], tasks: [preparing] }, receive: (message: any) => Promise<void>;
+  let saveSource: (document: { uri: ReturnType<typeof uri> }) => Promise<void> = async () => assert.fail('Save listener was not registered');
+  let publish = async () => {};
+  const publishRoute = '/api/tasks/task/publish';
+  const paperChoices: string[][] = [];
   const textDocuments: any[] = [];
   let manuscriptReads = 0, staleTaskPdf = false;
   const position = { page: 0, rect: [0.1, 0.2, 0.3, 0.4] };
   const taskPdf = '/api/tasks/task/pdf?round=1&build=task-build';
   const backend = {
     dispose() {},
-    async api(route: string) {
+    async api(route: string, body?: { path: string }) {
       apiCalls.push(route);
       if (route === '/api/state') return snapshot;
+      if (route === '/api/projects/register') return { project: discovered.find(paper => paper.project.path === body?.path)!.project };
+      const files = /^\/api\/projects\/([^/]+)\/files$/.exec(route);
+      if (files) return { files: discovered.filter(paper => paper.project.id === files[1]).map(paper => ({ path: paper.document, root: true })) };
+      if (route === publishRoute) { await publish(); return { ok: true }; }
       if (route.startsWith('/api/tasks/task/source/place?')) return staleTaskPdf ? { place: null, stale: true } : { place: position, key: 'task-build', url: taskPdf };
-      if (route.startsWith('/api/projects/project/manuscript/source/place?')) return { place: position };
-      if (route.startsWith('/api/projects/project/manuscript/problems?')) return { problems: [] };
-      if (route.startsWith('/api/projects/project/manuscript?')) {
+      if (/^\/api\/projects\/[^/]+\/manuscript\/source\/place\?/.test(route)) return { place: position };
+      if (/^\/api\/projects\/[^/]+\/manuscript\/problems\?/.test(route)) return { problems: [] };
+      if (/^\/api\/projects\/[^/]+\/manuscript\?/.test(route)) {
         return { build: ++manuscriptReads === 1 ? { key: 'old', status: 'building', current: false } : { key: 'new', status: 'ready', current: true } };
       }
       return {};
     },
     async request(route: string) { requests.push(route); return { status: 200, headers: {}, body: Buffer.from('{}').toString('base64') }; },
   };
-  const git = { state: 'initialized', git: { path: 'git' }, repositories: [], getRepository: () => undefined, onDidOpenRepository: disposable, onDidCloseRepository: disposable };
+  const git = {
+    state: 'initialized', git: { path: 'git' }, repositories: [],
+    getRepository(file: ReturnType<typeof uri>) {
+      const root = discovered.find(({ project }) => file.fsPath === project.path || file.fsPath.startsWith(project.path + path.sep))?.project.path;
+      return root ? { rootUri: uri(root), status: async () => {} } : undefined;
+    },
+    onDidOpenRepository: disposable, onDidCloseRepository: disposable,
+  };
   const vscode = {
     env: { language: 'zh-tw' },
     l10n: { t: (source: string, args: Record<string, string> = {}) => source.replace(/\{(\w+)\}/g, (_, key) => args[key]) },
@@ -54,15 +70,16 @@ test('review actions use the current task and protect aliased unsaved buffers', 
     languages: { createDiagnosticCollection: () => ({ ...disposable(), clear() {}, set() {} }) },
     commands: { registerCommand(name: string, fn: any) { commands.set(name, fn); return disposable(); }, async executeCommand(name: string, ...args: any[]) { return commands.get(name)?.(...args); } },
     workspace: {
-      isTrusted: true, textDocuments, findFiles: async () => [],
+      isTrusted: true, textDocuments, findFiles: async () => discovered.map(paper => uri(path.join(paper.project.path, paper.document))),
       createFileSystemWatcher: () => ({ ...disposable(), onDidCreate: disposable, onDidDelete: disposable, onDidChange: disposable }),
-      onDidSaveTextDocument: disposable, onDidChangeWorkspaceFolders: disposable,
+      onDidSaveTextDocument: (listener: typeof saveSource) => { saveSource = listener; return disposable(); }, onDidChangeWorkspaceFolders: disposable,
       openTextDocument: async (uri: any) => ({ uri, lineCount: 1 }),
     },
     window: {
       createOutputChannel: () => ({ ...disposable(), append() {}, appendLine() {} }),
       registerTreeDataProvider: disposable, registerWebviewViewProvider: disposable,
       activeTextEditor: undefined as any,
+      showQuickPick: async (options: { paper: typeof paper }[]) => { paperChoices.push(options.map(option => option.paper.key)); return options[0]; },
       withProgress: (_: unknown, run: (...args: any[]) => unknown) => run({}, { isCancellationRequested: false }),
       showErrorMessage: (message: string) => errors.push(message), tabGroups: { all: [] },
       showTextDocument: (document: any) => opened.push(document.uri.fsPath),
@@ -87,7 +104,6 @@ test('review actions use the current task and protect aliased unsaved buffers', 
     }] });
     const { activate } = await import(pathToFileURL(outfile).href);
     const extension = await activate({ subscriptions, storageUri: uri(directory), extensionPath: directory, extensionUri: uri(directory) });
-    extension.papers.papers = [paper];
     await commands.get('papilot.openTask')!(preparing);
     await commands.get('papilot.review')!();
     const send = async (message: any) => { await receive({ id: responses.length + 1, ...message }); return responses.at(-1); };
@@ -95,7 +111,7 @@ test('review actions use the current task and protect aliased unsaved buffers', 
     assert.deepEqual(opened, [], 'preparing tasks must not open the manuscript');
 
     snapshot = { ...snapshot, tasks: [{ ...preparing, status: 'reviewing', worktree }] };
-    await extension.refresh(); extension.papers.papers = [paper];
+    await extension.refresh();
     assert.equal((await send({ type: 'source', file: 'main.tex' })).error, undefined);
     assert.deepEqual(opened, [path.join(worktree, 'main.tex')], 'the existing panel must use the new task snapshot');
     const decide = { type: 'api', route: '/review/project/api/tasks/task/decide', body: { action: 'reject' } };
@@ -165,6 +181,46 @@ test('review actions use the current task and protect aliased unsaved buffers', 
     assert.equal(new URL(places[0], 'http://test').searchParams.get('key'), 'new');
     assert.deepEqual(responses.at(-1)?.place?.place, position);
     assert.deepEqual(errors, []);
+
+    const secondProject = { id: 'second', path: path.join(directory, 'second'), name: 'Second' };
+    await fs.mkdir(secondProject.path);
+    for (const document of ['main.tex', 'slides.tex']) {
+      await fs.writeFile(path.join(secondProject.path, document), 'second project');
+      discovered.push({ project: secondProject, document, key: `second:${document}` });
+    }
+    const included = path.join(secondProject.path, 'chapter.tex');
+    await fs.writeFile(included, 'included source');
+    await extension.refresh();
+    await commands.get('papilot.open')!(extension.papers.papers[0]);
+    selectSource(included);
+    await forwardSearch();
+    assert.deepEqual(paperChoices, [['second:main.tex', 'second:slides.tex']]);
+    const secondPlace = apiCalls.find(route => route.startsWith('/api/projects/second/manuscript/source/place?'));
+    assert.ok(secondPlace);
+    assert.equal(new URL(secondPlace, 'http://test').searchParams.get('file'), 'chapter.tex');
+    assert.deepEqual(errors, []);
+
+    const savedSource = { uri: uri(path.join(worktree, 'main.tex')) };
+    const publishCalls = () => apiCalls.filter(route => route === publishRoute).length;
+    const task = snapshot.tasks[0];
+    snapshot = { ...snapshot, tasks: [{ ...task, status: 'uncertain' }] };
+    await extension.refresh();
+    await saveSource(savedSource);
+    assert.equal(publishCalls(), 0, 'uncertain tasks cannot build');
+    snapshot = { ...snapshot, tasks: [task] };
+    publish = async () => { throw new Error('The task started another review action.'); };
+    await extension.refresh();
+    assert.equal(publishCalls(), 1, 'the saved edit should build once the task becomes idle');
+    publish = async () => {
+      publish = async () => {};
+      await saveSource(savedSource);
+    };
+    await extension.refresh();
+    assert.equal(publishCalls(), 2, 'a rejected build request must be retried');
+    await extension.refresh();
+    assert.equal(publishCalls(), 3, 'a second save during a build request must also be published');
+    await extension.refresh();
+    assert.equal(publishCalls(), 3, 'an accepted save should be removed from the queue');
 
     // The old task panel must not fall back to the manuscript after deletion.
     await commands.get('papilot.openTask')!(preparing);
