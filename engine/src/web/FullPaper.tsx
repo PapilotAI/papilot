@@ -71,8 +71,10 @@ export function FullPaper({
   onUnavailable,
   place,
   restorePlace = true,
+  resource,
 }: {
   url: string;
+  resource?: (url: string) => Promise<string>;
   passes?: string;
   errors?: string[];
   changes: PlacedChange[];
@@ -101,7 +103,9 @@ export function FullPaper({
     setStarted(Date.now());
     announced.current = false;
     const open = async (source: string, partial: boolean, errors?: string[]) => {
-      const task = pdfjs.getDocument({ url: source, enableXfa: false, BinaryDataFactory: CMapData });
+      const resolved = resource ? await resource(source) : source;
+      if (!live) return;
+      const task = pdfjs.getDocument({ url: resolved, enableXfa: false, BinaryDataFactory: CMapData });
       tasks.push(task);
       const pdf = await task.promise,
         first = (await pdf.getPage(1)).getViewport({ scale: 1 }),
@@ -144,7 +148,7 @@ export function FullPaper({
       stop.abort();
       for (const task of tasks) void task.destroy();
     };
-  }, [url, passes]);
+  }, [url, passes, resource]);
   // A newer version replaces the one on screen once its pages are in place.
   useEffect(() => {
     const previous = shown.current;

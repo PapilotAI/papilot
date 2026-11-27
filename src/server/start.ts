@@ -1,24 +1,17 @@
+import { createRuntime, resumeTasks } from './runtime.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { Store } from './store.ts';
-import { Workspace } from './workspace.ts';
 import { ROOT, DATA, PORT, PUBLIC_ORIGIN, OWNER, VERSION } from './paths.ts';
-import { Manuscripts } from './manuscript.ts';
-import { Changes } from './changes.ts';
 import { buildApp, gitQueue } from './app.ts';
 import { Updates } from './updates.ts';
 import { readJson } from '../../bin/installation.mjs';
 import { desktopDemo } from './desktop-demo.ts';
-import { moveLegacyStates } from './state.ts';
 
 // One TeX pool for this installation: the review engines this server starts
 // inherit the folder, so their builds and the manuscript's share two slots.
 process.env.PAPILOT_TEX_POOL ||= path.join(DATA, 'tex-pool');
-const store = new Store(path.join(DATA, 'papilot.sqlite'));
-await moveLegacyStates(store.projects().map(project => project.path));
-const workspace = new Workspace(store);
-const manuscripts = new Manuscripts(), changes = new Changes();
+const { store, workspace, manuscripts, changes } = await createRuntime(DATA);
 const desktop = process.env.PAPILOT_DESKTOP === '1';
 const prepareDemo = desktop ? await desktopDemo(ROOT, DATA, store, workspace, manuscripts).catch(error => console.error('Could not prepare the demo paper:', error)) : undefined;
 // A packaged desktop app downloads only Papilot's own code built for its
@@ -49,20 +42,11 @@ const localUrl = await app.listen({ host: '127.0.0.1', port: PORT }).catch(error
 });
 // Desktop requests an OS-assigned port. Keep Host/Origin checks exact after bind.
 localListener.port = Number(new URL(localUrl).port);
+
 store.recover();
 console.log(`Papilot is running at ${localUrl}${PUBLIC_ORIGIN ? `\nRemote: ${PUBLIC_ORIGIN}` : ''}`);
 if (!process.env.PAPILOT_UPDATE_PROBE) { void workspace.connect(); updates.start(); }
-// Recompute cached feedback counts, including decisions from before this restart.
-for (const task of store.tasks()) {
-  // A task saved but not yet prepared continues; a failure shows on the task.
-  if (task.status === 'preparing') void workspace.prepareTask(task.id);
-  else if (task.pendingBuild || (task.review?.job?.id && (task.status === 'building' || (task.status === 'failed' && task.error === 'fetch failed')))) {
-    void workspace.resumeBuild(task.id);
-  } else if (task.status === 'building') {
-    store.updateTask(task.id, { status: 'interrupted', error: 'The server restarted during the PDF build. Check the review and rebuild it if needed.' });
-    void workspace.refresh(task.id);
-  } else if (task.review?.round && task.status !== 'deleting') void workspace.refresh(task.id);
-}
+resumeTasks(store, workspace);
 let shuttingDown = false;
 function shutdown() {
   if (shuttingDown) return; shuttingDown = true; updates.close(); workspace.close(); void manuscripts.stop().catch(() => undefined);

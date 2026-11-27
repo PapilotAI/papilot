@@ -989,6 +989,11 @@
     "textHash": "214903d3df07f0fc166c18fd8c3f7be82dc5cc83cf9d616da4a02f4b33efbb7a",
     "model": "gemini-4-argon-medium"
   },
+  "Select a task in Papers, or start a new conversation.": {
+    "revision": "cceb0157118eb5f772f275a79b26970d97d2fab000f353221ea1b1e045a43749",
+    "textHash": "15325ffb06ae3f62630576a0fea5f51a71ab6eed907ef3b045e930ea11f2e922",
+    "model": "manual"
+  },
   "Selected work": {
     "revision": "e73fb7a892838e9ad96bf2051a51b459196bb9e8abcf474412b829f27290d740",
     "textHash": "82f82ef102193a4c39614c23679edcc03ff545b604d47c16d8a097e6d0b5971f",

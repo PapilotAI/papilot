@@ -455,13 +455,7 @@ export function loadProject(root: string, overrides?: BuildOverrides, document?:
     if (directoryWithin(root, worktrees))
       throw new Error('"worktrees" must be outside the repository.');
   }
-  const build_workers = settings.build_workers ?? 1;
-  if (
-    !Number.isInteger(build_workers) ||
-    build_workers < 1 ||
-    build_workers > 8
-  )
-    throw new Error('"build_workers" must be an integer between 1 and 8.');
+  const build_workers = buildWorkers(settings);
   return {
     root,
     state: stateOf(root),
@@ -494,3 +488,15 @@ export const signature = (p: Project) =>
     ...(p.compiler === "phitex" ? ["phitex"] : []),
   ]);
 export const isFigure = (p: Project, file: string) => within(file, p.figures);
+
+/** Repository-wide scheduling does not require a selected root document. */
+export function buildWorkers(settings: Settings) {
+  const build_workers = settings.build_workers ?? 1;
+  if (
+    !Number.isInteger(build_workers) ||
+    build_workers < 1 ||
+    build_workers > 8
+  )
+    throw new Error('"build_workers" must be an integer between 1 and 8.');
+  return build_workers;
+}

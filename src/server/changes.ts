@@ -31,7 +31,7 @@ async function engine() {
   const [{ Builder, BuildError, buildDate }, { Repo }, { loadProject, isFigure }, { diffUnits, diffUnitsAsync, revertUnits, withUnits, splitLines, textOf }, { opcodes }, { textEdits }, { render, more }] = await Promise.all(
     ['src/core/build.ts', 'src/core/git.ts', 'src/core/config.ts', 'src/core/changes.ts', 'src/core/diff.ts', 'src/core/text-edits.ts', 'src/core/publish.ts'].map(load));
   return { Builder, BuildError, buildDate, Repo, loadProject, isFigure, diffUnits, diffUnitsAsync, revertUnits, withUnits, splitLines, textOf, opcodes, textEdits, render, more } as {
-    Builder: any; BuildError: any; Repo: any; loadProject: (root: string) => any; isFigure: (project: any, file: string) => boolean;
+    Builder: any; BuildError: any; Repo: any; loadProject: (root: string, overrides?: unknown, document?: string) => any; isFigure: (project: any, file: string) => boolean;
     buildDate: () => { SOURCE_DATE_EPOCH: string; FORCE_SOURCE_DATE?: string };
     diffUnits: (repo: any, before: string, after: string, isFigure: (file: string) => boolean) => Unit[];
     diffUnitsAsync: (repo: any, before: string, after: string, isFigure: (file: string) => boolean) => Promise<Unit[]>;
@@ -81,14 +81,27 @@ const same = (a: Buffer | null, b: Buffer | null) => a === null || b === null ? 
 const readBytes = (file: string) => { try { return fs.readFileSync(file); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; } };
 
 export class Changes {
+  private contexts = new Map<string, { projectId: string; changes: Changes }>();
+  /** The same comparison service, with an explicit compilation document. */
+  forDocument(projectId: string, document?: string): Changes {
+    if (document === undefined) return this;
+    const key = createHash('sha256').update(JSON.stringify([projectId, document])).digest('hex');
+    let context = this.contexts.get(key);
+    if (!context) {
+      const changes = new Changes(path.join(this.dir, 'documents', key), document);
+      changes.indirectChanges = () => this.indirectChanges();
+      this.contexts.set(key, context = { projectId, changes });
+    }
+    return context.changes;
+  }
   private comparisons = new Map<string, Comparison>();
-  get busyForUpdate() { return [...this.comparisons.values()].some(comparison => comparison.job?.status === 'running'); }
-  busyForProject(id: string) { return this.comparisons.get(id)?.job?.status === 'running'; }
-  forgetProject(id: string) { this.comparisons.delete(id); }
-  buildSettingsChanged(id: string) { const comparison = this.comparisons.get(id); if (comparison) comparison.settingsVersion++; }
+  get busyForUpdate(): boolean { return [...this.contexts.values()].some(({ changes }) => changes.busyForUpdate) || [...this.comparisons.values()].some(comparison => comparison.job?.status === 'running'); }
+  busyForProject(id: string): boolean { return this.comparisons.get(id)?.job?.status === 'running' || [...this.contexts.values()].some(context => context.projectId === id && context.changes.busyForProject(id)); }
+  forgetProject(id: string) { this.comparisons.delete(id); for (const [key, context] of this.contexts) if (context.projectId === id) this.contexts.delete(key); }
+  buildSettingsChanged(id: string) { for (const context of this.contexts.values()) if (context.projectId === id) context.changes.buildSettingsChanged(id); const comparison = this.comparisons.get(id); if (comparison) comparison.settingsVersion++; }
   // Whether the comparison lists each change's effects elsewhere (Settings).
   indirectChanges: () => boolean = () => false;
-  constructor(private dir = path.join(DATA, 'changes')) { fs.rmSync(dir, { recursive: true, force: true }); }
+  constructor(private dir = path.join(DATA, 'changes'), private document?: string) { fs.rmSync(dir, { recursive: true, force: true }); }
 
   private comparison(projectId: string) {
     let comparison = this.comparisons.get(projectId);
@@ -115,7 +128,7 @@ export class Changes {
   private async units(projectId: string, root: string, snapshot: Snapshot) {
     const comparison = this.comparison(projectId), key = `${snapshot.before}:${snapshot.after}:${comparison.settingsVersion}`;
     if (comparison.current?.key === key) return comparison.current.units;
-    const { Repo, loadProject, isFigure, diffUnitsAsync } = await engine(), project = loadProject(root);
+    const { Repo, loadProject, isFigure, diffUnitsAsync } = await engine(), project = loadProject(root, undefined, this.document);
     const units = (await diffUnitsAsync(new Repo(root), snapshot.before!, snapshot.after, file => isFigure(project, file))).filter(unit => !(unit.status === 'added' && ignorePattern(unit.file)));
     comparison.current = { key, units };
     return units;
@@ -146,7 +159,7 @@ export class Changes {
     comparison.job = job;
     void (async () => {
       const { Builder, BuildError, buildDate, Repo, loadProject, withUnits, render } = await engine();
-      const project = loadProject(root), repo = new Repo(root), number = comparison.next++;
+      const project = loadProject(root, undefined, this.document), repo = new Repo(root), number = comparison.next++;
       const units = await this.units(projectId, root, snapshot), folder = path.join(this.dir, projectId, String(number));
       let warnings: string[] = [], pdf: string | undefined, baselineErrors: string[] | undefined, revisedErrors: string[] | undefined;
       fs.rmSync(folder, { recursive: true, force: true }); fs.mkdirSync(folder, { recursive: true });

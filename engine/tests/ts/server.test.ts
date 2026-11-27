@@ -3,6 +3,7 @@ import path from "node:path";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { Fixture, fakeRound, METHOD } from "./helpers.ts";
 import { createServer, App } from "../../src/server.ts";
+import * as buildCache from "../../src/core/build.ts";
 import { Builder, BuildError } from "../../src/core/build.ts";
 import { PublishError } from "../../src/core/publish.ts";
 import { acquireLock, sleep, writeJson } from "../../src/core/files.ts";
@@ -200,7 +201,7 @@ it("schedules distinct tasks concurrently but serializes the same task", async (
 it("waits for cache cleanup before starting newly queued builds", async () => {
   app.tasks.create("a");
   let finish!: () => void;
-  vi.spyOn(Builder.prototype, "prune").mockImplementation(
+  vi.spyOn(buildCache, "pruneBuildCache").mockImplementation(
     () => new Promise<void>((r) => (finish = r)),
   );
   const publish = vi

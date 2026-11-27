@@ -175,12 +175,17 @@ export function ReviewApp({
   pinned,
   changes = false,
   transport,
+  resource,
+  live = !transport,
 }: {
   task: string;
   pinned: number | null;
   changes?: boolean;
   /** A host can provide local review data without running the HTTP server. */
   transport?: <T>(route: string, body?: unknown) => Promise<T>;
+  resource?: (url: string) => Promise<string>;
+  /** Hosts with a live backend retain previews, decision recovery and build priorities. */
+  live?: boolean;
 }) {
   const [state, setState] = useState<PageState | null>(null),
     [publishedDetail, setDetail] = useState<RoundDetail | null>(null),
@@ -273,20 +278,24 @@ export function ReviewApp({
   // page has its state: the server takes decisions only with the token in it.
   const restored = useRef(false);
   useEffect(() => {
-    if (!queueKey || transport || restored.current || !state?.csrf) return;
+    if (!queueKey || !live || restored.current || !state?.csrf) return;
     restored.current = true;
     const saved = DecisionQueue.saved<Queued>(queueKey).filter((entry) => !queue.current!.pending.some((queued) => queued.id === entry.id));
     for (const entry of saved) queue.current!.push(entry);
     if (saved.length) { setQueued(queue.current!.pending); setSettling(true); }
   }, [Boolean(state?.csrf)]);
   useEffect(() => {
-    if (!queueKey || transport) return;
+    if (!queueKey || !live) return;
     // A page that goes away sends what is left at once; the browser finishes
     // those requests even after the page is gone.
     const listener = (event: Event) => {
       if (document.visibilityState !== "hidden" && event.type !== "pagehide") return;
       const csrf = snapshot.current.state?.csrf ?? "";
       queue.current!.flush((entry) => {
+        if (transport) {
+          void api('/decide', { id: entry.id, action: entry.kind, round: entry.round, changes: entry.changes, body: entry.body, noteKey: entry.noteKey }).catch(() => undefined);
+          return;
+        }
         void fetch(`/api/tasks/${encodeURIComponent(task)}/decide`, {
           method: "POST",
           keepalive: true,
@@ -1039,7 +1048,7 @@ export function ReviewApp({
     };
   }, [detail?.round, detail?.before, detail?.after]);
   useEffect(() => {
-    if (!detail || changes || history || transport || previewing || detail.sourceOnly || detail.rendering) return;
+    if (!detail || changes || history || !live || previewing || detail.sourceOnly || detail.rendering) return;
     const gen = mixedGen.current;
     for (const { block, index } of placed) {
       if (pendingUnits(stops[index], decisions).length) continue;
@@ -1069,7 +1078,7 @@ export function ReviewApp({
           setMixedPreviews((prev) => ({ ...prev, [key]: { status: "error" } }));
         });
     }
-  }, [detail, placed, stops, decisions, variants, changes, history, transport, previewing]);
+  }, [detail, placed, stops, decisions, variants, changes, history, live, previewing]);
   // A block with an edit accepted in a note option's wording shows the
   // option's own comparison, the one its preview showed, until the block is
   // decided with rejections too. The engine compiles each wording once.
@@ -1083,7 +1092,7 @@ export function ReviewApp({
   // for is not asked again on this page, failed or not.
   const building = state?.job?.status === "queued" || state?.job?.status === "running";
   useEffect(() => {
-    if (!detail || changes || transport || previewing || detail.sourceOnly || building) return;
+    if (!detail || changes || !live || previewing || detail.sourceOnly || building) return;
     for (const { block } of placed) {
       const key = optionKey(block.units);
       if (!key || optionRequested.current.has(key)) continue;
@@ -1092,7 +1101,7 @@ export function ReviewApp({
       void api<RoundDetail>(`/source/options/preview`, { id: "accepted", round, edits, background: true })
         .then((value) => setOptionBlocks((prev) => ({ ...prev, [key]: value })), () => {});
     }
-  }, [detail, placed, variants, changes, transport, previewing, building]);
+  }, [detail, placed, variants, changes, live, previewing, building]);
   // Clear stale selectedUnit if its unit disappeared or its block resolved.
   const multiUnitAt = (index: number) => {
     const meta = blockUnitStatic.get(index),
@@ -2358,7 +2367,7 @@ export function ReviewApp({
   // What the author reads now compiles first: the page says which view it
   // shows while it is on screen.
   useEffect(() => {
-    if (changes || transport || !task) return;
+    if (changes || !live || !task) return;
     const mode = paperView ? "pdf" : "changes";
     // Only with the page's token, which the first state brings.
     const look = () => { if (!document.hidden && snapshot.current.state?.csrf) void api("/look", { mode }).catch(() => undefined); };
@@ -2366,7 +2375,7 @@ export function ReviewApp({
     const timer = setInterval(look, 5000);
     document.addEventListener("visibilitychange", look);
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", look); };
-  }, [task, paperView, changes, Boolean(state?.csrf)]);
+  }, [task, paperView, changes, live, Boolean(state?.csrf)]);
   // A host shows its PDF navigation controls while the whole paper is shown,
   // and keeps their place while the round's comparison renders again.
   const paperPending = !paperView && !paperUnavailable && !detail?.sourceOnly
@@ -2841,6 +2850,7 @@ export function ReviewApp({
                 <FullPaper
                   key={`${placeKey}:pdf:${detail.round}:${detail.pdf}`}
                   url={detail.pdf!}
+                  resource={resource}
                   passes={detail.passes}
                   errors={detail.revisedErrors}
                   changes={placed}

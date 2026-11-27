@@ -422,6 +422,57 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  vscode:
+    name: VS Code extension
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            engine/package-lock.json
+            extensions/vscode/package-lock.json
+      - run: npm ci
+      - run: npm run setup:review
+      - run: npm --prefix extensions/vscode ci
+      - name: Install TeX
+        uses: ./.github/actions/setup-tex
+      - run: npm --prefix extensions/vscode run typecheck
+      - run: npm --prefix extensions/vscode test
+      - run: npm --prefix extensions/vscode run package
+      - name: Conversation sidebar
+        run: |
+          engine/node_modules/.bin/playwright install chromium
+          npm --prefix extensions/vscode run test:web
+        env:
+          PAPILOT_BROWSER_CHANNEL: chromium
+      - name: Install VS Code
+        run: |
+          curl --fail --location --retry 3 https://update.code.visualstudio.com/1.119.0/linux-x64/stable -o "$RUNNER_TEMP/vscode.tar.gz"
+          mkdir "$RUNNER_TEMP/vscode"
+          tar -xzf "$RUNNER_TEMP/vscode.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/vscode"
+          echo "PAPILOT_CODE=$RUNNER_TEMP/vscode/bin/code" >> "$GITHUB_ENV"
+      - name: Exercise the packaged extension in VS Code
+        run: xvfb-run -a npm --prefix extensions/vscode run test:host
+        env:
+          PAPILOT_TEST_VSIX: extensions/vscode/papilot-linux-x64.vsix
+          PAPILOT_HOST_INSPECT: '1'
+      - name: Keep extension and screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: vscode-extension
+          path: |
+            extensions/vscode/*.vsix
+            /tmp/papilot-vscode-host-*/native-*.png
+            /tmp/papilot-vscode-chat-*/chat-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
   # The same checks on a native Windows host: the CLI, server and review engine
   # run there too, and the tests that need POSIX signals skip themselves.
   windows:
@@ -484,7 +535,7 @@ jobs:
   passed:
     name: CI passed
     if: always()
-    needs: [check, review, interface, windows, changes, desktop]
+    needs: [check, review, interface, vscode, windows, changes, desktop]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -493,6 +544,7 @@ jobs:
           CHECK_RESULT: ${{ needs.check.result }}
           REVIEW_RESULT: ${{ needs.review.result }}
           INTERFACE_RESULT: ${{ needs.interface.result }}
+          VSCODE_RESULT: ${{ needs.vscode.result }}
           WINDOWS_RESULT: ${{ needs.windows.result }}
           CHANGES_RESULT: ${{ needs.changes.result }}
           DESKTOP_SCOPE: ${{ needs.changes.outputs.desktop }}

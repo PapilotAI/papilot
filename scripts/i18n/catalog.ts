@@ -81,7 +81,8 @@ export function collectCatalog(root: string) {
     if (!entry.occurrences.some(item => JSON.stringify(item) === JSON.stringify(occurrence))) entry.occurrences.push(occurrence);
     all.set(source, entry);
   };
-  for (const file of sourceFiles(path.join(root, 'src/web'))) {
+  const directories = ['src/web', 'extensions/vscode/web'].map(directory => path.join(root, directory)).filter(directory => fs.existsSync(directory));
+  for (const file of directories.flatMap(sourceFiles)) {
     const extracted = extractSource(fs.readFileSync(file, 'utf8'), path.relative(root, file).split(path.sep).join('/'));
     for (const message of extracted.messages) for (const occurrence of message.occurrences) add(message.source, occurrence);
     dynamic.push(...extracted.dynamic);

@@ -215,3 +215,26 @@ it("reads a documents file it cannot use as none", () => {
   expect(chooseDocument(f.root, SLIDES)).toBe(true);
   expect(JSON.parse(fs.readFileSync(documentsFile(f.root), "utf8"))).toHaveProperty(["paper/main.tex"]);
 });
+
+it("serves and publishes explicit tasks without selecting one of several main files", async () => {
+  f.write("slides/main.tex", "\\documentclass{article}\n\\begin{document}\nSlides.\n\\end{document}\n");
+  f.repo.run(["add", "."]); f.repo.run(["commit", "-qm", "another main"]);
+  expect(() => loadProject(f.root)).toThrow(/Several root documents/);
+  const app = f.app(), server = createServer(app);
+  try {
+    await app.ready;
+    const info = await server.inject({ url: "/api/info", headers: { host: "127.0.0.1:9" } });
+    expect(info.statusCode).toBe(200);
+    expect(info.json().build_workers).toBe(1);
+    const created = await server.inject({ method: "POST", url: "/api/tasks", headers: { host: "127.0.0.1:9", origin: app.url, "x-review-token": app.csrf }, payload: { name: "explicit", title: "Slides", document: "slides/main.tex" } });
+    expect(created.statusCode).toBe(200);
+    const task = app.tasks.get("explicit");
+    expect(task.document).toBe("slides/main.tex");
+    // Publishing an unchanged task still drains the queue and prunes caches,
+    // but needs no TeX installation or model call.
+    const published = await server.inject({ method: "POST", url: "/api/tasks/explicit/publish", headers: { host: "127.0.0.1:9", origin: app.url, "x-review-token": app.csrf }, payload: {} });
+    expect(published.statusCode).toBe(200);
+    await app.publisher.join();
+    expect(readSettings(f.root)).toEqual({});
+  } finally { await server.close(); }
+});

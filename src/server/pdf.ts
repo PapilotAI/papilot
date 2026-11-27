@@ -119,9 +119,9 @@ function roundInfo(connect: Connect, root: string, name: string, round: number) 
 // with the changes, exactly where its strips come from, at once.
 async function chaptersBuild(root: string, info: RoundInfo): Promise<PaperBuild | null> {
   if (!info.build || !/^[0-9a-f]{32}$/.test(info.build.key) || JSON.stringify(info.build.targets) === '["full"]') return null;
-  const { loadProject } = await import(pathToFileURL(path.join(ENGINE, 'src/core/config.ts')).href);
+  const { stateOf } = await import(pathToFileURL(path.join(ENGINE, 'src/core/git.ts')).href);
   try {
-    const result = JSON.parse(await fs.promises.readFile(path.join(loadProject(root).state, 'cache/builds', info.build.key, 'result.json'), 'utf8')) as { pdf?: unknown; errors?: string[] };
+    const result = JSON.parse(await fs.promises.readFile(path.join(stateOf(root), 'cache/builds', info.build.key, 'result.json'), 'utf8')) as { pdf?: unknown; errors?: string[] };
     if (typeof result.pdf !== 'string') return null;
     await fs.promises.access(result.pdf);
     return { key: info.build.key, pdf: result.pdf, ...(result.errors?.length ? { errors: result.errors } : {}) };
