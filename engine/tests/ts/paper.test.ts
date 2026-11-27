@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { pairPages, paperPlan, scope, type PlacedChange } from "../../src/web/paper.ts";
+import { alignPages, paperPlan, scope, type PlacedChange } from "../../src/web/paper.ts";
 import type { Rect, Strip } from "../../src/types.ts";
 
 const strip = ([left, top, right, bottom]: Rect, page = 1): Strip => ({
@@ -77,21 +77,21 @@ it("shows a multi-page change once and preserves source-only change placement", 
   ).toBe(true);
 });
 
-it("pairs old and new pages around changes, with blank pages for the shorter version", () => {
-  // Same length, no changes: page by page.
-  expect(pairPages(3, 3, [])).toEqual([[0, 0], [1, 1], [2, 2]]);
-  // A page inserted before the change on new page 2: the change's pages
-  // share a row, and the old side gets a blank before them.
-  expect(pairPages(3, 4, [[1, 2]])).toEqual([[0, 0], [null, 1], [1, 2], [2, 3]]);
-  // A page removed: the new side gets the blank.
-  expect(pairPages(4, 3, [[2, 1]])).toEqual([[0, 0], [1, null], [2, 1], [3, 2]]);
-  // Extra pages at the end of one version.
-  expect(pairPages(2, 4, [[0, 0]])).toEqual([[0, 0], [1, 1], [null, 2], [null, 3]]);
-  // Several changes on the same pages, and one that would go back.
-  expect(pairPages(3, 3, [[1, 1], [1, 1], [2, 2], [0, 0]])).toEqual([[0, 0], [1, 1], [2, 2]]);
-  // A change whose old lines are on the page just paired, and new lines on
-  // a later page: that new page gets a blank beside it.
-  expect(pairPages(2, 3, [[0, 0], [0, 1]])).toEqual([[0, 0], [null, 1], [1, 2]]);
+it("pairs old and new pages by what they say, with blank pages where one version has more", () => {
+  const page = (...words: string[]) => words.flatMap((word) => Array(10).fill(word));
+  const [a, b, c, d, x] = [page("alpha"), page("beta"), page("gamma"), page("delta"), page("inserted")];
+  // The same pages pair one to one.
+  expect(alignPages([a, b, c], [a, b, c])).toEqual([[0, 0], [1, 1], [2, 2]]);
+  // A page only the new version has sits beside a blank page, where it is.
+  expect(alignPages([a, b, c], [a, x, b, c])).toEqual([[0, 0], [null, 1], [1, 2], [2, 3]]);
+  // A page only the old version had.
+  expect(alignPages([a, b, x, c], [a, b, c])).toEqual([[0, 0], [1, 1], [2, null], [3, 2]]);
+  // Text pushed down by part of a page keeps the pages paired one to one,
+  // with no blank pages, as long as both have as many pages.
+  const shifted = [page("alpha", "beta"), page("beta", "gamma"), page("gamma", "delta")];
+  expect(alignPages([a.concat(b), b.concat(c), c.concat(d)], [page("alpha", "alpha", "beta"), ...shifted.slice(1)])).toEqual([[0, 0], [1, 1], [2, 2]]);
+  // One more page at the end.
+  expect(alignPages([a, b], [a, b, c])).toEqual([[0, 0], [1, 1], [null, 2]]);
 });
 
 it("shades exactly a crop's lines, or the whole crop when it has no words", () => {

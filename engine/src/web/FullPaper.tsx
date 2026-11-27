@@ -17,6 +17,7 @@ import { t } from "./i18n.ts";
 import { paperPlan, type Cut, type PlacedChange } from "./paper.ts";
 import { cMapData } from "./pdf-cmaps.ts";
 import { fullPaperReader } from './full-paper-reader.ts';
+import { holdReader } from './reader-handoff.ts';
 import { CompilationErrors } from './CompilationErrors.tsx';
 
 // Built assets share one folder, and a host such as Papilot serves the viewer
@@ -71,6 +72,7 @@ export function FullPaper({
   onUnavailable,
   place,
   restorePlace = true,
+  active = true,
 }: {
   url: string;
   passes?: string;
@@ -82,6 +84,9 @@ export function FullPaper({
   onUnavailable: () => void;
   place: string;
   restorePlace?: boolean;
+  /** False while another view is shown: the PDF stays loaded, its pages are
+   *  not rendered. */
+  active?: boolean;
 }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null),
     [error, setError] = useState(""),
@@ -92,6 +97,8 @@ export function FullPaper({
     // Where the change being reviewed was on screen before a newer version
     // replaced the pages, so that it stays there.
     anchor = useRef<{ stop: string; offset: number } | null>(null);
+  // The workspace's controls stay while the pages load.
+  useLayoutEffect(() => { if (active) return holdReader(window); }, [active]);
   useEffect(() => {
     let live = true;
     const stop = new AbortController(),
@@ -178,6 +185,11 @@ export function FullPaper({
       {t("Preparing the full PDF…")} <span className="paper-clock">{clock(now - started)}</span>
     </>
   );
+  if (!active) {
+    // Coming back shows the reader's place, not a newer version's anchor.
+    anchor.current = null;
+    return null;
+  }
   if (error)
     return (
       <div className="paper-status" role="alert">
@@ -282,7 +294,7 @@ function Pages({
         <Fragment key={c.index}>{render(c.block, c.index)}</Fragment>
       ))}
       {paper.pages.map((cuts, page) => (
-        <section className="paper-page" data-page={page} data-pdf-width={paper.width} data-pdf-height={paper.height} key={page}>
+        <section className="paper-page" data-page={page} data-reader-page={page} data-pdf-width={paper.width} data-pdf-height={paper.height} key={page}>
           {cuts.map((cut, i) => (
             <div key={i} data-reading-anchor={`${page}:${i}`} data-pdf-top={cut.top} data-pdf-bottom={cut.bottom}>
               {cut.shown.map(c => (

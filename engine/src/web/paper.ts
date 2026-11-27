@@ -145,27 +145,40 @@ export function scope(strip: Strip): [number, number, number, number] {
   return [Math.max(0, x0 - 3), Math.max(0, y0 - 2), Math.min(strip.width, x1 + 3), Math.min(strip.height, y1 + 2)];
 }
 
-// Old and new pages, paired in order as Draftable's comparison does: a
-// change printed on old page b and new page a puts those two in one row, the
-// pages before it pair up to it, and a blank page (null) fills in for the
-// version with fewer of them. Pages after the last change pair from the
-// start. A change that would go back to earlier pages is not an anchor.
+// Old and new pages, paired by what they say, as Draftable's comparison
+// export does. Each page is its words; two pages score the share of words
+// they have in common, and a global alignment (Needleman–Wunsch) pairs them
+// in order, so that text that only moved down a little keeps its pages
+// paired, and a page one version alone has (null on the other side) is left
+// beside a blank page, where the versions part.
 export type PagePair = [number | null, number | null];
-export function pairPages(before: number, after: number, anchors: [number, number][]): PagePair[] {
-  const rows: PagePair[] = [];
-  let b = 0, a = 0;
-  // Pages up to old page toB and new page toA, paired from the start.
-  const run = (toB: number, toA: number) => {
-    for (let i = 0; i < Math.max(toB - b, toA - a); i++) rows.push([b + i < toB ? b + i : null, a + i < toA ? a + i : null]);
-    b = Math.max(b, toB); a = Math.max(a, toA);
+const GAP = 0.4;
+function bag(words: string[]) {
+  const counts = new Map<string, number>();
+  for (const word of words) counts.set(word, (counts.get(word) ?? 0) + 1);
+  return { counts, size: words.length };
+}
+export function alignPages(before: string[][], after: string[][]): PagePair[] {
+  const old = before.map(bag), next = after.map(bag);
+  const like = (i: number, j: number) => {
+    const a = old[i], b = next[j];
+    if (!a.size && !b.size) return 1;
+    let shared = 0;
+    for (const [word, count] of a.counts) shared += Math.min(count, b.counts.get(word) ?? 0);
+    return (2 * shared) / (a.size + b.size);
   };
-  for (const [ob, na] of anchors) {
-    if (ob < b - 1 || na < a - 1 || (ob < b && na < a)) continue;
-    run(Math.max(b, ob), Math.max(a, na));
-    // A side already paired with the previous change gets a blank here.
-    rows.push([ob >= b ? ob : null, na >= a ? na : null]);
-    b = Math.max(b, ob + 1); a = Math.max(a, na + 1);
+  const n = old.length, m = next.length, score = Array.from({ length: n + 1 }, () => new Float64Array(m + 1));
+  for (let i = 1; i <= n; i++) score[i][0] = -GAP * i;
+  for (let j = 1; j <= m; j++) score[0][j] = -GAP * j;
+  for (let i = 1; i <= n; i++)
+    for (let j = 1; j <= m; j++)
+      score[i][j] = Math.max(score[i - 1][j - 1] + like(i - 1, j - 1), score[i - 1][j] - GAP, score[i][j - 1] - GAP);
+  const rows: PagePair[] = [];
+  let i = n, j = m;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && score[i][j] === score[i - 1][j - 1] + like(i - 1, j - 1)) rows.push([--i, --j]);
+    else if (i > 0 && (j === 0 || score[i][j] === score[i - 1][j] - GAP)) rows.push([--i, null]);
+    else rows.push([null, --j]);
   }
-  run(before, after);
-  return rows;
+  return rows.reverse();
 }

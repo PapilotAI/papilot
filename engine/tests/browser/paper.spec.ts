@@ -237,6 +237,13 @@ test("side by side shows both versions' whole pages, paired with a blank page, a
     await expect(page.locator(".paper .change")).toBeVisible();
     const toggle = page.getByRole("button", { name: "Side by side", exact: true });
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    // The workspace's page controls follow either layout and are never
+    // cleared while switching.
+    await page.evaluate(() => {
+      const seen: (number | null)[] = [];
+      (window as unknown as { readerStates: typeof seen }).readerStates = seen;
+      window.addEventListener("papilot:review:pdf-reader-state", (event) => seen.push((event as CustomEvent<{ pages: number } | null>).detail?.pages ?? null));
+    });
     await toggle.click();
     // Two rows of pages: the changed pages together, then the new appendix
     // beside a blank page.
@@ -257,8 +264,8 @@ test("side by side shows both versions' whole pages, paired with a blank page, a
     const bar = page.getByRole("button", { name: "Change 1", exact: true }), decisions = page.locator(".compare-panel");
     await expect(page.locator(".compare-mark.current .compare-shade")).toHaveCount(2);
     await bar.click();
-    await expect(decisions.getByRole("button", { name: "Accept" })).toBeVisible();
-    await expect(decisions.getByRole("button", { name: "Reject" })).toBeVisible();
+    for (const name of ["Accept", "Reject", "Comment", "Copy reference", "Show LaTeX source"])
+      await expect(decisions.getByRole("button", { name, exact: true })).toBeVisible();
     await page.screenshot({ path: ".cache/browser-compare-pages.png" });
     await bar.click();
     await expect(page.locator(".compare-mark.current")).toHaveCount(0);
@@ -277,6 +284,15 @@ test("side by side shows both versions' whole pages, paired with a blank page, a
     await page.locator("#paper").evaluate((root) => root.scrollBy(0, 600));
     await page.waitForTimeout(300);
     await expect(page.locator(".compare-spot.current")).toHaveCount(0);
+    // Switching back and forth keeps the reader on the new version's pages.
+    await toggle.click();
+    await expect(page.locator(".paper-page")).toHaveCount(2);
+    await toggle.click();
+    await expect(page.locator(".compare-row")).toHaveCount(2);
+    await page.waitForTimeout(300);
+    const states = await page.evaluate(() => (window as unknown as { readerStates: (number | null)[] }).readerStates);
+    expect(states.length).toBeGreaterThan(0);
+    expect(states).toEqual(states.map(() => 2));
     // The choice is remembered; narrow windows keep the stacked layout.
     await page.reload();
     await expect(page.locator(".compare-row")).toHaveCount(2);

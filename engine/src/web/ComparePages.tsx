@@ -4,7 +4,9 @@ import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import type { Strip } from "../types.ts";
 import { t } from "./i18n.ts";
 import { CMapData } from "./FullPaper.tsx";
-import { locator, pairPages, scope, type PlacedChange } from "./paper.ts";
+import { alignPages, locator, scope, type PlacedChange } from "./paper.ts";
+import { fullPaperReader } from "./full-paper-reader.ts";
+import { holdReader } from "./reader-handoff.ts";
 
 // Both versions of the paper, whole, side by side: the old version's pages
 // on the left and the new version's on the right, paired page by page, with
@@ -15,7 +17,7 @@ import { locator, pairPages, scope, type PlacedChange } from "./paper.ts";
 // cuts through a page: a column between the two has a bar level with each
 // change, with its number; a click there, or on the change on either page,
 // selects it and opens its decisions.
-interface Doc { pdf: PDFDocumentProxy; width: number; height: number; labels: string[] | null }
+interface Doc { pdf: PDFDocumentProxy; width: number; height: number; labels: string[] | null; words: string[][] }
 type Side = "before" | "after";
 // A change's crops on one page, in PDF points.
 interface Placed { index: number; strip: Strip; page: number }
@@ -24,7 +26,12 @@ async function open(url: string, tasks: ReturnType<typeof pdfjs.getDocument>[]):
   const task = pdfjs.getDocument({ url, enableXfa: false, BinaryDataFactory: CMapData });
   tasks.push(task);
   const pdf = await task.promise, first = (await pdf.getPage(1)).getViewport({ scale: 1 });
-  return { pdf, width: first.width, height: first.height, labels: await pdf.getPageLabels().catch(() => null) };
+  // Each page's words, to pair the two versions' pages by what they say.
+  const words = await Promise.all(Array.from({ length: pdf.numPages }, async (_, index) => {
+    const content = await (await pdf.getPage(index + 1)).getTextContent();
+    return content.items.flatMap((item) => "str" in item ? item.str.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [] : []);
+  }));
+  return { pdf, width: first.width, height: first.height, labels: await pdf.getPageLabels().catch(() => null), words };
 }
 
 function place(doc: Doc, changes: PlacedChange[], side: Side): Placed[] {
@@ -41,7 +48,10 @@ function place(doc: Doc, changes: PlacedChange[], side: Side): Placed[] {
   return placed;
 }
 
-export function ComparePages({ before, after, files, changes, current, states, controls, onSelect, scrollRoot, onReady, onUnavailable }: {
+export function ComparePages({ active, before, after, files, changes, current, states, controls, onSelect, scrollRoot, readingPlace, onReady, onUnavailable }: {
+  /** False while the full paper is shown: both PDFs stay loaded, their pages
+   *  are not rendered. */
+  active: boolean;
   before: string;
   after: string;
   /** Where the changes' comparison crops are. */
@@ -54,7 +64,10 @@ export function ComparePages({ before, after, files, changes, current, states, c
   controls: (index: number) => ReactNode;
   onSelect: (index: number) => void;
   scrollRoot: RefObject<HTMLElement | null>;
-  onReady: () => void;
+  /** Where the reading place is kept. */
+  readingPlace: string;
+  /** The pages exist; `restored` when the reading place was restored. */
+  onReady: (restored: boolean) => void;
   onUnavailable: () => void;
 }) {
   const [docs, setDocs] = useState<{ before: Doc; after: Doc } | null>(null), [error, setError] = useState(""),
@@ -68,7 +81,7 @@ export function ComparePages({ before, after, files, changes, current, states, c
   const deselect = () => { setPanel(null); setDeselected(true); };
   const shown = deselected ? -1 : current;
   useEffect(() => {
-    if (shown < 0) return;
+    if (shown < 0 || !active) return;
     // Only a click on the pages away from any change deselects: the bar,
     // the change map and dialogs keep the change.
     const outside = (event: PointerEvent) => {
@@ -83,7 +96,7 @@ export function ComparePages({ before, after, files, changes, current, states, c
     document.addEventListener("pointerdown", outside);
     document.addEventListener("keydown", escape);
     return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
-  }, [shown]);
+  }, [shown, active]);
   const choose = (index: number) => { onSelect(index); setDeselected(false); setPanel(index); };
   useEffect(() => {
     let live = true;
@@ -95,19 +108,22 @@ export function ComparePages({ before, after, files, changes, current, states, c
     );
     return () => { live = false; tasks.forEach((task) => void task.destroy()); };
   }, [before, after]);
-  useEffect(() => { if (docs) return paint(box.current!, docs, scrollRoot.current); }, [docs, scrollRoot]);
-  useLayoutEffect(() => { if (docs) ready.current(); }, [docs]);
+  useEffect(() => { if (docs && active) return paint(box.current!, docs, scrollRoot.current); }, [docs, scrollRoot, active]);
+  useLayoutEffect(() => { if (active) return holdReader(window); }, [active]);
+  // The workspace's page, outline, zoom and find controls read the new
+  // version's pages, as in the full paper; fit to width fits both versions.
+  useLayoutEffect(() => {
+    if (!docs || !active) return;
+    const reader = fullPaperReader(box.current!, scrollRoot.current!, docs.after.pdf, readingPlace, true);
+    ready.current(reader.restored);
+    return () => reader.dispose();
+  }, [docs, readingPlace, scrollRoot, active]);
+  if (!active) return null;
   if (error) return <p className="empty" role="alert">{error}</p>;
-  if (!docs) return <div className="paper-status" role="status"><div className="pulse" /><span>{t("Opening both versions…")}</span></div>;
+  // Not the full paper's loading status: the review stays shown meanwhile.
+  if (!docs) return <div className="compare-status" role="status"><div className="pulse" /><span>{t("Opening both versions…")}</span></div>;
   const old = place(docs.before, changes, "before"), next = place(docs.after, changes, "after");
-  const firstOf = (list: Placed[]) => {
-    const first = new Map<number, number>();
-    for (const item of list) if (!first.has(item.index)) first.set(item.index, item.page);
-    return first;
-  };
-  const oldFirst = firstOf(old), newFirst = firstOf(next);
-  const anchors = changes.flatMap(({ index }) => oldFirst.has(index) && newFirst.has(index) ? [[oldFirst.get(index)!, newFirst.get(index)!] as [number, number]] : []);
-  const rows = pairPages(docs.before.pdf.numPages, docs.after.pdf.numPages, anchors);
+  const rows = alignPages(docs.before.words, docs.after.words);
   // Each change's lines on a page, as a share of the page's height: where
   // its bar in the middle column runs.
   const extents = (list: Placed[], doc: Doc) => {
@@ -135,7 +151,13 @@ export function ComparePages({ before, after, files, changes, current, states, c
     if (number === null) return <div className="compare-page compare-blank" style={{ aspectRatio: `${doc.width} / ${doc.height}` }} aria-hidden="true" />;
     return (
       <div className="compare-page" data-side={side} data-page={number} style={{ aspectRatio: `${doc.width} / ${doc.height}` }}
+        data-reader-page={side === "after" ? number : undefined} data-pdf-width={doc.width} data-pdf-height={doc.height}
         aria-label={`${side === "before" ? t("Before") : t("After")} · ${t("p. {pages}", { pages: doc.labels?.[number] ?? String(number + 1) })}`}>
+        {side === "after" && (
+          // The whole page, for the reader's place and the find marks.
+          <div className="paper-slice compare-reading" data-left={0} data-right={doc.width} data-top={0} data-bottom={doc.height}
+            data-pdf-top={0} data-pdf-bottom={doc.height} data-reading-anchor={`${number}:0`} />
+        )}
         {placed.filter((item) => item.page === number).map(({ index, strip }) => (
           <div key={`${index}:${strip.src}`} className={`compare-mark${index === shown ? " current" : ""}`} data-state={states(index)} data-side={side}
             style={{
@@ -165,7 +187,9 @@ export function ComparePages({ before, after, files, changes, current, states, c
       {changes.flatMap(({ index }) => {
         const left = oldLines.get(index), right = newLines.get(index),
           l = left && left.page === b ? left : null, r = right && right.page === a ? right : null;
-        if (!l && !r) return [];
+        // One bar per change: in the row of its new lines, or of its old
+        // ones for a deletion, also when the two print on different rows.
+        if (right ? !r : !l) return [];
         const top = Math.min(l?.top ?? 1, r?.top ?? 1), bottom = Math.max(l?.bottom ?? 0, r?.bottom ?? 0),
           open = panel === index && index === shown;
         return [

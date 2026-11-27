@@ -3,6 +3,7 @@ import {
   lazy,
   Suspense,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -38,6 +39,7 @@ const stateRoute = (round?: number | null) => {
 };
 import { EFFECTS_EVENT, EFFECTS_STORAGE, readExpandedEffects } from "./effect-preferences.ts";
 import { LAYOUT_STORAGE, readLayout, saveLayout, type ReviewLayout } from "./layout-preference.ts";
+import { holdReader } from "./reader-handoff.ts";
 import { language, locale, t, tn, withLanguage } from "./i18n.ts";
 import {
   ConfirmReferences,
@@ -171,6 +173,11 @@ function ReviewProgress({ value, total, label }: { value: number; total: number;
       <span aria-hidden="true"><span className="review-progress-value">{value}</span> / {total}</span>
     </div>
   );
+}
+// While the side-by-side code loads, the workspace's page controls stay.
+function CompareLoading() {
+  useLayoutEffect(() => holdReader(window), []);
+  return <div className="compare-status" role="status"><div className="pulse" /></div>;
 }
 // Two versions side by side need a wide window.
 const NARROW = "(max-width: 720px)";
@@ -1671,6 +1678,32 @@ export function ReviewApp({
       return (
         <nav className="compare-actions" aria-label={t("Review the current change")}>
           {renderDecisionButtons(available)}
+          <span className="compare-actions-sep" aria-hidden="true" />
+          <button
+            className="copy-reference"
+            title={t("Copy selected text with this change’s file, line numbers and PDF page")}
+            aria-label={t("Copy reference")}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => void copy(index)}
+          >
+            {t("Copy reference")}
+          </button>
+          <button
+            className="source-toggle"
+            title={[t("Show LaTeX source"), shortcuts.source.map(bindingLabel).join(" / ")].filter(Boolean).join(" · ")}
+            aria-label={t("Show LaTeX source")}
+            aria-keyshortcuts={shortcuts.source.join(" ")}
+            onClick={() => {
+              // The workspace opens it in its editor; on its own, the review
+              // shows the source in the stacked view, at this change.
+              if (offerSource(detail?.units.filter((unit) => units.includes(unit.id)) ?? [])) return;
+              saveLayout("stacked");
+              setChosenLayout("stacked");
+              setOpenSource((previous) => new Set(previous).add(index));
+            }}
+          >
+            LaTeX
+          </button>
         </nav>
       );
     return (
@@ -2365,6 +2398,8 @@ export function ReviewApp({
     canCompare = paperView && Boolean(detail?.pdfBefore) && !compareUnavailable && !phoneDock && !narrow,
     compare = canCompare && chosenLayout === "side-by-side";
   useEffect(() => { setCompareUnavailable(false); }, [detail?.round, detail?.pdfBefore]);
+  const [compareOpened, setCompareOpened] = useState(false);
+  useEffect(() => { if (compare) setCompareOpened(true); }, [compare]);
   // The comparisons of the next few undecided changes are fetched and decoded
   // ahead, so the next one is on screen the moment a decision moves on. A
   // small window keeps a phone's memory free.
@@ -2410,8 +2445,7 @@ export function ReviewApp({
     && (detail?.rendering === "pending" || Boolean(state?.job && ["queued", "running"].includes(state.job.status)));
   useEffect(() => {
     const root = document.documentElement;
-    // The host's page controls follow the single paper, not the comparison.
-    if (paperView && !compare) root.dataset.fullPaper = "available";
+    if (paperView) root.dataset.fullPaper = "available";
     else if (paperPending) root.dataset.fullPaper = "pending";
     else delete root.dataset.fullPaper;
   }, [paperView, paperPending, compare]);
@@ -2637,9 +2671,11 @@ export function ReviewApp({
                 setChosenLayout(next);
               }}
             >
+              {/* Two pages, unlike the workspace's own split-view icon. */}
               <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="3" y="4" width="18" height="16" rx="2" />
-                <path d="M12 4v16" />
+                <rect x="2.5" y="4.5" width="8" height="15" rx="1" />
+                <rect x="13.5" y="4.5" width="8" height="15" rx="1" />
+                <path d="M4.8 8.5h3.4M4.8 11.5h3.4M15.8 8.5h3.4M15.8 11.5h3.4" />
               </svg>
             </button>
           )}
@@ -2892,35 +2928,44 @@ export function ReviewApp({
               />
             )}
           <div className={`document${compare ? " compare-view" : ""}`}>
-            {detail && compare ? (
-              <Suspense fallback={<div className="paper-status" role="status"><div className="pulse" /></div>}>
-                <div className="compare-head" aria-hidden="true">
-                  <span>{t("Before")}</span>
-                  <span>{t("After")}</span>
-                </div>
-                <ComparePages
-                  key={`${detail.round}:${detail.pdfBefore}:${detail.pdf}`}
-                  before={detail.pdfBefore!}
-                  after={detail.pdf!}
-                  files={detail.files}
-                  changes={placed}
-                  current={current}
-                  states={(at) => stopState(stops[at]?.units ?? [], decisions)}
-                  controls={(at) => actionBar(at, true)}
-                  onSelect={(at) => { if (!composer && at !== current) { reached.current = "pick"; select(at, false); } }}
-                  scrollRoot={paper}
-                  onReady={() => {
-                    const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${snapshot.current.current}"]`);
-                    if (article) reveal(article);
-                  }}
-                  onUnavailable={() => setCompareUnavailable(true)}
-                />
-              </Suspense>
-            ) : detail && paperView ? (
+            {detail && paperView ? (
               <>
-                <Suspense fallback={<div className="paper-status" role="status"><div className="pulse" /></div>}>
+                {/* Once opened, both views stay loaded and only the one shown
+                    renders its pages, so switching keeps the review in place. */}
+                {(compare || compareOpened) && (
+                  <Suspense fallback={<CompareLoading />}>
+                    {compare && (
+                      <div className="compare-head" aria-hidden="true">
+                        <span>{t("Before")}</span>
+                        <span>{t("After")}</span>
+                      </div>
+                    )}
+                    <ComparePages
+                      key={`${detail.round}:${detail.pdfBefore}:${detail.pdf}`}
+                      active={compare}
+                      before={detail.pdfBefore!}
+                      after={detail.pdf!}
+                      files={detail.files}
+                      changes={placed}
+                      current={current}
+                      states={(at) => stopState(stops[at]?.units ?? [], decisions)}
+                      controls={(at) => actionBar(at, true)}
+                      onSelect={(at) => { if (!composer && at !== current) { reached.current = "pick"; select(at, false); } }}
+                      scrollRoot={paper}
+                      readingPlace={`${placeKey}:compare:${detail.round}`}
+                      onReady={(restored) => {
+                        if (restored) return;
+                        const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${snapshot.current.current}"]`);
+                        if (article) reveal(article);
+                      }}
+                      onUnavailable={() => setCompareUnavailable(true)}
+                    />
+                  </Suspense>
+                )}
+                <Suspense fallback={compare ? null : <div className="paper-status" role="status"><div className="pulse" /></div>}>
                 <FullPaper
                   key={`${placeKey}:pdf:${detail.round}:${detail.pdf}`}
+                  active={!compare}
                   url={detail.pdf!}
                   passes={detail.passes}
                   errors={detail.revisedErrors}

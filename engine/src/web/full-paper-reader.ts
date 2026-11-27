@@ -1,6 +1,7 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { pdfZoom, PDF_ZOOM_STORAGE, readOutline, PDF_READER_COMMAND, PDF_READER_STATE, type PdfReaderCommand, type PdfReaderState } from './pdf-reader.ts';
 import { fullPaperSearch } from './full-paper-search.ts';
+import { clearSoon, keepControls } from './reader-handoff.ts';
 
 interface Place { anchor: string; offset: number; top: number; left: number; zoom: string }
 const memory = new Map<string, Place>();
@@ -8,17 +9,26 @@ function read(key: string): Place | undefined {
   try { return memory.get(key) ?? JSON.parse(localStorage.getItem(key) || 'null') ?? undefined; } catch { return memory.get(key); }
 }
 
+// Where the last reader was, on the new version's pages: the page and the
+// PDF line at the top of the view. Switching between the full paper and the
+// side-by-side pages opens the other view there.
+let spot: { pdf: string; page: number; y: number } | null = null;
+
 // The review opens PDF pages to insert before/after rows. Keep its rendering,
 // but adapt those pages to the same navigation contract as the manuscript.
 export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: PDFDocumentProxy, key: string, restore: boolean, preparing?: number) {
   const document = container.ownerDocument, view = document.defaultView!;
   const documentBox = container.closest<HTMLElement>('.document')!;
+  // The other view was read here a moment ago: this one opens at that line.
+  const handed = spot && spot.pdf === (pdf.fingerprints[0] ?? '') ? spot : null;
   let alive = true, initialized = false, tick = 0, timer: ReturnType<typeof setTimeout> | undefined;
   let saved = read(key), position: Place | undefined, globalZoom: string | null = null;
   try { globalZoom = localStorage.getItem(PDF_ZOOM_STORAGE); } catch { /* Optional storage. */ }
   const savedPage = restore && saved ? Number(saved.anchor.split(':')[0]) + 1 : 1;
   let state: PdfReaderState = { pages: pdf.numPages, page: Number.isInteger(savedPage) ? Math.max(1, Math.min(pdf.numPages, savedPage)) : 1, zoom: { value: pdfZoom(saved?.zoom || globalZoom), scale: 1 }, outline: [], section: -1, ...(preparing ? { preparing } : {}) };
-  const pages = () => [...container.querySelectorAll<HTMLElement>('.paper-page')];
+  // The pages of the version read: the full paper's, or side by side the new
+  // version's, beside the old one's.
+  const pages = () => [...container.querySelectorAll<HTMLElement>('[data-reader-page]')];
   const anchors = () => [...container.querySelectorAll<HTMLElement>('[data-reading-anchor]')];
   const top = (element: HTMLElement) => element.getBoundingClientRect().top - root.getBoundingClientRect().top;
   const capture = (): Place => {
@@ -44,9 +54,23 @@ export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: 
   const announce = (force = false) => {
     if (!force && announced && announced.page === state.page && announced.section === state.section && announced.outline === state.outline && announced.zoom.value === state.zoom.value && announced.zoom.scale === state.zoom.scale && announced.find === state.find) return;
     announced = state;
+    keepControls();
     view.dispatchEvent(new CustomEvent(PDF_READER_STATE, { detail: state }));
   };
   const search = fullPaperSearch(container, root, pdf, find => { state = { ...state, find }; announce(); });
+  // The page the controls show, and the line of it at the top of the view,
+  // in PDF points from the page's top; its top when it starts lower down.
+  const mark = () => {
+    const element = pages()[state.page - 1];
+    if (!element) return;
+    let y = 0;
+    if (top(element) < 0) {
+      const band = [...element.querySelectorAll<HTMLElement>('[data-pdf-top]')].find(item => top(item) + item.offsetHeight > 0);
+      const start = Number(band?.dataset.pdfTop ?? 0), end = Number(band?.dataset.pdfBottom ?? 0);
+      if (band) y = start + Math.max(0, Math.min(1, -top(band) / Math.max(1, band.offsetHeight))) * (end - start);
+    }
+    spot = { pdf: pdf.fingerprints[0] ?? '', page: state.page - 1, y };
+  };
   const update = () => {
     const list = pages();
     const visible = list.map((element, index) => ({ index, fraction: Math.max(0, Math.min(root.clientHeight, top(element) + element.offsetHeight) - Math.max(0, top(element))) / Math.max(1, element.offsetHeight) }));
@@ -62,6 +86,7 @@ export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: 
     if (root.scrollTop + root.clientHeight >= root.scrollHeight - 2 && state.outline.length) section = state.outline.length - 1;
     state = { ...state, page: page + 1, section };
     announce();
+    mark();
   };
   // Bookmarks use PDF coordinates. Find the surviving PDF band at that height;
   // a heading replaced by a change lands at that change's before/after row.
@@ -92,9 +117,12 @@ export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: 
     const list = pages(), width = Number(list[0]?.dataset.pdfWidth), page = list[state.page - 1];
     if (!width || !page) return;
     const style = getComputedStyle(root), available = root.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-    const fit = available / (width * 96 / 72);
+    // Side by side, the width holds both versions' pages and the column between.
+    const columns = documentBox.classList.contains('compare-view') ? 2 : 1,
+      gap = columns > 1 ? parseFloat(getComputedStyle(documentBox).getPropertyValue('--compare-gutter')) || 0 : 0;
+    const fit = (available - gap) / (width * 96 / 72 * columns);
     let scale = Math.max(0.1, state.zoom.value === 'page-width' || state.zoom.value === 'page-fit' ? fit : Number(state.zoom.value));
-    const size = (value: number) => { documentBox.style.width = `${width * 96 / 72 * value}px`; };
+    const size = (value: number) => { documentBox.style.width = `${width * 96 / 72 * value * columns + gap}px`; };
     documentBox.style.maxWidth = 'none';
     size(scale);
     if (state.zoom.value === 'page-fit') {
@@ -117,7 +145,7 @@ export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: 
   const zoom = (value: string, origin?: [number, number]) => {
     // Anchor the actual slice under the fingers: a whole review page also
     // contains controls whose height does not scale with its PDF content.
-    const hit = origin && document.elementFromPoint(...origin)?.closest<HTMLElement>('.paper-slice,.pdf-strip,[data-reading-anchor],.paper-page');
+    const hit = origin && document.elementFromPoint(...origin)?.closest<HTMLElement>('.paper-slice,.pdf-strip,[data-reading-anchor],[data-reader-page]');
     const element = hit && container.contains(hit) ? hit : undefined, before = element?.getBoundingClientRect();
     const point = origin && before?.width && before.height ? [(origin[0] - before.left) / before.width, (origin[1] - before.top) / before.height] : undefined;
     const page = state.page;
@@ -165,6 +193,18 @@ export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: 
   // Hosts may replay an open search in response to the initial state event.
   view.addEventListener(PDF_READER_COMMAND, command);
   resize(); observer.observe(root);
+  if (handed) {
+    const element = pages()[handed.page];
+    if (element) {
+      root.scrollTop = destination(element, Number(element.dataset.pdfHeight) - handed.y);
+      // A line near the end of the page may leave the next page the most
+      // visible here; then the page itself starts the view, so the controls
+      // show the same page as before the switch.
+      const shown = (item: HTMLElement) => Math.max(0, Math.min(root.clientHeight, top(item) + item.offsetHeight) - Math.max(0, top(item)));
+      if (pages().some(item => item !== element && shown(item) > shown(element))) root.scrollTop += top(element);
+      position = capture(); update();
+    }
+  }
   void readOutline(pdf).then(outline => { if (alive) { state = { ...state, outline }; update(); } }, () => {});
   view.addEventListener('pagehide', persist);
   root.addEventListener('scroll', scroll, { passive: true });
@@ -174,7 +214,7 @@ export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: 
   root.addEventListener('touchend', touchEnd);
   root.addEventListener('touchcancel', touchEnd);
   return {
-    restored: Boolean(restore && saved),
+    restored: Boolean(restore && saved) || Boolean(handed),
     dispose() {
       // React may already have replaced the pages before effect cleanup runs.
       // Keep the last measured place, not a measurement of the new geometry.
@@ -183,7 +223,7 @@ export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: 
       root.removeEventListener('touchstart', touchStart); root.removeEventListener('touchmove', touchMove); root.removeEventListener('touchend', touchEnd); root.removeEventListener('touchcancel', touchEnd);
       view.removeEventListener(PDF_READER_COMMAND, command); view.removeEventListener('pagehide', persist);
       documentBox.style.removeProperty('width'); documentBox.style.removeProperty('max-width');
-      view.dispatchEvent(new CustomEvent(PDF_READER_STATE, { detail: null }));
+      clearSoon(view);
     },
   };
 }

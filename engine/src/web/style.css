@@ -1227,7 +1227,8 @@ kbd {
     overflow-x: clip;
   }
 }
-.paper-status {
+.paper-status,
+.compare-status {
   text-align: center;
   padding: 90px 16px;
   color: var(--text-3);
@@ -2361,12 +2362,18 @@ body {
    left, the new on the right, a blank page where one has no counterpart,
    and between them a column with each change's number and decisions. */
 .document.compare-view {
+  --compare-gutter: 44px;
   max-width: 1700px;
+}
+/* The reader's whole-page anchor on the new version's pages. */
+.compare-reading {
+  inset: 0;
+  pointer-events: none;
 }
 .compare-head,
 .compare-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) var(--compare-gutter) minmax(0, 1fr);
 }
 .compare-head {
   margin: 0 0 8px;
@@ -2572,6 +2579,17 @@ body {
 .compare-actions .comment {
   --compare-icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linejoin='round'><path d='M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z'/></svg>");
   color: var(--accent);
+}
+.compare-actions-sep {
+  height: 1px;
+  margin: 2px 4px;
+  background: var(--line);
+}
+.compare-actions .copy-reference {
+  --compare-icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'><rect x='8' y='8' width='12' height='12' rx='2'/><path d='M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2'/></svg>");
+}
+.compare-actions .source-toggle {
+  --compare-icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16'/></svg>");
 }
 .compare-actions .unstage {
   --compare-icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'><path d='M5 12h14'/></svg>");
