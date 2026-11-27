@@ -13,6 +13,7 @@
   "AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.": "AI-granskning använder manuskriptets PDF. Starta en separat redigeringsuppgift för att skicka anteckningar eller bilagor.",
   "Accepted changes are already in the manuscript.": "Accepterade ändringar finns redan i manuskriptet.",
   "Add a DOI, arXiv identifier, author or year to this entry to keep a PDF for it.": "Lägg till DOI, arXiv-ID, författare eller årtal i den här posten för att spara en PDF för den.",
+  "Add the source files for the selected PDF notes, or deselect those notes.": "Lägg till källfilerna för de valda PDF-anteckningarna eller avmarkera dessa anteckningar.",
   "An AI review comment is invalid. Ask the reviewer to retry.": "En kommentar i AI-granskningen är ogiltig. Be granskaren att försöka igen.",
   "An AI review comment lists its PDF lines in reverse order. Ask the reviewer to put the start before the end.": "En kommentar i AI-granskningen anger sina PDF-rader i omvänd ordning. Be granskaren att placera början före slutet.",
   "An AI review comment refers to an unknown PDF location. Ask the reviewer to retry using the supplied line IDs.": "En kommentar i AI-granskningen hänvisar till en okänd plats i PDF-filen. Be granskaren att försöka igen med de angivna rad-ID:na.",

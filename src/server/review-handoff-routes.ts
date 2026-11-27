@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { Repo } from '../../engine/src/core/git.ts';
-import { isAgentId, type ExternalReview, type ExternalReviewOptions, type ExternalReviewRemote } from '../shared.ts';
+import { isAgentId, isTaskReviewNote, type ExternalReview, type ExternalReviewOptions, type ExternalReviewRemote } from '../shared.ts';
 import { taskTitle } from '../task-caption.ts';
+import { canonicalGroup, parseGroupInstructions } from '../note-groups.ts';
 import {
   createHandoffRequest, handoffCommit, handoffFiles, handoffGit, handoffIdPattern, handoffReceipt, handoffReceiptMarkdown,
-  handoffFence, handoffRecord, handoffRequestMarkdown, handoffSource, handoffTaskPrompt, proposalDigest, validateHandoffProposal,
+  handoffFence, handoffNotes, handoffRecord, handoffRequestMarkdown, handoffSource, handoffTaskPrompt, proposalDigest, validateHandoffProposal,
 } from './review-handoff.ts';
 import { taskRoute, type reviewClient } from './review.ts';
 import type { Store } from './store.ts';
@@ -16,7 +17,7 @@ const route = '/api/projects/:id/external-review';
 const projectScope = { config: { resource: { project: 'id' } } } as const;
 const proposalLimit = 2 * 1024 * 1024;
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
-type SavedReview = ExternalReview & { result?: NonNullable<ExternalReview['result']> & { publication?: string } };
+type SavedReview = ExternalReview & { noteSelection?: string; result?: NonNullable<ExternalReview['result']> & { publication?: string } };
 type Params = { id: string; review?: string };
 type ReviewRequest = FastifyRequest<{ Params: Params; Body: Record<string, unknown> }>;
 
@@ -61,8 +62,9 @@ function pageLink(value: unknown) {
   throw new Error('Paste a ChatGPT Space Page link.');
 }
 
-export function registerExternalReviewRoutes(app: FastifyInstance, { store, workspace, serialGit, connectReview }: {
+export function registerExternalReviewRoutes(app: FastifyInstance, { store, workspace, serialGit, connectReview, settleAnnotation }: {
   store: Store; workspace: Workspace; serialGit: <T>(projectId: string, work: () => Promise<T>) => Promise<T>; connectReview: typeof reviewClient;
+  settleAnnotation?: (id: string) => Promise<void> | undefined;
 }) {
   const enabled = () => store.preference<boolean>(EXTERNAL_REVIEWS) === true;
   const projectRepo = (id: string) => {
@@ -112,17 +114,34 @@ export function registerExternalReviewRoutes(app: FastifyInstance, { store, work
     const [files, remotes] = await Promise.all([handoffFiles(repo, baseCommit), configuredRemotes(repo)]);
     return { baseCommit, files, remotes, reviews: selected ? [selected] : scope === 'files' ? [] : store.externalReviews(id) };
   });
-  app.post<{ Params: Params; Body: { baseCommit?: string; files?: unknown; question?: unknown; composerId?: unknown } }>(route, { ...projectScope, bodyLimit: proposalLimit }, request => serialGit(request.params.id, async () => {
-    const { id } = request.params, repo = projectRepo(id), { baseCommit, question, files, composerId } = request.body ?? {};
+  app.post<{ Params: Params; Body: { baseCommit?: string; files?: unknown; question?: unknown; composerId?: unknown; annotations?: unknown; groupInstructions?: unknown } }>(route, { ...projectScope, bodyLimit: proposalLimit }, request => serialGit(request.params.id, async () => {
+    const { id } = request.params, repo = projectRepo(id), { baseCommit, question, files, composerId, annotations, groupInstructions } = request.body ?? {};
     if (typeof baseCommit !== 'string') throw new Error('Choose a committed version to review.');
     if (composerId !== undefined && (typeof composerId !== 'string' || !handoffIdPattern.test(composerId))) throw new Error('This external review no longer exists.');
-    const record = await createHandoffRequest(repo, baseCommit, question, files, composerId);
+    if (annotations !== undefined && (!Array.isArray(annotations) || annotations.some((note: unknown) => typeof note !== 'string' || !note || note.length > 64))) throw new Error('Select valid PDF notes for this task.');
+    const noteIds = [...new Set<string>(annotations ?? [])], directions = parseGroupInstructions(groupInstructions);
+    const noteSelection = noteIds.length ? sha256(JSON.stringify([noteIds, Object.entries(directions).sort()])) : undefined;
+    const text = noteIds.length && (question === undefined || typeof question === 'string' && !question.trim()) ? 'Review the selected PDF annotations and suggest focused changes.' : question;
+    const record = await createHandoffRequest(repo, baseCommit, text, files, composerId);
     const prior = composerId && store.externalReview<SavedReview>(id, composerId);
     if (prior) {
-      if (!prior.fromComposerAt || JSON.stringify(prior.request) !== JSON.stringify(record)) throw new Error('This external review no longer exists.');
+      const { notes: _, ...previousRequest } = prior.request;
+      if (!prior.fromComposerAt || prior.noteSelection !== noteSelection || JSON.stringify(previousRequest) !== JSON.stringify(record)) throw new Error('This external review no longer exists.');
       return prior;
     }
-    const review: SavedReview = { request: record, ...(composerId ? { fromComposerAt: Date.now() } : {}) };
+    if (noteIds.length) {
+      if (settleAnnotation) await Promise.all(noteIds.map(settleAnnotation));
+      const notes = noteIds.map(noteId => {
+        const note = store.findAnnotation(id, noteId);
+        if (!note || note.taskId || note.deletedAt !== undefined || isTaskReviewNote(note)) throw new Error('A selected PDF note is no longer available. Refresh the manuscript and try again.');
+        return note;
+      });
+      if (Object.keys(directions).some(group => !notes.some(note => note.group && canonicalGroup(note.group) === group))) throw new Error('Group instructions must refer to selected PDF notes.');
+      const outside = notes.flatMap(note => note.source && !record.files.includes(note.source.file) ? [note.source.file] : []);
+      if (outside.length && (await handoffFiles(repo, baseCommit)).some(file => outside.includes(file))) throw new Error('Add the source files for the selected PDF notes, or deselect those notes.');
+      record.notes = await handoffNotes(repo, record, notes, directions);
+    }
+    const review: SavedReview = { request: record, ...(composerId ? { fromComposerAt: Date.now() } : {}), ...(noteSelection ? { noteSelection } : {}) };
     await repo.updateRefAsync(localRef(review.request.requestId, 'base'), baseCommit);
     return save(id, review);
   }));
@@ -172,7 +191,7 @@ export function registerExternalReviewRoutes(app: FastifyInstance, { store, work
     }
     const agent = body.agent;
     if (!isAgentId(agent) || agent === 'collaboration') throw new Error('Choose a local agent.');
-    const { requestId, baseCommit, question } = review.request;
+    const { requestId, baseCommit, question, notes } = review.request;
     const idForTask = !review.taskId || store.taskDeleted(review.taskId) ? `external-${randomUUID()}` : review.taskId;
     const changes = review.proposal.changes;
     // Confirm the saved Git base is still readable, even when the manuscript has advanced.
@@ -181,7 +200,7 @@ export function registerExternalReviewRoutes(app: FastifyInstance, { store, work
     const task = await workspace.createTask({ id: idForTask, projectId: id, agent,
       ...(typeof body.model === 'string' && body.model ? { model: body.model } : {}),
       title: taskTitle(question), permissions: 'workspace',
-      instructions: handoffTaskPrompt({ baseCommit, question, changes }, true),
+      instructions: handoffTaskPrompt({ baseCommit, question, notes, changes }, true),
       externalReview: { requestId, baseCommit, files: [...new Set(changes.map(change => change.file))] },
     });
     return { task, review };

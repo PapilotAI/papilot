@@ -13,6 +13,7 @@
   "AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.": "AI レビューでは原稿の PDF を使用します。注釈や添付ファイルを送信するには、別の編集タスクを開始してください。",
   "Accepted changes are already in the manuscript.": "承認された変更はすでに原稿に反映されています。",
   "Add a DOI, arXiv identifier, author or year to this entry to keep a PDF for it.": "この項目の PDF を保存するには、DOI、arXiv ID、著者、または出版年を追加してください。",
+  "Add the source files for the selected PDF notes, or deselect those notes.": "選択したPDF注釈のソースファイルを追加するか、それらの注釈の選択を解除してください。",
   "An AI review comment is invalid. Ask the reviewer to retry.": "AI レビューのコメントが無効です。レビュアーに再試行するよう指示してください。",
   "An AI review comment lists its PDF lines in reverse order. Ask the reviewer to put the start before the end.": "AI レビューのコメントで PDF の行が逆順に指定されています。開始位置を終了位置より前にするようレビュアーに指示してください。",
   "An AI review comment refers to an unknown PDF location. Ask the reviewer to retry using the supplied line IDs.": "AI レビューのコメントが不明な PDF 位置を参照しています。指定された行 ID を使用して再試行するようレビュアーに指示してください。",

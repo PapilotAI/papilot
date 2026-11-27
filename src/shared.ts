@@ -34,8 +34,13 @@ export interface PendingReview { returnNote?: Annotation; returnNotes?: Annotati
 // task it never saw is deleted without it.
 export interface TaskPreparation { submitted?: boolean }
 export interface ExternalReviewChange { file: string; original: string; suggestion: string; reason: string }
+export interface ExternalReviewNote {
+  page: number; comment: string; quote: string; kind?: MarkKind; group?: NoteGroup; groupInstruction?: string;
+  source?: { file: string; lines?: [number, number]; excerpt?: string };
+}
 export interface ExternalReviewRequest {
   schema: 'papilot-handoff/v1'; kind: 'request'; requestId: string; baseCommit: string; question: string; files: string[];
+  notes?: ExternalReviewNote[];
 }
 export interface ExternalReviewRemote { name: string; revision: string; repository?: string; url?: string }
 export interface ExternalReviewReceipt {

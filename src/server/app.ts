@@ -406,7 +406,6 @@ export async function buildApp(options: AppOptions) {
     return { quickNotes: quickNotes || null };
   });
   app.get('/api/collaboration', () => workspace.collaborationSettings());
-  registerExternalReviewRoutes(app, { store, workspace, serialGit, connectReview });
   app.post('/api/collaboration', (request, reply) => {
     const { enabled, routes } = (request.body as any) || {};
     if (enabled === undefined && routes === undefined) return reply.code(400).send({ error: 'Send enabled or routes.' });
@@ -570,6 +569,7 @@ export async function buildApp(options: AppOptions) {
   const optional = (value: unknown, name: string, max?: number) => value === undefined || value === '' ? '' : string(value, name, max);
   // Each new note's source lookup while it runs, by note ID.
   const locating = new Map<string, Promise<void>>();
+  registerExternalReviewRoutes(app, { store, workspace, serialGit, connectReview, settleAnnotation: id => locating.get(id) });
   app.get<{ Params: { id: string } }>('/api/projects/:id/skills', project(), request => ({ skills: loadSkills(store.project(request.params.id).path).map(listedSkill) }));
   app.post('/api/tasks', { config: { resource: { project: 'projectId', from: 'body' } } }, async request => {
     const b = request.body as any, skill = skillName(b.skill), attachments = attachmentIds(b.attachments);

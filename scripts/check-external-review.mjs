@@ -32,6 +32,9 @@ try {
         { file: 'paper.tex', original: 'The effect is really small.', suggestion: 'The effect is small.', reason: 'Remove the intensifier.' },
       ] };
       const settings = { baseCommit: base, files: ['paper.tex', 'supplements/results with spaces.tex'], remotes: [remote], reviews: [] };
+      const selected = { id: 'note-to-share', projectId: project.id, key: 'fixture-pdf', page: 0, rect: [1, 1, 5, 4], createdAt: 1,
+        comment: 'Explain the measured effect.', quote: 'The effect is really small.', source: { file: settings.files[1], lines: [2, 2] } };
+      let annotations = [];
       let loadingError = true, fetched = false, decided = false, readReceipt = 0, composerId = '';
       await page.addInitScript(language => {
         localStorage.setItem('papilot:language', language);
@@ -55,11 +58,13 @@ try {
             if (loadingError) { loadingError = false; return error('Temporary connection problem'); }
             return json({ ...settings, reviews: id ? [review] : url.searchParams.has('scope') ? [] : settings.reviews });
           }
-          assert.deepEqual(body.files, ['paper.tex']); assert.equal(body.baseCommit, base);
-          const { composerId: incomingId, ...data } = body;
+          assert.deepEqual(body.files, body.composerId ? settings.files : ['paper.tex']); assert.equal(body.baseCommit, base);
+          const { composerId: incomingId, annotations: checkedNotes, groupInstructions: _directions, ...data } = body;
           const created = { request: { schema: 'papilot-handoff/v1', kind: 'request', requestId: incomingId || requestId, ...data } };
           if (incomingId) {
             assert.match(incomingId, /^[0-9a-f-]{36}$/);
+            assert.deepEqual(checkedNotes, [selected.id]);
+            created.request.notes = [{ comment: selected.comment, quote: selected.quote, page: 1, source: selected.source }];
             composerId = incomingId;
             state.externalReviewConversations = [{ id: incomingId, projectId: project.id, title: data.question, createdAt: 3 }];
           }
@@ -99,7 +104,7 @@ try {
         }
         if (pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
         if (pathname.endsWith('/requirements')) return json(readyRequirements);
-        if (pathname.endsWith('/manuscript')) return json({ git: { branch: 'main', files: [] }, build: {}, annotations: [] });
+        if (pathname.endsWith('/manuscript')) return json({ git: { branch: 'main', files: [] }, build: {}, annotations });
         if (pathname.endsWith('/git')) return json({ branch: 'main', files: [], head: base });
         if (pathname.endsWith('/items')) return json({ items: [] });
         return json({});
@@ -158,7 +163,11 @@ try {
 
       state.tasks.length = 0;
       settings.reviews.length = 0;
-      await page.evaluate(() => localStorage.setItem('papilot:task', ''));
+      annotations = [selected, { ...selected, id: 'private-note', comment: 'Keep this note private.' }];
+      await page.evaluate(noteId => {
+        localStorage.setItem('papilot:task', '');
+        localStorage.setItem('papilot:selected-notes', JSON.stringify({ paper: [noteId] }));
+      }, selected.id);
       await page.reload();
       await page.locator('[data-task-home]:visible').first().click();
       const composer = page.locator('.new-task-panel:visible');
@@ -173,15 +182,24 @@ try {
       await shot('model-picker');
       await menu.getByRole('combobox').press('Enter');
       await expect(picker).toContainText(webModel);
-      await expect(composer.locator('summary').getByText('paper.tex', { exact: true })).toBeVisible();
-      const question = 'Review the interpretation of this result.';
-      await composer.getByRole('textbox', { name: text('Describe the revision') }).fill(question);
+      await expect(composer.getByText(selected.comment)).toBeVisible();
+      await expect(composer.getByText(text('Only selected PDF notes are included in the prompt.'))).toBeVisible();
+      await composer.locator('.external-composer-scope summary').click();
+      const noteFile = composer.getByRole('checkbox', { name: settings.files[1] });
+      await expect(noteFile).toBeChecked();
+      await noteFile.uncheck();
+      await expect(composer.getByRole('button', { name: text('Start task') })).toBeDisabled();
+      await noteFile.check();
+      const question = text('Review the selected PDF annotations and suggest focused changes.');
       await composer.getByRole('button', { name: text('Start task') }).click();
       const conversation = page.locator('.external-conversation');
       await expect(conversation.getByText(question)).toBeVisible();
       assert.ok(composerId && !settings.reviews[0].git, 'Starting the task does not publish files');
       await page.reload(); await expect(conversation.getByText(question)).toBeVisible();
       await expect(page.locator('.task-row').filter({ hasText: question })).toHaveCount(1);
+      await conversation.locator('summary').filter({ hasText: text('PDF notes') }).click();
+      await expect(conversation.getByText(selected.comment)).toBeVisible();
+      await expect(conversation.getByText('Keep this note private.')).toHaveCount(0);
       await conversation.getByLabel(text('ChatGPT Space Page'), { exact: true }).check();
       await expect(conversation.getByRole('button', { name: text('Copy Space prompt') })).toBeVisible();
       await shot('composer-conversation');

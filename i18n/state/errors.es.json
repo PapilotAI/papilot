@@ -64,6 +64,11 @@
     "textHash": "3fa41ac844af136179276dbec9f20c467d420d7fe62a0a6da839cda97a577731",
     "model": "gemini-4-argon-medium"
   },
+  "Add the source files for the selected PDF notes, or deselect those notes.": {
+    "revision": "31d2f6b1005662a6612595fce75ff5b36c41debd3cd414ab01d35172cc77e05f",
+    "textHash": "d9c447c493f89126ea8c9523917776dd0491668763f8a87d8312068d08ca4d7f",
+    "model": "gemini-4-argon-medium"
+  },
   "An AI review comment is invalid. Ask the reviewer to retry.": {
     "revision": "e8b5d828fc0d0c206a7fe9f0ed7645e70b80a1e4048b70c6f7a7d53603061050",
     "textHash": "73d52342fc06b7a4026a9e7a01bc54e7a5684a9d3f7050f07333d08ff506faab",

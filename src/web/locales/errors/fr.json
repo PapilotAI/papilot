@@ -13,6 +13,7 @@
   "AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.": "La révision par IA utilise le PDF du manuscrit. Démarrez une tâche d’édition distincte pour envoyer des annotations ou des pièces jointes.",
   "Accepted changes are already in the manuscript.": "Les modifications acceptées sont déjà dans le manuscrit.",
   "Add a DOI, arXiv identifier, author or year to this entry to keep a PDF for it.": "Ajoutez un DOI, un identifiant arXiv, un auteur ou une année à cette entrée pour lui associer un PDF.",
+  "Add the source files for the selected PDF notes, or deselect those notes.": "Ajoutez les fichiers sources pour les annotations PDF sélectionnées, ou désélectionnez ces annotations.",
   "An AI review comment is invalid. Ask the reviewer to retry.": "Un commentaire de révision par IA est invalide. Demandez au réviseur de réessayer.",
   "An AI review comment lists its PDF lines in reverse order. Ask the reviewer to put the start before the end.": "Un commentaire de révision par IA indique ses lignes PDF dans l’ordre inverse. Demandez au réviseur de placer le début avant la fin.",
   "An AI review comment refers to an unknown PDF location. Ask the reviewer to retry using the supplied line IDs.": "Un commentaire de révision par IA renvoie à un emplacement PDF inconnu. Demandez au réviseur de réessayer avec les identifiants de ligne fournis.",

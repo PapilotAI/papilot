@@ -254,6 +254,11 @@
     "textHash": "64cf6781500aad03a97136ef589567c7a81626ffbd0eb97c1c11e7a2595401ce",
     "model": "gemini-4-argon-medium"
   },
+  "Add the source files for the selected PDF notes, or deselect those notes.": {
+    "revision": "b493adb692ab9a9c85b4ca9aebfea775f748d1a8e7862a18d1e019040006c7a7",
+    "textHash": "4f0c2d02a56a3baeb8fd287737d365491b503425a545d53d78389e7934c16666",
+    "model": "gemini-4-argon-medium"
+  },
   "Add to .gitignore": {
     "revision": "475ffca59160348b68b617cbe83deea23e340f5e037d09b7cc8710577583c353",
     "textHash": "5479a5a5ed943c5df6a41b7290d4f403f96aebe6907da8d20cc712fde5cb8b95",
@@ -2439,11 +2444,6 @@
     "textHash": "b4b704e5a64a2e2236e54c147d4403cd64f2813c6b3628934b1a0d5c80be34d3",
     "model": "manual"
   },
-  "For ChatGPT Pro, use committed files and a message. Remove attachments, PDF notes, or skills to continue.": {
-    "revision": "12f458ad1fa67470b05b1e6016f475a031a5abad6c7b445cb740953b0bfa05e2",
-    "textHash": "61444ad601a23a21f44028f12cfb29c9f9ab3acf8f25053152dc70d3eb5d2b5b",
-    "model": "gemini-4-argon-medium"
-  },
   "For a computer without Zotero: PDFs are downloaded from Zotero's online storage.": {
     "revision": "52c416ae1a92ec4f6828b477952cda1050e10930f19c7a806bf2ebedf8edc757",
     "textHash": "4b7cb9f33dedaa57928604fc3b59d7e98732e8806e63a2766dba9abc65459e4b",
@@ -3859,6 +3859,11 @@
     "textHash": "e96ebb2fc005521ff3ee27f3d091cbda51ee15cd681f9ca8d4a30dc5f7f62961",
     "model": "gemini-4-argon-medium"
   },
+  "Only selected PDF notes are included in the prompt.": {
+    "revision": "ed04d00dbdb4f6880ce8b9c32802f65cc35ce1556d5454ad8d4d91646938be88",
+    "textHash": "0f13e754453383b94bc7d717f38f6894b0ef996fc91420d6674d8e9fffcfc011",
+    "model": "gemini-4-argon-medium"
+  },
   "Open": {
     "revision": "a00f5c29e759d917d394fb1fade5f44257e065ca5e03e446a2a72f4cea0f8e31",
     "textHash": "9fb440435a0466471535fbd53edeba3bfb5abf47f12a7890ef30b67606558a7e",
@@ -4100,7 +4105,7 @@
     "model": "gemini-4-argon-medium"
   },
   "PDF notes": {
-    "revision": "4ce035cec6873fbbd62d4170c23b3a796258d6dde5f492627f617d30bccc1a5c",
+    "revision": "d764db4cf6e4861c48373180947bf7a562ac5f0fcb64131203f3307b90dcd569",
     "textHash": "4d954e6e36e2c772d4dd9e69f9af0895a3b4b0c8a22c04bdb65c6a798d03f7f9",
     "model": "gemini-4-argon-medium"
   },
@@ -4145,7 +4150,7 @@
     "model": "manual"
   },
   "Page {n}": {
-    "revision": "b34c44783e990ad938cfea2b727c64771e40fa66ca21c31098b84d68ca390d29",
+    "revision": "42735bc5890ea6e4129adb9bee559832942a3c2801b896ca83a91c24605a558a",
     "textHash": "a456627ace382cd7eac7c2e266b2ae8b326f7f1bc8579b15af3c009ce2ba0923",
     "model": "gemini-4-argon-medium"
   },
@@ -4894,6 +4899,11 @@
     "textHash": "3efe346ea936d55589847ca02be23674f0186ab20548d53b220754788164b72e",
     "model": "gemini-4-argon-medium"
   },
+  "Remove uploaded attachments or skills to continue with ChatGPT Pro.": {
+    "revision": "e8c8651eb8135c603990c067be7b8bd79c0d02fffb3212bea99eea23bfc8b130",
+    "textHash": "596f05fd3e02812b93b40a368ef1349a7eabbed52a7797ec8b6e636fdc6bb0bc",
+    "model": "gemini-4-argon-medium"
+  },
   "Removed": {
     "revision": "0628cf9d1a5c257e51b305fd9090815cb9154657e009903dc349ef0d2d797b31",
     "textHash": "61c7f9c25b467b272e81d228253a6bee1d6792760307e1f40d5346de7cd5e21b",
@@ -5218,6 +5228,11 @@
     "revision": "0bcef44863e52b2e29839ec249f7a8c4eb6250a69552f4b83f2a78210fbb18e3",
     "textHash": "7533c7cd9b008f43a36bd38a90780be6e31a219b1be9046f32871f02e54fc3d8",
     "model": "gemini-4-argon-high"
+  },
+  "Review the selected PDF annotations and suggest focused changes.": {
+    "revision": "b05ac54c41f276097c07b51131f8bb08feb7f80ede669f592eb7deb764149531",
+    "textHash": "60b157cb7a0c369a7713c5494fdd74d0454bded0940cfb71386522290394a3b4",
+    "model": "gemini-4-argon-medium"
   },
   "Review, {n} to decide": {
     "revision": "13792d283dc8053838ad26d7c26245c668f8a82f084c20e767b12f74b956d729",

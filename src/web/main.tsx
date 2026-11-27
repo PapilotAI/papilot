@@ -1811,15 +1811,19 @@ function App() {
   }
   async function createTask() {
     if (webReviewSelected) {
-      const question = newDraft.trim(), target = project?.id, { commit: baseCommit, files } = webReviewScope;
-      if (!target || !question || !baseCommit || !files.length || webReviewAttachments || creating || marking || noteEditing || reviewNoteBusy || history.busy) return;
+      const attached = noteSelection.selected, annotations = attached.map(note => note.id);
+      const question = newDraft.trim() || (annotations.length ? t('Review the selected PDF annotations and suggest focused changes.') : '');
+      const target = project?.id, { commit: baseCommit, files } = webReviewScope;
+      if (!target || !question || !baseCommit || !files.length || webReviewScope.missingNoteFiles.length || webReviewAttachments || creating || marking || noteEditing || reviewNoteBusy || history.busy) return;
       setCreating(true); setCreateError('');
       try {
-        const body = { baseCommit, files, question };
+        const groupInstructions = groupDrafts.forNotes(attached);
+        const body = { baseCommit, files, question, ...(annotations.length ? { annotations, groupInstructions } : {}) };
         const key = 'papilot:new-web-review-request';
-        const composerId = requestId(browserStorage, key, JSON.stringify([target, body]), browserUuid);
+        const composerId = requestId(browserStorage, key, JSON.stringify([target, body, attached.map(note => [note.comment, note.quote, note.kind, note.group])]), browserUuid);
         const review = await api<ExternalReview>(externalReviewPath(target), { ...body, composerId });
         await refresh(true);
+        noteSelection.set(annotations, false);
         browserStorage.removeItem(key); setNewDraft(''); setTaskSearch(''); setShowArchived(false);
         setSelected(review.taskId && snapshotRef.current?.tasks.some(task => task.id === review.taskId) ? review.taskId : reviewSelection(review.request.requestId));
         setPage('manuscript'); setMobileTab('conversation'); setLayout('split'); setSidebar(false);
@@ -2106,7 +2110,6 @@ function App() {
   }
   const updateGit = (projectId: string, status: GitStatus) => { setGit({ projectId, status }); setManuscript(current => current.projectId === projectId && current.data ? { ...current, data: { ...current.data, git: status } } : current); };
   const manuscriptData = manuscript.projectId === project?.id ? manuscript : { data: null, error: '' };
-  const webReviewScope = useExternalReviewScope(api, webReviewSelected && manuscriptOpen ? project?.id : undefined, manuscriptData.data?.build?.document);
   const [openFile, setOpenFile] = useState<{ file: string; line?: number } | null>(null), [editingFile, setEditingFile] = useState<string | null>(null);
   function openRepositoryFile(file: string, line?: number) {
     setSelected(''); setPage('manuscript'); setSidebar(false); setOpenFile({ file, line });
@@ -2148,7 +2151,8 @@ function App() {
   const shownManuscript = useMemo(() => manuscriptData.data && { ...manuscriptData.data, annotations: notes }, [manuscriptData.data, notes]);
 
   const noteSelection = useNoteSelection(project?.id || '', notes);
-  const webReviewAttachments = Boolean(newSkill || newFiles.files.length || noteSelection.selected.length);
+  const webReviewScope = useExternalReviewScope(api, webReviewSelected && manuscriptOpen ? project?.id : undefined, manuscriptData.data?.build?.document, noteSelection.selected);
+  const webReviewAttachments = Boolean(newSkill || newFiles.files.length);
   const groupDrafts = useGroupInstructions(project?.id || '');
   const groupDirections = groupDrafts.forNotes(noteSelection.selected);
   const missingGroupDirections = !newDraft.trim() && !newSkill && groupsWithoutInstructions(noteSelection.selected, groupDirections).length > 0;
@@ -2587,7 +2591,8 @@ function App() {
     {suggestWriter && !webReviewSelected && <WriterSuggestion ready={writerReady} onUse={() => { chooseModel('papilot', runtimes.papilot?.models.find(model => model.isDefault)?.id || ''); dismissWriter(); }} onSetUp={() => setSettings('agents')} onDismiss={dismissWriter}/>}
     {webReviewSelected && <>
       <ExternalReviewScope key={project?.id} scope={webReviewScope}/>
-      {webReviewAttachments && <p className="muted">{t('For ChatGPT Pro, use committed files and a message. Remove attachments, PDF notes, or skills to continue.')}</p>}
+      {noteSelection.selected.length > 0 && <p className="muted">{t('Only selected PDF notes are included in the prompt.')}</p>}
+      {webReviewAttachments && <p className="muted">{t('Remove uploaded attachments or skills to continue with ChatGPT Pro.')}</p>}
     </>}
     <Composer attachments={newSkill?.output === 'annotations' ? undefined : newFiles.draft} upload={(file, signal) => uploadAttachment(project!.id, file, signal)} imageHint={agentChoice === 'antigravity' && newFiles.files.some(file => file.mime.startsWith('image/'))} autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={noteSelection.selected.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
       skills={projectSkills} skill={newSkill} onSkill={setNewSkill}
@@ -2595,8 +2600,8 @@ function App() {
         <SkillPicker onAttach={newSkill?.output === 'annotations' ? undefined : attach} skills={projectSkills} selected={newSkill} disabled={creating} onPick={skill => { setNewSkill(skill); newTaskInput.current?.focus(); }}/>
         {agentOptions(creating)}
       </div>}
-      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={missingGroupDirections ? t('Add instructions to the selected color groups above.') : t('Start task (Enter)')} disabled={creating || reviewNoteBusy || noteEditing || history.busy || (webReviewSelected
-        ? !newDraft.trim() || !webReviewScope.commit || !webReviewScope.files.length || webReviewAttachments || marking > 0
+      action={<button className="send-button" type="submit" aria-label={t('Start task')} title={!webReviewSelected && missingGroupDirections ? t('Add instructions to the selected color groups above.') : t('Start task (Enter)')} disabled={creating || reviewNoteBusy || noteEditing || history.busy || (webReviewSelected
+        ? (!newDraft.trim() && !noteSelection.selected.length) || !webReviewScope.commit || !webReviewScope.files.length || webReviewScope.missingNoteFiles.length > 0 || webReviewAttachments || marking > 0
         : missingAgent || (newSkill?.output !== 'annotations' && (newFiles.blocked || marking > 0 || missingGroupDirections)) || (!newDraft.trim() && !newSkill && !newFiles.files.length && !noteSelection.selected.some(actionable) && !Object.keys(groupDirections).length))} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
     {createError && <p className="inline-error" role="alert">{createError}</p>}
     {PlaygroundPresets && <Suspense fallback={null}><PlaygroundPresets selected={noteSelection.selected} open={id => openPreparedTask(id)} disabled={creating}/></Suspense>}

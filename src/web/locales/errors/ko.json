@@ -13,6 +13,7 @@
   "AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.": "AI 검토에는 원고 PDF가 사용됩니다. 주석이나 첨부 파일을 보내려면 별도의 편집 작업을 시작하세요.",
   "Accepted changes are already in the manuscript.": "수락된 변경 사항이 이미 원고에 반영되어 있습니다.",
   "Add a DOI, arXiv identifier, author or year to this entry to keep a PDF for it.": "이 항목의 PDF를 보관하려면 DOI, arXiv 식별자, 저자 또는 연도를 추가하세요.",
+  "Add the source files for the selected PDF notes, or deselect those notes.": "선택한 PDF 주석의 소스 파일을 추가하거나 해당 주석의 선택을 해제하세요.",
   "An AI review comment is invalid. Ask the reviewer to retry.": "AI 검토 의견이 유효하지 않습니다. 검토자에게 다시 시도하도록 요청하세요.",
   "An AI review comment lists its PDF lines in reverse order. Ask the reviewer to put the start before the end.": "AI 검토 의견의 PDF 줄 순서가 반대로 되어 있습니다. 시작 위치를 끝 위치보다 앞에 두도록 검토자에게 요청하세요.",
   "An AI review comment refers to an unknown PDF location. Ask the reviewer to retry using the supplied line IDs.": "AI 검토 의견이 알 수 없는 PDF 위치를 참조합니다. 제공된 줄 ID를 사용하여 다시 시도하도록 검토자에게 요청하세요.",

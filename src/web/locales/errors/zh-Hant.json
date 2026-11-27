@@ -13,6 +13,7 @@
   "AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.": "AI 審閱會使用論文原稿 PDF。若要傳送註解或附件，請啟動獨立的編輯任務。",
   "Accepted changes are already in the manuscript.": "已接受的變更已在論文原稿中。",
   "Add a DOI, arXiv identifier, author or year to this entry to keep a PDF for it.": "請為此項目新增 DOI、arXiv 識別碼、作者或年份，以便為其保留 PDF。",
+  "Add the source files for the selected PDF notes, or deselect those notes.": "請新增所選 PDF 註解的原始檔案，或取消選取這些註解。",
   "An AI review comment is invalid. Ask the reviewer to retry.": "AI 審閱意見無效。請要求審閱者重試。",
   "An AI review comment lists its PDF lines in reverse order. Ask the reviewer to put the start before the end.": "AI 審閱意見的 PDF 行號順序顛倒。請要求審閱者將起始位置放在結束位置之前。",
   "An AI review comment refers to an unknown PDF location. Ask the reviewer to retry using the supplied line IDs.": "AI 審閱意見指向未知的 PDF 位置。請要求審閱者使用提供的行號 ID 重試。",

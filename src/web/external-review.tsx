@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import type { AgentId, ExternalReview, ExternalReviewOptions, RuntimeStatus, Task } from '../shared.ts';
+import type { AgentId, Annotation, ExternalReview, ExternalReviewOptions, RuntimeStatus, Task } from '../shared.ts';
 import { agentLabel, offeredAgents, shownModels } from './agent-choice.ts';
 import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
@@ -81,14 +81,16 @@ function ReviewText({ api, route, label, title }: { api: Api; route: string; lab
   return result.data ? <CopyText key={route} text={result.data.text} title={title} label={label}/> : <p className="external-hint"><span className="spinner"/>{t('Preparing text…')}</p>;
 }
 
-export function useExternalReviewScope(api: Api, projectId: string | undefined, document?: string) {
+export function useExternalReviewScope(api: Api, projectId: string | undefined, document?: string, annotations: Annotation[] = []) {
   const result = useReviewResource<ExternalReviewOptions>(api, projectId ? `${externalReviewPath(projectId)}?scope=files` : '');
   const [selection, setSelection] = useState<{ key: string; files: string[] }>();
   const commit = result.data?.baseCommit;
   const key = `${projectId}:${commit}`;
   const suggested = result.data && committedDocument(result.data.files, document);
-  const files = selection?.key === key ? selection.files : suggested ? [suggested] : [];
-  return { ...result, commit, files, select: (files: string[]) => setSelection({ key, files }) };
+  const noteFiles = annotations.flatMap(note => note.source && result.data?.files.includes(note.source.file) ? [note.source.file] : []);
+  const files = selection?.key === key ? selection.files : [...new Set(suggested ? [suggested, ...noteFiles] : noteFiles)];
+  const missingNoteFiles = noteFiles.filter(file => !files.includes(file));
+  return { ...result, commit, files, missingNoteFiles, select: (files: string[]) => setSelection({ key, files }) };
 }
 
 function ReviewFiles({ available, files, onSelect }: { available: string[]; files: string[]; onSelect: (files: string[]) => void }) {
@@ -108,11 +110,13 @@ function ReviewFiles({ available, files, onSelect }: { available: string[]; file
 export function ExternalReviewScope({ scope }: { scope: ReturnType<typeof useExternalReviewScope> }) {
   if (scope.error) return <div className="external-actions"><p className="inline-error" role="alert">{scope.error}</p><button type="button" className="button secondary" onClick={scope.retry}>{t('Try again')}</button></div>;
   if (!scope.data) return <p className="muted" role="status">{t('Loading…')}</p>;
-  return <details className="external-composer-scope">
+  return <><details className="external-composer-scope">
     <summary>{t('Files to review')} <span>{scope.files.length === 1 ? scope.files[0] : t('{n} selected', { n: scope.files.length })}</span></summary>
     <div className="external-base"><span>{t('Base commit')}</span><code>{scope.commit?.slice(0, 12)}</code></div>
     <ReviewFiles available={scope.data.files} files={scope.files} onSelect={scope.select}/>
-  </details>;
+  </details>
+    {scope.missingNoteFiles.length > 0 && <p className="inline-error" role="status">{t('Add the source files for the selected PDF notes, or deselect those notes.')}</p>}
+  </>;
 }
 
 function activeStep(review: ExternalReview | undefined) {
@@ -204,7 +208,15 @@ export function ExternalReviewDialog({ api, projectId, projectName, document, ru
         <h3 ref={heading} id={`${id}-step`} tabIndex={-1}>{conversation ? returning ? labels[4] : t('ChatGPT Pro (web)') : labels[step]}</h3>
         {error && <p id={errorId} className="inline-error" role="alert">{error}</p>}
         {!options && (error ? <button type="button" className="button secondary" onClick={() => { setError(''); setLoadAttempt(loadAttempt + 1); }}>{t('Try again')}</button> : <p>{t('Loading…')}</p>)}
-        {conversation && !returning && review && <><p className="external-question">{review.request.question}</p><div className="external-base"><span>{review.request.files.join(', ')}</span><code title={review.request.baseCommit}>{review.request.baseCommit.slice(0, 12)}</code></div></>}
+        {conversation && !returning && review && <><p className="external-question">{review.request.question}</p><div className="external-base"><span>{review.request.files.join(', ')}</span><code title={review.request.baseCommit}>{review.request.baseCommit.slice(0, 12)}</code></div>
+          {review.request.notes?.length ? <details className="external-composer-scope">
+            <summary>{t('PDF notes')} <span>{review.request.notes.length}</span></summary>
+            <div className="external-proposal"><ol>{review.request.notes.map((note, index) => <li key={index}>
+              <small>{t('Page {n}', { n: note.page })}{note.source && <> · <code>{note.source.file}{note.source.lines && `:${note.source.lines.join('–')}`}</code></>}</small>
+              {note.quote && <blockquote>{note.quote}</blockquote>}{note.comment && <p>{note.comment}</p>}{note.groupInstruction && <p>{note.groupInstruction}</p>}
+            </li>)}</ol></div>
+          </details> : null}
+        </>}
         {!conversation && options && step === 0 && <form method="post" aria-labelledby={`${id}-step`} onSubmit={event => {
           event.preventDefault();
           if (!files.length) { setError(t('Select at least one file to review.')); return; }
