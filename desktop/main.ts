@@ -36,9 +36,9 @@ const notifications = desktopNotifications({
 });
 const typeless = typelessControl();
 let typelessSending = false;
-// Read the desktop's window button layout while the backend starts; the
-// first window waits for it (see launch).
-const windowButtonsLayout = process.platform === 'linux' ? detectWindowButtons() : Promise.resolve(null);
+// The running instance reads the desktop's window button layout while the
+// backend starts; the first window waits for it (see launch).
+let windowButtonsLayout: Promise<WindowButtons | null> = Promise.resolve(null);
 let windowButtons: WindowButtons | null = null;
 // papilot://new?template=<id>&version=<version> starts a paper from a Universe template.
 let pendingTemplate: { id: string; version: string } | null = null;
@@ -91,6 +91,7 @@ function showWindow() {
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
+  if (process.platform === 'linux') windowButtonsLayout = detectWindowButtons();
   // macOS delivers links as events; Windows and Linux pass them as arguments.
   app.on('open-url', (event, url) => { event.preventDefault(); openLink(url); });
   app.on('second-instance', (_event, argv) => { if (!openLink(argv.find(arg => arg.startsWith('papilot://')))) showWindow(); });

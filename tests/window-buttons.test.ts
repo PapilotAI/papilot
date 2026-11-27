@@ -15,6 +15,14 @@ test('GTK button layouts keep the desktop side, buttons and order', () => {
 test('KDE and Xfce layouts map their button letters', () => {
   assert.deepEqual(kwinLayout(''), { side: 'right', buttons: ['minimize', 'maximize', 'close'] }, 'Plasma default');
   assert.deepEqual(kwinLayout('[Other]\nButtonsOnLeft=X\n[org.kde.kdecoration2]\nButtonsOnLeft=XIA\nButtonsOnRight=\nlibrary=org.kde.breeze\n'), { side: 'left', buttons: ['close', 'minimize', 'maximize'] });
+  // Files are read separately, least important first, with KConfig's [$i] locks.
+  const left = { side: 'left', buttons: ['close', 'minimize', 'maximize'] };
+  assert.deepEqual(kwinLayout(['[org.kde.kdecoration2][$i]\nButtonsOnLeft=XIA\nButtonsOnRight=\n', '[org.kde.kdecoration2]\nButtonsOnLeft=\nButtonsOnRight=IAX\n']), left, 'A locked system group wins over the user');
+  assert.deepEqual(kwinLayout(['[org.kde.kdecoration2][$i]\nButtonsOnLeft=XIA\n', '[org.kde.kdecoration2]\nButtonsOnRight=X\n']), left, 'A locked group also holds keys it leaves at their defaults');
+  assert.deepEqual(kwinLayout(['[org.kde.kdecoration2]\nButtonsOnLeft[$i]=XIA\nButtonsOnRight=\n', '[org.kde.kdecoration2]\nButtonsOnLeft=\nButtonsOnRight=IAX\n']), left, 'A locked key wins over the user');
+  assert.deepEqual(kwinLayout(['[$i]\n[org.kde.kdecoration2]\nButtonsOnLeft=XIA\nButtonsOnRight=\n', '[org.kde.kdecoration2]\nButtonsOnLeft=\nButtonsOnRight=IAX\n']), left, 'A locked file wins over the user');
+  assert.deepEqual(kwinLayout(['[org.kde.kdecoration2]\nButtonsOnLeft=XIA\nButtonsOnRight=\n', '[org.kde.kdecoration2]\nButtonsOnLeft=\nButtonsOnRight=IAX\n']), { side: 'right', buttons: ['minimize', 'maximize', 'close'] }, 'Without a lock the user wins');
+  assert.deepEqual(kwinLayout(['[org.kde.kdecoration2]\nButtonsOnLeft=X\nButtonsOnRight=\n', 'ButtonsOnLeft=IA\n']), { side: 'left', buttons: ['close'] }, "A group does not carry into the next file's ungrouped keys");
   assert.deepEqual(xfwmLayout('O|HMC\n'), { side: 'right', buttons: ['minimize', 'maximize', 'close'] }, 'Xfce default');
   assert.deepEqual(xfwmLayout('CHM|O'), { side: 'left', buttons: ['close', 'minimize', 'maximize'] });
 });
