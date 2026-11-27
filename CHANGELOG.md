@@ -37,6 +37,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 - On Windows, the toolbar divider extends beneath the window buttons to the right edge.
 - The PDF zoom menu keeps one width across percentages, so the toolbar no longer shifts between 90% and 100%.
 - The `papilot` command uses the Codex it downloads on the same launch, even when an older copy is on `PATH`.
+- Fix TeX Live builds on Windows that fail in non-ASCII directories or miss BibTeX databases when Git for Windows' Perl is on `PATH`.
 
 ## [0.14.1] - 2026-11-23
 
