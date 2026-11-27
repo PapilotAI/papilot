@@ -152,23 +152,23 @@ function drawSystems({ text, icons, surface }) {
     + `<div data-card="${name}-compact" style="display:flex;flex-direction:column;justify-content:center;gap:12px;width:220px;height:170px;padding:0 20px;${card}">${mark(icon)}<p style="margin:0;font:400 21px/1.2 var(--serif);color:var(--text)">${title}</p>${download}</div>`).join('')
     + `<div data-card="terminal" style="display:flex;flex-direction:column;justify-content:center;width:440px;height:140px;padding:0 24px;${card}"><p style="display:flex;align-items:center;gap:7px;margin:0 0 8px;font-size:12px;color:var(--text-3)"><span class="lights"><i></i><i></i><i></i></span>&nbsp;${text.terminal}</p><p style="margin:0;font:13.5px/1.9 var(--mono);color:var(--text)">${prompt} npm install -g papilot<br>${prompt} papilot demo</p><p style="margin:4px 0 0;font:12px var(--mono);color:var(--text-3)">${text.node}</p></div>`
     + `<div data-card="terminal-compact" style="display:flex;flex-direction:column;justify-content:center;gap:12px;width:220px;height:170px;padding:0 18px;${card}"><span class="lights"><i></i><i></i><i></i></span><p style="margin:0;font:12px/1.8 var(--mono);color:var(--text);white-space:nowrap">${prompt} npm install -g papilot<br>${prompt} papilot demo</p><p style="margin:0;font:11px var(--mono);color:var(--text-3)">${text.node}</p></div>`;
-  const pmIcon = (d, size = 14) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" style="color:var(--text-2);flex:none"><path d="${d}"/></svg>`;
-  const pmChip = (svg, label) => `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:light-dark(#fff,#1f2024);box-shadow:0 0 0 1px var(--line);font:500 12px/1.2 var(--sans);color:var(--text);white-space:nowrap">${svg}${label}</span>`;
+  const pmIcon = (d, size = 13) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" style="color:var(--text-2);flex:none"><path d="${d}"/></svg>`;
+  const pmChip = (svg, label) => `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:6px;background:light-dark(#fff,#1f2024);box-shadow:0 0 0 1px var(--line);font:500 11.5px/1.35 var(--mono);color:var(--text-2);white-space:nowrap">${svg}${label}</span>`;
   const pmChips = [
-    pmChip(pmIcon(icons.homebrew, 14), 'Homebrew'),
-    pmChip(pmIcon(icons.scoop, 14), 'Scoop'),
-    pmChip(pmIcon(icons.debian, 13) + pmIcon(icons.ubuntu, 13), 'APT'),
-    pmChip(pmIcon(icons.archlinux, 13), 'AUR'),
-    pmChip(pmIcon(icons.nixos, 14), 'Nix'),
+    pmChip(pmIcon(icons.homebrew, 13), 'Homebrew'),
+    pmChip(pmIcon(icons.scoop, 13), 'Scoop'),
+    pmChip(pmIcon(icons.debian, 12) + pmIcon(icons.ubuntu, 12), 'APT'),
+    pmChip(pmIcon(icons.archlinux, 12), 'AUR'),
+    pmChip(pmIcon(icons.nixos, 13), 'Nix'),
   ].join('');
-  const chevron = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+  const chevron = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
   row.innerHTML +=
-    `<div data-card="pm-bar" style="display:flex;align-items:center;gap:14px;width:868px;height:56px;padding:0 22px;border-radius:16px;background:linear-gradient(180deg,light-dark(#fbfbfc,#191a1e),light-dark(#f3f4f7,#15161a));box-shadow:0 0 0 1px var(--line),0 1px 2px rgb(15 23 42/.04),0 10px 24px -18px rgb(15 23 42/.22);box-sizing:border-box"><span style="font:600 14px/1 var(--sans);color:var(--text);white-space:nowrap">${text.pmTitle}</span><span style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap">${pmChips}</span><span style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;font:500 13.5px/1 var(--sans);color:var(--accent);white-space:nowrap">${text.pmAction}${chevron}</span></div>`
-    + `<div data-card="pm-bar-compact" style="display:flex;flex-direction:column;gap:10px;width:420px;padding:14px 18px;border-radius:16px;background:linear-gradient(180deg,light-dark(#fbfbfc,#191a1e),light-dark(#f3f4f7,#15161a));box-shadow:0 0 0 1px var(--line),0 1px 2px rgb(15 23 42/.04),0 10px 24px -18px rgb(15 23 42/.22);box-sizing:border-box"><div style="display:flex;align-items:center;justify-content:space-between"><span style="font:600 14px/1 var(--sans);color:var(--text)">${text.pmTitle}</span><span style="display:inline-flex;align-items:center;gap:4px;font:500 13px/1 var(--sans);color:var(--accent)">${text.pmAction}${chevron}</span></div><span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${pmChips}</span></div>`;
+    `<div data-card="pm-bar" style="display:flex;align-items:center;gap:14px;width:868px;height:56px;padding:0 24px;${card}"><span style="font:400 17px/1.2 var(--serif);color:var(--text);white-space:nowrap">${text.pmTitle}</span><span style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap">${pmChips}</span><span style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;font:500 13.5px/1 var(--sans);color:var(--accent);white-space:nowrap">${text.pmAction}${chevron}</span></div>`
+    + `<div data-card="pm-bar-compact" style="display:flex;flex-direction:column;gap:10px;width:420px;padding:14px 20px;${card}"><div style="display:flex;align-items:center;justify-content:space-between"><span style="font:400 17px/1.2 var(--serif);color:var(--text)">${text.pmTitle}</span><span style="display:inline-flex;align-items:center;gap:4px;font:500 13px/1 var(--sans);color:var(--accent)">${text.pmAction}${chevron}</span></div><span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${pmChips}</span></div>`;
   document.body.append(row);
   // Room around each card for its shadow; the README shows the padded image.
   for (const card of row.querySelectorAll('[data-card]')) {
-    const pad = card.dataset.card.startsWith('pm-bar') ? '4px 10px 14px' : '4px 12px 20px';
+    const pad = card.dataset.card.startsWith('pm-bar') ? '4px 12px 16px' : '4px 12px 20px';
     const wrap = Object.assign(document.createElement('div'), { style: `padding:${pad}` });
     wrap.dataset.shot = card.dataset.card;
     card.replaceWith(wrap);
@@ -194,24 +194,9 @@ function drawCommunity({ icons, text, surface }) {
     return `<div data-card="${name}" style="display:flex;align-items:center;gap:18px;width:440px;height:128px;padding:0 24px;${card}">${chip(svg)}<div style="flex:1"><p style="margin:0 0 5px;font:400 21px/1.2 var(--serif);color:var(--text)">${title}</p><p style="margin:0;font-size:13.5px;line-height:1.45;color:var(--text-2);text-wrap:balance">${body}</p></div>${arrow}</div>`
       + `<div data-card="${name}-compact" style="display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:14px;width:220px;height:150px;padding:0 20px;${card}">${chip(svg)}<p style="display:flex;align-items:center;gap:6px;width:100%;margin:0;font:400 20px/1.2 var(--serif);color:var(--text)"><span style="flex:1">${title}</span>${arrow}</p></div>`;
   }).join('');
-  const pmIcon = (d, size = 14) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" style="color:var(--text-2);flex:none"><path d="${d}"/></svg>`;
-  const pmChip = (svg, label) => `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:light-dark(#fff,#1f2024);box-shadow:0 0 0 1px var(--line);font:500 12px/1.2 var(--sans);color:var(--text);white-space:nowrap">${svg}${label}</span>`;
-  const pmChips = [
-    pmChip(pmIcon(icons.homebrew, 14), 'Homebrew'),
-    pmChip(pmIcon(icons.scoop, 14), 'Scoop'),
-    pmChip(pmIcon(icons.debian, 13) + pmIcon(icons.ubuntu, 13), 'APT'),
-    pmChip(pmIcon(icons.archlinux, 13), 'AUR'),
-    pmChip(pmIcon(icons.nixos, 14), 'Nix'),
-  ].join('');
-  const chevron = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
-  row.innerHTML +=
-    `<div data-card="pm-bar" style="display:flex;align-items:center;gap:14px;width:868px;height:56px;padding:0 22px;border-radius:16px;background:linear-gradient(180deg,light-dark(#fbfbfc,#191a1e),light-dark(#f3f4f7,#15161a));box-shadow:0 0 0 1px var(--line),0 1px 2px rgb(15 23 42/.04),0 10px 24px -18px rgb(15 23 42/.22);box-sizing:border-box"><span style="font:600 14px/1 var(--sans);color:var(--text);white-space:nowrap">${text.pmTitle}</span><span style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap">${pmChips}</span><span style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;font:500 13.5px/1 var(--sans);color:var(--accent);white-space:nowrap">${text.pmAction}${chevron}</span></div>`
-    + `<div data-card="pm-bar-compact" style="display:flex;flex-direction:column;gap:10px;width:420px;padding:14px 18px;border-radius:16px;background:linear-gradient(180deg,light-dark(#fbfbfc,#191a1e),light-dark(#f3f4f7,#15161a));box-shadow:0 0 0 1px var(--line),0 1px 2px rgb(15 23 42/.04),0 10px 24px -18px rgb(15 23 42/.22);box-sizing:border-box"><div style="display:flex;align-items:center;justify-content:space-between"><span style="font:600 14px/1 var(--sans);color:var(--text)">${text.pmTitle}</span><span style="display:inline-flex;align-items:center;gap:4px;font:500 13px/1 var(--sans);color:var(--accent)">${text.pmAction}${chevron}</span></div><span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${pmChips}</span></div>`;
   document.body.append(row);
-  // Room around each card for its shadow; the README shows the padded image.
   for (const card of row.querySelectorAll('[data-card]')) {
-    const pad = card.dataset.card.startsWith('pm-bar') ? '4px 10px 14px' : '4px 12px 20px';
-    const wrap = Object.assign(document.createElement('div'), { style: `padding:${pad}` });
+    const wrap = Object.assign(document.createElement('div'), { style: 'padding:4px 12px 20px' });
     wrap.dataset.shot = card.dataset.card;
     card.replaceWith(wrap);
     wrap.append(card);
