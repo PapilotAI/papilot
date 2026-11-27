@@ -1,12 +1,12 @@
 import { AGENT_IDS, AGENT_NAMES, type AgentId, type RuntimeStatus } from '../shared.ts';
 import { t } from './i18n.ts';
 
-export const agentLabel = (id: AgentId) => id === 'collaboration' ? t('Collaboration mode') : AGENT_NAMES[id];
+export const agentLabel = (id: AgentId) => id === 'collaboration' ? t('Collaboration mode') : id === 'chatgpt' ? t('ChatGPT Pro (web)') : AGENT_NAMES[id];
 
-// Whether an agent is turned off: collaboration mode is opt-in, every other
+// Whether an agent is turned off: experimental modes are opt-in, every other
 // agent is on until the author turns it off in Settings → Agents.
-export const agentOff = (id: AgentId, runtimes: Partial<Record<AgentId, RuntimeStatus>>) => id === 'collaboration' ? runtimes.collaboration?.hidden !== false : Boolean(runtimes[id]?.hidden);
-export const canReviewWith = (id: AgentId, runtime?: RuntimeStatus) => id !== 'collaboration' && runtime?.supportsReadOnlyTasks !== false;
+export const agentOff = (id: AgentId, runtimes: Partial<Record<AgentId, RuntimeStatus>>) => (id === 'collaboration' || id === 'chatgpt') ? runtimes[id]?.hidden !== false : Boolean(runtimes[id]?.hidden);
+export const canReviewWith = (id: AgentId, runtime?: RuntimeStatus) => id !== 'collaboration' && id !== 'chatgpt' && runtime?.supportsReadOnlyTasks !== false;
 // Offer only reported runtimes that are on and not known to be missing.
 export function offeredAgents(runtimes: Partial<Record<AgentId, RuntimeStatus>>) {
   return AGENT_IDS.filter(id => !agentOff(id, runtimes) && Boolean(runtimes[id] && runtimes[id]!.installed !== false));

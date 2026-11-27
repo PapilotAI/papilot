@@ -92,7 +92,7 @@ export class Store extends EventEmitter {
       // Only Papilot records are removed. Never finish review tasks or touch their files.
       this.db.prepare('INSERT OR IGNORE INTO deleted_tasks SELECT id, ? FROM tasks WHERE project_id=?').run(Date.now(), id);
       for (const table of ['items', 'runs', 'ai_review_inputs', 'task_pins']) this.db.prepare(`DELETE FROM ${table} WHERE task_id IN (SELECT id FROM tasks WHERE project_id=?)`).run(id);
-      for (const task of tasks) { const prefix = `note-options:${task}:`; this.db.prepare('DELETE FROM settings WHERE substr(key,1,?)=?').run(prefix.length, prefix); this.db.prepare('DELETE FROM settings WHERE key=?').run(`memory-evidence:${task}`); }
+      for (const task of tasks) { const prefix = `note-options:${task}:`; this.db.prepare('DELETE FROM settings WHERE substr(key,1,?)=?').run(prefix.length, prefix); this.db.prepare('DELETE FROM settings WHERE key=?').run(`memory-evidence:${task}`); this.db.prepare('DELETE FROM settings WHERE key=?').run(`manual-prompt:${task}`); }
       this.db.prepare('DELETE FROM settings WHERE key=?').run(`memory-dismissed:${id}`);
       const clearPrefix = `annotation-clear:${id}:`;
       this.db.prepare('DELETE FROM settings WHERE substr(key,1,?)=?').run(clearPrefix.length, clearPrefix);
@@ -203,6 +203,7 @@ export class Store extends EventEmitter {
       this.db.prepare('DELETE FROM tasks WHERE id=?').run(id);
       const prefix = `note-options:${id}:`; this.db.prepare('DELETE FROM settings WHERE substr(key,1,?)=?').run(prefix.length, prefix);
       this.db.prepare('DELETE FROM settings WHERE key=?').run(`memory-evidence:${id}`);
+      this.db.prepare('DELETE FROM settings WHERE key=?').run(`manual-prompt:${id}`);
     });
     this.itemRevisions.delete(id);
     this.emit('change');
@@ -218,13 +219,19 @@ export class Store extends EventEmitter {
       for (const t of this.tasks().filter(t => t.status === 'deleting')) this.updateTask(t.id, { error: 'The server restarted during deletion. Retry deletion to confirm cleanup.' });
       for (const t of this.tasks().filter(t => t.pendingReview)) this.updateTask(t.id, { status: 'uncertain', error: 'The server restarted before a review action was confirmed. Select Check status before continuing.' });
       for (const r of this.runs().filter(r => r.status === 'running')) {
+        const task = this.findTask(r.taskId);
+        // A manual relay turn waiting for a pasted ChatGPT Pro reply has no
+        // subprocess to lose across a restart; keep it waiting for the author.
+        if (task?.status === 'waiting_input' && task.manualTurn?.status === 'awaiting_reply' && task.manualTurn.runId === r.id) continue;
         const finishedAt = Date.now();
         this.saveRun({ ...r, status: 'interrupted', finishedAt });
         this.settleSteps(r.taskId);
-        const task = this.findTask(r.taskId);
-        this.recordActivity({ key: `turn:${r.id}`, at: r.createdAt, kind: 'agent_turn', projectId: task?.projectId, taskId: r.taskId, agent: task?.agent || 'codex', model: task?.model, data: { role: task?.mode === 'review' ? 'review' : 'edit', status: 'interrupted', finishedAt } }, true);
+        this.recordActivity({ key: `turn:${r.id}`, at: r.createdAt, kind: 'agent_turn', projectId: task?.projectId, taskId: r.taskId, agent: task?.manualTurn?.executor?.agent || task?.agent || 'codex', model: task?.manualTurn?.executor?.model ?? task?.model, data: { role: task?.mode === 'review' ? 'review' : 'edit', status: 'interrupted', finishedAt } }, true);
       }
-      for (const t of this.tasks().filter(t => ['running', 'waiting_input'].includes(t.status) || (t.mode === 'review' && t.status === 'building'))) this.updateTask(t.id, { status: 'interrupted', turnId: null, error: 'The server restarted and interrupted the previous turn. Continue in the same conversation.' });
+      for (const t of this.tasks().filter(t => ['running', 'waiting_input'].includes(t.status) || (t.mode === 'review' && t.status === 'building'))) {
+        if (t.status === 'waiting_input' && t.manualTurn?.status === 'awaiting_reply') continue;
+        this.updateTask(t.id, { status: 'interrupted', turnId: null, ...(t.manualTurn ? { manualTurn: null } : {}), error: 'The server restarted and interrupted the previous turn. Continue in the same conversation.' });
+      }
     });
   }
   // Durable workspace statistics stay independent of live state broadcasts and

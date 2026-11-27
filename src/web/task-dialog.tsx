@@ -7,7 +7,8 @@ export function DeleteTaskDialog({ task, submit, onClose, onDeleted, refresh }: 
   const dialog = useRef<HTMLDialogElement>(null);
   const pending = useRef(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
-  const blocked = ['running', 'waiting_input', 'queued'].includes(task.status) ? t('Pause this task before deleting it.')
+  const awaitingManual = task.status === 'waiting_input' && task.manualTurn?.status === 'awaiting_reply';
+  const blocked = (['running', 'waiting_input', 'queued'].includes(task.status) && !awaitingManual) ? t('Pause this task before deleting it.')
     : task.status === 'building' ? t('Wait for the PDF build to finish before deleting this task.')
     : task.status === 'uncertain' ? t('Check task status before deleting this task.') : '';
   useEffect(() => {

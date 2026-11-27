@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import type { CompilerChoice } from '../shared.ts';
+import { ChatgptProSettings, type ChatgptProSettingsProps } from './chatgpt-pro-settings.tsx';
 import { CollaborationSettings, type CollaborationSettingsProps } from './collaboration-settings.tsx';
 import { t } from './i18n.ts';
 import { TypelessExperiment } from './typeless.tsx';
@@ -33,10 +34,11 @@ function PhitexExperiment({ choose, online }: { choose: ChooseCompiler; online: 
   </div>;
 }
 
-export function ExperimentSettings({ compiler, workflow, online }: { compiler?: ChooseCompiler; workflow?: CollaborationSettingsProps; online: boolean }) {
+export function ExperimentSettings({ compiler, workflow, chatgptPro, online }: { compiler?: ChooseCompiler; workflow?: CollaborationSettingsProps; chatgptPro?: ChatgptProSettingsProps; online: boolean }) {
   return <div className="settings-page experiment-settings">
     <TypelessExperiment/>
     {compiler && <PhitexExperiment choose={compiler} online={online}/>}
     {workflow && <CollaborationSettings {...workflow}/>}
+    {chatgptPro && <ChatgptProSettings {...chatgptPro}/>}
   </div>;
 }

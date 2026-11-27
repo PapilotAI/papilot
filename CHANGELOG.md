@@ -6,6 +6,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Added
 
+- Use **ChatGPT Pro (web)** manually inside standard Papilot tasks via **Settings → Experiments**. Send PDF annotations from the Manuscript like any other agent, copy the prepared prompt (or sync a non-destructive task snapshot branch to your paper's GitHub remote for full-repository context through ChatGPT Pro's GitHub connector), paste any free-form reply back into the same chat, and choose a local agent, model and reasoning effort to apply edits and build the PDF comparison.
 - Choose **Ultrafast** in the Codex model picker when your account and model offer it. Papilot remembers the selected speed per model and marks Fast with one lightning bolt and Ultrafast with two.
 - Choose **ZCode** for manuscript tasks. Papilot uses your local ZCode CLI and its default model, streams replies and tool activity, and resumes the same conversation on follow-up turns. ([#338](https://github.com/PapilotAI/papilot/issues/338))
 - Use a third-party OpenAI-compatible Chat Completions API with **Settings → Runtime → Agents → Papilot Writer → Custom API**. Save the provider's base URL, model ID and API key, then choose that model for a task. ([#338](https://github.com/PapilotAI/papilot/issues/338))

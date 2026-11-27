@@ -10,8 +10,8 @@ import { AGENT_IDS, AGENT_NAMES } from '../src/shared.ts';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = path.join(root, 'docs/assets/readme-agents');
 const escape = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
-// Collaboration reuses Codex; it is not a separate installed runtime or brand.
-const agents = AGENT_IDS.filter(id => id !== 'collaboration');
+// Collaboration and ChatGPT Pro (web) are not separate installed runtimes or brands.
+const agents = AGENT_IDS.filter(id => id !== 'collaboration' && id !== 'chatgpt');
 const names = agents.map(id => AGENT_NAMES[id]).join(', ');
 fs.mkdirSync(output, { recursive: true });
 

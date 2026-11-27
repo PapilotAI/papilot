@@ -44,7 +44,21 @@ export type TaskPermissions = string;
 export interface TaskPermissionOption { value: TaskPermissions; label: string; detail: string }
 /** An agent chosen for a helper step, such as resolving conflicts. */
 export interface HelperChoice { agent: AgentId; model?: string; effort?: string; serviceTier?: string }
+/** A manual relay turn (ChatGPT Pro web): waits for a pasted reply, then hands off to a local agent in the same task. */
+export interface ManualTurn {
+  runId: string;
+  status: 'awaiting_reply' | 'implementing';
+  executor?: { agent: AgentId; model: string | null; effort?: string | null };
+}
+export interface ManualGithubRemote { name: string; repository: string; url: string }
+export interface ManualGithubSynced { remote: string; repository: string; branch: string; commit: string; url: string; reusedRemote: boolean }
+export interface ManualGithubContext { remotes: ManualGithubRemote[]; synced: ManualGithubSynced | null; syncing: boolean; autoSync: boolean; syncError?: string | null }
+export interface ChatgptProSettings { enabled: boolean; executor: HelperChoice | null; autoSyncGithub: boolean }
 export interface Task {
+  /** Active manual relay turn for ChatGPT Pro (web). */
+  manualTurn?: ManualTurn | null;
+  /** The local agent that last ran an implementation turn on this manual task's thread. */
+  manualExecutor?: { agent: AgentId; model: string | null; effort?: string | null } | null;
   // Papilot 0.13 and earlier switched agents by replaying a task's original
   // request in a new task; such a task links to the one it replaced.
   restart?: { taskId: string; draftAttachments?: Attachment[] };
@@ -195,7 +209,7 @@ export interface CollaborationRaceResultMeta {
   synthesized?: boolean;
 }
 // request: the author's own overall request sent with notes, which the prompt otherwise only embeds.
-export interface MessageMeta { attachments?: Attachment[]; skill?: { id: string; name: string; icon?: SkillIcon }; notes?: NoteSummary[]; request?: string; groupInstructions?: GroupInstructions; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author; dispatch?: CollaborationDispatchMeta; raceResult?: CollaborationRaceResultMeta }
+export interface MessageMeta { attachments?: Attachment[]; skill?: { id: string; name: string; icon?: SkillIcon }; notes?: NoteSummary[]; request?: string; groupInstructions?: GroupInstructions; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author; advisor?: string; dispatch?: CollaborationDispatchMeta; raceResult?: CollaborationRaceResultMeta }
 // Historical attribution on messages and notes from older shared workspaces.
 export interface Author { id: string; name: string }
 // A failed review build as the engine reports it; log is the compiler log's path.
@@ -203,11 +217,12 @@ export interface BuildFailure { error: string; details: string[]; log?: string }
 export interface FeedbackSummary { round: number | null; accepted: number; rejected: number; undone: number; comments: { where: string; text: string }[]; buildError?: boolean }
 export interface Skill { output?: 'annotations'; id: string; name: string; description: string; hint: string; icon?: SkillIcon; source: 'builtin' | 'user' | 'paper' }
 export interface PendingRequest { id: string; taskId: string; method: string; params: Record<string, any>; createdAt: number }
-export type AgentId = 'papilot' | 'pi' | 'codex' | 'claude' | 'antigravity' | 'kimi' | 'cursor' | 'copilot' | 'grok' | 'opencode' | 'qwen' | 'glm' | 'zcode' | 'deepseek' | 'qoder' | 'codebuddy' | 'workbuddy' | 'collaboration';
+export type AgentId = 'papilot' | 'pi' | 'codex' | 'claude' | 'antigravity' | 'kimi' | 'cursor' | 'copilot' | 'grok' | 'opencode' | 'qwen' | 'glm' | 'zcode' | 'deepseek' | 'qoder' | 'codebuddy' | 'workbuddy' | 'collaboration' | 'chatgpt';
 // Every agent Papilot can drive, in menu order. Only the ones found on the host are offered.
-export const AGENT_IDS: AgentId[] = ['papilot', 'pi', 'codex', 'claude', 'cursor', 'copilot', 'grok', 'antigravity', 'kimi', 'glm', 'zcode', 'deepseek', 'qwen', 'opencode', 'qoder', 'codebuddy', 'workbuddy', 'collaboration'];
-export const AGENT_NAMES: Record<AgentId, string> = { papilot: 'Papilot Writer', pi: 'Pi', codex: 'Codex', claude: 'Claude', cursor: 'Cursor', copilot: 'Copilot', grok: 'Grok', antigravity: 'Antigravity', kimi: 'Kimi', glm: 'GLM', zcode: 'ZCode', deepseek: 'DeepSeek', qwen: 'Qwen', opencode: 'OpenCode', qoder: 'Qoder', codebuddy: 'CodeBuddy', workbuddy: 'WorkBuddy', collaboration: 'Collaboration mode' };
+export const AGENT_IDS: AgentId[] = ['papilot', 'pi', 'codex', 'claude', 'cursor', 'copilot', 'grok', 'antigravity', 'kimi', 'glm', 'zcode', 'deepseek', 'qwen', 'opencode', 'qoder', 'codebuddy', 'workbuddy', 'collaboration', 'chatgpt'];
+export const AGENT_NAMES: Record<AgentId, string> = { papilot: 'Papilot Writer', pi: 'Pi', codex: 'Codex', claude: 'Claude', cursor: 'Cursor', copilot: 'Copilot', grok: 'Grok', antigravity: 'Antigravity', kimi: 'Kimi', glm: 'GLM', zcode: 'ZCode', deepseek: 'DeepSeek', qwen: 'Qwen', opencode: 'OpenCode', qoder: 'Qoder', codebuddy: 'CodeBuddy', workbuddy: 'WorkBuddy', collaboration: 'Collaboration mode', chatgpt: 'ChatGPT Pro (web)' };
 export const usesCodex = (id: AgentId) => id === 'codex';
+export const isManualAgent = (id: AgentId | undefined) => id === 'chatgpt';
 // Collaboration mode: a fast router assigns annotations to per-task lanes
 // (single-model direct execution or 2–4 model parallel racing), with a
 // rigorous judge selecting the default proposal and exposing alternatives inline.
@@ -220,8 +235,8 @@ export type BuiltinCollaborationLaneId = 'quick' | 'polish' | 'rigorous' | 'layo
 export const BUILTIN_COLLABORATION_LANES: BuiltinCollaborationLaneId[] = ['quick', 'polish', 'rigorous', 'layout'];
 export const MAX_COLLABORATION_LANES = 8;
 export type CollaborationSlot = 'router' | CollaborationRole | 'judge';
-export type CollaborationWorkerAgent = Exclude<AgentId, 'collaboration'>;
-export const COLLABORATION_WORKERS: CollaborationWorkerAgent[] = AGENT_IDS.filter((id): id is CollaborationWorkerAgent => id !== 'collaboration');
+export type CollaborationWorkerAgent = Exclude<AgentId, 'collaboration' | 'chatgpt'>;
+export const COLLABORATION_WORKERS: CollaborationWorkerAgent[] = AGENT_IDS.filter((id): id is CollaborationWorkerAgent => id !== 'collaboration' && id !== 'chatgpt');
 export interface CollaborationRoute { agent: CollaborationWorkerAgent; model: string | null; effort: string | null; serviceTier?: string | null }
 export type CollaborationRoutes = Record<CollaborationRole, CollaborationRoute | null>;
 export interface CollaborationLane {
