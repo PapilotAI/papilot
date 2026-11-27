@@ -244,7 +244,7 @@ export function AgentPicker({ label, agents, agent, model, effort, serviceTier, 
         <div className="agent-speed-options">
           {['default', ...tiers].map(tier => <label key={tier} className="agent-speed-option" htmlFor={`${id}-speed-${tier}`}>
             <input type="radio" id={`${id}-speed-${tier}`} name={`${id}-speed`} value={tier} checked={speed === tier} onChange={() => onChange({ serviceTier: tier })}/>
-            {tier === 'default' ? <Icon name="minus" size={16}/> : <SpeedBolts tier={tier} size={16}/>}
+            {tier !== 'default' && <SpeedBolts tier={tier} size={16}/>}
             <span>{speedName(tier)}</span>
           </label>)}
         </div>

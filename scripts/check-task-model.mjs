@@ -73,6 +73,7 @@ try {
   await expect.poll(() => task.effort).toBe('xhigh');
   await expect(taskSettings).toContainText('Xhigh');
   const taskSpeed = taskModelMenu.getByRole('group', { name: 'Speed', exact: true });
+  await expect(taskSpeed.locator('label', { hasText: 'Standard' }).locator('svg')).toHaveCount(0);
   await taskSpeed.getByRole('radio', { name: 'Fast', exact: true }).check();
   await expect.poll(() => task.serviceTier).toBe('priority');
   await expect(taskSettings.locator('.agent-speed-bolts svg')).toHaveCount(1);
