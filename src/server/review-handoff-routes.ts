@@ -1,11 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { Repo } from '../../engine/src/core/git.ts';
-import { isAgentId, isTaskReviewNote, type ExternalReview, type ExternalReviewOptions, type ExternalReviewRemote } from '../shared.ts';
+import { isAgentId, isTaskReviewNote, type Annotation, type ExternalReview, type ExternalReviewOptions, type ExternalReviewRemote } from '../shared.ts';
 import { taskTitle } from '../task-caption.ts';
 import { canonicalGroup, parseGroupInstructions } from '../note-groups.ts';
 import {
-  createHandoffRequest, handoffCommit, handoffFiles, handoffGit, handoffIdPattern, handoffReceipt, handoffReceiptMarkdown,
+  createHandoffRequest, handoffCommit, handoffCommitPattern, handoffFiles, handoffGit, handoffIdPattern, handoffReceipt, handoffReceiptMarkdown,
   handoffFence, handoffNotes, handoffRecord, handoffRequestMarkdown, handoffSource, handoffTaskPrompt, proposalDigest, validateHandoffProposal,
 } from './review-handoff.ts';
 import { taskRoute, type reviewClient } from './review.ts';
@@ -17,7 +17,7 @@ const route = '/api/projects/:id/external-review';
 const projectScope = { config: { resource: { project: 'id' } } } as const;
 const proposalLimit = 2 * 1024 * 1024;
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
-type SavedReview = ExternalReview & { noteSelection?: string; result?: NonNullable<ExternalReview['result']> & { publication?: string } };
+type SavedReview = ExternalReview & { noteSelection?: string; automaticRequest?: string; result?: NonNullable<ExternalReview['result']> & { publication?: string } };
 type Params = { id: string; review?: string };
 type ReviewRequest = FastifyRequest<{ Params: Params; Body: Record<string, unknown> }>;
 
@@ -48,6 +48,17 @@ async function configuredRemotes(repo: Repo): Promise<ExternalReviewRemote[]> {
 const gitOptions = { timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } };
 const localRef = (id: string, kind: string) => `refs/papilot/external-review/${id}/${kind}`;
 const branchRef = (branch: string) => `refs/heads/${branch}`;
+const commitManuscriptError = () => new Error('Commit the current manuscript before requesting an external review.');
+
+async function automaticReviewFiles(repo: Repo, baseCommit: string, document: () => Promise<string | undefined>, notes: Annotation[]) {
+  const committed = new Set(await handoffFiles(repo, baseCommit));
+  const sources = [...new Set(notes.flatMap(note => note.source && committed.has(note.source.file) ? [note.source.file] : []))];
+  if (sources.length) return sources;
+  const main = await document();
+  if (!main) throw new Error('Choose an existing TeX main file.');
+  if (!committed.has(main)) throw commitManuscriptError();
+  return [main];
+}
 
 async function pushBranch(repo: Repo, remote: string, commit: string, branch: string) {
   await handoffGit(repo, ['-c', `remote.${remote}.mirror=false`, 'push', '--no-follow-tags', '--', remote, `${commit}:${branchRef(branch)}`], gitOptions);
@@ -62,9 +73,10 @@ function pageLink(value: unknown) {
   throw new Error('Paste a ChatGPT Space Page link.');
 }
 
-export function registerExternalReviewRoutes(app: FastifyInstance, { store, workspace, serialGit, connectReview, settleAnnotation }: {
+export function registerExternalReviewRoutes(app: FastifyInstance, { store, workspace, serialGit, connectReview, settleAnnotation, currentDocument }: {
   store: Store; workspace: Workspace; serialGit: <T>(projectId: string, work: () => Promise<T>) => Promise<T>; connectReview: typeof reviewClient;
   settleAnnotation?: (id: string) => Promise<void> | undefined;
+  currentDocument: (id: string, root: string) => Promise<string | undefined>;
 }) {
   const enabled = () => store.preference<boolean>(EXTERNAL_REVIEWS) === true;
   const projectRepo = (id: string) => {
@@ -114,35 +126,48 @@ export function registerExternalReviewRoutes(app: FastifyInstance, { store, work
     const [files, remotes] = await Promise.all([handoffFiles(repo, baseCommit), configuredRemotes(repo)]);
     return { baseCommit, files, remotes, reviews: selected ? [selected] : scope === 'files' ? [] : store.externalReviews(id) };
   });
-  app.post<{ Params: Params; Body: { baseCommit?: string; files?: unknown; question?: unknown; composerId?: unknown; annotations?: unknown; groupInstructions?: unknown } }>(route, { ...projectScope, bodyLimit: proposalLimit }, request => serialGit(request.params.id, async () => {
-    const { id } = request.params, repo = projectRepo(id), { baseCommit, question, files, composerId, annotations, groupInstructions } = request.body ?? {};
-    if (typeof baseCommit !== 'string') throw new Error('Choose a committed version to review.');
+  app.post<{ Params: Params; Body: { baseCommit?: unknown; document?: unknown; files?: unknown; question?: unknown; composerId?: unknown; annotations?: unknown; groupInstructions?: unknown } }>(route, { ...projectScope, bodyLimit: proposalLimit }, request => serialGit(request.params.id, async () => {
+    const { id } = request.params, repo = projectRepo(id), { baseCommit, document, question, files, composerId, annotations, groupInstructions } = request.body ?? {};
+    if ((baseCommit !== undefined || files !== undefined) && (typeof baseCommit !== 'string' || !handoffCommitPattern.test(baseCommit))) throw new Error('Choose a committed version to review.');
+    if (document !== undefined && typeof document !== 'string') throw new Error('Choose an existing TeX main file.');
     if (composerId !== undefined && (typeof composerId !== 'string' || !handoffIdPattern.test(composerId))) throw new Error('This external review no longer exists.');
     if (annotations !== undefined && (!Array.isArray(annotations) || annotations.some((note: unknown) => typeof note !== 'string' || !note || note.length > 64))) throw new Error('Select valid PDF notes for this task.');
     const noteIds = [...new Set<string>(annotations ?? [])], directions = parseGroupInstructions(groupInstructions);
     const noteSelection = noteIds.length ? sha256(JSON.stringify([noteIds, Object.entries(directions).sort()])) : undefined;
     const text = noteIds.length && (question === undefined || typeof question === 'string' && !question.trim()) ? 'Review the selected PDF annotations and suggest focused changes.' : question;
-    const record = await createHandoffRequest(repo, baseCommit, text, files, composerId);
     const prior = composerId && store.externalReview<SavedReview>(id, composerId);
-    if (prior) {
-      const { notes: _, ...previousRequest } = prior.request;
-      if (!prior.fromComposerAt || prior.noteSelection !== noteSelection || JSON.stringify(previousRequest) !== JSON.stringify(record)) throw new Error('This external review no longer exists.');
+    // The same composer submission keeps its original commit and note snapshot,
+    // even when HEAD or the manuscript's active document changes before retry.
+    const automaticRequest = files === undefined && composerId ? sha256(JSON.stringify([baseCommit, document, typeof text === 'string' ? text.trim() : text, noteSelection])) : undefined;
+    if (prior && automaticRequest) {
+      if (!prior.fromComposerAt || prior.automaticRequest !== automaticRequest) throw new Error('This external review no longer exists.');
       return prior;
     }
-    if (noteIds.length) {
-      if (settleAnnotation) await Promise.all(noteIds.map(settleAnnotation));
-      const notes = noteIds.map(noteId => {
-        const note = store.findAnnotation(id, noteId);
-        if (!note || note.taskId || note.deletedAt !== undefined || isTaskReviewNote(note)) throw new Error('A selected PDF note is no longer available. Refresh the manuscript and try again.');
-        return note;
-      });
+    const commit = typeof baseCommit === 'string' ? baseCommit : await handoffCommit(repo, 'HEAD').catch(() => { throw commitManuscriptError(); });
+    if (prior) {
+      const record = await createHandoffRequest(repo, commit, text, files, composerId);
+      const { notes: _, ...previousRequest } = prior.request;
+      if (!prior.fromComposerAt || prior.automaticRequest || prior.noteSelection !== noteSelection || JSON.stringify(previousRequest) !== JSON.stringify(record)) throw new Error('This external review no longer exists.');
+      return prior;
+    }
+    if (noteIds.length && settleAnnotation) await Promise.all(noteIds.map(settleAnnotation));
+    const notes = noteIds.map(noteId => {
+      const note = store.findAnnotation(id, noteId);
+      if (!note || note.taskId || note.deletedAt !== undefined || isTaskReviewNote(note)) throw new Error('A selected PDF note is no longer available. Refresh the manuscript and try again.');
+      return note;
+    });
+    const selectedFiles = files === undefined ? await automaticReviewFiles(repo, commit, async () => document || await currentDocument(id, repo.root), notes) : files;
+    const record = await createHandoffRequest(repo, commit, text, selectedFiles, composerId);
+    if (notes.length) {
       if (Object.keys(directions).some(group => !notes.some(note => note.group && canonicalGroup(note.group) === group))) throw new Error('Group instructions must refer to selected PDF notes.');
-      const outside = notes.flatMap(note => note.source && !record.files.includes(note.source.file) ? [note.source.file] : []);
-      if (outside.length && (await handoffFiles(repo, baseCommit)).some(file => outside.includes(file))) throw new Error('Add the source files for the selected PDF notes, or deselect those notes.');
+      if (files !== undefined) {
+        const outside = notes.flatMap(note => note.source && !record.files.includes(note.source.file) ? [note.source.file] : []);
+        if (outside.length && (await handoffFiles(repo, commit)).some(file => outside.includes(file))) throw new Error('Add the source files for the selected PDF notes, or deselect those notes.');
+      }
       record.notes = await handoffNotes(repo, record, notes, directions);
     }
-    const review: SavedReview = { request: record, ...(composerId ? { fromComposerAt: Date.now() } : {}), ...(noteSelection ? { noteSelection } : {}) };
-    await repo.updateRefAsync(localRef(review.request.requestId, 'base'), baseCommit);
+    const review: SavedReview = { request: record, ...(composerId ? { fromComposerAt: Date.now() } : {}), ...(noteSelection ? { noteSelection } : {}), ...(automaticRequest ? { automaticRequest } : {}) };
+    await repo.updateRefAsync(localRef(review.request.requestId, 'base'), commit);
     return save(id, review);
   }));
   app.post(`${route}/:review/page`, projectScope, change((_repo, id, review, body) => save(id, { ...review, page: pageLink(body.url) })));

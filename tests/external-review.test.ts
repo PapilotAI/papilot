@@ -41,7 +41,7 @@ test('an external review round trips from Git and Space into a pinned task and p
   const engineBase = await repo.commitTreeAsync(await repo.treeIdAsync(base), base, 'Papilot snapshot');
   let engineState = { state: 'reviewing', round: 1, baseCommit: engineBase, acceptedCommit: engineBase };
   app.setErrorHandler((error, _request, reply) => { reply.code(400).send({ error: (error as Error).message }); });
-  registerExternalReviewRoutes(app, { store, workspace, serialGit: gitQueue(), connectReview: async () => ({ get: async () => engineState }) as unknown as ReviewClient });
+  registerExternalReviewRoutes(app, { store, workspace, serialGit: gitQueue(), currentDocument: async () => 'appendix.tex', connectReview: async () => ({ get: async () => engineState }) as unknown as ReviewClient });
   t.after(async () => { await app.close(); store.db.close(); fs.rmSync(folder, { recursive: true, force: true }); });
   const get = (url = endpoint) => app.inject({ method: 'GET', url });
   const post = (url: string, payload: object) => app.inject({ method: 'POST', url, payload });
@@ -53,6 +53,12 @@ test('an external review round trips from Git and Space into a pinned task and p
   await ok(post('/api/external-reviews', { enabled: true }));
   const request = { baseCommit: base, files: ['main.tex'], question: 'Review the introduction.' };
   await ok(post(endpoint, request));
+  const defaultScope = await ok(post(endpoint, { question: 'Review the current paper.' }));
+  assert.equal(defaultScope.request.baseCommit, base);
+  assert.deepEqual(defaultScope.request.files, ['appendix.tex']);
+  const shownScope = await ok(post(endpoint, { question: 'Review the main document.', document: 'main.tex' }));
+  assert.deepEqual(shownScope.request.files, ['main.tex']);
+  assert.match((await post(endpoint, { question: 'Review the draft.', document: 'draft.tex' })).json().error, /Commit the current manuscript/);
   assert.deepEqual(store.pendingExternalReviewConversations(), [], 'Legacy wizard requests stay in review history');
   const composerId = '4fb4a42b-5c2b-40d3-a860-01a3b05198f0';
   const selected: Annotation = { id: 'selected-note', projectId, key: 'older-pdf', page: 1, rect: [0, 0, 1, 1],
@@ -62,13 +68,19 @@ test('an external review round trips from Git and Space into a pinned task and p
   store.saveAnnotation({ ...selected, id: 'unselected-note', comment: 'Do not share this other note.' });
   store.saveAnnotation({ ...selected, id: 'stale-note', comment: 'Explain this missing wording.', quote: 'The older draft had this sentence.', source: { file: 'main.tex', lines: [90, 90] } });
   store.saveAnnotation({ ...selected, id: 'appendix-note', source: { file: 'appendix.tex', lines: [1, 1] } });
+  store.saveAnnotation({ ...selected, id: 'unmapped-note', source: null });
   store.saveAnnotation({ ...selected, id: 'unplaced-ai-note', aiReview: { taskId: 'other', agent: 'codex' } });
-  const composerRequest = { ...request, question: '', composerId, annotations: [selected.id, 'stale-note'], groupInstructions: { yellow: 'Keep the meaning.' } };
-  assert.match((await post(endpoint, { ...composerRequest, annotations: ['appendix-note'] })).json().error, /Add the source files/);
+  const fallback = await ok(post(endpoint, { annotations: ['unmapped-note'] }));
+  assert.deepEqual(fallback.request.files, ['appendix.tex']);
+  assert.deepEqual(fallback.request.notes, [{ page: 2, comment: selected.comment, quote: selected.quote, group: 'yellow' }]);
+  const composerRequest = { question: '', document: 'appendix.tex', composerId, annotations: [selected.id, 'stale-note'], groupInstructions: { yellow: 'Keep the meaning.' } };
+  assert.match((await post(endpoint, { ...request, ...composerRequest, annotations: ['appendix-note'] })).json().error, /Add the source files/);
   assert.match((await post(endpoint, { ...composerRequest, annotations: ['unplaced-ai-note'] })).json().error, /no longer available/);
   assert.match((await post(endpoint, { ...composerRequest, groupInstructions: { red: 'Unrelated direction' } })).json().error, /must refer to selected PDF notes/);
   const [review, replayed] = await Promise.all([1, 2].map(() => ok(post(endpoint, composerRequest))));
   assert.equal(review.request.requestId, composerId);
+  assert.equal(review.request.baseCommit, base);
+  assert.deepEqual(review.request.files, ['main.tex'], 'The selected notes supply scope even in another root document');
   assert.deepEqual(replayed, review);
   assert.deepEqual(review.request.notes, [
     { page: 2, comment: selected.comment, quote: selected.quote, group: 'yellow', groupInstruction: 'Keep the meaning.', source: { file: 'main.tex', lines: [2, 2], excerpt: selected.quote } },
@@ -78,6 +90,7 @@ test('an external review round trips from Git and Space into a pinned task and p
   assert.deepEqual(await ok(post(endpoint, composerRequest)), review, 'Retry returns the immutable note snapshot');
   assert.deepEqual(store.pendingExternalReviewConversations(), [{ id: composerId, projectId, title: 'Review the selected PDF annotations and suggest focused changes', createdAt: review.fromComposerAt }]);
   assert.equal((await post(endpoint, { ...composerRequest, question: 'A different question.' })).statusCode, 400);
+  assert.equal((await post(endpoint, { ...composerRequest, document: 'main.tex' })).statusCode, 400);
   assert.equal((await post(endpoint, { ...composerRequest, annotations: ['unselected-note'] })).statusCode, 400);
   assert.deepEqual((await get(`${endpoint}?scope=files`)).json().reviews, []);
   assert.deepEqual((await get(`${endpoint}?review=${composerId}`)).json().reviews, [review]);
@@ -87,6 +100,7 @@ test('an external review round trips from Git and Space into a pinned task and p
   await ok(post(`${reviewRoute}/page`, { url: page }));
   const space = (await get(`${reviewRoute}/prompt?via=space`)).json().text;
   assert.ok(space.includes(initial)); assert.ok(space.includes(page));
+  assert.doesNotMatch(space, /Extra detail\./);
 
   const [{ revision }] = (await get()).json().remotes;
   assert.equal((await post(`${reviewRoute}/github`, { remote: 'origin', revision: 'stale' })).statusCode, 400);
@@ -105,6 +119,8 @@ test('an external review round trips from Git and Space into a pinned task and p
   const changes = [{ file: 'main.tex', original: 'Make this text a little more concise.', suggestion: 'Keep the text concise.', reason: 'Remove the qualifier.' }];
   const proposal = { schema: review.request.schema, kind: 'proposal', requestId: review.request.requestId, baseCommit: base, changes };
   const paste = '## Suggestion\n\n```json\n' + JSON.stringify(proposal) + '\n```';
+  const unrelated = { ...proposal, changes: [{ ...changes[0], file: 'appendix.tex', original: 'Extra detail.' }] };
+  assert.match((await post(`${reviewRoute}/proposal`, { text: JSON.stringify(unrelated) })).json().error, /did not authorize review of appendix\.tex/);
   assert.match((await post(`${reviewRoute}/proposal`, { text: paste.replace(base, '0'.repeat(40)) })).json().error, /match the local request/);
   assert.deepEqual((await ok(post(`${reviewRoute}/proposal`, { text: paste }))).proposal?.changes, changes);
   git(folder, 'clone', '--branch', link.branch, remote, reviewer);
@@ -117,6 +133,8 @@ test('an external review round trips from Git and Space into a pinned task and p
   fs.writeFileSync(path.join(root, 'main.tex'), 'A newer independent draft.\n');
   git(root, 'add', '--', 'main.tex'); commit(root, 'Advance the local paper');
   const local = git(root, 'rev-parse', 'HEAD');
+  assert.notEqual(local, base);
+  assert.deepEqual((await ok(post(endpoint, composerRequest))).request, review.request, 'Retry pins the original scope after HEAD advances');
   assert.match((await post(`${reviewRoute}/task`, { agent: 'codex', digest: 'stale' })).json().error, /This proposal changed/);
   const starts = await Promise.all([{}, {}].map(() => ok<{ task: Task }>(post(`${reviewRoute}/task`, { agent: 'codex', digest: imported.proposal!.digest }))));
   assert.equal(starts[0].task.id, starts[1].task.id); assert.equal(tasks.length, 1);

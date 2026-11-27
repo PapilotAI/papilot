@@ -92,6 +92,7 @@
   "Codex was not found on this computer. Install Codex, then select Reconnect.": "Codex hittades inte på den här datorn. Installera Codex och välj sedan Återanslut.",
   "Collaboration mode needs a successful audit of the final source before publication. Continue the task to check all annotations.": "Samarbetsläget kräver en godkänd kontroll av den slutliga källtexten före publicering. Fortsätt uppgiften för att kontrollera alla anteckningar.",
   "Comment does not match the document.": "Kommentaren stämmer inte överens med dokumentet.",
+  "Commit the current manuscript before requesting an external review.": "Spara en version av det aktuella manuskriptet innan du begär en extern granskning.",
   "Confirm permanent task deletion before continuing.": "Bekräfta permanent borttagning av uppgiften innan du fortsätter.",
   "Confirm stopping the current turn before switching agents.": "Bekräfta att den aktuella omgången ska stoppas innan du byter agent.",
   "Connect an agent that supports read-only tasks, such as Codex.": "Anslut en agent som stöder uppgifter med enbart läsåtkomst, till exempel Codex.",

@@ -92,6 +92,7 @@
   "Codex was not found on this computer. Install Codex, then select Reconnect.": "O Codex não foi encontrado neste computador. Instale o Codex e selecione Reconectar.",
   "Collaboration mode needs a successful audit of the final source before publication. Continue the task to check all annotations.": "O modo colaborativo exige uma verificação bem-sucedida do código-fonte final antes da publicação. Continue a tarefa para verificar todas as anotações.",
   "Comment does not match the document.": "O comentário não corresponde ao documento.",
+  "Commit the current manuscript before requesting an external review.": "Faça commit do manuscrito atual antes de solicitar uma revisão externa.",
   "Confirm permanent task deletion before continuing.": "Confirme a exclusão permanente da tarefa antes de continuar.",
   "Confirm stopping the current turn before switching agents.": "Confirme a interrupção do turno atual antes de trocar de agente.",
   "Connect an agent that supports read-only tasks, such as Codex.": "Conecte um agente que suporte tarefas em modo somente leitura, como o Codex.",

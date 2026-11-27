@@ -569,7 +569,7 @@ export async function buildApp(options: AppOptions) {
   const optional = (value: unknown, name: string, max?: number) => value === undefined || value === '' ? '' : string(value, name, max);
   // Each new note's source lookup while it runs, by note ID.
   const locating = new Map<string, Promise<void>>();
-  registerExternalReviewRoutes(app, { store, workspace, serialGit, connectReview, settleAnnotation: id => locating.get(id) });
+  registerExternalReviewRoutes(app, { store, workspace, serialGit, connectReview, settleAnnotation: id => locating.get(id), currentDocument: (id, root) => manuscripts.document(id, root) });
   app.get<{ Params: { id: string } }>('/api/projects/:id/skills', project(), request => ({ skills: loadSkills(store.project(request.params.id).path).map(listedSkill) }));
   app.post('/api/tasks', { config: { resource: { project: 'projectId', from: 'body' } } }, async request => {
     const b = request.body as any, skill = skillName(b.skill), attachments = attachmentIds(b.attachments);

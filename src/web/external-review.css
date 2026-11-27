@@ -25,7 +25,7 @@
 .external-step > h3 { margin: 0; font-size: 17px; }
 .external-step p, .external-step blockquote { margin: 0; line-height: 1.55; overflow-wrap: anywhere; }
 .external-step form, .external-channel, .external-proposal, .external-copy { display: grid; gap: 8px; }
-.external-review-dialog :is(input[type="url"], input[type="search"], textarea, select), .external-composer-scope input[type="search"] {
+.external-review-dialog :is(input[type="url"], textarea, select) {
   min-inline-size: 0; block-size: auto; margin: 0; padding: 7px 8px; border: 1px solid var(--line-strong); border-radius: var(--r);
   color: var(--text); background: var(--bg); font-size: max(1rem, 1em);
 }
@@ -36,12 +36,9 @@
 .external-step :is(textarea[readonly], textarea[name="proposal"]) { font-family: var(--mono); overflow-wrap: anywhere; }
 .external-step input[type="url"] { flex: 1 1 13em; }
 .external-step .button { min-block-size: 34px; height: auto; padding-block: 5px; text-align: start; white-space: normal; }
-:is(.external-review-dialog, .external-composer-scope) fieldset { min-inline-size: 0; border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; }
-:is(.external-review-dialog, .external-composer-scope) legend { padding-inline: 4px; font-weight: 600; }
-.external-files { display: grid; gap: 6px; }
-.external-file-list { max-block-size: min(20dvh, 180px); overflow: auto; overscroll-behavior: contain; }
-.external-file-list label, .external-choices label { display: flex; align-items: center; gap: 8px; min-block-size: 30px; cursor: pointer; }
-.external-file-list span { font-family: var(--mono); overflow-wrap: anywhere; }
+.external-review-dialog fieldset { min-inline-size: 0; border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; }
+.external-review-dialog legend { padding-inline: 4px; font-weight: 600; }
+.external-choices label { display: flex; align-items: center; gap: 8px; min-block-size: 30px; cursor: pointer; }
 .modal.external-review-dialog input:is([type="checkbox"], [type="radio"]) {
   inline-size: 16px; block-size: 16px; margin: 0; padding: 0; accent-color: var(--accent); flex-shrink: 0;
 }
@@ -59,18 +56,16 @@
 .external-review-inline { max-inline-size: 700px; margin-inline: auto; font-size: 13px; }
 .external-review-inline select { inline-size: 100%; }
 .external-question { white-space: pre-wrap; padding: 10px 12px; background: var(--bg-muted); border-radius: var(--r-md); }
-.external-composer-scope, .external-result-disclosure { border: 1px solid var(--line); border-radius: var(--r-md); font-size: 13px; }
-.external-composer-scope > summary, .external-result-disclosure > summary { cursor: pointer; padding: 8px 12px; }
-.external-composer-scope > summary span { margin-inline-start: 4px; color: var(--text-2); overflow-wrap: anywhere; }
-.external-composer-scope > :not(summary) { margin: 0 10px 8px; }
-.external-composer-scope fieldset legend { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
-.external-composer-scope input[type="search"] { inline-size: 100%; }
+.external-note-preview, .external-result-disclosure { border: 1px solid var(--line); border-radius: var(--r-md); font-size: 13px; }
+.external-note-preview > summary, .external-result-disclosure > summary { cursor: pointer; padding: 8px 12px; }
+.external-note-preview > summary span { margin-inline-start: 4px; color: var(--text-2); }
+.external-note-preview > :not(summary) { margin: 0 10px 8px; }
 @media (max-width: 520px) {
   .modal-backdrop.external-review-backdrop { padding: 0; }
   .modal.external-review-dialog { inline-size: 100%; }
-  .external-review-dialog :is(input[type="url"], input[type="search"], textarea, select), .external-composer-scope input[type="search"] { font-size: max(16px, 1em); }
+  .external-review-dialog :is(input[type="url"], textarea, select) { font-size: max(16px, 1em); }
 }
 @media (pointer: coarse) {
-  .external-review-dialog :is(.button, .icon-button, .external-steps button, .external-file-list label, .external-choices label) { min-block-size: 44px; }
+  .external-review-dialog :is(.button, .icon-button, .external-steps button, .external-choices label) { min-block-size: 44px; }
   .external-review-dialog .icon-button { min-inline-size: 44px; }
 }

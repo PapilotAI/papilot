@@ -39,11 +39,6 @@
     "textHash": "775ec01bf44e8e4077e55dc26eeaef64ca6e43e7f72823c31402a58e88127b45",
     "model": "manual"
   },
-  "Add the source files for the selected PDF notes, or deselect those notes.": {
-    "revision": "7376ad5721e68fa6dd5daa0c000fd679acb833a12a5a71e146663cbddab0018b",
-    "textHash": "205ae814e6ffad6a13b4f28116e880d656f895f5155cd75cf2bd44ea4e46afe5",
-    "model": "gemini-4-argon-medium"
-  },
   "Added by you": {
     "revision": "d928b4f624e74bc7a5f0bfb166789eb39168927657eb676a1d59c493fb0b260d",
     "textHash": "f6b130814c11b64eb74d3ac556ca077d4fee0e061d1057d97b91087295ce6ade",
@@ -147,11 +142,6 @@
   "Back to the library": {
     "revision": "b42c2000054ecbd716b6f731a69ce4dcf641195ce5acc209b4721a688a479895",
     "textHash": "cea41f00975d578f8bda0a640b1341c4744ab785c6885c31ced8a7dd4e7bc7ff",
-    "model": "gemini-4-argon-medium"
-  },
-  "Base commit": {
-    "revision": "29ee057a35eec3c4fa85608fed6aff9ac89b2a14cd831b3b90b934d42937375a",
-    "textHash": "72c810869a43aa8c5cce949a844b9c827dfcfe391e0cf7558aa72f522b0aae56",
     "model": "gemini-4-argon-medium"
   },
   "Bibliography entry": {
@@ -282,11 +272,6 @@
   "Choose a Git remote": {
     "revision": "0d9b0c16ddffa0f581ecb7991f2aa261cb232fe84712ca7ab50f64e01f5530ba",
     "textHash": "a21e5403b2b88dfa4f0b06c1b566214cd1139991ae9ce312cf6f72e6ae425ed1",
-    "model": "gemini-4-argon-medium"
-  },
-  "Choose a question and the committed files the reviewer should see.": {
-    "revision": "3fb4a8681ea76759a9dc8bc27fadaaf34bbba797472c6320913e76744db8658b",
-    "textHash": "c3c94517bf4645f8867ff1f3a1f16771ad492ac13c97644c18d5e3e718a911cc",
     "model": "gemini-4-argon-medium"
   },
   "Choose a work to see its PDF and the sentences that cite it.": {
@@ -537,16 +522,6 @@
   "Fetching proposal…": {
     "revision": "c40f4ac9fa3c48b1730f47d3ec04a4583319895486bddce32b418a40a0a55977",
     "textHash": "dd8f2cbdc46c0eb994fce6d39d02e1510a2967121e55ea28d0fc39c72abbeb06",
-    "model": "gemini-4-argon-medium"
-  },
-  "Files to review": {
-    "revision": "3b71e6bc81cf93744f5d0db22023f5d636fc81de93d47c377adaa57985b57276",
-    "textHash": "2ef4baf98377b2a00baab28bf3fec3250363a34aa5e3eaf2ad197578eaa25e75",
-    "model": "gemini-4-argon-medium"
-  },
-  "Filter files": {
-    "revision": "e8169b4692159f9655e7845b30aff923ae484ea2b3df56d22666db9877fe1bd4",
-    "textHash": "aba83d2af8177a74aada6d00e5037da2d807ffddb65a6bb6c42f68c910813398",
     "model": "gemini-4-argon-medium"
   },
   "Find openly available PDFs of these cited works and add each to Papilot's library with library_add. Use legal copies only: the authors' or their institutions' pages, preprint servers, repositories and publishers' open-access pages; never shadow libraries such as Sci-Hub or LibGen. Papilot keeps a PDF only when its first page shows the work's full title or DOI. Do not edit any file. Report which works you added and where each copy came from, and which you could not find.": {
@@ -858,11 +833,6 @@
     "revision": "819f7e2222a817c82f6ee2b1925c102ebbbcb3d4fad3c3a5bf486dfe53d3b7b1",
     "textHash": "e82c2e6a5e5c8b1e1c1387f9a63095255319642d19202687f8f8e0ff3c6f10d9",
     "model": "manual"
-  },
-  "No matching committed files.": {
-    "revision": "9d68de2f797f00358410b2a32d954ff706fab5ece7d5e85c4e5aaa84c620eae0",
-    "textHash": "b6d4c771b5fe7fb01886236f96808caede719bdcd45ce70f3b45ffa8b8a2ad1e",
-    "model": "gemini-4-argon-medium"
   },
   "No matching projects": {
     "revision": "15e8ca2e987bb81c07cdc6d33f92302a60b5886c02559bdc3987fec5e081fa7e",
@@ -1327,11 +1297,6 @@
   "Search works and their PDFs": {
     "revision": "58679313d51eea343160f2e74d1becda9fb1b7b207d3080e40d922e742929a2e",
     "textHash": "214903d3df07f0fc166c18fd8c3f7be82dc5cc83cf9d616da4a02f4b33efbb7a",
-    "model": "gemini-4-argon-medium"
-  },
-  "Select at least one file to review.": {
-    "revision": "4f77defc6c6cf778b00114475cf5583ed5af3727c277cab2058736774f5958d0",
-    "textHash": "0f609e14f4041bad745d85fcaf34c3a89185bc313fbeaa206f15332671d4be4f",
     "model": "gemini-4-argon-medium"
   },
   "Selected work": {
@@ -1822,11 +1787,6 @@
   "{n} problems": {
     "revision": "aa044ef5243c67cc965ed53a7d20f5a64bd72ca4b45b3adb998b3c25f597ffd7",
     "textHash": "ea1143ddf10d98985b92acc659b93f529d15dbe082038d3c98edc7d5ee9466f6",
-    "model": "gemini-4-argon-medium"
-  },
-  "{n} selected": {
-    "revision": "69854abcf81c0b427236e02c0fc70e829e4c6ce12d3545f1e89bdaaecf123992",
-    "textHash": "d8490ec5787155184300f969c5233eebe5c32735cc36c1b4572d1c795a68947c",
     "model": "gemini-4-argon-medium"
   },
   "{n} supported": {

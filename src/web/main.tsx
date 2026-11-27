@@ -38,7 +38,7 @@ import { AiReviewView } from './ai-review.tsx';
 import { keepDialogFocus } from './focus.ts';
 import { DeleteTaskDialog } from './task-dialog.tsx';
 import { BulkTaskDialog, type BulkTaskAction } from './bulk-task-dialog.tsx';
-import { ExternalReviewDialog, ExternalReviewResult, ExternalReviewScope, externalReviewPath, useExternalReviewScope } from './external-review.tsx';
+import { ExternalReviewDialog, ExternalReviewResult, externalReviewPath } from './external-review.tsx';
 import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
 import { BrandIcon } from './brand-icon.tsx';
@@ -1813,12 +1813,12 @@ function App() {
     if (webReviewSelected) {
       const attached = noteSelection.selected, annotations = attached.map(note => note.id);
       const question = newDraft.trim() || (annotations.length ? t('Review the selected PDF annotations and suggest focused changes.') : '');
-      const target = project?.id, { commit: baseCommit, files } = webReviewScope;
-      if (!target || !question || !baseCommit || !files.length || webReviewScope.missingNoteFiles.length || webReviewAttachments || creating || marking || noteEditing || reviewNoteBusy || history.busy) return;
+      const target = project?.id, document = manuscriptDocument(manuscriptData.data);
+      if (!target || !question || webReviewAttachments || creating || marking || noteEditing || reviewNoteBusy || history.busy) return;
       setCreating(true); setCreateError('');
       try {
         const groupInstructions = groupDrafts.forNotes(attached);
-        const body = { baseCommit, files, question, ...(annotations.length ? { annotations, groupInstructions } : {}) };
+        const body = { question, ...(document ? { document } : {}), ...(annotations.length ? { annotations, groupInstructions } : {}) };
         const key = 'papilot:new-web-review-request';
         const composerId = requestId(browserStorage, key, JSON.stringify([target, body, attached.map(note => [note.comment, note.quote, note.kind, note.group])]), browserUuid);
         const review = await api<ExternalReview>(externalReviewPath(target), { ...body, composerId });
@@ -2151,7 +2151,6 @@ function App() {
   const shownManuscript = useMemo(() => manuscriptData.data && { ...manuscriptData.data, annotations: notes }, [manuscriptData.data, notes]);
 
   const noteSelection = useNoteSelection(project?.id || '', notes);
-  const webReviewScope = useExternalReviewScope(api, webReviewSelected && manuscriptOpen ? project?.id : undefined, manuscriptData.data?.build?.document, noteSelection.selected);
   const webReviewAttachments = Boolean(newSkill || newFiles.files.length);
   const groupDrafts = useGroupInstructions(project?.id || '');
   const groupDirections = groupDrafts.forNotes(noteSelection.selected);
@@ -2590,7 +2589,6 @@ function App() {
     {missingAgent && !webReviewSelected && <NoAgentNotice reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} onAdd={() => setSettings('agents')}/>}
     {suggestWriter && !webReviewSelected && <WriterSuggestion ready={writerReady} onUse={() => { chooseModel('papilot', runtimes.papilot?.models.find(model => model.isDefault)?.id || ''); dismissWriter(); }} onSetUp={() => setSettings('agents')} onDismiss={dismissWriter}/>}
     {webReviewSelected && <>
-      <ExternalReviewScope key={project?.id} scope={webReviewScope}/>
       {noteSelection.selected.length > 0 && <p className="muted">{t('Only selected PDF notes are included in the prompt.')}</p>}
       {webReviewAttachments && <p className="muted">{t('Remove uploaded attachments or skills to continue with ChatGPT Pro.')}</p>}
     </>}
@@ -2601,7 +2599,7 @@ function App() {
         {agentOptions(creating)}
       </div>}
       action={<button className="send-button" type="submit" aria-label={t('Start task')} title={!webReviewSelected && missingGroupDirections ? t('Add instructions to the selected color groups above.') : t('Start task (Enter)')} disabled={creating || reviewNoteBusy || noteEditing || history.busy || (webReviewSelected
-        ? (!newDraft.trim() && !noteSelection.selected.length) || !webReviewScope.commit || !webReviewScope.files.length || webReviewScope.missingNoteFiles.length > 0 || webReviewAttachments || marking > 0
+        ? (!newDraft.trim() && !noteSelection.selected.length) || webReviewAttachments || marking > 0
         : missingAgent || (newSkill?.output !== 'annotations' && (newFiles.blocked || marking > 0 || missingGroupDirections)) || (!newDraft.trim() && !newSkill && !newFiles.files.length && !noteSelection.selected.some(actionable) && !Object.keys(groupDirections).length))} aria-busy={creating}>{creating ? <span className="spinner light"/> : <Icon name="arrowUp" size={18}/>}</button>}/>
     {createError && <p className="inline-error" role="alert">{createError}</p>}
     {PlaygroundPresets && <Suspense fallback={null}><PlaygroundPresets selected={noteSelection.selected} open={id => openPreparedTask(id)} disabled={creating}/></Suspense>}
@@ -2815,7 +2813,7 @@ function App() {
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
     {settings && <SettingsDialog refreshUsage={refreshUsage} commitWriter={commitWriter} conflictWriter={conflictWriter} activity={loadActivity} memory={!isPlayground ? { project, api } : undefined} workflow={isPlayground ? undefined : { enabled: runtimes.collaboration?.hidden === false, online, runtimes, load: () => api<CollaborationSettingsState>('/collaboration'), save: async change => { const result = await api<CollaborationSettingsState>('/collaboration', change); await refresh(true); return result; } }} externalReview={!isPlayground ? { enabled: state?.externalReviews === true, save: async enabled => { await api('/external-reviews', { enabled }); await refresh(true); } } : undefined} requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: offered.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] })), agent: agentChoice, model: chosenModel, effort: agent.effort, onSelect: chooseModel, onEffort: effort => remember({ effort }), ...(!isPlayground ? { quick: quickModelApi } : {}) }} updates={!isPlayground ? api : undefined} overleaf={!isPlayground ? { api, state: state?.overleaf } : undefined} zotero={!isPlayground ? zoteroApi : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, compiler: chooseCompiler, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body), agentSettings: async change => { await api('/agent-settings', change); await refresh(true); } } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
-    {externalReviewOpen && state?.externalReviews && project && <ExternalReviewDialog key={project.id} api={api} projectId={project.id} projectName={project.name} document={manuscriptData.data?.build?.document} runtimes={runtimes} preferredAgent={agentChoice} tasks={state.tasks}
+    {externalReviewOpen && state?.externalReviews && project && <ExternalReviewDialog key={project.id} api={api} projectId={project.id} projectName={project.name} document={manuscriptDocument(manuscriptData.data) ?? undefined} runtimes={runtimes} preferredAgent={agentChoice} tasks={state.tasks}
       onClose={() => { setExternalReviewOpen(false); requestAnimationFrame(() => externalReviewButton.current?.focus()); }}
       onAgentSettings={() => { setExternalReviewOpen(false); setSettings('agents'); }} onTask={openExternalTask}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}

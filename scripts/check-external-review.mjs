@@ -36,6 +36,7 @@ try {
         comment: 'Explain the measured effect.', quote: 'The effect is really small.', source: { file: settings.files[1], lines: [2, 2] } };
       let annotations = [];
       let loadingError = true, fetched = false, decided = false, readReceipt = 0, composerId = '';
+      const proposalFor = id => ({ ...proposal, requestId: id, changes: id === composerId ? proposal.changes.map(change => ({ ...change, file: selected.source.file })) : proposal.changes });
       await page.addInitScript(language => {
         localStorage.setItem('papilot:language', language);
         localStorage.setItem('papilot:setup-seen', '1');
@@ -58,15 +59,15 @@ try {
             if (loadingError) { loadingError = false; return error('Temporary connection problem'); }
             return json({ ...settings, reviews: id ? [review] : url.searchParams.has('scope') ? [] : settings.reviews });
           }
-          assert.deepEqual(body.files, body.composerId ? settings.files : ['paper.tex']); assert.equal(body.baseCommit, base);
-          const { composerId: incomingId, annotations: checkedNotes, groupInstructions: _directions, ...data } = body;
-          const created = { request: { schema: 'papilot-handoff/v1', kind: 'request', requestId: incomingId || requestId, ...data } };
+          assert.equal(body.files, undefined); assert.equal(body.baseCommit, undefined);
+          const { composerId: incomingId, annotations: checkedNotes, question } = body;
+          const created = { request: { schema: 'papilot-handoff/v1', kind: 'request', requestId: incomingId || requestId, baseCommit: base, files: [settings.files[incomingId ? 1 : 0]], question } };
           if (incomingId) {
             assert.match(incomingId, /^[0-9a-f-]{36}$/);
             assert.deepEqual(checkedNotes, [selected.id]);
             created.request.notes = [{ comment: selected.comment, quote: selected.quote, page: 1, source: selected.source }];
             composerId = incomingId;
-            state.externalReviewConversations = [{ id: incomingId, projectId: project.id, title: data.question, createdAt: 3 }];
+            state.externalReviewConversations = [{ id: incomingId, projectId: project.id, title: question, createdAt: 3 }];
           }
           settings.reviews.unshift(created); return json(created);
         }
@@ -79,13 +80,14 @@ try {
           if (pathname.endsWith('/prompt')) return json({ text: `${url.searchParams.get('via') === 'git' ? review.git.branch : review.page ?? 'Create a private Page'}\n${base}` });
           if (pathname.endsWith('/proposal')) {
             if (body.via === 'git') { fetched = true; return error('The reviewer has not posted a proposal yet.'); }
-            try { assert.deepEqual(JSON.parse(body.text), { ...proposal, requestId: id }); } catch { return error('Copy the complete JSON block.'); }
-            review.proposal = { digest, source: 'paste', changes: proposal.changes }; return json(review);
+            const expected = proposalFor(id);
+            try { assert.deepEqual(JSON.parse(body.text), expected); } catch { return error('Copy the complete JSON block.'); }
+            review.proposal = { digest, source: 'paste', changes: expected.changes }; return json(review);
           }
           if (pathname.endsWith('/task')) {
             assert.equal(body.digest, digest); assert.equal(body.agent, 'codex');
             const task = { id: `task-${id}`, name: `task-${id}`, projectId: 'paper', title: id === composerId ? review.request.question : 'External task fixture', instructions: '', status: 'reviewing', createdAt: 2, updatedAt: 2, agent: 'codex', error: null, review: null,
-              externalReview: { requestId: id, baseCommit: base, files: ['paper.tex'] } };
+              externalReview: { requestId: id, baseCommit: base, files: review.request.files } };
             if (id === composerId) state.externalReviewConversations = [];
             state.tasks.push(task); review.taskId = task.id; return json({ review, task });
           }
@@ -127,6 +129,7 @@ try {
       const shot = name => page.screenshot({ path: `test-results/external-review-${width}-${name}.png`, animations: 'disabled' });
       await expect(dialog.getByRole('alert')).toContainText('Temporary connection problem');
       await button('Try again').click(); await expect(heading('Prepare')).toBeFocused();
+      await expect(dialog.locator('input[name="files"]')).toHaveCount(0);
       await dialog.getByLabel(text('What should the reviewer check?')).fill('Clarify the first result.');
       await button('Create review request').click(); await expect(heading('Send to reviewer')).toBeFocused();
       await button('Publish review branch').click(); await expect(button('Copy Git prompt')).toBeVisible();
@@ -184,16 +187,13 @@ try {
       await expect(picker).toContainText(webModel);
       await expect(composer.getByText(selected.comment)).toBeVisible();
       await expect(composer.getByText(text('Only selected PDF notes are included in the prompt.'))).toBeVisible();
-      await composer.locator('.external-composer-scope summary').click();
-      const noteFile = composer.getByRole('checkbox', { name: settings.files[1] });
-      await expect(noteFile).toBeChecked();
-      await noteFile.uncheck();
-      await expect(composer.getByRole('button', { name: text('Start task') })).toBeDisabled();
-      await noteFile.check();
+      await expect(composer.locator('input[name="files"]')).toHaveCount(0);
+      await expect(composer.getByRole('button', { name: text('Start task') })).toBeEnabled();
       const question = text('Review the selected PDF annotations and suggest focused changes.');
       await composer.getByRole('button', { name: text('Start task') }).click();
       const conversation = page.locator('.external-conversation');
       await expect(conversation.getByText(question)).toBeVisible();
+      await expect(conversation.locator('.external-base').getByText(settings.files[1])).toBeVisible();
       assert.ok(composerId && !settings.reviews[0].git, 'Starting the task does not publish files');
       await page.reload(); await expect(conversation.getByText(question)).toBeVisible();
       await expect(page.locator('.task-row').filter({ hasText: question })).toHaveCount(1);
@@ -203,7 +203,7 @@ try {
       await conversation.getByLabel(text('ChatGPT Space Page'), { exact: true }).check();
       await expect(conversation.getByRole('button', { name: text('Copy Space prompt') })).toBeVisible();
       await shot('composer-conversation');
-      await conversation.getByLabel(text('Proposal JSON or Page Markdown')).fill(JSON.stringify({ ...proposal, requestId: composerId }));
+      await conversation.getByLabel(text('Proposal JSON or Page Markdown')).fill(JSON.stringify(proposalFor(composerId)));
       await conversation.getByRole('button', { name: text('Check pasted proposal') }).click();
       await expect(conversation.getByText(text('Proposal checked'))).toBeVisible();
       await conversation.getByRole('button', { name: text('Start local agent') }).click();

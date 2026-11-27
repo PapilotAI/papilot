@@ -4,7 +4,7 @@ Ask ChatGPT Pro on the web or another reviewer to suggest changes to a committed
 
 ## Follow a review in Papilot
 
-Enable **External reviews** under **Settings → Experiments**. Start a new task and choose **ChatGPT Pro (web)** in the model picker. Write what you want reviewed and check **Files to review** to change the committed files included in the request. Sending saves the request as a conversation in the task list. Open that conversation again to resume the review.
+Enable **External reviews** under **Settings → Experiments**. Start a new task and choose **ChatGPT Pro (web)** in the model picker. Write what you want reviewed or add PDF annotations to the task. On send, Papilot pins the current Git commit and uses the selected notes’ committed source files. If the notes have no committed source, or you sent a text request alone, Papilot uses the current root document. The saved request shows which files it includes. Open the conversation again from the task list to resume the review.
 
 To review your PDF annotations, add them to the task from the PDF or **My notes**. You can send the selected notes by themselves or add an overall request. Both Git and Space prompts include the selected notes, their marked PDF text, color-group instructions, and source locations when Papilot can match them to the committed text. Open **PDF notes** in the saved request to check what will be shared before you copy the prompt. The PDF page number refers to the build you marked. The proposal still needs to quote the exact committed text it proposes to change.
 

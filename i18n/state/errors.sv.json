@@ -394,6 +394,11 @@
     "textHash": "b3528acf97c1419416ed09f8f306e96f9896c9bb66f9a79c742382a3e4a891d2",
     "model": "gemini-4-argon-medium"
   },
+  "Commit the current manuscript before requesting an external review.": {
+    "revision": "257f7a57d78c53a88f8f8df8e5bfa0ed75745a88db6cc782f4e20e8885f6f5c0",
+    "textHash": "b540bc878efcf3f2104e686fff639ca65663ac53305c77f29c8c8c9ca4ab7633",
+    "model": "gemini-4-argon-medium"
+  },
   "Confirm permanent task deletion before continuing.": {
     "revision": "4de4bf6ad47ddfec27cd072337869bb1cd704ae7371395c2a171ef42f4ebd2cf",
     "textHash": "f360fad7ee2027e068e9b6f58823b770ea6e86512776b39e42b793ed66af491b",
