@@ -9,10 +9,10 @@ let modulePromise: Promise<{ connect: (root: string, start?: boolean, options?: 
 // even after a crash. The web server leaves them running to finish builds
 // across a restart.
 const owned = process.env.PAPILOT_DESKTOP === '1';
-export function reviewClient(root: string, reuse = false): Promise<ReviewClient> {
+export function reviewClient(root: string, reuse = false, options: { owned?: boolean } = { owned }): Promise<ReviewClient> {
   modulePromise ??= import(pathToFileURL(path.join(ENGINE, 'src/client.ts')).href);
   // Polling an existing job must not replace a healthy server of another version.
-  return modulePromise!.then(async module => (reuse && await module.connect(root, false)) || (await module.connect(root, true, { owned }))!);
+  return modulePromise!.then(async module => (reuse && await module.connect(root, false)) || (await module.connect(root, true, options))!);
 }
 export const taskRoute = (name: string) => `/api/tasks/${encodeURIComponent(name)}`;
 export function reviewConnectionError(error: unknown): boolean {

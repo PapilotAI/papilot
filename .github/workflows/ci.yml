@@ -426,6 +426,61 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  vscode:
+    name: VS Code extension
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            engine/package-lock.json
+            vscode/package-lock.json
+      - run: npm ci
+      - run: npm run setup:review
+      - run: npm --prefix vscode ci
+      - name: Install TeX
+        uses: ./.github/actions/setup-tex
+      - run: npm --prefix vscode run typecheck
+      - run: npm --prefix vscode test
+      - run: npm --prefix vscode run package
+      - name: Conversation and review webviews
+        run: |
+          engine/node_modules/.bin/playwright install chromium
+          npm --prefix vscode run test:web
+        env:
+          PAPILOT_BROWSER_CHANNEL: chromium
+      - name: Exercise the packaged extension in VS Code
+        run: |
+          for version in 1.96.4 1.119.0; do
+            echo "::group::VS Code $version"
+            editor="$RUNNER_TEMP/vscode-$version"
+            mkdir "$editor"
+            curl --fail --location --retry 3 "https://update.code.visualstudio.com/$version/linux-x64/stable" -o "$RUNNER_TEMP/vscode.tar.gz"
+            tar -xzf "$RUNNER_TEMP/vscode.tar.gz" --strip-components=1 -C "$editor"
+            PAPILOT_CODE="$editor/bin/code" xvfb-run -a npm --prefix vscode run test:host
+            echo "::endgroup::"
+          done
+        env:
+          PAPILOT_TEST_VSIX: vscode/papilot-linux-x64.vsix
+          PAPILOT_HOST_INSPECT: '1'
+      - name: Keep extension and screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: vscode-extension
+          path: |
+            vscode/*.vsix
+            /tmp/papilot-vscode-host-*/native-*.png
+            /tmp/papilot-vscode-chat-*/chat-*.png
+            /tmp/papilot-vscode-history-*/history-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
   # The same checks on a native Windows host: the CLI, server and review engine
   # run there too, and the tests that need POSIX signals skip themselves.
   windows:
@@ -441,13 +496,24 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             engine/package-lock.json
+            vscode/package-lock.json
       - run: npm ci
       - run: npm run setup:review
       - run: npm run typecheck
       - run: npm test
       - name: PDF diff engine tests
         run: npm --prefix engine test
-      - run: npm run build
+      - run: npm --prefix vscode ci
+      - name: Package the VS Code extension from a Node path with spaces
+        run: |
+          $node = (Get-Command node.exe).Source
+          $installation = Split-Path $node
+          $npm = Join-Path $installation 'node_modules/npm/bin/npm-cli.js'
+          $runtime = Join-Path $env:RUNNER_TEMP 'Papilot Node'
+          New-Item -ItemType Directory -Path $runtime | Out-Null
+          Copy-Item $node, (Join-Path $installation 'LICENSE') $runtime
+          $env:Path = "$runtime;$env:Path"
+          & (Join-Path $runtime 'node.exe') $npm --prefix vscode run package
 
   # Which desktop check a pull request or a push to main needs, from the files
   # it changes. Release calls CI for a tag and builds every installer itself.
@@ -488,7 +554,7 @@ jobs:
   passed:
     name: CI passed
     if: always()
-    needs: [check, review, interface, windows, changes, desktop]
+    needs: [check, review, interface, vscode, windows, changes, desktop]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -497,6 +563,7 @@ jobs:
           CHECK_RESULT: ${{ needs.check.result }}
           REVIEW_RESULT: ${{ needs.review.result }}
           INTERFACE_RESULT: ${{ needs.interface.result }}
+          VSCODE_RESULT: ${{ needs.vscode.result }}
           WINDOWS_RESULT: ${{ needs.windows.result }}
           CHANGES_RESULT: ${{ needs.changes.result }}
           DESKTOP_SCOPE: ${{ needs.changes.outputs.desktop }}

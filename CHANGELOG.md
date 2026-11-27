@@ -7,6 +7,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 ### Added
 
 - Use **ChatGPT Pro (web)** manually inside standard Papilot tasks via **Settings → Experiments**. Send PDF annotations from the Manuscript like any other agent, copy the prepared prompt (or sync a non-destructive task snapshot branch to your paper's GitHub remote for full-repository context through ChatGPT Pro's GitHub connector), paste any free-form reply back into the same chat, and choose a local agent, model and reasoning effort to apply edits and build the PDF comparison.
+- Use Papilot in VS Code 1.96.4 or later with native LaTeX editors, a separate conversation sidebar, PDF and review tabs, compilation diagnostics, and Git staging. Open conversation attachments and page thumbnails in editor tabs. The extension discovers multiple papers in workspace repositories and bundles the shared Papilot runtime and Node.js. See [the extension guide](vscode/README.md).
 - Choose **Ultrafast** in the Codex model picker when your account and model offer it. Papilot remembers the selected speed per model and marks Fast with one lightning bolt and Ultrafast with two.
 - Choose **ZCode** for manuscript tasks. Papilot uses your local ZCode CLI and its default model, streams replies and tool activity, and resumes the same conversation on follow-up turns. ([#338](https://github.com/PapilotAI/papilot/issues/338))
 - Use a third-party OpenAI-compatible Chat Completions API with **Settings → Runtime → Agents → Papilot Writer → Custom API**. Save the provider's base URL, model ID and API key, then choose that model for a task. ([#338](https://github.com/PapilotAI/papilot/issues/338))
@@ -33,6 +34,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Fixed
 
+- Keep changed PDF text and highlights readable in the VS Code extension's dark theme.
+- Keep VS Code review navigation in its tab, resolve task source paths after preparation, protect unsaved files opened through symlinks, and translate native commands and prompts.
+- Use VS Code's display language in review tabs and protect unsaved task source when applying reviewed changes.
+- In VS Code, wait for the current manuscript PDF when jumping from LaTeX source, and open the task's own PDF when jumping from a task worktree.
 - Identify the `.tex` file the manuscript source editor could not open, with guidance for invalid UTF-8 and null bytes. ([#352](https://github.com/PapilotAI/papilot/issues/352))
 - Fix LaTeX compilation and PDF reviews on Windows when TeX Live or MiKTeX passes LaTeX code through the Perl bundled with Git for Windows. ([#340](https://github.com/PapilotAI/papilot/pull/340), [#346](https://github.com/PapilotAI/papilot/issues/346))
 - On Windows, the toolbar divider extends beneath the window buttons to the right edge.

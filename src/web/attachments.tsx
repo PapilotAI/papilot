@@ -1,3 +1,4 @@
+import { Resource, ResourceLink } from './resources.tsx';
 import { useMemo, useSyncExternalStore } from 'react';
 import type { Attachment } from '../shared.ts';
 import { AttachmentDraft, attachmentDrafts as drafts, type UploadAttachment } from './attachment-draft.ts';
@@ -18,7 +19,7 @@ export const attachmentUrl = (file: Attachment) => `/api/projects/${encodeURICom
 const sizeLabel = (size: number) => size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / 1024 / 1024).toFixed(1)} MB`;
 
 function FileIcon({ file }: { file?: Attachment }) {
-  return file?.mime.startsWith('image/') ? <img src={attachmentUrl(file)} alt="" loading="lazy"/> : <Icon name={file?.mime === 'application/pdf' ? 'pdf' : 'paper'} size={20}/>;
+  return file?.mime.startsWith('image/') ? <Resource route={attachmentUrl(file)}>{url => <img src={url} alt="" loading="lazy"/>}</Resource> : <Icon name={file?.mime === 'application/pdf' ? 'pdf' : 'paper'} size={20}/>;
 }
 export function DraftAttachments({ draft, upload, discard, disabled }: { draft: AttachmentDraft; upload: UploadAttachment; discard: (file: Attachment) => void; disabled?: boolean }) {
   const { entries, error } = useSyncExternalStore(draft.subscribe, draft.getSnapshot);
@@ -34,7 +35,7 @@ export function DraftAttachments({ draft, upload, discard, disabled }: { draft: 
 }
 export function MessageAttachments({ files }: { files?: Attachment[] }) {
   if (!files?.length) return null;
-  return <ul className="message-attachments" aria-label={t('Attachments')}>{files.map(file => <li key={file.id}><a className="attachment" href={attachmentUrl(file)} target="_blank" rel="noreferrer" title={t('Open attachment {name}', { name: file.name })}>
+  return <ul className="message-attachments" aria-label={t('Attachments')}>{files.map(file => <li key={file.id}><ResourceLink className="attachment" route={attachmentUrl(file)} title={t('Open attachment {name}', { name: file.name })}>
     <span className="attachment-icon"><FileIcon file={file}/></span><span className="attachment-info"><span className="attachment-name">{file.name}</span><small>{sizeLabel(file.size)}</small></span><Icon name="external" size={13}/>
-  </a></li>)}</ul>;
+  </ResourceLink></li>)}</ul>;
 }

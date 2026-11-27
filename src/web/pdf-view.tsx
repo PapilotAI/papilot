@@ -287,9 +287,9 @@ export const PdfView = forwardRef<PdfHandle, {
   const queryRef = useRef(query); queryRef.current = query;
   const [selection, setSelection] = useState<Selection | null>(null);
   // A place shown from elsewhere, such as a compilation problem, marked briefly.
-  const [flash, setFlash] = useState<{ page: number; rect: Rect; id: number } | null>(null);
+  const [flash, setFlash] = useState<{ url: string; page: number; rect: Rect; id: number } | null>(null);
   // A place asked for while a new PDF opens is shown once its pages have a size.
-  const pagesReady = useRef(false), pendingPlace = useRef<{ page: number; rect: Rect; keep?: boolean } | null>(null);
+  const pagesReady = useRef(false), pendingPlace = useRef<{ url: string; page: number; rect: Rect; keep?: boolean } | null>(null);
   const position = useRef<PdfPosition | null>(null);
   const [anchorsReady, setAnchorsReady] = useState(false);
   const [editing, setEditing] = useState<(Target & { actionPoint?: { x: number; y: number } }) | null>(null), editingRef = useRef(editing); editingRef.current = editing;
@@ -485,17 +485,18 @@ export const PdfView = forwardRef<PdfHandle, {
       box.scrollTo({ top: box.scrollTop + frame.top - box.getBoundingClientRect().top + note.rect[1] * frame.height - 96, behavior: 'smooth' });
     },
     showPlace(page, rect, options) {
-      if (!pagesReady.current || shownRef.current.url !== latest.current.url) { pendingPlace.current = { page, rect, ...options }; return; }
+      const { url } = latest.current;
+      if (!pagesReady.current || shownRef.current.url !== url) { pendingPlace.current = { url, page, rect, ...options }; return; }
       const div = tools.current?.viewer.getPageView(page)?.div, box = container.current;
       if (!div || !box) return;
       const pageBox = originalPageRect(div, cropRef.current), view = box.getBoundingClientRect();
       const visible = pageBox.top + rect[1] * pageBox.height >= view.top + 8 && pageBox.top + rect[3] * pageBox.height <= view.bottom - 8;
-      if (options?.keep && visible) { setFlash({ page, rect, id: Date.now() }); return; }
+      if (options?.keep && visible) { setFlash({ url, page, rect, id: Date.now() }); return; }
       const top = box.scrollTop + pageBox.top - view.top + rect[1] * pageBox.height - box.clientHeight / 3;
       const middle = box.scrollLeft + pageBox.left - view.left + (rect[0] + rect[2]) / 2 * pageBox.width - box.clientWidth / 2;
       // A far jump lands at once, so the mark is still showing on arrival.
       box.scrollTo({ top, left: box.scrollWidth > box.clientWidth ? middle : box.scrollLeft, behavior: Math.abs(top - box.scrollTop) > box.clientHeight * 2 ? 'instant' : 'smooth' });
-      setFlash({ page, rect, id: Date.now() });
+      setFlash({ url, page, rect, id: Date.now() });
     },
   }), []);
   useEffect(() => {
@@ -567,8 +568,14 @@ export const PdfView = forwardRef<PdfHandle, {
       else goBack();
       pagesReady.current = true;
       setAnchorsReady(true);
-      const pending = pendingPlace.current; pendingPlace.current = null;
-      if (pending) requestAnimationFrame(() => handle.current?.showPlace(pending.page, pending.rect, { keep: pending.keep }));
+      const pending = pendingPlace.current;
+      if (pending?.url !== latest.current.url) pendingPlace.current = null;
+      else if (pending.url === shownRef.current.url) {
+        pendingPlace.current = null;
+        requestAnimationFrame(() => {
+          if (pending.url === latest.current.url && !pendingPlace.current) handle.current?.showPlace(pending.page, pending.rect, { keep: pending.keep });
+        });
+      }
     });
     bus.on('pagechanging', ({ pageNumber }: { pageNumber: number }) => { setPage(pageNumber); });
     // setDocument resets PDF.js's find controller on a crop or recompilation.
@@ -1148,7 +1155,7 @@ export const PdfView = forwardRef<PdfHandle, {
       </Fragment>)}
       {props.margin && (!props.pdfKey || shown.key === props.pdfKey) && props.margin(number - 1)}
       {props.passage?.page === number - 1 && props.passage.marks.map((rect, index) => <div key={index} className="source-mark" style={percent(rect)}/>)}
-      {flash?.page === number - 1 && <div key={flash.id} className="problem-flash" style={percent(flash.rect)}/>}
+      {flash?.url === shown.url && flash.page === number - 1 && <div key={flash.id} className="problem-flash" style={percent(flash.rect)}/>}
       {selection?.handles && selection.page === number - 1 && !editing && <>
         {selection.rects.map((rect, index) => <div key={index} className="note-mark draft" style={percent(rect)}/>)}
         {(['from', 'to'] as const).map(end => { const [x, top, bottom] = selection.handles![end]; return <span key={end} className="select-handle" data-end={end}

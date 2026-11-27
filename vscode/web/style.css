@@ -1,0 +1,24 @@
+body { padding: 0; }
+body, #root { width: 100%; height: 100vh; margin: 0; overflow: hidden; }
+:root, :root[data-theme] {
+  --sans: var(--vscode-font-family); --mono: var(--vscode-editor-font-family);
+  --bg: var(--vscode-editor-background); --sidebar: var(--vscode-sideBar-background); --bg-subtle: var(--vscode-sideBar-background);
+  --bg-muted: var(--vscode-input-background); --bg-hover: var(--vscode-list-hoverBackground); --bg-active: var(--vscode-list-activeSelectionBackground);
+  --raised: var(--vscode-editorWidget-background); --canvas: var(--vscode-editor-background);
+  --text: var(--vscode-foreground); --text-2: var(--vscode-descriptionForeground); --text-3: var(--vscode-descriptionForeground);
+  --line: var(--vscode-panel-border); --line-strong: var(--vscode-input-border, var(--vscode-panel-border));
+  --accent: var(--vscode-focusBorder); --primary: var(--vscode-button-background); --danger: var(--vscode-errorForeground);
+  --accent-soft: color-mix(in srgb, var(--accent) 15%, var(--bg)); --accent-line: var(--vscode-focusBorder);
+  color: var(--text); background: var(--bg); font-family: var(--sans); font-size: var(--vscode-font-size);
+}
+button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+.chat-host, .paper-host { height: 100%; display: flex; flex-direction: column; min-width: 0; }
+.chat-host .activity-panel { flex: 1; min-height: 0; width: 100%; border: 0; }
+.chat-host .panel-heading:empty { display: none; }
+.chat-host .thread { max-width: none; }
+.host-toolbar { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px; border-bottom: 1px solid var(--line); }
+.host-toolbar strong { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.host-toolbar button, .empty button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); padding: 4px 8px; border: 0; border-radius: 2px; }
+.host-error { padding: 8px; color: var(--vscode-errorForeground); }
+.empty { padding: 16px; }
+.paper-host > .pdf-view { flex: 1; min-height: 0; }

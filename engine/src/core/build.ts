@@ -751,8 +751,7 @@ export class Builder {
     return path.join(this.cache, key + ".preferred.json");
   }
   private preferred(key: string): string | null {
-    const value = readJson<{ key?: string } | null>(this.preferredFile(key), null);
-    return typeof value?.key === "string" && /^[0-9a-f]{32}$/.test(value.key) ? value.key : null;
+    return preferredBuild(this.cache, key);
   }
   /** Reuse an immutable published build while its cached PDF is available. */
   async completed(key: string) {
@@ -1364,35 +1363,45 @@ export class Builder {
   // Removes builds unused for `maxAge` seconds, except those in `keep` and the
   // two newest of each set of targets, which the next build continues from.
   async prune(keep: Set<string>, maxAge = 3 * 86400) {
+    return pruneBuildCache(this.cache, keep, maxAge);
+  }
+}
+
+/** Cache cleanup is shared across documents and needs no compilation settings. */
+export async function pruneBuildCache(cache: string, keep: Set<string>, maxAge = 3 * 86400) {
     let entries: fs.Dirent[];
-    try { entries = await fs.promises.readdir(this.cache, { withFileTypes: true }); }
+    try { entries = await fs.promises.readdir(cache, { withFileTypes: true }); }
     catch { return; }
     const kept = new Set(keep);
     for (const entry of entries)
       if (entry.isFile() && /^(?:recent|latest)(?:-[0-9a-f]+)?\.json$/.test(entry.name)) {
-        const value = readJson<unknown>(path.join(this.cache, entry.name), null),
+        const value = readJson<unknown>(path.join(cache, entry.name), null),
           list = Array.isArray(value) ? value : [value];
         for (const item of list.slice(0, 2)) if (typeof (item as Recent)?.key === "string") kept.add((item as Recent).key);
       }
     for (const entry of entries) {
-      const folder = path.join(this.cache, entry.name);
+      const folder = path.join(cache, entry.name);
       if (!entry.isDirectory() || entry.name.endsWith(".lock") || kept.has(entry.name)) continue;
       const stat = await fs.promises.stat(folder).catch(() => null);
       if (!stat || now() - stat.mtimeMs / 1000 <= maxAge) continue;
-      await withLock(path.join(this.cache, entry.name + ".lock"), () => fs.promises.rm(folder, { recursive: true, force: true }));
-      await fs.promises.rm(path.join(this.cache, entry.name + ".lock"), { force: true });
+      await withLock(path.join(cache, entry.name + ".lock"), () => fs.promises.rm(folder, { recursive: true, force: true }));
+      await fs.promises.rm(path.join(cache, entry.name + ".lock"), { force: true });
     }
     // Keep a missing refresh's pointer while its superseded output exists:
     // readers must rebuild, not silently fall back to that older PDF.
     for (const entry of entries) {
       const key = /^([0-9a-f]{32})\.preferred\.json$/.exec(entry.name)?.[1];
       if (!key) continue;
-      const file = this.preferredFile(key);
+      const file = path.join(cache, key + ".preferred.json");
       await withLock(file, async () => {
-        const preferred = this.preferred(key);
-        if (!fs.existsSync(path.join(this.cache, key)) && (!preferred || !fs.existsSync(path.join(this.cache, preferred))))
+        const preferred = preferredBuild(cache, key);
+        if (!fs.existsSync(path.join(cache, key)) && (!preferred || !fs.existsSync(path.join(cache, preferred))))
           await fs.promises.rm(file, { force: true });
       });
     }
   }
+
+function preferredBuild(cache: string, key: string): string | null {
+    const value = readJson<{ key?: string } | null>(path.join(cache, key + ".preferred.json"), null);
+    return typeof value?.key === "string" && /^[0-9a-f]{32}$/.test(value.key) ? value.key : null;
 }

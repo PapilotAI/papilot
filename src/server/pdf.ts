@@ -119,9 +119,9 @@ function roundInfo(connect: Connect, root: string, name: string, round: number) 
 // with the changes, exactly where its strips come from, at once.
 async function chaptersBuild(root: string, info: RoundInfo): Promise<PaperBuild | null> {
   if (!info.build || !/^[0-9a-f]{32}$/.test(info.build.key) || JSON.stringify(info.build.targets) === '["full"]') return null;
-  const { loadProject } = await import(pathToFileURL(path.join(ENGINE, 'src/core/config.ts')).href);
+  const { stateOf } = await import(pathToFileURL(path.join(ENGINE, 'src/core/git.ts')).href);
   try {
-    const result = JSON.parse(await fs.promises.readFile(path.join(loadProject(root).state, 'cache/builds', info.build.key, 'result.json'), 'utf8')) as { pdf?: unknown; errors?: string[] };
+    const result = JSON.parse(await fs.promises.readFile(path.join(stateOf(root), 'cache/builds', info.build.key, 'result.json'), 'utf8')) as { pdf?: unknown; errors?: string[] };
     if (typeof result.pdf !== 'string') return null;
     await fs.promises.access(result.pdf);
     return { key: info.build.key, pdf: result.pdf, ...(result.errors?.length ? { errors: result.errors } : {}) };
@@ -169,11 +169,21 @@ async function ready(root: string, revision: string, follow = false, priority: P
 }
 
 /** The complete PDF of a round's version, once it has compiled. */
-export async function fullPaperPdf(connect: Connect, root: string, name: string, round: number, side: 'before' | 'after'): Promise<string> {
+async function fullPaperBuild(connect: Connect, root: string, name: string, round: number, side: 'before' | 'after') {
   const info = await roundInfo(connect, root, name, round);
   await adopt(root, info[side], info, side);
   const buildKey = side === 'before' ? info.builds?.at(-2) ?? info.build?.key : info.build?.key;
-  return (await ready(root, info[side], false, 'foreground', buildKey, info.document)).pdf;
+  return { ...await ready(root, info[side], false, 'foreground', buildKey, info.document), document: info.document };
+}
+export const fullPaperPdf = async (connect: Connect, root: string, name: string, round: number, side: 'before' | 'after') =>
+  (await fullPaperBuild(connect, root, name, round, side)).pdf;
+
+/** The sources and PDF of the same completed review build, for SyncTeX. */
+export async function fullPaperSource(connect: Connect, root: string, name: string, round: number) {
+  const { key, document } = await fullPaperBuild(connect, root, name, round, 'after');
+  const b = await builder(root, document), compiled = await b.completed(key);
+  if (!compiled) throw notFound();
+  return { key, pdf: compiled.pdf, root: compiled.root, sourceDir: b.project.source_dir || '' };
 }
 
 /** A round's already-compiled PDF for the retained fallback reader, or a

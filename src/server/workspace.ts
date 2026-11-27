@@ -740,7 +740,7 @@ export class Workspace extends EventEmitter {
     this.syncCollaborationRuntime();
     this.emit('change');
   }
-  private async projectRoot(input: string) {
+  async projectRoot(input: string) {
     const expanded = input.startsWith('~/') ? path.join(process.env.HOME!, input.slice(2)) : input;
     const root = realPath(expanded);
     const git = await execute('git', ['-C', root, 'rev-parse', '--show-toplevel']);
@@ -876,7 +876,7 @@ export class Workspace extends EventEmitter {
     this.runCitationCheck?.(this.store.task(task.id));
     return this.store.task(task.id);
   }
-  async createTask(input: { permissions?: TaskPermissions; prepareReview?: (worktree: string, document?: string) => Promise<ReviewSnapshot>; projectId: string; title: string; instructions: string; skill?: string; annotations?: string[]; noteContexts?: Record<string, TaskNoteContext>; groupInstructions?: GroupInstructions; attachments?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string }) {
+  async createTask(input: { permissions?: TaskPermissions; prepareReview?: (worktree: string, document?: string) => Promise<ReviewSnapshot>; projectId: string; document?: string; title: string; instructions: string; skill?: string; annotations?: string[]; noteContexts?: Record<string, TaskNoteContext>; groupInstructions?: GroupInstructions; attachments?: string[]; agent?: AgentId; model?: string; effort?: string; serviceTier?: string; id: string }) {
     if (!/^[\w-]{16,64}$/.test(input.id)) throw new Error('Invalid task ID.');
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
     // A retried request returns its task, preparing it again if that failed;
@@ -929,7 +929,7 @@ export class Workspace extends EventEmitter {
       if (!input.prepareReview && !skill && !notes.length && !files.length && !input.instructions.trim()) throw new Error('Describe the revision, choose a skill, or add a PDF note.');
       const instructions = notes.length ? notesInstructions(notes, input.instructions, groupInstructions) : input.instructions;
       const name = 'p-' + input.id.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48);
-    const task: Task = { ...(input.prepareReview ? { mode: 'review' as const } : {}), id: input.id, projectId: project.id, name, title: input.title, titleSource: 'prompt', instructions: skill ? skillPrompt(skill, instructions) : instructions,
+    const task: Task = { ...(input.prepareReview ? { mode: 'review' as const } : {}), id: input.id, projectId: project.id, ...(input.document ? { document: input.document } : {}), name, title: input.title, titleSource: 'prompt', instructions: skill ? skillPrompt(skill, instructions) : instructions,
       permissions: input.permissions || 'workspace', worktree: '', deferred: true, threadId: null, turnId: null, agent: input.agent || 'codex', model: input.model || null, effort: input.effort || null, ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}), status: 'preparing', preparation: {},
         createdAt: Date.now(), updatedAt: Date.now(), feedbackCursor: 0, error: null, review: null };
     // One transaction saves the task, its first message and the claims on

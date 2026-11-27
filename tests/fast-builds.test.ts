@@ -282,6 +282,28 @@ test('the whole paper of a version compiles ahead, and the review shows each of 
   } finally { teX.restore(); f.close(); }
 });
 
+test('task source maps to the exact PDF of its published document', { skip: (!tex || !findCommand('synctex')) && 'needs latexmk, pdflatex, and synctex', timeout: 120000 }, async () => {
+  const { fullPaperSource, paperBuildPdf } = await import('../src/server/pdf.ts');
+  const { placeCompiledSource } = await import('../src/server/manuscript-source.ts');
+  const slides = 'slides/talk.tex', f = paper({ 'main.tex': document('The manuscript.'), [slides]: document('The original slide.') });
+  try {
+    const before = f.repo.rev('HEAD'), worktree = path.join(f.base, 'task');
+    f.repo.run(['worktree', 'add', '--detach', worktree, before]);
+    const revised = '\\documentclass{article}\n\\begin{document}\nFirst slide.\n\\newpage\nTask text on the second slide.\n\\end{document}\n';
+    const file = path.join(worktree, slides);
+    fs.writeFileSync(file, revised);
+    const after = await new Repo(worktree).snapshotAsync(['']);
+    const connect = async () => ({ get: async <T>() => ({ before, after, document: slides }) as T });
+    const build = await fullPaperSource(connect, f.root, 'task', 1);
+    assert.equal(build.pdf, await paperBuildPdf(connect, f.root, 'task', 1, build.key));
+    const result = await placeCompiledSource(build, slides, 4, 5, 0, undefined, worktree);
+    assert.equal(result.place?.page, 1);
+    assert.match(fs.readFileSync(path.join(f.root, slides), 'utf8'), /The original slide/);
+    fs.writeFileSync(file, revised.replace('Task text', '% Inserted line\nTask text'));
+    assert.deepEqual(await placeCompiledSource(build, slides, 5, 6, 0, undefined, worktree), { place: null, stale: true });
+  } finally { f.close(); }
+});
+
 test('the review full paper shows the round\'s changed chapters at once, then each pass of the whole paper, then the complete PDF', { skip: !tex && 'needs latexmk and pdflatex', timeout: 180000 }, async () => {
   const { nextPaperPass, paperPassPdf, fullPaperPdf, retainedPaperBuild, paperBuildPdf } = await import('../src/server/pdf.ts');
   const f = paper({ 'main.tex': document('\\section{One}\\label{one}See page~\\pageref{two}.\n\\section{Two}\\label{two}Text.\n') });

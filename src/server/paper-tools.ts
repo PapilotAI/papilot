@@ -189,7 +189,7 @@ export class PaperTools {
 
   private async currentPdf(task: Task) {
     const project = this.store.project(task.projectId);
-    const { build } = await this.manuscripts.state(project.id, project.path);
+    const { build } = await this.manuscripts.state(this.manuscripts.existingSession(project.id, task.document), project.path);
     if (!build.current || !build.key) throw agentToolError('The current manuscript PDF is still compiling or unavailable. Try again after its build finishes.');
     const document = this.manuscripts.documentOf(project.id, build.key);
     if (task.document && task.document !== document) throw agentToolError('This task belongs to another document. Select its manuscript document before using paper tools.');

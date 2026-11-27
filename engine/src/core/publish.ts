@@ -2,10 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { ROOT, codeVersion } from "../runtime.ts";
-import { Builder, BuildError, auxiliaryBuildError, auxiliaryDiagnostics, buildDate, reprioritize, type BuildPriority } from "./build.ts";
+import { pruneBuildCache, Builder, BuildError, auxiliaryBuildError, auxiliaryDiagnostics, buildDate, reprioritize, type BuildPriority } from "./build.ts";
 import { diffUnitsAsync, scopeViolationsAsync, withHashesAsync, withUnits } from "./changes.ts";
 import { provisional, roundFolder, writeProvisional } from "./carry.ts";
-import { isFigure, signature } from "./config.ts";
+import { buildWorkers, readSettings, isFigure, signature } from "./config.ts";
 import { REFS } from "./git.ts";
 import { now, readJson, writeJson } from "./files.ts";
 import { Cancelled, runAsync } from "./process.ts";
@@ -588,7 +588,7 @@ export class Publisher {
     while (
       !this.stopping &&
       this.queue.length &&
-      this.running.size < this.app.project.build_workers
+      this.running.size < buildWorkers(readSettings(this.app.root))
     ) {
       const job = this.next();
       this.update(job.id, { status: "running" });
@@ -1023,7 +1023,7 @@ export class Publisher {
         )
         .flatMap((r) => r.summary.builds ?? []),
     );
-    this.pruning = Promise.all([new Builder(this.app.project, this.app.repo).prune(keep), this.pruneRenders()]).then(() => undefined);
+    this.pruning = Promise.all([pruneBuildCache(path.join(this.app.state, "cache/builds"), keep), this.pruneRenders()]).then(() => undefined);
     try {
       await this.pruning;
     } catch (error) {
