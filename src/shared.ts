@@ -44,6 +44,8 @@ export interface ExternalReviewReceipt {
 }
 export interface ExternalReview {
   request: ExternalReviewRequest;
+  /** Timestamp for reviews started from the regular task composer. */
+  fromComposerAt?: number;
   page?: string;
   git?: { remote: ExternalReviewRemote; branch: string; proposalFile: string };
   proposal?: { digest: string; changes: ExternalReviewChange[]; source: 'git' | 'paste'; commit?: string };
@@ -51,6 +53,7 @@ export interface ExternalReview {
   result?: { accepted: string; receipt: ExternalReviewReceipt; published?: { branch: string; url?: string } };
 }
 export interface ExternalReviewOptions { baseCommit: string; files: string[]; remotes: ExternalReviewRemote[]; reviews: ExternalReview[] }
+export interface ExternalReviewConversation { id: string; projectId: string; title: string; createdAt: number }
 export interface TaskCommitReview { token: string; files: string[]; diff: string }
 export interface TaskReconciliation {
   id: string; round: number; files: string[];
@@ -263,7 +266,7 @@ export interface DiagnosticReport {
   version: string; checkedAt: number; platform: string; arch: string; node: string;
   ok: boolean; checks: DiagnosticCheck[];
 }
-export interface Snapshot { projects: Project[]; manuscriptNoteCounts?: Record<string, number>; tasks: Task[]; pinnedTaskIds?: string[]; requests: PendingRequest[]; runtime: RuntimeStatus; runtimes?: Partial<Record<AgentId, RuntimeStatus>>; version: string; gitAvailable?: boolean; overleaf?: OverleafState; externalReviews?: boolean }
+export interface Snapshot { projects: Project[]; manuscriptNoteCounts?: Record<string, number>; tasks: Task[]; pinnedTaskIds?: string[]; requests: PendingRequest[]; runtime: RuntimeStatus; runtimes?: Partial<Record<AgentId, RuntimeStatus>>; version: string; gitAvailable?: boolean; overleaf?: OverleafState; externalReviews?: boolean; externalReviewConversations?: ExternalReviewConversation[] }
 // Live synchronization of a paper folder with an Overleaf project. A conflict
 // is a passage (or whole file) both sides changed while Papilot was away:
 // Overleaf's version stayed, and the author's can be put back.

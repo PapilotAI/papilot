@@ -5,7 +5,7 @@ import { FolderField } from './folder-browser.tsx';
 import { locale, t } from './i18n.ts';
 import { chooseDirectory, nativeFolders } from './desktop-chrome.tsx';
 import { browserStorage } from './storage.ts';
-import { requestId } from './request-id.ts';
+import { browserUuid, requestId } from './request-id.ts';
 import './create-paper-dialog.css';
 // The example project's first page, as the gallery shows each template's.
 import exampleThumbnail from './example-paper.jpg';
@@ -37,8 +37,6 @@ const templateName = (template: Choice) => locale().startsWith('zh') && template
 const templateMeta = (template: Choice) => { if (template.family) return template.family; const from = template.venue ? [template.venue.name, template.venue.year].filter(Boolean).join(' ') : template.organization ?? ''; return template.name.includes(from) ? '' : from; };
 const choiceOf = ({ id, version, name, zh, engine, thumbnail, organization, venue }: PaperTemplate, family?: string): Choice => ({ id, version, name, ...(zh ? { zh } : {}), engine, ...(thumbnail ? { thumbnail } : {}), ...(organization ? { organization } : {}), ...(venue ? { venue } : {}), ...(family ? { family } : {}) });
 const isVenue = (template: PaperTemplate) => Boolean(template.template || template.venue);
-// crypto.randomUUID is unavailable on LAN HTTP. Keep a UUID-shaped random ID.
-const uuid = () => crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('').replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
 export function CreatePaperPanel({ api, onDone, preset, tab, active, onBusyChange }: { api: <T>(url: string, body?: unknown) => Promise<T>; onDone: (paper: Project) => Promise<void>; preset?: { id: string; version: string }; tab: 'blank' | 'templates'; active: boolean; onBusyChange: (busy: boolean) => void }) {
   const dialog = useRef<HTMLDivElement>(null), pending = useRef(false), id = useId();
   const presetPending = useRef(Boolean(preset));
@@ -86,7 +84,7 @@ export function CreatePaperPanel({ api, onDone, preset, tab, active, onBusyChang
     pending.current = true; setOperation('create'); setError('');
     try {
       const body = { name: form.name.trim(), parent: form.parent.trim(), ...(chosen ? { template: { id: chosen.id, version: chosen.version } } : example ? { example: true } : {}) };
-      const id = requestId(browserStorage, identityKey, JSON.stringify(body), uuid);
+      const id = requestId(browserStorage, identityKey, JSON.stringify(body), browserUuid);
       const paper = await api<Project>('/projects/create', { id, ...body });
       await onDone(paper);
       browserStorage.removeItem(draftKey); browserStorage.removeItem(identityKey);

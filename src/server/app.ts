@@ -387,7 +387,9 @@ export async function buildApp(options: AppOptions) {
     await options.prepareDemo?.();
     // Check the backend environment (Linux when using WSL), again on each poll
     // so installing Git unlocks version management without a page reload.
-    const body = JSON.stringify({ ...workspace.snapshot(), gitAvailable: Boolean(findExecutable('git')), overleaf: overleaf.state(), externalReviews: store.preference<boolean>(EXTERNAL_REVIEWS) === true, csrf: options.csrf });
+    const externalReviews = store.preference<boolean>(EXTERNAL_REVIEWS) === true;
+    const body = JSON.stringify({ ...workspace.snapshot(), gitAvailable: Boolean(findExecutable('git')), overleaf: overleaf.state(), externalReviews,
+      ...(externalReviews ? { externalReviewConversations: store.pendingExternalReviewConversations() } : {}), csrf: options.csrf });
     // The app polls every second or two and most polls find nothing new: those
     // get an empty 304 instead of every task again to download and parse.
     const tag = `"${createHash('sha1').update(body).digest('base64url')}"`;

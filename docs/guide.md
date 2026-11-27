@@ -70,7 +70,7 @@ The `papilot` command uses the `codex` on your `PATH` if it is at least as new a
 
 ### Agents
 
-To use the regular ChatGPT Pro web chat as a reviewer while a Papilot agent implements its suggestions, enable **External review** in **Settings → Experiments**. [Follow the external review steps](review-handoff.md).
+To use the regular ChatGPT Pro web chat as a reviewer while a Papilot agent implements its suggestions, enable **External reviews** in **Settings → Experiments**, then select **ChatGPT Pro (web)** in the new task's model picker. [Follow the external review steps](review-handoff.md).
 
 To use a third-party OpenAI-compatible model, open **Settings → Runtime → Agents → Papilot Writer → Custom API**. Enter the provider's API base URL (for example, `https://provider.example/v1`), exact model ID and API key, then select **Save**. Use HTTPS for remote services. An HTTP URL on the Papilot host's localhost also works. The provider needs streaming and function calling through Chat Completions. Select the saved model in the task's model menu. To change its model ID, reopen **Custom API** and leave the key blank to keep it for the same URL. To switch endpoints, enter the new endpoint's key and choose the new model on any task that used the previous endpoint.
 

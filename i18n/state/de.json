@@ -824,6 +824,11 @@
     "textHash": "654f7bcfca9f21627a19f4f8d4777d6e092521dfb169b99e787d02d8eabc71df",
     "model": "gemini-4-argon-medium"
   },
+  "ChatGPT Pro (web)": {
+    "revision": "2cc79daf57675e07b6edb3b98e614f8a90cc01ca12bbb7bff7a1e90e419989cd",
+    "textHash": "cda72d4294178b32d3a8f966279c0d49e9f75ddbc2e9f6957268dbccab9c9673",
+    "model": "gemini-4-argon-medium"
+  },
   "ChatGPT Space Page": {
     "revision": "8c05622faa344ca3b1f0540f2dd7fbd9028465d38356b04d3f3b14b2af3c678d",
     "textHash": "d813106f417d30c1fae53184de49bf639b4b974164cbd20518b243f5efb025ff",
@@ -2433,6 +2438,11 @@
     "revision": "2c364fcf277f4d8931e02c3c65db707d72f0f67a1d64e364c582e65b7f7b01ef",
     "textHash": "36904f398e9e4ea77aa9d4947f24d343d56741335b8d0811a5b91ae7947ec30f",
     "model": "manual"
+  },
+  "For ChatGPT Pro, use committed files and a message. Remove attachments, PDF notes, or skills to continue.": {
+    "revision": "50cd637a1523cd392610b2f5a8d844bfd76c680f9752beee0b55c07f203cbb10",
+    "textHash": "627f4244cc25854dd4a33016b45306a13dc8b9e780b1ee810310775cef663e80",
+    "model": "gemini-4-argon-medium"
   },
   "For a computer without Zotero: PDFs are downloaded from Zotero's online storage.": {
     "revision": "668dfaa40fbba56a5a9378e819a8f2057bfdc9a2a099d9bf3c03c6536687ec1f",

@@ -105,15 +105,24 @@ export function registerExternalReviewRoutes(app: FastifyInstance, { store, work
     store.emit('change');
     return { enabled: request.body.enabled };
   });
-  app.get<{ Params: Params }>(route, projectScope, async (request): Promise<ExternalReviewOptions> => {
-    const { id } = request.params, repo = projectRepo(id), baseCommit = await handoffCommit(repo, 'HEAD');
+  app.get<{ Params: Params; Querystring: { scope?: string; review?: string } }>(route, projectScope, async (request): Promise<ExternalReviewOptions> => {
+    const { id } = request.params, repo = projectRepo(id), { scope, review } = request.query;
+    const selected = review ? find(id, review) : undefined;
+    const baseCommit = selected?.request.baseCommit ?? await handoffCommit(repo, 'HEAD');
     const [files, remotes] = await Promise.all([handoffFiles(repo, baseCommit), configuredRemotes(repo)]);
-    return { baseCommit, files, remotes, reviews: store.externalReviews(id) };
+    return { baseCommit, files, remotes, reviews: selected ? [selected] : scope === 'files' ? [] : store.externalReviews(id) };
   });
-  app.post<{ Params: Params; Body: { baseCommit?: string; files?: unknown; question?: unknown } }>(route, { ...projectScope, bodyLimit: proposalLimit }, request => serialGit(request.params.id, async () => {
-    const { id } = request.params, repo = projectRepo(id), { baseCommit, question, files } = request.body ?? {};
+  app.post<{ Params: Params; Body: { baseCommit?: string; files?: unknown; question?: unknown; composerId?: unknown } }>(route, { ...projectScope, bodyLimit: proposalLimit }, request => serialGit(request.params.id, async () => {
+    const { id } = request.params, repo = projectRepo(id), { baseCommit, question, files, composerId } = request.body ?? {};
     if (typeof baseCommit !== 'string') throw new Error('Choose a committed version to review.');
-    const review: SavedReview = { request: await createHandoffRequest(repo, baseCommit, question, files) };
+    if (composerId !== undefined && (typeof composerId !== 'string' || !handoffIdPattern.test(composerId))) throw new Error('This external review no longer exists.');
+    const record = await createHandoffRequest(repo, baseCommit, question, files, composerId);
+    const prior = composerId && store.externalReview<SavedReview>(id, composerId);
+    if (prior) {
+      if (!prior.fromComposerAt || JSON.stringify(prior.request) !== JSON.stringify(record)) throw new Error('This external review no longer exists.');
+      return prior;
+    }
+    const review: SavedReview = { request: record, ...(composerId ? { fromComposerAt: Date.now() } : {}) };
     await repo.updateRefAsync(localRef(review.request.requestId, 'base'), baseCommit);
     return save(id, review);
   }));
@@ -164,7 +173,7 @@ export function registerExternalReviewRoutes(app: FastifyInstance, { store, work
     const agent = body.agent;
     if (!isAgentId(agent) || agent === 'collaboration') throw new Error('Choose a local agent.');
     const { requestId, baseCommit, question } = review.request;
-    const idForTask = !review.taskId ? `external-${requestId}` : store.taskDeleted(review.taskId) ? `external-${randomUUID()}` : review.taskId;
+    const idForTask = !review.taskId || store.taskDeleted(review.taskId) ? `external-${randomUUID()}` : review.taskId;
     const changes = review.proposal.changes;
     // Confirm the saved Git base is still readable, even when the manuscript has advanced.
     await handoffCommit(repo, baseCommit);

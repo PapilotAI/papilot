@@ -4,13 +4,14 @@ Ask ChatGPT Pro on the web or another reviewer to suggest changes to a committed
 
 ## Follow a review in Papilot
 
-Enable **External reviews** under **Settings → Experiments**, then open **External review** from the paper's sidebar. Papilot saves the request, checked proposal, and task link on the host. Use **Review request** to reopen an earlier review.
+Enable **External reviews** under **Settings → Experiments**. Start a new task and choose **ChatGPT Pro (web)** in the model picker. Write what you want reviewed and check **Files to review** to change the committed files included in the request. Sending saves the request as a conversation in the task list. Open that conversation again to resume the review.
 
-1. **Prepare.** Ask a focused question and choose the committed files the reviewer should check. Commit any edits you want included before preparing the request.
-2. **Send to reviewer.** Open an ordinary ChatGPT web chat, choose **Pro**, and paste the prompt Papilot provides. For GitHub, publish the review branch first and use `@GitHub` in the chat if the app is available. Publishing sends the base commit and its history to the selected Git remote. For a Space Page, use the Space prompt, which includes the selected committed text. Ask ChatGPT to create a private Page or edit one you can access. Save its link in Papilot if you want to open it again from the request. If the chat returns the JSON in its reply, you can import it directly.
-3. **Import proposal.** Fetch from the published Git branch or paste the JSON block from Space or the chat. Papilot checks that it matches the request, the approved files, and the exact original passages. Read the checked suggestions before continuing.
-4. **Implement locally.** Choose a local agent and start the task. Papilot gives the agent a copy of the requested commit and shows its changes in the normal PDF review. Accept or reject the changes you want to share.
-5. **Return result.** Prepare a receipt of the accepted changes. Publish a separate Git result branch with the receipt, or copy the receipt and paste it into the Space Page or review chat. The result branch is based on the requested commit. To apply the changes to your manuscript, use the ordinary Papilot task controls.
+1. **Send to ChatGPT.** Open an ordinary ChatGPT web chat, choose **Pro**, and paste the prompt from the Papilot conversation. For GitHub, publish the review branch first and use `@GitHub` in the chat if the app is available. Publishing sends the base commit and its history to the selected Git remote. For a Space Page, copy the Space prompt, which includes the selected committed text. Ask ChatGPT to create a private Page or edit one you can access. Save its link in Papilot to open it again from the conversation.
+2. **Import the proposal.** In the same Papilot conversation, fetch the proposal from the published Git branch or paste the JSON block from Space or the chat. Papilot checks the request, the files, and the exact original passages. Read the checked suggestions before continuing.
+3. **Implement locally.** Choose a local agent and start it. Papilot gives the agent a copy of the requested commit and shows its changes in the normal PDF review. Accept or reject the changes you want to share.
+4. **Return result.** In the task's conversation, expand **Return result** and prepare a receipt. Publish a separate Git result branch, or copy the receipt into the Space Page or review chat. To apply the changes to your manuscript, use the ordinary Papilot task controls.
+
+The **External review** sidebar entry also opens prior review requests and accepts the same proposal format from other reviewers.
 
 ## Command line handoffs
 

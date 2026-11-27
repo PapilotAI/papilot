@@ -1,6 +1,9 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 
+// crypto.randomUUID is unavailable when Papilot is opened over plain LAN HTTP.
+export const browserUuid = () => crypto.randomUUID?.() || bytesToHex(crypto.getRandomValues(new Uint8Array(16))).replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+
 // Persist only a digest: duplicating a long draft here can exhaust browser
 // storage and lose the retry ID on reload. JS hashing also works over LAN HTTP.
 export function requestId(storage: Pick<Storage, 'getItem' | 'setItem'>, key: string, content: string, newId: () => string): string {

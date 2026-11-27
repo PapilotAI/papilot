@@ -5,7 +5,8 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Annotation, ExternalReview, Project, Task, Run, TimelineItem } from '../shared.ts';
+import type { Annotation, ExternalReview, ExternalReviewConversation, Project, Task, Run, TimelineItem } from '../shared.ts';
+import { taskTitle } from '../task-caption.ts';
 
 // A thread's task, through the task_threads index.
 export const TASK_BY_THREAD = "SELECT data FROM tasks WHERE json_extract(data,'$.threadId')=? ORDER BY rowid LIMIT 1";
@@ -115,8 +116,19 @@ export class Store extends EventEmitter {
     const row = this.db.prepare('SELECT data FROM external_reviews WHERE id=? AND project_id=?').get(id, projectId) as { data: string } | undefined;
     return row ? JSON.parse(row.data) : undefined;
   }
+  pendingExternalReviewConversations(): ExternalReviewConversation[] {
+    const rows = this.db.prepare(`SELECT id, project_id AS projectId, json_extract(data, '$.request.question') AS question,
+      json_extract(data, '$.fromComposerAt') AS createdAt FROM external_reviews AS r
+      WHERE json_type(data, '$.fromComposerAt') = 'integer'
+        AND NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.id = json_extract(r.data, '$.taskId'))
+        AND NOT EXISTS (SELECT 1 FROM deleted_tasks WHERE deleted_tasks.id = json_extract(r.data, '$.taskId'))
+      ORDER BY createdAt DESC, r.rowid DESC`).all() as { id: string; projectId: string; question: string; createdAt: number }[];
+    return rows.map(({ question, ...row }) => ({ ...row, title: taskTitle(question) }));
+  }
   saveExternalReview(projectId: string, review: ExternalReview) {
-    this.db.prepare('INSERT INTO external_reviews VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data WHERE project_id=excluded.project_id').run(review.request.requestId, projectId, JSON.stringify(review));
+    const saved = this.db.prepare('INSERT INTO external_reviews VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data WHERE project_id=excluded.project_id').run(review.request.requestId, projectId, JSON.stringify(review));
+    if (!saved.changes) throw new Error('This external review no longer exists.');
+    if (review.fromComposerAt) this.emit('change');
     return review;
   }
   // One durable copy per revision, shared by all anchors made in that file.

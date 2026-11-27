@@ -5,12 +5,13 @@ import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
 import { chromium, expect, webkit } from './playwright.mjs';
 import { readyRequirements } from './required-tools-fixture.mjs';
+import { zhCN } from '../src/web/zh-CN.ts';
 
 const server = Fastify();
 await server.register(staticFiles, { root: path.resolve('dist') });
 await server.listen({ host: '127.0.0.1', port: 0 });
 const origin = `http://127.0.0.1:${server.server.address().port}`;
-const zh = JSON.parse(fs.readFileSync('src/web/locales/zh-CN.json', 'utf8'));
+const zh = { ...JSON.parse(fs.readFileSync('src/web/locales/zh-CN.json', 'utf8')), ...zhCN };
 const failures = [];
 fs.mkdirSync('test-results', { recursive: true });
 try {
@@ -31,10 +32,11 @@ try {
         { file: 'paper.tex', original: 'The effect is really small.', suggestion: 'The effect is small.', reason: 'Remove the intensifier.' },
       ] };
       const settings = { baseCommit: base, files: ['paper.tex', 'supplements/results with spaces.tex'], remotes: [remote], reviews: [] };
-      let loadingError = true, fetched = false, decided = false, readReceipt = 0;
+      let loadingError = true, fetched = false, decided = false, readReceipt = 0, composerId = '';
       await page.addInitScript(language => {
         localStorage.setItem('papilot:language', language);
         localStorage.setItem('papilot:setup-seen', '1');
+        if (language === 'zh-CN') Object.defineProperty(crypto, 'randomUUID', { value: undefined });
         Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
           writeText: text => language === 'en' ? Promise.resolve(globalThis.copiedReviewText = text) : Promise.reject(new Error('Clipboard unavailable')),
         } });
@@ -44,33 +46,42 @@ try {
         const url = new URL(route.request().url()), pathname = url.pathname, json = value => route.fulfill({ json: value });
         const post = route.request().method() === 'POST', body = post ? route.request().postDataJSON() : null;
         const error = message => route.fulfill({ status: 400, json: { error: message } });
-        const review = settings.reviews[0];
+        const id = url.searchParams.get('review') || /\/external-review\/([^/]+)\//.exec(pathname)?.[1];
+        const review = id ? settings.reviews.find(item => item.request.requestId === id) : settings.reviews[0];
         if (pathname === '/api/state') return json(state);
         if (pathname === '/api/external-reviews') { state.externalReviews = body.enabled; return json({ enabled: body.enabled }); }
         if (pathname.endsWith('/external-review')) {
           if (!post) {
             if (loadingError) { loadingError = false; return error('Temporary connection problem'); }
-            return json(settings);
+            return json({ ...settings, reviews: id ? [review] : url.searchParams.has('scope') ? [] : settings.reviews });
           }
           assert.deepEqual(body.files, ['paper.tex']); assert.equal(body.baseCommit, base);
-          const created = { request: { schema: 'papilot-handoff/v1', kind: 'request', requestId, ...body } };
-          settings.reviews.push(created); return json(created);
+          const { composerId: incomingId, ...data } = body;
+          const created = { request: { schema: 'papilot-handoff/v1', kind: 'request', requestId: incomingId || requestId, ...data } };
+          if (incomingId) {
+            assert.match(incomingId, /^[0-9a-f-]{36}$/);
+            composerId = incomingId;
+            state.externalReviewConversations = [{ id: incomingId, projectId: project.id, title: data.question, createdAt: 3 }];
+          }
+          settings.reviews.unshift(created); return json(created);
         }
         if (pathname.includes('/external-review/')) {
           if (pathname.endsWith('/github')) {
             assert.deepEqual(body, { remote: 'origin', revision: 'remote-v1' });
-            review.git = { branch: `papilot-review/${requestId}`, proposalFile: 'proposal.json', remote }; return json(review);
+            review.git = { branch: `papilot-review/${id}`, proposalFile: 'proposal.json', remote }; return json(review);
           }
           if (pathname.endsWith('/page')) { review.page = body.url; return json(review); }
           if (pathname.endsWith('/prompt')) return json({ text: `${url.searchParams.get('via') === 'git' ? review.git.branch : review.page ?? 'Create a private Page'}\n${base}` });
           if (pathname.endsWith('/proposal')) {
             if (body.via === 'git') { fetched = true; return error('The reviewer has not posted a proposal yet.'); }
-            try { assert.deepEqual(JSON.parse(body.text), proposal); } catch { return error('Copy the complete JSON block.'); }
+            try { assert.deepEqual(JSON.parse(body.text), { ...proposal, requestId: id }); } catch { return error('Copy the complete JSON block.'); }
             review.proposal = { digest, source: 'paste', changes: proposal.changes }; return json(review);
           }
           if (pathname.endsWith('/task')) {
             assert.equal(body.digest, digest); assert.equal(body.agent, 'codex');
-            const task = { id: 'task-external-review', name: 'task-external-review', projectId: 'paper', title: 'External task fixture', instructions: '', status: 'reviewing', createdAt: 2, updatedAt: 2, agent: 'codex', error: null, review: null };
+            const task = { id: `task-${id}`, name: `task-${id}`, projectId: 'paper', title: id === composerId ? review.request.question : 'External task fixture', instructions: '', status: 'reviewing', createdAt: 2, updatedAt: 2, agent: 'codex', error: null, review: null,
+              externalReview: { requestId: id, baseCommit: base, files: ['paper.tex'] } };
+            if (id === composerId) state.externalReviewConversations = [];
             state.tasks.push(task); review.taskId = task.id; return json({ review, task });
           }
           if (pathname.endsWith('/receipt') && !post) {
@@ -144,8 +155,48 @@ try {
       await shot('result');
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
       await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0); await expect(entry).toBeFocused();
+
+      state.tasks.length = 0;
+      settings.reviews.length = 0;
+      await page.evaluate(() => localStorage.setItem('papilot:task', ''));
+      await page.reload();
+      await page.locator('[data-task-home]:visible').first().click();
+      const composer = page.locator('.new-task-panel:visible');
+      await expect(composer).toBeVisible();
+      const picker = composer.getByRole('button', { name: text('Agent settings') });
+      await picker.click();
+      const menu = page.getByRole('dialog', { name: text('Agent settings') });
+      await expect(menu.getByRole('option', { name: /Fixture model/ }).first()).toBeVisible();
+      await menu.getByRole('combobox').fill('ChatGPT Pro');
+      const webModel = text('ChatGPT Pro (web)');
+      await expect(menu.getByRole('option', { name: webModel, exact: true })).toBeVisible();
+      await shot('model-picker');
+      await menu.getByRole('combobox').press('Enter');
+      await expect(picker).toContainText(webModel);
+      await expect(composer.locator('summary').getByText('paper.tex', { exact: true })).toBeVisible();
+      const question = 'Review the interpretation of this result.';
+      await composer.getByRole('textbox', { name: text('Describe the revision') }).fill(question);
+      await composer.getByRole('button', { name: text('Start task') }).click();
+      const conversation = page.locator('.external-conversation');
+      await expect(conversation.getByText(question)).toBeVisible();
+      assert.ok(composerId && !settings.reviews[0].git, 'Starting the task does not publish files');
+      await page.reload(); await expect(conversation.getByText(question)).toBeVisible();
+      await expect(page.locator('.task-row').filter({ hasText: question })).toHaveCount(1);
+      await conversation.getByLabel(text('ChatGPT Space Page'), { exact: true }).check();
+      await expect(conversation.getByRole('button', { name: text('Copy Space prompt') })).toBeVisible();
+      await shot('composer-conversation');
+      await conversation.getByLabel(text('Proposal JSON or Page Markdown')).fill(JSON.stringify({ ...proposal, requestId: composerId }));
+      await conversation.getByRole('button', { name: text('Check pasted proposal') }).click();
+      await expect(conversation.getByText(text('Proposal checked'))).toBeVisible();
+      await conversation.getByRole('button', { name: text('Start local agent') }).click();
+      await expect(conversation).toHaveCount(0);
+      await expect(page.locator('.task-row').filter({ hasText: question })).toHaveCount(1);
+      const result = page.locator('.external-result-disclosure');
+      await result.locator('summary').click();
+      await result.getByRole('button', { name: text('Prepare receipt') }).click();
+      await expect(result.getByText(text('Receipt ready'))).toBeVisible();
     } finally { await browser.close(); }
   }
   assert.deepEqual(failures, []);
-  console.log('External review: complete wizard, Git and Space prompts, import recovery, receipt revalidation, and desktop and mobile layouts checked.');
+  console.log('External review: model picker, durable conversation, local task and receipt, wizard compatibility, and desktop and mobile layouts checked.');
 } finally { await server.close(); }

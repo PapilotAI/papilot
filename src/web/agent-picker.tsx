@@ -66,6 +66,7 @@ function remember(agent: AgentId, model: string) {
 }
 
 export interface AgentOption { value: AgentId; label: string; runtime?: RuntimeStatus; allowUnknownDefault?: boolean }
+type WebAgent = { value: 'chatgpt-pro'; label: string; runtime?: undefined };
 // An agent's models in runs of the same source, in list order; models without one stay ungrouped.
 function bySource(items: Choice[]) {
   const parts: { source?: string; items: Choice[] }[] = [];
@@ -75,7 +76,7 @@ function bySource(items: Choice[]) {
   }
   return parts;
 }
-interface Choice { key: string; agent: AgentOption; model: string; name: string; source?: string; isDefault: boolean; recent: boolean }
+interface Choice { key: string; agent: AgentOption | WebAgent; model: string; name: string; source?: string; isDefault: boolean; recent: boolean }
 
 // An agent's state when it cannot be used yet, shown beside its name.
 function agentState(runtime?: RuntimeStatus) {
@@ -90,17 +91,23 @@ function agentState(runtime?: RuntimeStatus) {
 // selected model's reasoning effort, fast mode and permissions sit below the list. Native
 // popovers keep the menu above the PDF and scrolling panels, with
 // outside-click and Escape dismissal.
-export function AgentPicker({ label, agents, agent, model, effort, fast, reconnecting, onReconnect, onSelect, onChange, disabled, description, permissions, permissionMode, allowUnknownDefault = true, noAgent = false, refreshUsage }: {
+export function AgentPicker({ label, agents, agent, model, effort, fast, reconnecting, onReconnect, onSelect, onChange, disabled, description, permissions, permissionMode, allowUnknownDefault = true, noAgent = false, refreshUsage, webReview }: {
   label?: string; agents: AgentOption[]; agent: AgentId; model: string; effort: string; fast: boolean;
   reconnecting: boolean; onReconnect: () => void;
   onSelect: (agent: AgentId, model: string) => void; onChange: (change: Partial<{ effort: string; fast: boolean }>) => void; disabled?: boolean; description?: string; allowUnknownDefault?: boolean;
   permissions?: ReactNode; permissionMode?: TaskPermissions; noAgent?: boolean;
   refreshUsage?: RefreshUsage;
+  webReview?: { selected: boolean; onSelect: () => void };
 }) {
   const id = useId(), trigger = useRef<HTMLButtonElement>(null), panel = useRef<HTMLDivElement>(null), search = useRef<HTMLInputElement>(null), list = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false), [query, setQuery] = useState(''), [active, setActive] = useState(''), [recent, setRecent] = useState(readRecent);
   const current = agents.find(item => item.value === agent) || agents[0];
-  const runtime = current?.runtime, models = runtime?.models || [];
+  const webLabel = t('ChatGPT Pro (web)');
+  const webAgent: WebAgent = { value: 'chatgpt-pro', label: 'ChatGPT' };
+  const webChoice: Choice = { key: webAgent.value, agent: webAgent, model: '', name: webLabel, isDefault: false, recent: false };
+  const webSelected = webReview?.selected === true;
+  const unavailable = noAgent && !webReview;
+  const runtime = webSelected ? undefined : current?.runtime, models = runtime?.models || [];
   const selected = model ? models.find(item => item.id === model) : models.find(item => item.isDefault);
   const agentName = current?.label || agent;
   const modelName = selected?.name || model || t('Default model');
@@ -108,7 +115,7 @@ export function AgentPicker({ label, agents, agent, model, effort, fast, reconne
   const fastMode = agent === 'codex' ? selected?.fastMode : undefined;
   const permission = runtime?.permissionOptions?.find(option => option.value === permissionMode);
   const disconnected = runtime && (!runtime.connected || !runtime.authenticated);
-  const summary = noAgent ? t('No agent') : [agentName, modelName, currentEffort ? effortName(currentEffort) : '', fastMode && fast ? t('Fast') : '', permission ? permissionText(permission.label) : ''].filter((part, index, all) => part && all.indexOf(part) === index).join(' · ');
+  const summary = webSelected ? webLabel : noAgent ? t('No agent') : [agentName, modelName, currentEffort ? effortName(currentEffort) : '', fastMode && fast ? t('Fast') : '', permission ? permissionText(permission.label) : ''].filter((part, index, all) => part && all.indexOf(part) === index).join(' · ');
   // Every model of every agent that the author did not hide; an agent without a model list offers its default.
   const choices = (option: AgentOption): Choice[] => {
     const list = option.runtime?.models || [];
@@ -117,16 +124,18 @@ export function AgentPicker({ label, agents, agent, model, effort, fast, reconne
       ...shownModels(option.runtime, option.value === agent ? model : undefined).map(item => ({ key: `${option.value}\n${item.id}`, agent: option, model: item.id, name: item.name, source: item.source, isDefault: item.isDefault, recent: false })),
     ];
   };
-  const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  const matches = (choice: Choice) => terms.every(term => `${choice.agent.label} ${choice.source || ''} ${choice.name} ${choice.model}`.toLocaleLowerCase().includes(term));
-  const groups = agents.map(option => ({ option, items: choices(option).filter(matches) })).filter(group => group.items.length);
+  const searchTerms = (text: string) => text.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (choice: Choice, terms: string[]) => terms.every(term => `${choice.agent.label} ${choice.source || ''} ${choice.name} ${choice.model}`.toLocaleLowerCase().includes(term));
+  const terms = searchTerms(query);
+  const allGroups = [...(webReview ? [{ option: webAgent, items: [webChoice] }] : []), ...agents.map(option => ({ option, items: choices(option) }))];
+  const groups = allGroups.map(group => ({ ...group, items: group.items.filter(choice => matches(choice, terms)) })).filter(group => group.items.length);
   const recentItems = terms.length ? [] : recent.flatMap(item => {
     const option = agents.find(candidate => candidate.value === item.agent);
     const found = option && choices(option).find(choice => choice.model === item.model);
     return found ? [{ ...found, key: `recent\n${found.key}`, recent: true }] : [];
   });
   const visible = [...recentItems, ...groups.flatMap(group => group.items)];
-  const isSelected = (choice: Choice) => choice.agent.value === agent && (choice.model === model || (!model && (choice.isDefault || choice.model === '')));
+  const isSelected = (choice: Choice) => webSelected ? choice.agent.value === webAgent.value : choice.agent.value === agent && (choice.model === model || (!model && (choice.isDefault || choice.model === '')));
   function position() {
     const box = panel.current!, rect = trigger.current!.getBoundingClientRect();
     box.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - box.offsetWidth - 8))}px`;
@@ -143,7 +152,7 @@ export function AgentPicker({ label, agents, agent, model, effort, fast, reconne
     window.addEventListener('resize', dismiss); document.addEventListener('scroll', scroll, true);
     return () => { observer.disconnect(); window.removeEventListener('resize', dismiss); document.removeEventListener('scroll', scroll, true); };
   }, [open]);
-  useEffect(() => { if (disabled || noAgent) panel.current?.hidePopover(); }, [disabled, noAgent]);
+  useEffect(() => { if (disabled || unavailable) panel.current?.hidePopover(); }, [disabled, unavailable]);
   function revealOption(option: HTMLElement | null | undefined) {
     const container = list.current;
     if (!container || !option) return;
@@ -166,6 +175,9 @@ export function AgentPicker({ label, agents, agent, model, effort, fast, reconne
   }
   function choose(choice: Choice) {
     if (disabled) return;
+    if (choice.agent.value === webAgent.value) {
+      panel.current?.hidePopover(); webReview?.onSelect(); return;
+    }
     onSelect(choice.agent.value, choice.model);
     remember(choice.agent.value, choice.model);
     setActive(choice.key);
@@ -176,10 +188,10 @@ export function AgentPicker({ label, agents, agent, model, effort, fast, reconne
     setActive(visible[(index + step + visible.length) % visible.length].key);
   }
   const renderChoice = (choice: Choice) => {
-    const chosen = isSelected(choice), state = agentState(choice.agent.runtime);
-    return <div key={choice.key} id={`${id}-${choice.key.replace(/\W/g, '_')}`} data-key={choice.key} role="option" aria-selected={chosen} aria-label={[choice.name, choice.source, choice.agent.label].filter(Boolean).join(' · ')}
+    const chosen = isSelected(choice), state = choice.agent.value === webAgent.value ? '' : agentState(choice.agent.runtime);
+    return <div key={choice.key} id={`${id}-${choice.key.replace(/\W/g, '_')}`} data-key={choice.key} role="option" aria-selected={chosen} aria-label={choice.agent.value === webAgent.value ? choice.name : [choice.name, choice.source, choice.agent.label].filter(Boolean).join(' · ')}
       className={'model-option' + (choice.key === active ? ' active' : '')} onPointerMove={() => setActive(choice.key)} onClick={() => choose(choice)}>
-      {choice.recent && <BrandIcon name={choice.agent.value} size={15}/>}<span className="model-option-name">{choice.name}</span>
+      {choice.recent && <BrandIcon name={choice.agent.value === webAgent.value ? 'openai' : choice.agent.value} size={15}/>}<span className="model-option-name">{choice.name}</span>
       {choice.isDefault && !choice.recent && <small className="model-option-tag">{t('Default')}</small>}
       {(choice.recent || state) && <small className={'model-option-agent' + (state ? ' warn' : '')}>{choice.recent ? [choice.agent.label, choice.source].filter(Boolean).join(' · ') : state}</small>}
       {chosen && <Icon name="check" size={14}/>}
@@ -187,10 +199,11 @@ export function AgentPicker({ label, agents, agent, model, effort, fast, reconne
   };
   const activeChoice = visible.find(choice => choice.key === active);
   return <span className="agent-picker">
-    <button ref={trigger} type="button" className="agent-picker-trigger" aria-label={label || t('Agent settings')} aria-description={summary} title={summary + (disconnected ? ` · ${t('{agent} is unavailable', { agent: agentName })}` : '')} aria-haspopup="dialog" aria-expanded={open} aria-controls={id} disabled={disabled || noAgent}
+    <button ref={trigger} type="button" className="agent-picker-trigger" aria-label={label || t('Agent settings')} aria-description={summary} title={summary + (disconnected ? ` · ${t('{agent} is unavailable', { agent: agentName })}` : '')} aria-haspopup="dialog" aria-expanded={open} aria-controls={id} disabled={disabled || unavailable}
       onClick={() => panel.current?.matches(':popover-open') ? panel.current.hidePopover() : show()}
       onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); show(); } }}>
-      {noAgent ? <span className="agent-picker-selection">{t('No agent')}</span> : <><BrandIcon name={agent} size={15}/>{!permission && modelName !== agentName && <span className="agent-picker-agent">{agentName}</span>}
+      {webSelected ? <><BrandIcon name="openai" size={15}/><span className="agent-picker-selection"><ModelLabel model={webLabel}/></span><Icon name="chevronDown" size={13}/></>
+        : noAgent ? <><span className="agent-picker-selection">{t('No agent')}</span>{webReview && <Icon name="chevronDown" size={13}/>}</> : <><BrandIcon name={agent} size={15}/>{!permission && modelName !== agentName && <span className="agent-picker-agent">{agentName}</span>}
       <span className="agent-picker-selection">
         <ModelLabel model={modelName} effort={permission ? undefined : currentEffort} fast={Boolean(fastMode && fast)}/>
         {permission && <small className="agent-permission-label" data-mode={permission.value}>{permissionText(permission.label)}</small>}
@@ -204,7 +217,7 @@ export function AgentPicker({ label, agents, agent, model, effort, fast, reconne
       <label className="model-search"><Icon name="search" size={14}/>
         <input ref={search} type="search" value={query} placeholder={t('Search models')} aria-label={t('Search models')} role="combobox" aria-expanded="true" aria-controls={`${id}-list`} aria-autocomplete="list"
           aria-activedescendant={activeChoice ? `${id}-${activeChoice.key.replace(/\W/g, '_')}` : undefined}
-          onChange={event => { setQuery(event.target.value); const terms = event.target.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean); const first = agents.flatMap(choices).find(choice => terms.every(term => `${choice.agent.label} ${choice.source || ''} ${choice.name} ${choice.model}`.toLocaleLowerCase().includes(term))); setActive(first?.key || ''); }}
+          onChange={event => { setQuery(event.target.value); const terms = searchTerms(event.target.value); const first = allGroups.flatMap(group => group.items).find(choice => matches(choice, terms)); setActive(first?.key || ''); }}
           onKeyDown={event => {
             if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); move(event.key === 'ArrowDown' ? 1 : -1); }
             else if (event.key === 'Enter' && activeChoice) { event.preventDefault(); choose(activeChoice); }
@@ -213,7 +226,7 @@ export function AgentPicker({ label, agents, agent, model, effort, fast, reconne
       <div ref={list} id={`${id}-list`} role="listbox" aria-label={t('Models')} className="model-list">
         {recentItems.length > 0 && <div role="group" aria-label={t('Recent')} className="model-group"><div className="model-group-head" aria-hidden="true">{t('Recent')}</div>{recentItems.map(renderChoice)}</div>}
         {groups.map(group => <div key={group.option.value} role="group" aria-label={group.option.label} className="model-group">
-          <div className="model-group-head" aria-hidden="true"><BrandIcon name={group.option.value} size={15}/>{group.option.label}</div>
+          <div className="model-group-head" aria-hidden="true"><BrandIcon name={group.option.value === webAgent.value ? 'openai' : group.option.value} size={15}/>{group.option.label}</div>
           {bySource(group.items).map(part => part.source
             ? <div key={part.source} role="group" aria-label={`${group.option.label}, ${part.source}`} className="model-subgroup"><div className="model-subgroup-head" aria-hidden="true">{part.source}</div>{part.items.map(renderChoice)}</div>
             : <Fragment key="">{part.items.map(renderChoice)}</Fragment>)}
@@ -225,7 +238,7 @@ export function AgentPicker({ label, agents, agent, model, effort, fast, reconne
       {description && <p className="effort-description">{description}</p>}
       {selected?.efforts.length ? <EffortSlider efforts={selected.efforts} value={effort} fallback={selected.defaultEffort} onChange={value => onChange({ effort: value })}/> : null}
       {fastMode && <label className="agent-fast"><span><strong><Icon name="bolt" size={14}/>{t('Fast mode')}</strong><small>{t('Faster, higher usage')}</small></span><input type="checkbox" role="switch" aria-label={t('Fast mode')} checked={fast} onChange={event => onChange({ fast: event.target.checked })}/></label>}
-      {permissions}
+      {!webSelected && permissions}
     </div>
   </span>;
 }

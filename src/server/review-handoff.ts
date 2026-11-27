@@ -91,12 +91,12 @@ export function handoffFence(language: string, content: string) {
 
 const render = (record: unknown) => handoffFence('json', JSON.stringify(record, null, 2));
 
-export async function createHandoffRequest(repo: Repo, baseCommit: string, question: unknown, files: unknown): Promise<ExternalReviewRequest> {
+export async function createHandoffRequest(repo: Repo, baseCommit: string, question: unknown, files: unknown, requestId: string = randomUUID()): Promise<ExternalReviewRequest> {
   if (!handoffCommitPattern.test(baseCommit) || baseCommit !== await handoffCommit(repo, baseCommit)) throw new Error('Choose a committed version to review.');
   if (!Array.isArray(files) || !files.length) throw new Error('Select at least one file to review.');
   const paths = [...new Set(files.map(filePath))];
   for (const file of paths) await handoffSource(repo, baseCommit, file);
-  return { schema: protocol, kind: 'request', requestId: randomUUID(), baseCommit, question: nonempty(question, 'Question').trim(), files: paths };
+  return { schema: protocol, kind: 'request', requestId, baseCommit, question: nonempty(question, 'Question').trim(), files: paths };
 }
 
 export async function handoffRequestMarkdown(repo: Repo, record: ExternalReviewRequest, includeSource: boolean) {
