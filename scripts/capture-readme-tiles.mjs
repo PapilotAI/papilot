@@ -130,18 +130,18 @@ const cardSurface = 'box-sizing:border-box;border-radius:16px;background:light-d
 // terminal, each linked on its own in the README, two to a row, in the
 // community cards' style. Phones get the compact card.
 const systemsCopy = {
-  en: { download: 'Download', mac: 'Apple silicon and Intel', windows: 'x64 PCs', linux: 'Ubuntu, Fedora, Arch, NixOS', installer: 'Installer', portable: 'Portable', terminal: 'Terminal', node: 'Node.js 22.22+' },
-  'zh-CN': { download: '下载', mac: 'Apple 芯片和 Intel', windows: 'x64 电脑', linux: 'Ubuntu、Fedora、Arch、NixOS', installer: '安装版', portable: '便携版', terminal: '终端', node: 'Node.js 22.22+' },
+  en: { download: 'Download', mac: 'Apple silicon and Intel', windows: 'x64 PCs', linux: 'Ubuntu, Fedora, Arch, NixOS', installer: 'Installer', portable: 'Portable', terminal: 'Terminal', node: 'Node.js 22.22+', pmTitle: 'Package managers', pmAction: 'Install commands' },
+  'zh-CN': { download: '下载', mac: 'Apple 芯片和 Intel', windows: 'x64 电脑', linux: 'Ubuntu、Fedora、Arch、NixOS', installer: '安装版', portable: '便携版', terminal: '终端', node: 'Node.js 22.22+', pmTitle: '包管理器安装', pmAction: '展开命令' },
 };
 function drawSystems({ text, icons, surface }) {
   const card = surface;
-  const chip = label => `<span style="padding:3px 8px;border-radius:6px;background:light-dark(#fff,#1f2024);box-shadow:0 0 0 1px var(--line);font:500 11px var(--mono);color:var(--text-2)">${label}</span>`;
+  const chip = label => `<span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:6px;background:light-dark(#fff,#1f2024);box-shadow:0 0 0 1px var(--line);font:500 11px/1.35 var(--mono);color:var(--text-2)">${label}</span>`;
   const mark = d => `<span style="display:grid;place-items:center;flex:none;width:52px;height:52px;border-radius:15px;background:light-dark(#fff,#1f2024);box-shadow:0 0 0 1px var(--line),0 1px 2px rgb(15 23 42/.05),0 8px 20px -10px rgb(15 23 42/.22)"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" style="color:var(--text)"><path d="${d}"/></svg></span>`;
   const download = `<span style="display:flex;align-items:center;gap:6px;flex:none;font-size:14px;font-weight:500;color:var(--accent)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-5-5 5 5 5-5M5 21h14"/></svg>${text.download}</span>`;
   const cards = {
-    mac: [icons.mac, 'macOS', text.mac, ['DMG', 'ZIP']],
-    windows: [icons.windows, 'Windows', text.windows, [text.installer, text.portable]],
-    linux: [icons.linux, 'Linux', text.linux, ['AppImage', '.deb', 'Nix']],
+    mac: [icons.mac, 'macOS', text.mac, ['DMG', 'ZIP', 'Homebrew']],
+    windows: [icons.windows, 'Windows', text.windows, [text.installer, text.portable, 'Scoop']],
+    linux: [icons.linux, 'Linux', text.linux, ['AppImage', 'APT', 'AUR', 'Nix']],
   };
   const row = document.createElement('div');
   row.id = 'readme-systems';
@@ -152,10 +152,25 @@ function drawSystems({ text, icons, surface }) {
     + `<div data-card="${name}-compact" style="display:flex;flex-direction:column;justify-content:center;gap:12px;width:220px;height:170px;padding:0 20px;${card}">${mark(icon)}<p style="margin:0;font:400 21px/1.2 var(--serif);color:var(--text)">${title}</p>${download}</div>`).join('')
     + `<div data-card="terminal" style="display:flex;flex-direction:column;justify-content:center;width:440px;height:140px;padding:0 24px;${card}"><p style="display:flex;align-items:center;gap:7px;margin:0 0 8px;font-size:12px;color:var(--text-3)"><span class="lights"><i></i><i></i><i></i></span>&nbsp;${text.terminal}</p><p style="margin:0;font:13.5px/1.9 var(--mono);color:var(--text)">${prompt} npm install -g papilot<br>${prompt} papilot demo</p><p style="margin:4px 0 0;font:12px var(--mono);color:var(--text-3)">${text.node}</p></div>`
     + `<div data-card="terminal-compact" style="display:flex;flex-direction:column;justify-content:center;gap:12px;width:220px;height:170px;padding:0 18px;${card}"><span class="lights"><i></i><i></i><i></i></span><p style="margin:0;font:12px/1.8 var(--mono);color:var(--text);white-space:nowrap">${prompt} npm install -g papilot<br>${prompt} papilot demo</p><p style="margin:0;font:11px var(--mono);color:var(--text-3)">${text.node}</p></div>`;
+  const pmIcon = (d, size = 13) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" style="color:var(--text-2);flex:none"><path d="${d}"/></svg>`;
+  const pmChip = (svg, label) => `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:6px;background:light-dark(#fff,#1f2024);box-shadow:0 0 0 1px var(--line);font:500 11.5px/1.35 var(--mono);color:var(--text-2);white-space:nowrap">${svg}${label}</span>`;
+  const pmChips = [
+    pmChip(pmIcon(icons.homebrew, 13), 'Homebrew'),
+    pmChip(pmIcon(icons.scoop, 13), 'Scoop'),
+    pmChip(pmIcon(icons.debian, 12) + pmIcon(icons.ubuntu, 12), 'APT'),
+    pmChip(pmIcon(icons.archlinux, 12), 'AUR'),
+    pmChip(pmIcon(icons.nixos, 13), 'Nix'),
+    pmChip(pmIcon(icons.npm, 13), 'npm'),
+  ].join('');
+  const chevron = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+  row.innerHTML +=
+    `<div data-card="pm-bar" style="display:flex;align-items:center;gap:14px;width:868px;height:56px;padding:0 24px;${card}"><span style="font:400 17px/1.2 var(--serif);color:var(--text);white-space:nowrap">${text.pmTitle}</span><span style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap">${pmChips}</span><span style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;font:500 13.5px/1 var(--sans);color:var(--accent);white-space:nowrap">${text.pmAction}${chevron}</span></div>`
+    + `<div data-card="pm-bar-compact" style="display:flex;flex-direction:column;gap:10px;width:420px;padding:14px 20px;${card}"><div style="display:flex;align-items:center;justify-content:space-between"><span style="font:400 17px/1.2 var(--serif);color:var(--text)">${text.pmTitle}</span><span style="display:inline-flex;align-items:center;gap:4px;font:500 13px/1 var(--sans);color:var(--accent)">${text.pmAction}${chevron}</span></div><span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${pmChips}</span></div>`;
   document.body.append(row);
   // Room around each card for its shadow; the README shows the padded image.
   for (const card of row.querySelectorAll('[data-card]')) {
-    const wrap = Object.assign(document.createElement('div'), { style: 'padding:4px 12px 20px' });
+    const pad = card.dataset.card.startsWith('pm-bar') ? '4px 12px 16px' : '4px 12px 20px';
+    const wrap = Object.assign(document.createElement('div'), { style: `padding:${pad}` });
     wrap.dataset.shot = card.dataset.card;
     card.replaceWith(wrap);
     wrap.append(card);
@@ -181,7 +196,6 @@ function drawCommunity({ icons, text, surface }) {
       + `<div data-card="${name}-compact" style="display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:14px;width:220px;height:150px;padding:0 20px;${card}">${chip(svg)}<p style="display:flex;align-items:center;gap:6px;width:100%;margin:0;font:400 20px/1.2 var(--serif);color:var(--text)"><span style="flex:1">${title}</span>${arrow}</p></div>`;
   }).join('');
   document.body.append(row);
-  // Room around each card for its shadow; the README shows the padded image.
   for (const card of row.querySelectorAll('[data-card]')) {
     const wrap = Object.assign(document.createElement('div'), { style: 'padding:4px 12px 20px' });
     wrap.dataset.shot = card.dataset.card;
@@ -287,7 +301,12 @@ function drawFlow({ text, compact }) {
 // The systems' marks from the README's icons, and the community cards' icons
 // in the accent blue (Discord in its own).
 const iconPath = name => fs.readFileSync(path.join(root, `docs/assets/readme-icons/${name}.svg`), 'utf8').match(/ d="([^"]+)"/)[1];
-const systemIcons = { mac: iconPath('apple'), windows: iconPath('windows'), linux: iconPath('linux') };
+const systemIcons = {
+  mac: iconPath('apple'), windows: iconPath('windows'), linux: iconPath('linux'),
+  homebrew: iconPath('homebrew'), scoop: iconPath('scoop'), debian: iconPath('debian'),
+  ubuntu: iconPath('ubuntu'), archlinux: iconPath('archlinux'), nixos: iconPath('nixos'),
+  npm: iconPath('npm'),
+};
 const lineIcon = name => fs.readFileSync(path.join(root, `docs/assets/readme-icons/${name}.svg`), 'utf8').replace(/ width="24" height="24"/, ' width="26" height="26"').replaceAll('#3b82f6', 'var(--accent)');
 const communityIcons = {
   issue: lineIcon('issue'),
@@ -337,7 +356,7 @@ try {
       await flow.screenshot({ path: path.join(output, `${id.replace('readme-', '')}${scheme === 'dark' ? '-dark' : ''}${locale === 'en' ? '' : `.${locale}`}.png`), omitBackground: true, animations: 'disabled' });
     }
     art.agents = [await capture(page, '#readme-picker')];
-    for (const name of ['mac', 'windows', 'linux', 'terminal']) for (const variant of ['', '-compact']) {
+    for (const name of ['mac', 'windows', 'linux', 'terminal', 'pm-bar']) for (const variant of ['', '-compact']) {
       await page.locator(`#readme-systems [data-shot="${name}${variant}"]`).screenshot({ path: path.join(root, 'docs/assets/readme-downloads', `${name}${variant}${scheme === 'dark' ? '-dark' : ''}${locale === 'en' ? '' : `.${locale}`}.png`), omitBackground: true, animations: 'disabled' });
     }
     for (const name of Object.keys(communityIcons)) for (const variant of ['', '-compact']) {
