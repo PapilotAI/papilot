@@ -143,7 +143,7 @@ export function ReviewNotes({ doc, task, onComment, railSlot }: { railSlot: HTML
     if (selection && ['note', 'magic', 'delete'].includes(next)) { current.current.tool = next; markSelection(selection); }
   }
   function annotate(region: boolean) { chooseTool(region ? 'region' : 'select'); doc?.defaultView?.focus(); }
-  const hand = useReviewToolKeys({ doc, tool, busy, choose: chooseTool, lock: setLocked, stamps, wheel: Boolean(wheel) });
+  const hand = useReviewToolKeys({ doc, tool, busy, choose: chooseTool, lock: setLocked, locked, stamps, wheel: Boolean(wheel) });
   current.current.tool = hand ? 'hand' : tool;
   useEffect(() => {
     if (!doc) return;

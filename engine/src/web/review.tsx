@@ -174,11 +174,6 @@ function ReviewProgress({ value, total, label }: { value: number; total: number;
     </div>
   );
 }
-// While the side-by-side code loads, the workspace's page controls stay.
-function CompareLoading() {
-  useLayoutEffect(() => holdReader(window), []);
-  return <div className="compare-status" role="status"><div className="pulse" /></div>;
-}
 // Two versions side by side need a wide window.
 const NARROW = "(max-width: 720px)";
 export function ReviewApp({
@@ -1930,15 +1925,18 @@ export function ReviewApp({
     // A preview's crops come from a compile of their own, laid out apart from
     // the round's new version: each is drawn where the round's crop it
     // replaces prints, and any further ones follow below the last.
+    // Round crops left over are blanked, so their text does not read as part
+    // of the preview; a crop with no known place is skipped, as on the pages.
     const onto = (images: Strip[], base: string): Strip[] => {
-      let top = 0;
-      return block.after.length ? images.map((image, k) => {
+      let top: number | undefined;
+      const placed = block.after.length ? images.map((image, k) => {
         const place = block.after[Math.min(k, block.after.length - 1)];
-        top = k < block.after.length ? place.top ?? 0 : top;
+        top = k < block.after.length ? place.top : top;
         const strip = { ...at(base)(image), page: place.page, label: place.label, top, left: place.left };
-        top += image.height;
+        if (top !== undefined) top += image.height;
         return strip;
       }) : [];
+      return [...placed, ...block.after.slice(images.length).map((place) => ({ ...place, src: "", clean: "" }))];
     };
     const after = mixed?.status === "ready" && mixed.strips?.length && mixed.files
       ? onto(mixed.strips, mixed.files)
@@ -2452,6 +2450,15 @@ export function ReviewApp({
     canCompare = paperView && Boolean(detail?.pdfBefore) && !compareUnavailable && !phoneDock && !narrow,
     compare = canCompare && chosenLayout === "side-by-side";
   useEffect(() => { setCompareUnavailable(false); }, [detail?.round, detail?.pdfBefore]);
+  // Switching layouts hands the workspace's page controls from one view's
+  // reader to the other's without clearing them; a new round still clears
+  // them while its PDF loads, as the workspace expects.
+  const shownLayout = useRef(compare);
+  useLayoutEffect(() => {
+    if (shownLayout.current === compare) return;
+    shownLayout.current = compare;
+    return holdReader(window);
+  }, [compare]);
   const [compareOpened, setCompareOpened] = useState(false);
   useEffect(() => { if (compare) setCompareOpened(true); }, [compare]);
   // The comparisons of the next few undecided changes are fetched and decoded
@@ -2991,7 +2998,7 @@ export function ReviewApp({
                 {/* Once opened, both views stay loaded and only the one shown
                     renders its pages, so switching keeps the review in place. */}
                 {(compare || compareOpened) && (
-                  <Suspense fallback={<CompareLoading />}>
+                  <Suspense fallback={<div className="compare-status" role="status"><div className="pulse" /></div>}>
                     {compare && (
                       <div className="compare-head" aria-hidden="true">
                         <span>{t("Before")}</span>

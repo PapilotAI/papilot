@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { alignPages, paperPlan, scope, type PlacedChange } from "../../src/web/paper.ts";
+import { alignPages, BAR_HEIGHT, BAR_SPACING, freeSlot, paperPlan, scope, type PlacedChange } from "../../src/web/paper.ts";
 import type { Rect, Strip } from "../../src/types.ts";
 
 const strip = ([left, top, right, bottom]: Rect, page = 1): Strip => ({
@@ -108,4 +108,19 @@ it("shades exactly a crop's lines, or the whole crop when it has no words", () =
   ] };
   expect(scope(crop)).toEqual([69, 8, 303, 44]);
   expect(scope(strip([0, 100, 600, 160]))).toEqual([0, 0, 600, 60]);
+});
+
+it("puts the bars of changes with nothing to mark in free places, never on another bar", () => {
+  // A change near the page's foot, then two with nothing to mark after it.
+  const lines = new Map([[0, { page: 0, top: 0.9, bottom: 0.98 }]]);
+  for (const index of [1, 2]) {
+    const top = freeSlot(lines, 0, lines.get(index - 1)!.bottom + BAR_SPACING);
+    lines.set(index, { page: 0, top, bottom: top + BAR_HEIGHT });
+  }
+  const bars = [...lines.values()].sort((a, b) => a.top - b.top);
+  for (let i = 1; i < bars.length; i++) expect(bars[i].top).toBeGreaterThanOrEqual(bars[i - 1].bottom + BAR_SPACING - 1e-9);
+  for (const bar of bars) expect(bar.bottom).toBeLessThanOrEqual(1);
+  // On an empty page, the first goes where it was asked.
+  expect(freeSlot(new Map(), 0, 0.03)).toBeCloseTo(BAR_SPACING);
+  expect(freeSlot(new Map(), 0, 0.5)).toBeCloseTo(0.5);
 });

@@ -17,7 +17,6 @@ import { t } from "./i18n.ts";
 import { paperPlan, type Cut, type PlacedChange } from "./paper.ts";
 import { cMapData } from "./pdf-cmaps.ts";
 import { fullPaperReader } from './full-paper-reader.ts';
-import { holdReader } from './reader-handoff.ts';
 import { CompilationErrors } from './CompilationErrors.tsx';
 
 // Built assets share one folder, and a host such as Papilot serves the viewer
@@ -99,8 +98,6 @@ export function FullPaper({
     // Where the change being reviewed was on screen before a newer version
     // replaced the pages, so that it stays there.
     anchor = useRef<{ stop: string; offset: number } | null>(null);
-  // The workspace's controls stay while the pages load.
-  useLayoutEffect(() => { if (active) return holdReader(window); }, [active]);
   useEffect(() => {
     let live = true;
     const stop = new AbortController(),

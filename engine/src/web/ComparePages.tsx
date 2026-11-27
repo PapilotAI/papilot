@@ -4,9 +4,8 @@ import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import type { Strip } from "../types.ts";
 import { t } from "./i18n.ts";
 import { CMapData } from "./FullPaper.tsx";
-import { alignPages, locator, scope, type PlacedChange } from "./paper.ts";
+import { alignPages, BAR_HEIGHT, BAR_SPACING, freeSlot, locator, scope, type PlacedChange } from "./paper.ts";
 import { fullPaperReader } from "./full-paper-reader.ts";
-import { holdReader } from "./reader-handoff.ts";
 
 // Both versions of the paper, whole, side by side: the old version's pages
 // on the left and the new version's on the right, paired page by page, with
@@ -71,12 +70,10 @@ function layout(docs: { before: Doc; after: Doc }, changes: PlacedChange[]) {
   for (const { index } of changes) {
     const placedLines = newLines.get(index) ? newLines : oldLines.get(index) ? oldLines : null;
     if (placedLines) { const extent = placedLines.get(index)!; previous = { page: extent.page, top: extent.top, bottom: extent.bottom, lines: placedLines }; continue; }
-    // Below the change before it; near the page's foot, above it instead,
-    // so that bars never sit on one another or off the page.
-    const top: number = !previous ? 0.03 : previous.bottom + 0.032 <= 1 ? previous.bottom + 0.012 : Math.max(0, previous.top - 0.032),
-      bottom: number = top + 0.02;
-    (previous?.lines ?? newLines).set(index, { page: previous?.page ?? 0, top, bottom });
-    previous = { page: previous?.page ?? 0, top, bottom, lines: previous?.lines ?? newLines };
+    const lines: typeof newLines = previous?.lines ?? newLines, page: number = previous?.page ?? 0,
+      top = freeSlot(lines, page, previous ? previous.bottom + BAR_SPACING : 0.03), bottom = top + BAR_HEIGHT;
+    lines.set(index, { page, top, bottom });
+    previous = { page, top, bottom, lines };
   }
   return { old, next, oldLines, newLines };
 }
@@ -158,7 +155,6 @@ export function ComparePages({ active, restorePlace = true, before, after, resou
     return () => { live = false; tasks.forEach((task) => void task.destroy()); };
   }, [before, after, resource, wanted]);
   useEffect(() => { if (docs && active) return paint(box.current!, docs, scrollRoot.current); }, [docs, scrollRoot, active]);
-  useLayoutEffect(() => { if (active) return holdReader(window); }, [active]);
   // The workspace's page, outline, zoom and find controls read the new
   // version's pages, as in the full paper; fit to width fits both versions.
   useLayoutEffect(() => {
@@ -189,13 +185,13 @@ export function ComparePages({ active, restorePlace = true, before, after, resou
             data-pdf-top={0} data-pdf-bottom={height} data-reading-anchor={`${number}:0`} />
         )}
         {placed.filter((item) => item.page === number).map(({ index, strip }) => (
-          <div key={`${index}:${strip.src}`} className={`compare-mark${index === shown ? " current" : ""}`} data-state={states(index)} data-side={side}
+          <div key={`${index}:${strip.page}:${strip.top}:${strip.src}`} className={`compare-mark${index === shown ? " current" : ""}`} data-state={states(index)} data-side={side}
             style={{
               left: `${((strip.left ?? 0) / width) * 100}%`, top: `${(strip.top! / height) * 100}%`,
               width: `${(strip.width / width) * 100}%`, height: `${(strip.height / height) * 100}%`,
             }}
             onClick={() => choose(index)}>
-            <img src={files + strip.src} alt="" draggable={false} />
+            {strip.src && <img src={files + strip.src} alt="" draggable={false} />}
             {(() => {
               // A light shade over exactly the change's lines.
               const [x0, y0, x1, y1] = scope(strip);

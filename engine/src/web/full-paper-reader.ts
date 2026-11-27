@@ -12,7 +12,11 @@ function read(key: string): Place | undefined {
 // Where the last reader was, on the new version's pages: the page and the
 // PDF line at the top of the view. Switching between the full paper and the
 // side-by-side pages opens the other view there.
-let spot: { pdf: string; page: number; y: number } | null = null;
+let spot: { pdf: string; round: string; page: number; y: number } | null = null;
+// The round a reading place belongs to, whichever view keeps it: the full
+// paper's `…:pdf:N` and the side-by-side pages' `…:compare:N`. Only a switch
+// within a round hands its line on; a new round shows its own place.
+const roundOf = (key: string) => key.replace(/:(pdf|compare):(\d+)$/, ':$2');
 
 // The review opens PDF pages to insert before/after rows. Keep its rendering,
 // but adapt those pages to the same navigation contract as the manuscript.
@@ -20,7 +24,7 @@ export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: 
   const document = container.ownerDocument, view = document.defaultView!;
   const documentBox = container.closest<HTMLElement>('.document')!;
   // The other view was read here a moment ago: this one opens at that line.
-  const handed = restore && spot && spot.pdf === (pdf.fingerprints[0] ?? '') ? spot : null;
+  const handed = restore && spot && spot.pdf === (pdf.fingerprints[0] ?? '') && spot.round === roundOf(key) ? spot : null;
   let alive = true, initialized = false, tick = 0, timer: ReturnType<typeof setTimeout> | undefined;
   let saved = read(key), position: Place | undefined, globalZoom: string | null = null;
   try { globalZoom = localStorage.getItem(PDF_ZOOM_STORAGE); } catch { /* Optional storage. */ }
@@ -69,7 +73,7 @@ export function fullPaperReader(container: HTMLElement, root: HTMLElement, pdf: 
       const start = Number(band?.dataset.pdfTop ?? 0), end = Number(band?.dataset.pdfBottom ?? 0);
       if (band) y = start + Math.max(0, Math.min(1, -top(band) / Math.max(1, band.offsetHeight))) * (end - start);
     }
-    spot = { pdf: pdf.fingerprints[0] ?? '', page: state.page - 1, y };
+    spot = { pdf: pdf.fingerprints[0] ?? '', round: roundOf(key), page: state.page - 1, y };
   };
   const update = () => {
     const list = pages();
