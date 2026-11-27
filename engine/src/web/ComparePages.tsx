@@ -17,7 +17,8 @@ import { holdReader } from "./reader-handoff.ts";
 // cuts through a page: a column between the two has a bar level with each
 // change, with its number; a click there, or on the change on either page,
 // selects it and opens its decisions.
-interface Doc { pdf: PDFDocumentProxy; width: number; height: number; labels: string[] | null; words: string[][] }
+// Each page has its own size: an appendix may be landscape.
+interface Doc { pdf: PDFDocumentProxy; width: number; height: number; labels: string[] | null; words: string[][]; sizes: { width: number; height: number }[] }
 type Side = "before" | "after";
 // A change's crops on one page, in PDF points.
 interface Placed { index: number; strip: Strip; page: number }
@@ -27,11 +28,11 @@ async function open(url: string, tasks: ReturnType<typeof pdfjs.getDocument>[], 
   tasks.push(task);
   const pdf = await task.promise, first = (await pdf.getPage(1)).getViewport({ scale: 1 });
   // Each page's words, to pair the two versions' pages by what they say.
-  const words = await Promise.all(Array.from({ length: pdf.numPages }, async (_, index) => {
-    const content = await (await pdf.getPage(index + 1)).getTextContent();
-    return content.items.flatMap((item) => "str" in item ? item.str.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [] : []);
+  const pages = await Promise.all(Array.from({ length: pdf.numPages }, async (_, index) => {
+    const page = await pdf.getPage(index + 1), { width, height } = page.getViewport({ scale: 1 }), content = await page.getTextContent();
+    return { size: { width, height }, words: content.items.flatMap((item) => "str" in item ? item.str.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [] : []) };
   }));
-  return { pdf, width: first.width, height: first.height, labels: await pdf.getPageLabels().catch(() => null), words };
+  return { pdf, width: first.width, height: first.height, labels: await pdf.getPageLabels().catch(() => null), words: pages.map((page) => page.words), sizes: pages.map((page) => page.size) };
 }
 
 function place(doc: Doc, changes: PlacedChange[], side: Side): Placed[] {
@@ -56,7 +57,7 @@ function layout(docs: { before: Doc; after: Doc }, changes: PlacedChange[]) {
   const extents = (list: Placed[], doc: Doc) => {
     const found = new Map<number, { page: number; top: number; bottom: number }>();
     for (const { index, strip, page } of list) {
-      const [, y0, , y1] = scope(strip), top = (strip.top! + y0) / doc.height, bottom = (strip.top! + y1) / doc.height, extent = found.get(index);
+      const height = doc.sizes[page].height, [, y0, , y1] = scope(strip), top = (strip.top! + y0) / height, bottom = (strip.top! + y1) / height, extent = found.get(index);
       if (!extent) found.set(index, { page, top, bottom });
       else if (extent.page === page) { extent.top = Math.min(extent.top, top); extent.bottom = Math.max(extent.bottom, bottom); }
     }
@@ -70,14 +71,15 @@ function layout(docs: { before: Doc; after: Doc }, changes: PlacedChange[]) {
   for (const { index } of changes) {
     const placedLines = newLines.get(index) ? newLines : oldLines.get(index) ? oldLines : null;
     if (placedLines) { const extent = placedLines.get(index)!; previous = { page: extent.page, bottom: extent.bottom, lines: placedLines }; continue; }
-    const top: number = previous ? previous.bottom + 0.012 : 0.03, bottom: number = top + 0.02;
+    // Kept on the page, at its foot at the latest.
+    const top: number = Math.min(previous ? previous.bottom + 0.012 : 0.03, 0.97), bottom: number = top + 0.02;
     (previous?.lines ?? newLines).set(index, { page: previous?.page ?? 0, top, bottom });
     previous = { page: previous?.page ?? 0, bottom, lines: previous?.lines ?? newLines };
   }
   return { old, next, oldLines, newLines };
 }
 
-export function ComparePages({ active, restorePlace = true, before, after, resource, files, changes, current, states, controls, onSelect, scrollRoot, readingPlace, onReady, onUnavailable }: {
+export function ComparePages({ active, restorePlace = true, before, after, resource, files, changes, current, states, controls, onSelect, onDeselected, scrollRoot, readingPlace, onReady, onUnavailable }: {
   /** False while the full paper is shown: both PDFs stay loaded, their pages
    *  are not rendered. */
   active: boolean;
@@ -96,6 +98,8 @@ export function ComparePages({ active, restorePlace = true, before, after, resou
   /** The decisions of the change being reviewed. */
   controls: (index: number) => ReactNode;
   onSelect: (index: number) => void;
+  /** Whether no change is selected, so that shortcuts decide nothing. */
+  onDeselected?: (deselected: boolean) => void;
   scrollRoot: RefObject<HTMLElement | null>;
   /** Where the reading place is kept. */
   readingPlace: string;
@@ -115,6 +119,8 @@ export function ComparePages({ active, restorePlace = true, before, after, resou
   useEffect(() => { setDeselected(false); setPanel((open) => open === null ? null : current); }, [current]);
   const deselect = () => { setPanel(null); setDeselected(true); };
   const shown = deselected ? -1 : current;
+  const told = useRef(onDeselected); told.current = onDeselected;
+  useEffect(() => { told.current?.(active && deselected); }, [active, deselected]);
   useEffect(() => {
     if (shown < 0 || !active) return;
     // Only a click on the pages away from any change deselects: the bar,
@@ -169,20 +175,21 @@ export function ComparePages({ active, restorePlace = true, before, after, resou
   const { old, next, oldLines, newLines } = marks!, rows = pairs!;
   const page = (side: Side, doc: Doc, number: number | null, placed: Placed[]) => {
     if (number === null) return <div className="compare-page compare-blank" style={{ aspectRatio: `${doc.width} / ${doc.height}` }} aria-hidden="true" />;
+    const { width, height } = doc.sizes[number];
     return (
-      <div className="compare-page" data-side={side} data-page={number} style={{ aspectRatio: `${doc.width} / ${doc.height}` }}
-        data-reader-page={side === "after" ? number : undefined} data-pdf-width={doc.width} data-pdf-height={doc.height}
+      <div className="compare-page" data-side={side} data-page={number} style={{ aspectRatio: `${width} / ${height}` }}
+        data-reader-page={side === "after" ? number : undefined} data-pdf-width={width} data-pdf-height={height}
         aria-label={`${side === "before" ? t("Before") : t("After")} · ${t("p. {pages}", { pages: doc.labels?.[number] ?? String(number + 1) })}`}>
         {side === "after" && (
           // The whole page, for the reader's place and the find marks.
-          <div className="paper-slice compare-reading" data-left={0} data-right={doc.width} data-top={0} data-bottom={doc.height}
-            data-pdf-top={0} data-pdf-bottom={doc.height} data-reading-anchor={`${number}:0`} />
+          <div className="paper-slice compare-reading" data-left={0} data-right={width} data-top={0} data-bottom={height}
+            data-pdf-top={0} data-pdf-bottom={height} data-reading-anchor={`${number}:0`} />
         )}
         {placed.filter((item) => item.page === number).map(({ index, strip }) => (
           <div key={`${index}:${strip.src}`} className={`compare-mark${index === shown ? " current" : ""}`} data-state={states(index)} data-side={side}
             style={{
-              left: `${((strip.left ?? 0) / doc.width) * 100}%`, top: `${(strip.top! / doc.height) * 100}%`,
-              width: `${(strip.width / doc.width) * 100}%`, height: `${(strip.height / doc.height) * 100}%`,
+              left: `${((strip.left ?? 0) / width) * 100}%`, top: `${(strip.top! / height) * 100}%`,
+              width: `${(strip.width / width) * 100}%`, height: `${(strip.height / height) * 100}%`,
             }}
             onClick={() => choose(index)}>
             <img src={files + strip.src} alt="" draggable={false} />

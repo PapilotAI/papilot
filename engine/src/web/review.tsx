@@ -377,6 +377,8 @@ export function ReviewApp({
     return () => query.removeEventListener("change", changed);
   }, []);
   const [compareUnavailable, setCompareUnavailable] = useState(false);
+  // Side by side, the author may deselect every change.
+  const nothingSelected = useRef(false);
   const selectUnitHandler = useRef<(stop: number, unit?: string) => void>(() => {});
   useEffect(() => {
     const changed = (event: Event) => setNoteFocus((event as CustomEvent).detail || null);
@@ -1542,6 +1544,8 @@ export function ReviewApp({
       }
       const action = shortcutAction(event, shortcuts);
       if (!action || (changes && action === 'comment')) return;
+      // Side by side with no change selected, a shortcut decides nothing.
+      if (nothingSelected.current && ["accept", "reject", "comment", "source"].includes(action)) return;
       event.preventDefault();
       const activeUnitGroup = focusedUnit
         ? unitGroup(current, focusedUnit)
@@ -1904,6 +1908,33 @@ export function ReviewApp({
         </div>
       </section>
     );
+  }
+  // What the side-by-side pages lay over a change: the crops the stacked view
+  // shows for it, an option being previewed or accepted, or the result of a
+  // mixed decision, each with its own files.
+  function compareChange({ block, index }: PlacedChange): PlacedChange {
+    const accepted = optionKey(block.units),
+      option = previewing && optionPreview?.detail && (!optionPreview.units?.length || block.units.some((id) => optionPreview.units!.includes(id)))
+        ? optionPreview.detail
+        : (accepted && optionBlocks[accepted]) || null,
+      shown = option
+        ? [...option.sections.flatMap((s) => s.blocks.filter((b): b is ChangeBlock => b.kind === "change")), ...option.loose]
+          .find((b) => b.units.some((id) => block.units.includes(id))) ?? null
+        : null,
+      restored = Boolean(!shown && option && !previewing &&
+        block.units.every((id) => variants && Object.hasOwn(variants, id) && variants[id] === units.get(id)?.old_text)),
+      key = !changes && !history && !pendingUnits(stops[index], decisions).length
+        ? mixedKey(detail!.round, index, block.units, decisions, variants) : null,
+      mixed = key ? mixedPreviews[key] : undefined,
+      at = (base: string) => (strip: Strip) => ({ ...strip, src: base + strip.src, clean: base + strip.clean }),
+      base = shown && option ? option.files : detail!.files;
+    return { index, block: {
+      ...block,
+      before: (shown ? shown.before : block.before).map(at(base)),
+      after: mixed?.status === "ready" && mixed.strips?.length && mixed.files
+        ? mixed.strips.map(at(mixed.files))
+        : (shown ? shown.after : restored ? block.before : block.after).map(at(base)),
+    } };
   }
   function change(
     block: ChangeBlock,
@@ -2959,12 +2990,13 @@ export function ReviewApp({
                       before={detail.pdfBefore!}
                       after={detail.pdf!}
                       resource={resource}
-                      files={detail.files}
-                      changes={placed}
+                      files=""
+                      changes={placed.map(compareChange)}
                       current={current}
                       states={(at) => stopState(stops[at]?.units ?? [], decisions)}
                       controls={(at) => actionBar(at, true)}
                       onSelect={(at) => { if (!composer && at !== current) { reached.current = "pick"; select(at, false); } }}
+                      onDeselected={(value) => { nothingSelected.current = value; }}
                       scrollRoot={paper}
                       readingPlace={`${placeKey}:compare:${detail.round}`}
                       onReady={(restored) => {

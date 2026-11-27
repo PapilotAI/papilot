@@ -231,16 +231,19 @@ test("side by side shows both versions' whole pages, paired with a blank page, a
     });
     await page.route(/\/api\/tasks\/tighten-design\/rounds\/\d+$/, async (route) => {
       const detail = (await (await route.fetch()).json()) as RoundDetail;
-      const unit = { ...detail.units[0], visual: "text" as const, effects: undefined };
-      await route.fulfill({ json: { ...detail, units: [unit], sections: [], loose: [{ ...block, units: [unit.id] }],
+      const unit = { ...detail.units[0], visual: "text" as const, effects: undefined },
+        added = { ...detail.units[1], visual: "text" as const, effects: undefined };
+      // A second change: the appendix the new version adds, on its own page.
+      const appendix: ChangeBlock = { ...block, units: [added.id], before: [], after: [{ ...block.after[0], page: 2, label: "2", top: 40, height: 24 }] };
+      await route.fulfill({ json: { ...detail, units: [unit, added], sections: [], loose: [{ ...block, units: [unit.id] }, appendix],
         pdf: "/compare-fixture/new.pdf", pdfBefore: "/compare-fixture/old.pdf", files: "/compare-fixture/", passes: undefined, references: undefined } });
     });
     await page.goto("/?task=tighten-design");
-    await expect(page.locator(".paper .change")).toBeVisible();
+    await expect(page.locator(".paper .change").first()).toBeVisible();
     const toggle = page.getByRole("button", { name: "Side by side", exact: true });
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     // A review that stays stacked never asks for the old version.
-    await page.waitForTimeout(500);
+    await expect.poll(() => page.locator(".paper-page canvas").count()).toBeGreaterThan(0);
     expect(oldRequests).toBe(0);
     // The workspace's page controls follow either layout and are never
     // cleared while switching.
@@ -260,7 +263,7 @@ test("side by side shows both versions' whole pages, paired with a blank page, a
     await expect.poll(() => page.locator(".compare-page > canvas").count()).toBe(3);
     // The change is marked on both pages, level with each other.
     const marks = page.locator(".compare-mark");
-    await expect(marks).toHaveCount(2);
+    await expect(marks).toHaveCount(3);
     const [before, after] = await marks.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().toJSON()));
     expect(Math.abs(before.top - after.top)).toBeLessThan(2);
     expect(before.right).toBeLessThan(after.left);
@@ -285,10 +288,18 @@ test("side by side shows both versions' whole pages, paired with a blank page, a
     await page.keyboard.press("Escape");
     await expect(page.locator(".compare-mark.current")).toHaveCount(0);
     await expect(decisions).toHaveCount(0);
-    // Reading on selects nothing.
-    await page.locator("#paper").evaluate((root) => root.scrollBy(0, 600));
+    // With nothing selected, a shortcut decides nothing.
+    await page.keyboard.press("a");
     await page.waitForTimeout(300);
-    await expect(page.locator(".compare-spot.current")).toHaveCount(0);
+    await expect(page.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "0");
+    // Reading on to the next change selects nothing: change 1 stays the
+    // review's change while change 2 comes into view.
+    await bar.click();
+    await page.locator("#paper").evaluate((root) => root.scrollTo(0, root.scrollHeight));
+    await expect(page.getByRole("button", { name: "Change 2", exact: true })).toBeInViewport();
+    await page.waitForTimeout(300);
+    await expect(page.locator(".compare-spot.current")).toHaveAttribute("data-stop", "0");
+    await expect(page.locator(".change-nav-position")).toContainText("1");
     // Switching back and forth keeps the reader on the new version's pages.
     await toggle.click();
     await expect(page.locator(".paper-page")).toHaveCount(2);
