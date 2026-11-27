@@ -4,8 +4,11 @@ import '../../engine/src/web/legacy-storage.ts';
 import { aiReviewSummary, isFeedbackPrompt } from '../conversation.ts';
 import { noteGroups } from '../note-groups.ts';
 import { readNotesInstructions, type NoteSummary } from '../notes.ts';
+import { AGENT_IDS, isManualAgent } from '../shared.ts';
 import type { AgentId, Attachment, Author, FeedbackSummary, PendingRequest, RuntimeStatus, Skill, Task, TimelineItem } from '../shared.ts';
-import { agentLabel } from './agent-choice.ts';
+import { agentLabel, defaultOfferedModel, offeredAgents } from './agent-choice.ts';
+import { AgentPicker } from './agent-picker.tsx';
+import { BrandIcon } from './brand-icon.tsx';
 import { AttachmentDraft, type UploadAttachment } from './attachment-draft.ts';
 import { DraftAttachments, MessageAttachments, useAttachmentDraft } from './attachments.tsx';
 import { CollaborationDispatchCard } from './collaboration-dispatch.tsx';
@@ -15,6 +18,7 @@ import { ChangeSummary, FileDiffs } from './file-changes.tsx';
 import { errorText, locale, t, tn, useLanguage } from './i18n.ts';
 import { Icon } from './icons.tsx';
 import { Markdown } from './markdown.tsx';
+import { ManualTurnCard, type ManualExecutorPreview } from './manual-turn-card.tsx';
 import { SubmittedNoteContent } from './note-content.tsx';
 import { GroupCard } from './note-groups.tsx';
 import { noteLocation } from './note-location.ts';
@@ -31,6 +35,7 @@ import { TaskPermissionOptions } from './task-permissions.tsx';
 import { toolIcon, toolNote, toolSentence, toolSummary, workflowKind } from './tool-calls.ts';
 import { type RefreshUsage } from './usage.tsx';
 export const agentName = (task: Task) => agentLabel(task.agent || 'codex') || 'Codex';
+export const workingAgentName = (task: Task) => task.manualTurn?.executor?.agent ? agentLabel(task.manualTurn.executor.agent) : agentName(task);
 export const ACTIVE = ['running', 'waiting_input', 'queued'];
 export const preparingLabel = (task: Task) => task.mode === 'review' ? t('Preparing the review PDF…') : t('Preparing…');
 export const touch = () => window.matchMedia('(pointer: coarse)').matches;
@@ -214,7 +219,10 @@ export function createConversation(api: ConversationApi) {
     useLanguage();
     if (PlaygroundProgress && item.type === 'demo-progress') return <Suspense fallback={null}><PlaygroundProgress item={item}/></Suspense>;
     if (item.type === 'user') return <UserMessage item={item} agent={agent}/>;
-    if (item.type === 'assistant') return <article className="message assistant" aria-label={`${agent}, ${time(item.createdAt)}`}><div className="message-body markdown"><Markdown text={item.text}/></div><div className="message-actions"><CopyButton text={item.text}/><time dateTime={new Date(item.createdAt).toISOString()}>{time(item.createdAt)}</time></div></article>;
+    if (item.type === 'assistant') {
+      const speaker = item.meta?.advisor || agent;
+      return <article className="message assistant" aria-label={`${speaker}, ${time(item.createdAt)}`}>{item.meta?.advisor && <div className="message-author"><BrandIcon name="chatgpt" size={14}/>{item.meta.advisor}</div>}<div className="message-body markdown"><Markdown text={item.text}/></div><div className="message-actions"><CopyButton text={item.text}/><time dateTime={new Date(item.createdAt).toISOString()}>{time(item.createdAt)}</time></div></article>;
+    }
     const files = item.type === 'files' ? editedFiles(item, root) : [];
     const label = toolLabel(item, root);
     const detail = item.type === 'files' ? null : item.detail;
@@ -263,7 +271,7 @@ export function createConversation(api: ConversationApi) {
     return entries;
   }
 
-  function Activity({ runtimes, relatedTasks, onOpenTask, source, onRevealQuote, task, runtime, reconnecting, onReconnect, skills, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, onTaskSaved, reportError, pause, pausing, openReview, feedback, connection, tools, lead, errorActions }: { runtimes: Partial<Record<AgentId, RuntimeStatus>>; relatedTasks: Task[]; onOpenTask: (id: string) => void; source?: { tabs: React.ReactNode; panel: React.ReactNode; selected: boolean }; errorActions?: React.ReactNode; tools?: React.ReactNode; lead?: React.ReactNode; onRevealQuote: () => void; task: Task; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void; skills: Skill[]; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; onTaskSaved: (task: Task) => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void; feedback?: React.ReactNode; connection?: React.ReactNode }) {
+  function Activity({ runtimes, manualSettingsVersion = 0, relatedTasks, onOpenTask, source, onRevealQuote, task, runtime, reconnecting, onReconnect, skills, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, onTaskSaved, reportError, pause, pausing, openReview, feedback, connection, tools, lead, errorActions }: { runtimes: Partial<Record<AgentId, RuntimeStatus>>; manualSettingsVersion?: number; relatedTasks: Task[]; onOpenTask: (id: string) => void; source?: { tabs: React.ReactNode; panel: React.ReactNode; selected: boolean }; errorActions?: React.ReactNode; tools?: React.ReactNode; lead?: React.ReactNode; onRevealQuote: () => void; task: Task; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void; skills: Skill[]; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; onTaskSaved: (task: Task) => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void; feedback?: React.ReactNode; connection?: React.ReactNode }) {
     const input = useRef<HTMLTextAreaElement>(null);
     const reviewNotes = reviewDraft(task.id), notes = useReviewDraft(task.id);
     const [savingModel, setSavingModel] = useState(false);
@@ -296,7 +304,20 @@ export function createConversation(api: ConversationApi) {
     const noteResults = useNoteResults();
     useLayoutEffect(() => { if (noteResults?.selected) { back.current = undefined; shouldFollow.current = false; setFollowing(false); } }, [noteResults?.selected, noteResults?.reveal]);
     function latest() { back.current = undefined; shouldFollow.current = true; setFollowing(true); if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight; }
-    useEffect(() => { if (shouldFollow.current && !scroller.current?.querySelector(':popover-open')) latest(); }, [items, requests]);
+    const awaitingManual = task.status === 'waiting_input' && task.manualTurn?.status === 'awaiting_reply';
+    const [manualExecutor, setManualExecutor] = useState<ManualExecutorPreview | null | undefined>(undefined);
+    const [manualOverride, setManualOverride] = useState<{ agent: AgentId; model: string; effort: string } | null>(null);
+    useEffect(() => {
+      setManualOverride(null);
+      if (!awaitingManual) setManualExecutor(undefined);
+    }, [awaitingManual, task.id, task.manualTurn?.runId]);
+    const localExecutorAgents = offeredAgents(runtimes).filter(id => !isManualAgent(id) && id !== 'collaboration');
+    const readyLocalExecutor = localExecutorAgents.find(id => runtimes[id]?.connected && runtimes[id]?.authenticated);
+    const fallbackManualExecutor = manualExecutor === null && readyLocalExecutor
+      ? { agent: readyLocalExecutor, model: defaultOfferedModel(runtimes[readyLocalExecutor])?.id || '', effort: '' }
+      : null;
+    const effectiveManualExecutor = manualOverride ?? (manualExecutor ? { agent: manualExecutor.agent, model: manualExecutor.model || '', effort: manualExecutor.effort || '' } : fallbackManualExecutor);
+    useEffect(() => { if (shouldFollow.current && !scroller.current?.querySelector(':popover-open')) latest(); }, [items, requests, awaitingManual]);
     useEffect(() => {
       if (!scroller.current) return;
       const observer = new ResizeObserver(() => { if (back.current !== undefined) goBack(); else if (shouldFollow.current) latest(); });
@@ -305,10 +326,24 @@ export function createConversation(api: ConversationApi) {
     const feedbackCount = task.mode === 'review' ? 0 : pendingReviewFeedback(task.review);
     const readyReview = reviewSubmission(notes, draft, skill?.id);
     const emptyNotes = notes.notes.length - readyReview.notes.length;
-    const canSend = Boolean(draft.trim() || skill || files.files.length || readyReview.notes.length || readyReview.instructions.trim() || feedbackCount);
+    const manualRefreshKey = `${manualSettingsVersion}:${AGENT_IDS.map(id => `${id}:${runtimes[id]?.connected ? 1 : 0}${runtimes[id]?.authenticated ? 1 : 0}${runtimes[id]?.hidden ? 1 : 0}`).join(',')}`;
+    const canSend = awaitingManual ? Boolean(draft.trim()) : Boolean(draft.trim() || skill || files.files.length || readyReview.notes.length || readyReview.instructions.trim() || feedbackCount);
     async function submit() {
-      if (savingPermissions || savingModel || composer.sending || ['uncertain', 'deleting'].includes(task.status) || task.preparation || files.draft.getSnapshot().blocked) return;
+      if (savingPermissions || savingModel || composer.sending || ['uncertain', 'deleting'].includes(task.status) || task.preparation || (!awaitingManual && files.draft.getSnapshot().blocked)) return;
       if (isPlayground && canSend) { requestPlaygroundDownload(); return; }
+      if (awaitingManual) {
+        const chosenExecutor = manualOverride ?? fallbackManualExecutor;
+        const executorPayload = chosenExecutor
+          ? { agent: chosenExecutor.agent, ...(chosenExecutor.model ? { model: chosenExecutor.model } : {}), ...(chosenExecutor.effort ? { effort: chosenExecutor.effort } : {}) }
+          : undefined;
+        try {
+          if (await composer.submit('draft', message => api('/tasks/' + task.id + '/manual-reply', { reply: message.text, requestKey: message.requestKey, ...(executorPayload ? { executor: executorPayload } : {}) }))) {
+            shouldFollow.current = true;
+            refresh();
+          }
+        } catch (e) { reportError(e); }
+        return;
+      }
       const submitted = reviewSubmission(reviewNotes.getSnapshot(), composer.text, skill?.id), attached = files.draft.getSnapshot().files;
       const source = !composer.text.trim() && !skill && !attached.length && !submitted.notes.length && !submitted.instructions.trim() && feedbackCount ? 'feedback' : 'draft';
       reviewNotes.setBusy(true);
@@ -324,7 +359,7 @@ export function createConversation(api: ConversationApi) {
     const active = ACTIVE.includes(task.status), blocked = ['uncertain', 'deleting'].includes(task.status);
     // The draft re-renders this panel on every keystroke; the same elements let
     // React skip the conversation until its items change.
-    const agent = agentName(task), review = task.mode === 'review', root = task.worktree;
+    const agent = agentName(task), activeAgent = workingAgentName(task), review = task.mode === 'review', root = task.worktree;
     const thread = useMemo(() => {
       // Collaboration workers' steps belong under their delegation, not in the thread.
       const steps = new Map<string, TimelineItem[]>(), lines = new Set(items.map(item => item.id));
@@ -366,7 +401,8 @@ export function createConversation(api: ConversationApi) {
       });
     }, [items, review, agent, root, active]);
     const hint = task.status === 'deleting' ? t('This task is being deleted') : task.status === 'uncertain' ? t('Check task status before sending') : task.preparation ? t('Send more instructions once the task has started.') : sending ? t('Sending…')
-      : emptyNotes ? canSend ? tn(emptyNotes, '{n} empty comment will stay in drafts', '{n} empty comments will stay in drafts') : t('Write a comment or message to send.') : active ? t('{agent} is working · new instructions run next', { agent: agentName(task) }) : '';
+      : awaitingManual ? (effectiveManualExecutor ? t('Sending asks {agent} to apply the edits in this task.', { agent: agentLabel(effectiveManualExecutor.agent) }) : manualExecutor === null ? t('Connect a local agent in Settings → Agents to apply replies.') : '')
+      : emptyNotes ? canSend ? tn(emptyNotes, '{n} empty comment will stay in drafts', '{n} empty comments will stay in drafts') : t('Write a comment or message to send.') : active ? t('{agent} is working · new instructions run next', { agent: activeAgent }) : '';
     // A source tab beside the chat hides the chat while it is selected; both stay as they were.
     return <section id="conversation-panel" className="activity-panel" data-side={source?.selected ? 'source' : undefined} aria-label={t('{agent} conversation', { agent: agentName(task) })}><div className="panel-heading">{lead}{source?.tabs}{tools && <div className="panel-tools">{tools}</div>}</div>
       {source && <div className="side-pane" hidden={!source.selected}>{source.panel}</div>}
@@ -375,8 +411,9 @@ export function createConversation(api: ConversationApi) {
         {loadError && <div className="conversation-error" role="alert"><p>{loadError}</p><button className="button secondary compact" onClick={retry}>{t('Retry conversation')}</button></div>}
         {relatedTasks.map(related => <p className="restart-link" key={related.id}>{related.id === task.restart?.taskId ? t('Restarted from') : t('Replacement task')}: <button type="button" onClick={() => onOpenTask(related.id)}>{related.title}</button></p>)}
         {thread}
-        {requests.map(r => <RequestCard key={r.id} request={r} agent={agentName(task)} answerDrafts={answerDrafts} onDone={refresh}/>)}
-        {task.status === 'running' && <div className="working"><span className="working-dots"><i/><i/><i/></span>{t('{agent} is working on this task', { agent: agentName(task) })}</div>}
+        {awaitingManual && <ManualTurnCard key={task.manualTurn!.runId} taskId={task.id} runId={task.manualTurn!.runId} api={api} refreshKey={manualRefreshKey} onExecutor={setManualExecutor}/>}
+        {requests.map(r => <RequestCard key={r.id} request={r} agent={activeAgent} answerDrafts={answerDrafts} onDone={refresh}/>)}
+        {task.status === 'running' && <div className="working"><span className="working-dots"><i/><i/><i/></span>{t('{agent} is working on this task', { agent: activeAgent })}</div>}
         {task.status === 'queued' && <p className="muted">{t('Task saved. Waiting for an available {agent} session.', { agent: agentName(task) })}</p>}
         {task.status === 'preparing' && <p className="muted" role="status">{preparingLabel(task)}</p>}
         {openReview && task.status === 'reviewing' && task.review?.counts?.pending ? <div className="review-ready"><Icon name="paper" size={16}/><span>{tn(task.review.counts.pending, '{n} change to review', '{n} changes to review')}</span><button className="button secondary compact" onClick={openReview}>{t('Open review')}</button></div> : null}
@@ -385,27 +422,46 @@ export function createConversation(api: ConversationApi) {
       </div></div>{!following && <button className="jump-latest" onClick={latest}><Icon name="arrowDown" size={14}/>{t('Latest messages')}</button>}</div>
       <div className="composer-wrap">
         {connection}
-        <Composer reviewContent={<ReviewDraftCards task={task} feedbackCount={feedbackCount} onReveal={onRevealQuote}/>} attachments={task.mode === 'review' ? undefined : files.draft} upload={(file, signal) => uploadAttachment(task.projectId, file, signal)} filesDisabled={sending || blocked || savingModel} imageHint={task.agent === 'antigravity' && files.files.some(file => file.mime.startsWith('image/'))} inputRef={input} label={t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit()} placeholder={task.mode === 'review' ? t('Ask for another review of this PDF version…') : active ? t('Queue instructions for the next turn…') : notes.notes.length || feedbackCount ? t('Add overall instructions (optional)') : t('Ask a question or request changes…')} skills={task.mode === 'review' ? [] : skills.filter(skill => skill.output !== 'annotations')} skill={skill} onSkill={savingModel ? undefined : setSkill}
+        <Composer reviewContent={awaitingManual ? undefined : <ReviewDraftCards task={task} feedbackCount={feedbackCount} onReveal={onRevealQuote}/>} attachments={task.mode === 'review' || awaitingManual ? undefined : files.draft} upload={(file, signal) => uploadAttachment(task.projectId, file, signal)} filesDisabled={sending || blocked || savingModel} imageHint={task.agent === 'antigravity' && files.files.some(file => file.mime.startsWith('image/'))} inputRef={input} label={awaitingManual ? t('Paste ChatGPT Pro’s reply') : t('Instructions for {agent}', { agent: agentName(task) })} value={draft} onChange={value => composer.edit(value)} onSubmit={() => void submit()} placeholder={awaitingManual ? t('Paste ChatGPT Pro’s reply here…') : task.mode === 'review' ? t('Ask for another review of this PDF version…') : active ? t('Queue instructions for the next turn…') : notes.notes.length || feedbackCount ? t('Add overall instructions (optional)') : t('Ask a question or request changes…')} skills={task.mode === 'review' || awaitingManual ? [] : skills.filter(skill => skill.output !== 'annotations')} skill={awaitingManual ? null : skill} onSkill={savingModel || awaitingManual ? undefined : setSkill}
           footer={attach => <div className="composer-options">
-            {task.mode !== 'review' && <SkillPicker onAttach={attach} skills={skills.filter(skill => skill.output !== 'annotations')} selected={skill} disabled={sending || blocked || savingModel} onPick={value => { setSkill(value); input.current?.focus(); }}/>}
-            <TaskModelPicker refreshUsage={refreshUsage} task={task} runtime={runtime} runtimes={runtimes} disabled={sending || blocked || savingPermissions || files.blocked || notes.busy} reconnecting={reconnecting} onReconnect={onReconnect} save={settings => api<Task>(`/tasks/${task.id}/model`, settings)} onSaving={setSavingModel} refresh={refresh} reportError={reportError}
-              switchAgent={async settings => {
-                if (isPlayground) { requestPlaygroundDownload(); return; }
-                onTaskSaved(await api<Task>(`/tasks/${task.id}/agent`, settings));
-              }}
-              permissions={<TaskPermissionOptions task={task} runtime={runtime} disabled={sending || blocked || savingModel} save={permissions => api<Task>(`/tasks/${task.id}/permissions`, { permissions })} onSaved={onTaskSaved} onSaving={setSavingPermissions} refresh={refresh} reportError={reportError}/>}/>
+            {task.mode !== 'review' && !awaitingManual && <SkillPicker onAttach={attach} skills={skills.filter(skill => skill.output !== 'annotations')} selected={skill} disabled={sending || blocked || savingModel} onPick={value => { setSkill(value); input.current?.focus(); }}/>}
+            {awaitingManual ? (
+              <AgentPicker
+                label={t('Local agent for edits')}
+                agents={localExecutorAgents.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] }))}
+                agent={effectiveManualExecutor?.agent || localExecutorAgents[0] || 'codex'}
+                model={effectiveManualExecutor?.model || ''}
+                effort={effectiveManualExecutor?.effort || ''}
+                noAgent={!localExecutorAgents.length || (manualExecutor === null && !effectiveManualExecutor)}
+                reconnecting={reconnecting}
+                onReconnect={onReconnect}
+                refreshUsage={refreshUsage}
+                disabled={sending || blocked || manualExecutor === undefined}
+                onSelect={(nextAgent, nextModel) => setManualOverride({ agent: nextAgent, model: nextModel, effort: '' })}
+                onChange={change => {
+                  if (change.effort === undefined || !effectiveManualExecutor) return;
+                  setManualOverride({ ...effectiveManualExecutor, effort: change.effort });
+                }}
+              />
+            ) : (
+              <TaskModelPicker refreshUsage={refreshUsage} task={task} runtime={runtime} runtimes={runtimes} disabled={sending || blocked || savingPermissions || files.blocked || notes.busy} reconnecting={reconnecting} onReconnect={onReconnect} save={settings => api<Task>(`/tasks/${task.id}/model`, settings)} onSaving={setSavingModel} refresh={refresh} reportError={reportError}
+                switchAgent={async settings => {
+                  if (isPlayground) { requestPlaygroundDownload(); return; }
+                  onTaskSaved(await api<Task>(`/tasks/${task.id}/agent`, settings));
+                }}
+                permissions={<TaskPermissionOptions task={task} runtime={runtime} disabled={sending || blocked || savingModel} save={permissions => api<Task>(`/tasks/${task.id}/permissions`, { permissions })} onSaved={onTaskSaved} onSaving={setSavingPermissions} refresh={refresh} reportError={reportError}/>}/>
+            )}
           </div>}
           action={<div className="composer-actions">
             <ContextMeter usage={task.context}/>
-            {active && <button type="button" className="send-button stop" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: agentName(task) })} disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
-            {(!active || draft.trim() || skill || files.entries.length || notes.notes.length || feedbackCount || sending) && <button aria-label={t('Send instructions')} title={t('Send (Enter) · New line (Shift+Enter)')} disabled={!canSend || files.blocked || sending || savingModel || savingPermissions || blocked || Boolean(task.preparation)} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
+            {active && <button type="button" className="send-button stop" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: activeAgent })} disabled={pausing} aria-busy={pausing} onClick={pause}><Icon name="stop" size={18}/></button>}
+            {(!active || awaitingManual || draft.trim() || skill || files.entries.length || notes.notes.length || feedbackCount || sending) && <button aria-label={awaitingManual ? t('Send reply to local agent') : t('Send instructions')} title={t('Send (Enter) · New line (Shift+Enter)')} disabled={!canSend || (!awaitingManual && files.blocked) || sending || savingModel || savingPermissions || blocked || Boolean(task.preparation)} className="send-button" type="submit"><Icon name="arrowUp" size={18}/></button>}
           </div>}/>
         {hint && <p className="composer-hint" role="status">{hint}</p>}
       </div>
 
     </section>;
   }
-
 
   return { Activity, Composer };
 }

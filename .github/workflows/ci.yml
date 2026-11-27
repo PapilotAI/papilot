@@ -327,6 +327,9 @@ jobs:
       - name: collaboration-workers
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-collaboration-workers.mjs
+      - name: chatgpt-pro
+        if: ${{ !cancelled() }}
+        run: node --import tsx scripts/check-chatgpt-pro.mjs
       - name: pi-agent
         if: ${{ !cancelled() }}
         run: node --import tsx scripts/check-pi-agent.mjs

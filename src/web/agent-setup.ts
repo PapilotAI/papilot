@@ -41,6 +41,12 @@ export function agentSetup(id: AgentId) {
     steps: [t('Connect and sign in to at least one agent in Settings → Agents, then enable Collaboration mode in Settings → Experiments.')],
     existing: t('Connect two or more models to race subjective or technical annotations in parallel.'),
   };
+  if (id === 'chatgpt') return {
+    summary: t('ChatGPT Pro (web) runs manually through chat.'),
+    reason: t('Turn on ChatGPT Pro (web) in Settings → Experiments to copy prompts and paste replies inside normal tasks.'),
+    steps: [t('Enable ChatGPT Pro (web) in Settings → Experiments.')],
+    existing: t('A connected local agent applies ChatGPT Pro’s suggestions to your manuscript.'),
+  };
   const [command, variable] = cli[id];
   return {
     summary: id === 'claude' ? t('Claude Code or API credentials were not detected.') : t('{command} was not found by Papilot.', { command }),

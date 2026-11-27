@@ -1,4 +1,4 @@
-import { createConversation, agentName, ACTIVE, preparingLabel, touch } from './conversation.tsx';
+import { createConversation, agentName, workingAgentName, ACTIVE, preparingLabel, touch } from './conversation.tsx';
 import '../../engine/src/web/legacy-storage.ts';
 import { TaskDocument } from './task-document.tsx';
 import { requestApi, requestState } from './api.ts';
@@ -17,8 +17,8 @@ import { StrictMode, Suspense, lazy, useCallback, useEffect, useId, useImperativ
 import { createRoot } from 'react-dom/client';
 import { createPortal, flushSync } from 'react-dom';
 import { ignorePattern } from '../commit.ts';
-import { effectiveServiceTier, modelServiceTier, AGENT_IDS, isAgentId, isTaskReviewNote, taskFinished } from '../shared.ts';
-import type { TaskCommitReview, CompilerChoice, LatexInstallation, ZoteroStatus, AgentId, Annotation, AnnotationGroupEdit, AnnotationGroupState, AnnotationBatch, AnnotationBatchResult, NoteSection, PageReadingLayout, BuildRepairResult, MarkKind, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
+import { effectiveServiceTier, modelServiceTier, AGENT_IDS, isAgentId, isManualAgent, isTaskReviewNote, taskFinished } from '../shared.ts';
+import type { ChatgptProSettings as ChatgptProSettingsState, TaskCommitReview, CompilerChoice, LatexInstallation, ZoteroStatus, AgentId, Annotation, AnnotationGroupEdit, AnnotationGroupState, AnnotationBatch, AnnotationBatchResult, NoteSection, PageReadingLayout, BuildRepairResult, MarkKind, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
 import { SkillPicker, skillName } from './skills.tsx';
 import { reviewDraft, useReviewDraft, reviewSubmission } from './review-draft.ts';
 import { ComposerDraft, sendsMessage, taskTitle, pendingReviewFeedback } from './composer.ts';
@@ -139,7 +139,8 @@ const statusNames = (): Record<string, string> => ({ preparing: t('Preparing…'
 function Status({ task }: { task: Task }) {
   const answered = noManuscriptChanges(task), done = task.status === 'reviewing' && task.review?.state === 'done';
   const saved = taskSaveStatus(task);
-  return <span className={`status ${task.status}${saved ? ' done' : ''}`}><i/>{saved === 'committed' ? t('Committed') : saved === 'applied' ? t('Applied to manuscript') : answered ? t('Completed') : done ? t('Review complete') : task.status === 'running' ? t('{agent} is working', { agent: agentName(task) }) : task.status === 'preparing' ? preparingLabel(task) : task.status === 'building' && task.review?.ready ? t('Ready for review') : statusNames()[task.status] || task.status}</span>;
+  const awaitingManual = task.status === 'waiting_input' && task.manualTurn?.status === 'awaiting_reply';
+  return <span className={`status ${task.status}${saved ? ' done' : ''}`}><i/>{saved === 'committed' ? t('Committed') : saved === 'applied' ? t('Applied to manuscript') : answered ? t('Completed') : done ? t('Review complete') : awaitingManual ? t('Waiting for ChatGPT Pro') : task.status === 'running' ? t('{agent} is working', { agent: workingAgentName(task) }) : task.status === 'preparing' ? preparingLabel(task) : task.status === 'building' && task.review?.ready ? t('Ready for review') : statusNames()[task.status] || task.status}</span>;
 }
 function ago(timestamp: number) {
   const minutes = Math.floor((Date.now() - timestamp) / 60000);
@@ -817,11 +818,13 @@ function PendingComparison({ task, busy, onBuild }: { task: Task; busy: boolean;
       detail = t('Comparing the typeset pages…');
     }
   } else if (task.status === 'running' || task.status === 'queued') {
-    title = task.status === 'running' ? t('{agent} is working', { agent: agentName(task) }) : t('Queued');
+    title = task.status === 'running' ? t('{agent} is working', { agent: workingAgentName(task) }) : t('Queued');
     detail = t('If the task changes the manuscript, a PDF comparison will appear here. Otherwise, read the answer in the chat.');
   } else if (task.status === 'waiting_input') {
-    title = t('Needs your reply');
-    detail = t('Reply in the chat to continue. A PDF comparison is needed only if the manuscript changes.');
+    title = task.manualTurn?.status === 'awaiting_reply' ? t('Waiting for ChatGPT Pro') : t('Needs your reply');
+    detail = task.manualTurn?.status === 'awaiting_reply'
+      ? t('Copy the prompt in the chat, then paste ChatGPT Pro’s reply there to apply edits.')
+      : t('Reply in the chat to continue. A PDF comparison is needed only if the manuscript changes.');
   } else if (task.status === 'uncertain') {
     title = t('Check task status');
     detail = t('Confirm whether the task is still running before generating a PDF comparison.');
@@ -1039,6 +1042,7 @@ function App() {
   const [newSkill, setNewSkill] = useState<Skill | null>(null);
   const [skills, setSkills] = useState<{ projectId: string; list: Skill[] }>({ projectId: '', list: [] });
   const [skillsRevision, setSkillsRevision] = useState(0);
+  const [manualSettingsVersion, setManualSettingsVersion] = useState(0);
   // The agent, and each agent's model and reasoning effort, are remembered for
   // every new task, whether it starts from the composer or from PDF notes.
   useAgentPreferenceChanges();
@@ -1430,7 +1434,7 @@ function App() {
   }
   const defaultSelection = modelSelection(defaultAgent);
   const { agent, pref } = agentChoice === defaultAgent ? defaultSelection : modelSelection(agentChoice);
-  const readOnlyAgents = taskAgents.filter(id => id !== 'collaboration' && runtimes[id]?.supportsReadOnlyTasks !== false);
+  const readOnlyAgents = taskAgents.filter(id => id !== 'collaboration' && id !== 'chatgpt' && runtimes[id]?.supportsReadOnlyTasks !== false);
   // A read-only helper follows the editing choice when that runtime supports
   // it. Otherwise use an available read-only agent and its own model default.
   function readOnlyChoice(choice: CommitMessageChoice): CommitMessageChoice | undefined {
@@ -1446,15 +1450,19 @@ function App() {
     const serviceTier = effectiveServiceTier(model, choice.serviceTier);
     return serviceTier === choice.serviceTier ? choice : { ...choice, serviceTier };
   }
-  const fallbackGitAgent = taskAgents.find(id => id !== 'collaboration') || 'codex';
+  const fallbackGitAgent = taskAgents.find(id => id !== 'collaboration' && !isManualAgent(id)) || 'codex';
   const conversationHelper = commitContext
     ? commitContext.agent === 'collaboration'
       ? { agent: fallbackGitAgent, model: '', effort: '' }
-      : effectiveGitChoice({
-          agent: commitContext.agent || fallbackGitAgent, model: commitContext.model || '', effort: commitContext.effort || '',
-          ...(commitContext.serviceTier ? { serviceTier: commitContext.serviceTier } : {}),
-        })
-    : defaultSelection.agent.agent === 'collaboration'
+      : isManualAgent(commitContext.agent)
+        ? commitContext.manualExecutor
+          ? effectiveGitChoice({ agent: commitContext.manualExecutor.agent, model: commitContext.manualExecutor.model || '', effort: '' })
+          : { agent: fallbackGitAgent, model: '', effort: '' }
+        : effectiveGitChoice({
+            agent: commitContext.agent || fallbackGitAgent, model: commitContext.model || '', effort: commitContext.effort || '',
+            ...(commitContext.serviceTier ? { serviceTier: commitContext.serviceTier } : {}),
+          })
+    : defaultSelection.agent.agent === 'collaboration' || isManualAgent(defaultSelection.agent.agent)
       ? { agent: fallbackGitAgent, model: '', effort: '' }
       : defaultSelection.agent;
   const commitWriter = commitPreference === 'conversation' ? readOnlyChoice(conversationHelper)
@@ -2421,7 +2429,7 @@ function App() {
           {!mobile && !chatOnly && task.status === 'deleting' && (sidebarToggle || !conversationVisible) && <div className="review-placeholder-toolbar">{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}<div className="panel-tools">{!conversationVisible && taskStateActions}</div></div>}
           {(task.review?.state === 'build_failed' || task.status === 'failed' && task.review?.job?.status === 'failed') && <div className="review-build-error" role="status"><Icon name="alert" size={15}/><span>{t('Could not generate the PDF comparison.')}</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Retry build')}</button></div>}
           {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : !task.preparation && task.mode === 'review' ? <AiReviewView key={task.id} task={task} api={api} onCopied={() => void loadManuscript(task.projectId)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}</> : null} tools={!mobile && !conversationVisible ? taskStateActions : null}/> : <TaskDocument key={task.id} projectId={task.projectId} manuscript={manuscriptData.data} placeholder={task.preparation ? <PreparingTask task={task}/> : <PendingComparison task={task} busy={taskActionBusy} onBuild={() => void action('/tasks/' + task.id + '/publish')}/>} task={task} sources={taskReview} onOpenSource={openTaskSource} onRetryComparison={isPlayground ? undefined : () => void action('/tasks/' + task.id + '/publish')} retryBusy={comparisonRetryBusy} onChanges={next => setTaskChanges(current => JSON.stringify(current) === JSON.stringify(next) ? current : next)} onCurrentChange={change => { if (taskSource.editing && taskSide === 'source') void taskSource.follow(change, () => undefined); }} onDecided={() => void refresh(true)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}</> : null} tools={<>{reviewTools}{!mobile && !conversationVisible && taskStateActions}</>} completion={chatOnly ? null : completion} onComment={() => { setMobileTab('conversation'); setTaskSide('chat'); setLayout(current => current === 'review' ? 'split' : current); }}/>}
-        </section><Activity key={task.id} runtimes={runtimes} relatedTasks={state?.tasks.filter(other => other.id === task.restart?.taskId || other.restart?.taskId === task.id) || []} onOpenTask={id => { setSelected(id); setSidebar(false); }} source={taskSourceSide} onRevealQuote={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} task={task} lead={!mobile && chatOnly ? sidebarToggle : null} tools={!mobile && conversationVisible ? taskControls : null} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={taskRequests} refresh={() => void refresh(true)} errorActions={task.preparation && task.status === 'failed' ? <div className="task-error-actions">
+        </section><Activity key={task.id} runtimes={runtimes} manualSettingsVersion={manualSettingsVersion} relatedTasks={state?.tasks.filter(other => other.id === task.restart?.taskId || other.restart?.taskId === task.id) || []} onOpenTask={id => { setSelected(id); setSidebar(false); }} source={taskSourceSide} onRevealQuote={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} task={task} lead={!mobile && chatOnly ? sidebarToggle : null} tools={!mobile && conversationVisible ? taskControls : null} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={taskRequests} refresh={() => void refresh(true)} errorActions={task.preparation && task.status === 'failed' ? <div className="task-error-actions">
             <button type="button" className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/prepare')}><Icon name="refresh" size={14}/>{t('Retry')}</button>
             <button type="button" className="button secondary compact" onClick={() => setDeleteTarget(task)}><Icon name="trash" size={14}/>{t('Delete task…')}</button>
           </div> : chatOnly && task.mode !== 'review' && ['failed', 'interrupted'].includes(task.status) ? <div className="task-error-actions">
@@ -2441,7 +2449,7 @@ function App() {
       : <div className="home"><div className="home-inner"><PapilotMark size={52} className="home-logo"/><h1>{t('Add your first paper')}</h1><div className="home-paper-actions"><button className="button primary" onClick={createProject}><Icon name="plus" size={16}/>{t('New paper')}</button><button className="button secondary" onClick={importProject}><Icon name="download" size={16}/>{t('Import or open')}</button></div>{overleafEntry && <div className="home-integrations">{overleafEntry}</div>}</div></div>}
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
-    {settings && <SettingsDialog refreshUsage={refreshUsage} commitWriter={commitWriter} conflictWriter={conflictWriter} activity={loadActivity} memory={!isPlayground ? { project, api } : undefined} workflow={isPlayground ? undefined : { enabled: runtimes.collaboration?.hidden === false, online, runtimes, load: () => api<CollaborationSettingsState>('/collaboration'), save: async change => { const result = await api<CollaborationSettingsState>('/collaboration', change); await refresh(true); return result; } }} requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: taskAgents.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] })), agent: defaultAgent, model: defaultSelection.chosen, effort: defaultSelection.agent.effort, onSelect: chooseModel, onEffort: effort => saveModelPreferences(defaultAgent, defaultSelection.agent.model, { ...defaultSelection.pref, effort }), ...(!isPlayground ? { quick: quickModelApi } : {}) }} updates={!isPlayground ? api : undefined} overleaf={!isPlayground ? { api, state: state?.overleaf } : undefined} zotero={!isPlayground ? zoteroApi : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, compiler: chooseCompiler, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body), agentSettings: async change => { await api('/agent-settings', change); await refresh(true); } } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
+    {settings && <SettingsDialog refreshUsage={refreshUsage} commitWriter={commitWriter} conflictWriter={conflictWriter} activity={loadActivity} memory={!isPlayground ? { project, api } : undefined} workflow={isPlayground ? undefined : { enabled: runtimes.collaboration?.hidden === false, online, runtimes, load: () => api<CollaborationSettingsState>('/collaboration'), save: async change => { const result = await api<CollaborationSettingsState>('/collaboration', change); await refresh(true); return result; } }} chatgptPro={isPlayground ? undefined : { enabled: runtimes.chatgpt?.hidden === false, online, runtimes, load: () => api<ChatgptProSettingsState>('/chatgpt-pro'), save: async change => { const result = await api<ChatgptProSettingsState>('/chatgpt-pro', change); setManualSettingsVersion(value => value + 1); await refresh(true); return result; } }} requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: taskAgents.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] })), agent: defaultAgent, model: defaultSelection.chosen, effort: defaultSelection.agent.effort, onSelect: chooseModel, onEffort: effort => saveModelPreferences(defaultAgent, defaultSelection.agent.model, { ...defaultSelection.pref, effort }), ...(!isPlayground ? { quick: quickModelApi } : {}) }} updates={!isPlayground ? api : undefined} overleaf={!isPlayground ? { api, state: state?.overleaf } : undefined} zotero={!isPlayground ? zoteroApi : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, compiler: chooseCompiler, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body), agentSettings: async change => { await api('/agent-settings', change); await refresh(true); } } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}
     {bulkTarget && <BulkTaskDialog target={bulkTarget}
       submit={target => api('/tasks/' + target.id + '/' + bulkTarget.action, bulkTarget.action === 'archive' ? { archived: true } : { confirm: true })}

@@ -33,8 +33,9 @@ function connectionInfo(id: AgentId) {
     qoder: t('Uses Qoder CLI and its saved login through ACP.'),
     codebuddy: t('Uses CodeBuddy CLI and its saved login through ACP.'),
     workbuddy: t('Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.'),
+    chatgpt: t('Runs manually through your ChatGPT Pro conversation, with a local agent applying edits.'),
   };
-  const commands = { collaboration: '', papilot: '', pi: 'pi → /login', codex: window.papilotDesktop ? 'codex login' : 'papilot codex login', claude: 'claude auth login', cursor: 'CURSOR_API_KEY', copilot: 'copilot login', grok: 'grok login', antigravity: 'agy', kimi: 'kimi login', glm: 'ZHIPU_API_KEY / ZAI_API_KEY', zcode: 'zcode login', deepseek: 'dsh web', qwen: 'qwen', opencode: 'opencode auth login', qoder: 'qoder login', codebuddy: 'codebuddy', workbuddy: 'PAPILOT_WORKBUDDY_BIN' };
+  const commands = { collaboration: '', chatgpt: '', papilot: '', pi: 'pi → /login', codex: window.papilotDesktop ? 'codex login' : 'papilot codex login', claude: 'claude auth login', cursor: 'CURSOR_API_KEY', copilot: 'copilot login', grok: 'grok login', antigravity: 'agy', kimi: 'kimi login', glm: 'ZHIPU_API_KEY / ZAI_API_KEY', zcode: 'zcode login', deepseek: 'dsh web', qwen: 'qwen', opencode: 'opencode auth login', qoder: 'qoder login', codebuddy: 'codebuddy', workbuddy: 'PAPILOT_WORKBUDDY_BIN' };
   return { description: descriptions[id], command: commands[id], key: id === 'cursor' || id === 'glm' };
 }
 
@@ -54,8 +55,8 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
   const [pending, setPending] = useState<Record<string, { token: number; value: boolean | string[] }>>({});
   const [saveError, setSaveError] = useState(false), [resetting, setResetting] = useState(false);
   const tokens = useRef(0);
-  const isOff = (id: AgentId) => id !== 'collaboration' && Boolean((pending[`off:${id}`]?.value as boolean | undefined) ?? runtimes[id]?.hidden);
-  const hiddenOf = (id: AgentId) => (pending[`models:${id}`]?.value as string[] | undefined) ?? runtimes[id]?.hiddenModels ?? [];
+  const isOff = (id: AgentId) => id !== 'collaboration' && id !== 'chatgpt' && Boolean((pending[`off:${id}`]?.value as boolean | undefined) ?? runtimes[id]?.hidden);
+  const hiddenOf = (id: AgentId) => id === 'chatgpt' ? [] : (pending[`models:${id}`]?.value as string[] | undefined) ?? runtimes[id]?.hiddenModels ?? [];
   async function apply(updates: Record<string, boolean | string[]>, change: AgentSettingsChange) {
     const token = ++tokens.current;
     setSaveError(false);
@@ -103,7 +104,7 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
   }
   // Ready agents first and agents that are off last.
   const rank = (availability: string) => availability === 'ready' || availability === 'limited' ? 0 : availability === 'off' ? 2 : 1;
-  const agents = AGENT_IDS.filter(id => id !== 'collaboration' || runtimes.collaboration?.hidden === false).map(id => {
+  const agents = AGENT_IDS.filter(id => id !== 'chatgpt' && (id !== 'collaboration' || runtimes.collaboration?.hidden === false)).map(id => {
     const availability = agentAvailability(online, runtimes[id], isOff(id));
     return { id, availability } as const;
   }).sort((a, b) => rank(a.availability) - rank(b.availability));

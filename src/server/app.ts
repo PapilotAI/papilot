@@ -2,7 +2,7 @@ import { PaperTools, searchPaper } from './paper-tools.ts';
 import { buildActivityReport, type ActivityEventRow } from './activity.ts';
 import { canonicalGroup, isNoteGroup, regroupAnnotation, sameAnnotationGroup } from '../note-groups.ts';
 import { isCommitMessageLanguage, type CommitMessageLanguage } from '../commit.ts';
-import { AGENT_NAMES, noteAlternativeRange, NOTE_ALTERNATIVE_RANGES, validLanes, validRacers, validRoute, validRoutes, taskFinished, type CollaborationRoute, type InFlightMark } from '../shared.ts';
+import { AGENT_NAMES, isManualAgent, noteAlternativeRange, NOTE_ALTERNATIVE_RANGES, validLanes, validRacers, validRoute, validRoutes, taskFinished, type CollaborationRoute, type InFlightMark } from '../shared.ts';
 import Fastify from 'fastify';
 import compress from '@fastify/compress';
 import staticFiles from '@fastify/static';
@@ -448,6 +448,27 @@ export async function buildApp(options: AppOptions) {
     if (enabled !== undefined) workspace.setCollaborationEnabled(enabled);
     return workspace.collaborationSettings();
   });
+  app.get('/api/chatgpt-pro', () => workspace.chatgptProSettings());
+  app.post('/api/chatgpt-pro', (request, reply) => {
+    const { enabled, executor, autoSyncGithub } = (request.body as any) || {};
+    if (enabled === undefined && executor === undefined && autoSyncGithub === undefined) return reply.code(400).send({ error: 'Send enabled, executor, or autoSyncGithub.' });
+    if (enabled !== undefined && typeof enabled !== 'boolean') return reply.code(400).send({ error: 'Send enabled as true or false.' });
+    if (autoSyncGithub !== undefined && typeof autoSyncGithub !== 'boolean') return reply.code(400).send({ error: 'Send autoSyncGithub as true or false.' });
+    if (executor !== undefined && executor !== null) {
+      if (typeof executor !== 'object' || !isAgentId(executor.agent) || executor.agent === 'collaboration' || executor.agent === 'chatgpt') {
+        return reply.code(400).send({ error: 'Choose a local agent to apply ChatGPT Pro’s suggestions.' });
+      }
+      if ((executor.model !== undefined && executor.model !== null && typeof executor.model !== 'string') || (executor.effort !== undefined && executor.effort !== null && typeof executor.effort !== 'string')) {
+        return reply.code(400).send({ error: 'Choose a model and reasoning effort.' });
+      }
+      workspace.setChatgptProExecutor({ agent: executor.agent, ...(executor.model ? { model: executor.model } : {}), ...(executor.effort ? { effort: executor.effort } : {}) });
+    } else if (executor === null) {
+      workspace.setChatgptProExecutor(null);
+    }
+    if (autoSyncGithub !== undefined) workspace.setChatgptProAutoSyncGithub(autoSyncGithub);
+    if (enabled !== undefined) workspace.setChatgptProEnabled(enabled);
+    return workspace.chatgptProSettings();
+  });
   // Turns an agent on or off, hides some of its models, or resets both.
   // The model quick background jobs use: null lets each job pick the small
   // model of the agent it would use anyway.
@@ -456,7 +477,7 @@ export async function buildApp(options: AppOptions) {
   app.post('/api/quick-model', (request, reply) => {
     const { agent, model, effort } = (request.body as any) || {};
     if (agent === null) { workspace.setQuickModel(null); return quickModelState(); }
-    if (!isAgentId(agent) || agent === 'collaboration') return reply.code(400).send({ error: 'Unknown agent.' });
+    if (!isAgentId(agent) || agent === 'collaboration' || agent === 'chatgpt') return reply.code(400).send({ error: 'Unknown agent.' });
     if ((model !== undefined && model !== null && typeof model !== 'string') || (effort !== undefined && effort !== null && typeof effort !== 'string')) return reply.code(400).send({ error: 'Choose a model and reasoning effort.' });
     workspace.setQuickModel({ agent, model: model || null, effort: effort || null });
     return quickModelState();
@@ -464,7 +485,7 @@ export async function buildApp(options: AppOptions) {
   app.post('/api/agent-settings', (request, reply) => {
     const { agent, enabled, hiddenModels, reset } = (request.body as any) || {};
     if (reset === true) { workspace.resetAgentSettings(); return { ok: true }; }
-    if (!isAgentId(agent) || agent === 'collaboration') return reply.code(400).send({ error: 'Unknown agent.' });
+    if (!isAgentId(agent) || agent === 'collaboration' || agent === 'chatgpt') return reply.code(400).send({ error: 'Unknown agent.' });
     if (enabled === undefined && hiddenModels === undefined) return reply.code(400).send({ error: 'Send enabled or hiddenModels.' });
     if (enabled !== undefined && typeof enabled !== 'boolean') return reply.code(400).send({ error: 'Send enabled as true or false.' });
     if (hiddenModels !== undefined && !(Array.isArray(hiddenModels) && hiddenModels.every(model => typeof model === 'string' && model))) return reply.code(400).send({ error: 'Send hiddenModels as a list of model IDs.' });
@@ -927,6 +948,34 @@ export async function buildApp(options: AppOptions) {
     }
     return workspace.enqueue(task.id, text, string(b.requestKey, 'Request ID', 100), true, { skill, feedback, reviewNotes, attachments, returnedNotes });
   });
+  app.get<{ Params: { id: string } }>('/api/tasks/:id/manual-prompt', task, request => workspace.manualPrompt(request.params.id));
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/manual-github-sync', task, request => {
+    const current = store.task(request.params.id);
+    const b = (request.body || {}) as Record<string, unknown>;
+    const remote = b.remote === undefined ? undefined : string(b.remote, 'Git remote', 100);
+    return serialGit(current.projectId, () => workspace.syncManualGithub(current.id, remote));
+  });
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/manual-reply', { ...task, bodyLimit: 4 * 1024 * 1024 }, request => {
+    const b = (request.body || {}) as Record<string, unknown>;
+    const reply = string(b.reply, 'ChatGPT Pro reply', 2_000_000);
+    const requestKey = b.requestKey === undefined ? undefined : string(b.requestKey, 'Request ID', 100);
+    let executor: import('../shared.ts').HelperChoice | undefined;
+    if (b.executor !== undefined && b.executor !== null) {
+      const raw = b.executor as Record<string, unknown>;
+      if (typeof raw !== 'object' || !isAgentId(raw.agent) || raw.agent === 'collaboration' || isManualAgent(raw.agent)) {
+        throw new Error('Choose a local agent to apply ChatGPT Pro’s suggestions.');
+      }
+      if ((raw.model !== undefined && raw.model !== null && typeof raw.model !== 'string') || (raw.effort !== undefined && raw.effort !== null && typeof raw.effort !== 'string')) {
+        throw new Error('Choose a model and reasoning effort.');
+      }
+      executor = {
+        agent: raw.agent,
+        ...(typeof raw.model === 'string' && raw.model ? { model: raw.model } : {}),
+        ...(typeof raw.effort === 'string' && raw.effort ? { effort: raw.effort } : {}),
+      };
+    }
+    return workspace.submitManualReply(request.params.id, reply, requestKey, executor);
+  });
   // Applying writes the manuscript only once its delivery is complete: not
   // for a confirmation, a merge suggestion, a pending delivery or a branch.
   const delivered = (delivery: Task['delivery']) => Boolean(delivery && !delivery.pending && delivery.mode !== 'branch');
@@ -936,7 +985,7 @@ export async function buildApp(options: AppOptions) {
     const retryCommit = b.message === undefined && task.delivery?.mode === 'commit' && task.delivery.pending;
     // The conflict-resolution agent chosen in Settings → Git, for a merge suggestion.
     const conflict = b.conflictAgent;
-    if (conflict !== undefined && (!conflict || typeof conflict !== 'object' || !isAgentId(conflict.agent))) throw new Error('Choose a supported agent.');
+    if (conflict !== undefined && (!conflict || typeof conflict !== 'object' || !isAgentId(conflict.agent) || isManualAgent(conflict.agent))) throw new Error('Choose a supported agent.');
     const mergeAgent = conflict ? { agent: agent(conflict.agent), ...helperModelSettings(conflict) } : undefined;
     const result = await serialGit(task.projectId, () => workspace.applyTask(task.id, b.keepCurrent === true, b.mode === 'commit' ? { message: retryCommit ? undefined : string(b.message, 'Commit message', 5000), ...(b.confirmation ? { confirmation: string(b.confirmation, 'Commit confirmation', 100) } : {}) } : undefined, mergeAgent));
     if (delivered(result.delivery)) refreshManuscript(task.projectId);
@@ -947,9 +996,12 @@ export async function buildApp(options: AppOptions) {
   app.post<{ Params: { id: string } }>('/api/tasks/:id/commit-message', task, request => {
     const task = store.task(request.params.id), b = (request.body || {}) as Record<string, unknown>;
     if (b.agent !== undefined && !isAgentId(b.agent)) throw new Error('Invalid agent.');
-    const settings = helperModelSettings({ ...(b.agent === undefined ? { model: task.model || undefined, effort: task.effort || undefined, serviceTier: task.serviceTier } : {}), ...b });
+    const inheritedAgent = isManualAgent(task.agent) ? task.manualExecutor?.agent : task.agent;
+    const inheritedModel = isManualAgent(task.agent) ? task.manualExecutor?.model || undefined : task.model || undefined;
+    const inheritedEffort = isManualAgent(task.agent) ? task.manualExecutor?.effort || undefined : task.effort || undefined;
+    const settings = helperModelSettings({ ...(b.agent === undefined ? { model: inheritedModel, effort: inheritedEffort, serviceTier: isManualAgent(task.agent) ? undefined : task.serviceTier } : {}), ...b });
     const inheritedSpeed = b.agent === undefined && b.serviceTier === undefined && Boolean(settings.serviceTier);
-    return workspace.commitMessage(task.projectId, task.review?.files || [], { taskId: task.id, agent: b.agent === undefined ? task.agent : agent(b.agent), ...settings, ...(inheritedSpeed ? { inheritedSpeed } : {}), fresh: b.fresh === true, language: commitMessageLanguage(b.language) });
+    return workspace.commitMessage(task.projectId, task.review?.files || [], { taskId: task.id, agent: b.agent === undefined ? inheritedAgent : agent(b.agent), ...settings, ...(inheritedSpeed ? { inheritedSpeed } : {}), fresh: b.fresh === true, language: commitMessageLanguage(b.language) });
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/permissions', task, request => workspace.updateTaskPermissions(request.params.id, (request.body as any)?.permissions));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/model', task, request => {
@@ -1220,7 +1272,7 @@ export async function buildApp(options: AppOptions) {
   // A merge in progress is resolved by an agent, committed, or abandoned.
   app.post<{ Params: { id: string } }>('/api/projects/:id/git/resolve', project(), request => {
     const project = store.project(request.params.id), b = request.body as any;
-    if (b.agent !== undefined && !isAgentId(b.agent)) throw new Error('Choose a supported agent.');
+    if (b.agent !== undefined && (!isAgentId(b.agent) || isManualAgent(b.agent))) throw new Error('Choose a supported agent.');
     return serialGit(project.id, () => workspace.resolveConflicts(project.id, { agent: b.agent, ...helperModelSettings(b) }));
   });
   app.post<{ Params: { id: string } }>('/api/projects/:id/git/finish', project(), request => {

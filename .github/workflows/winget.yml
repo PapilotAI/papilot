@@ -1,0 +1,73 @@
+name: Publish WinGet package
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/prepare-winget.mts'
+      - 'scripts/stable-release.mts'
+      - '.github/workflows/winget.yml'
+      - '.github/workflows/release.yml'
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+    secrets:
+      WINGET_GITHUB_TOKEN:
+        required: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable tag to validate or submit
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  winget:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Generate WinGet manifests
+        id: generate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+          IS_PR: ${{ github.event_name == 'pull_request' }}
+        run: |
+          tag="$INPUT_TAG"
+          if [[ "$IS_PR" == "true" && -z "$tag" ]]; then
+            tag="$(gh api repos/PapilotAI/papilot/releases/latest --jq .tag_name)"
+          fi
+          [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          version="${tag#v}"
+          gh release view "$tag" --repo PapilotAI/papilot \
+            --json tagName,isDraft,isPrerelease,publishedAt,assets > "$RUNNER_TEMP/winget-release.json"
+          gh release download "$tag" --repo PapilotAI/papilot \
+            --pattern desktop.json --dir "$RUNNER_TEMP"
+          node scripts/prepare-winget.mts "$tag" "$RUNNER_TEMP/winget-release.json" "$RUNNER_TEMP/desktop.json" "$PWD/winget-manifests"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Validate manifests with winget
+        shell: pwsh
+        run: |
+          winget validate --manifest .\winget-manifests
+      - name: Submit update PR to microsoft/winget-pkgs
+        if: github.event_name != 'pull_request' && github.repository == 'PapilotAI/papilot'
+        shell: pwsh
+        env:
+          WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+          VERSION: ${{ steps.generate.outputs.version }}
+        run: |
+          if ([string]::IsNullOrEmpty($env:WINGET_GITHUB_TOKEN)) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "WinGet manifests for PapilotAI.Papilot $env:VERSION validated. Set the WINGET_GITHUB_TOKEN secret (a PAT with public_repo scope) to submit PRs to microsoft/winget-pkgs automatically."
+            exit 0
+          }
+          Invoke-WebRequest -Uri https://aka.ms/wingetcreate/latest -OutFile "$env:RUNNER_TEMP\wingetcreate.exe"
+          & "$env:RUNNER_TEMP\wingetcreate.exe" submit --token $env:WINGET_GITHUB_TOKEN .\winget-manifests
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Submitted PapilotAI.Papilot $env:VERSION to microsoft/winget-pkgs."

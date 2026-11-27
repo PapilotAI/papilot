@@ -30,7 +30,7 @@ import { PapilotMark } from './papilot-mark.tsx';
 import { Icon } from './icons.tsx';
 import './brand-icon.css';
 
-const marks = { collaboration: papilot, papilot, pi, codex, claude, cursor, copilot, grok, antigravity, kimi, glm, zcode, deepseek, qwen, opencode, qoder, codebuddy, workbuddy, git, latex, openai, gemini, openrouter, mistral, arxiv, overleaf, github, zotero };
+const marks = { collaboration: papilot, chatgpt: openai, papilot, pi, codex, claude, cursor, copilot, grok, antigravity, kimi, glm, zcode, deepseek, qwen, opencode, qoder, codebuddy, workbuddy, git, latex, openai, gemini, openrouter, mistral, arxiv, overleaf, github, zotero };
 export type Brand = keyof typeof marks;
 
 // Decorative beside a visible name. Local assets work offline and inherit theme colors.

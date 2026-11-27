@@ -6,9 +6,9 @@ import { t } from './i18n.ts';
 export const effortName = (id: string) => id.charAt(0).toUpperCase() + id.slice(1);
 const levels = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 
-export function EffortSlider({ efforts, value, fallback, onChange, label = t('Reasoning effort'), description }: {
+export function EffortSlider({ efforts, value, fallback, onChange, label = t('Reasoning effort'), description, disabled = false }: {
   efforts: string[]; value: string; fallback: string | null; onChange: (value: string) => void;
-  label?: string; description?: string;
+  label?: string; description?: string; disabled?: boolean;
 }) {
   const descriptionId = useId();
   if (!efforts.length) return null;
@@ -33,9 +33,9 @@ export function EffortSlider({ efforts, value, fallback, onChange, label = t('Re
       <span className="effort-thumb" aria-hidden="true">
         {level === 'ultra' && <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M10 1.5 12.4 7.6 18.5 10 12.4 12.4 10 18.5 7.6 12.4 1.5 10 7.6 7.6Z"/></svg>}
       </span>
-      <input type="range" min={0} max={efforts.length - 1} step={1} value={index} aria-label={label} aria-valuetext={valueLabel} aria-describedby={description ? descriptionId : undefined} disabled={efforts.length < 2}
+      <input type="range" min={0} max={efforts.length - 1} step={1} value={index} aria-label={label} aria-valuetext={valueLabel} aria-describedby={description ? descriptionId : undefined} disabled={disabled || efforts.length < 2}
         onChange={event => onChange(efforts[Number(event.target.value)])}/>
     </div>
-    <div className="effort-scale"><span>{effortName(efforts[0])}</span><button type="button" onClick={() => onChange('')} disabled={!value}>{t('Model default')}</button><span>{effortName(efforts[efforts.length - 1])}</span></div>
+    <div className="effort-scale"><span>{effortName(efforts[0])}</span><button type="button" onClick={() => onChange('')} disabled={disabled || !value}>{t('Model default')}</button><span>{effortName(efforts[efforts.length - 1])}</span></div>
   </div>;
 }

@@ -9,6 +9,7 @@ import { allowedCommand } from './commands.ts';
 import { inside, insideReal, routePath, sourcePath } from './paths.ts';
 import { supportedLanguage } from '../../engine/src/locales.ts';
 import type { GitExtension, Repository } from './git.ts';
+import { isManualAgent } from '../../src/shared.ts';
 import type { Manuscript, ManuscriptProblems, Project, Snapshot, SourcePlace, Task } from '../../src/shared.ts';
 
 type Paper = { project: Project; document: string; key: string };
@@ -200,7 +201,12 @@ export async function activate(context: vscode.ExtensionContext) {
     }
     if (view.kind === 'chat') {
       const task = snapshot?.tasks.find(task => task.id === selectedTask);
-      if (task && pathname.startsWith(`/api/tasks/${task.id}/`) && /^\/(?:items|messages|model|permissions|agent|interrupt|prepare|reconcile|workers\/stop|note-results|notes\/[^/]+\/(?:return|undo-return))$/.test(pathname.slice(`/api/tasks/${task.id}`.length))) return;
+      const prefix = task && `/api/tasks/${task.id}/`;
+      if (prefix && pathname.startsWith(prefix)) {
+        const action = pathname.slice(prefix.length);
+        if (/^(?:items|messages|model|permissions|agent|interrupt|prepare|reconcile|workers\/stop|note-results|notes\/[^/]+\/(?:return|undo-return))$/.test(action)) return;
+        if (isManualAgent(task.agent) && (write ? action === 'manual-reply' || action === 'manual-github-sync' : action === 'manual-prompt')) return;
+      }
       if (task && pathname.startsWith(`/api/projects/${task.projectId}/`) && /^attachments(?:\/[^/]+\/discard)?$/.test(pathname.slice(`/api/projects/${task.projectId}/`.length))) return;
       if (task && snapshot?.requests.some(request => pathname === `/api/requests/${request.id}` && request.taskId === task.id)) return;
       if (pathname === '/api/reconnect' || /^\/api\/runtime\/[a-z-]+\/usage$/.test(pathname)) return;

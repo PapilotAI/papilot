@@ -22,9 +22,10 @@ test('review actions use the current task and protect aliased unsaved buffers', 
   const project = { id: 'project', path: manuscript, name: 'Paper' };
   const paper = { project, document: 'main.tex', key: 'project:main.tex' };
   const discovered = [paper];
-  const preparing = { id: 'task', projectId: project.id, name: 'task', title: 'Revise', document: paper.document, worktree: '', status: 'preparing', review: { round: 1 } };
-  let snapshot = { projects: [project], tasks: [preparing] }, receive: (message: any) => Promise<void>;
+  const preparing = { id: 'task', projectId: project.id, name: 'task', title: 'Revise', document: paper.document, worktree: '', agent: 'codex', status: 'preparing', review: { round: 1 } };
+  let snapshot = { projects: [project], tasks: [preparing], requests: [] }, receive: (message: any) => Promise<void>;
   let saveSource: (document: { uri: ReturnType<typeof uri> }) => Promise<void> = async () => assert.fail('Save listener was not registered');
+  let resolveChat: () => Promise<void> = async () => assert.fail('Conversation was not registered');
   let publish = async () => {};
   const publishRoute = '/api/tasks/task/publish';
   const paperChoices: string[][] = [];
@@ -77,7 +78,18 @@ test('review actions use the current task and protect aliased unsaved buffers', 
     },
     window: {
       createOutputChannel: () => ({ ...disposable(), append() {}, appendLine() {} }),
-      registerTreeDataProvider: disposable, registerWebviewViewProvider: disposable,
+      registerTreeDataProvider: disposable,
+      registerWebviewViewProvider: (_: string, provider: { resolveWebviewView: (view: unknown) => Promise<void> }) => {
+        resolveChat = async () => provider.resolveWebviewView({
+          visible: false, onDidDispose: disposable,
+          webview: {
+            asWebviewUri: (uri: unknown) => uri,
+            onDidReceiveMessage: (listener: typeof receive) => { receive = listener; return disposable(); },
+            postMessage: async (message: any) => responses.push(message),
+          },
+        });
+        return disposable();
+      },
       activeTextEditor: undefined as any,
       showQuickPick: async (options: { paper: typeof paper }[]) => { paperChoices.push(options.map(option => option.paper.key)); return options[0]; },
       withProgress: (_: unknown, run: (...args: any[]) => unknown) => run({}, { isCancellationRequested: false }),
@@ -229,6 +241,27 @@ test('review actions use the current task and protect aliased unsaved buffers', 
     await extension.refresh();
     assert.match((await send({ type: 'source', file: 'main.tex' })).error, /not available yet/);
     assert.deepEqual(opened, [path.join(worktree, 'main.tex')]);
+
+    const manual = { ...preparing, agent: 'chatgpt', status: 'waiting_input', worktree };
+    const local = { ...preparing, id: 'local-task', status: 'reviewing', worktree };
+    snapshot = { ...snapshot, tasks: [manual, local] };
+    await extension.refresh();
+    await commands.get('papilot.openTask')!(manual);
+    await resolveChat();
+    const manualActions = [
+      { type: 'api', route: '/api/tasks/task/manual-prompt' },
+      { type: 'api', route: '/api/tasks/task/manual-reply', body: { reply: 'Revise the introduction' } },
+      { type: 'api', route: '/api/tasks/task/manual-github-sync', body: { remote: 'origin' } },
+    ];
+    requests.length = 0;
+    for (const action of manualActions) assert.equal((await send(action)).error, undefined);
+    assert.deepEqual(requests, manualActions.map(action => action.route));
+    assert.match((await send({ ...manualActions[0], body: {} })).error, /not available in this view/);
+    assert.match((await send({ ...manualActions[0], route: '/api/tasks/local-task/manual-prompt' })).error, /not available in this view/);
+    await commands.get('papilot.openTask')!(local);
+    assert.match((await send(manualActions[0])).error, /not available in this view/);
+    assert.match((await send({ ...manualActions[0], route: '/api/tasks/local-task/manual-prompt' })).error, /not available in this view/);
+    assert.equal(requests.length, manualActions.length);
   } finally {
     for (const item of subscriptions.toReversed()) item.dispose();
     delete fixture.papilotTest;
