@@ -381,7 +381,7 @@ export class CollaborationRuntime extends Adapter {
       }
     };
 
-    const raceReports = new Map<string, { noteNums: string; file: string; winnerLabel: string; summary: string; warnNames: string[]; noteNumbers: number[] }>();
+    const raceReports = new Map<string, { noteNums: string; file: string; laneLabel: string; racersText: string; winnerLabel: string; summary: string; warnNames: string[]; noteNumbers: number[] }>();
     const settledUnits = await Promise.allSettled(plan.units.map(async unit => {
       if (signal.aborted) return;
       const cluster = clusters.find(c => c.id === unit.clusterId)!;
@@ -545,6 +545,8 @@ export class CollaborationRuntime extends Adapter {
       raceReports.set(cluster.id, {
         noteNums,
         file: cluster.file,
+        laneLabel,
+        racersText: racers.map(shortModel).join(' vs '),
         winnerLabel: verdict.winner.label,
         summary: verdict.judgeSummary,
         warnNames: warnAlts.map(a => a.candidate.modelName),
@@ -622,11 +624,12 @@ export class CollaborationRuntime extends Adapter {
       const altSummary = altCount
         ? ` (${altCount} alternative${altCount === 1 ? '' : 's'} available in PDF card${info.warnNames.length ? `; rigor note on ${info.warnNames.join(', ')}` : ''})`
         : '';
-      reportLines.push(`- **${info.noteNums}** (${info.file}): Raced → **${info.winnerLabel}** — ${info.summary}${altSummary}`);
+      reportLines.push(`- **${info.noteNums}** (${info.file}): **${info.laneLabel}** raced (${info.racersText}) → **${info.winnerLabel}** — ${info.summary}${altSummary}`);
     }
 
     // Stage 5: Concise Markdown summary
-    const teamLine = `**Collaboration (${strategy})** · Router: ${shortModel(routerWorker)}${completedRaces.length ? ` · Racers: ${resolved.racers.map(shortModel).join(' vs ')} · Judge: ${shortModel(resolved.judge || primaryWorker)}` : ''}`;
+    const racedSummary = [...new Set([...raceReports.values()].map(r => `${r.laneLabel}: ${r.racersText}`))].join('; ');
+    const teamLine = `**Collaboration (${strategy})** · Router: ${shortModel(routerWorker)}${completedRaces.length ? ` · Raced (${racedSummary}) · Judge: ${shortModel(resolved.judge || primaryWorker)}` : ''}`;
     const sections = [teamLine];
     if (reportLines.length) sections.push(reportLines.join('\n'));
     if (answers.length) {
