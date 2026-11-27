@@ -9,6 +9,7 @@ import { Repo } from '../engine/src/core/git.ts';
 import { Store } from '../src/server/store.ts';
 import { gitQueue } from '../src/server/app.ts';
 import { registerExternalReviewRoutes } from '../src/server/review-handoff-routes.ts';
+import { handoffRecord } from '../src/server/review-handoff.ts';
 import type { Workspace } from '../src/server/workspace.ts';
 import type { ReviewClient } from '../src/server/review.ts';
 import type { Annotation, ExternalReview, Task } from '../src/shared.ts';
@@ -104,13 +105,27 @@ test('an external review round trips from Git and Space into a pinned task and p
 
   const [{ revision }] = (await get()).json().remotes;
   assert.equal((await post(`${reviewRoute}/github`, { remote: 'origin', revision: 'stale' })).statusCode, 400);
-  const published = await ok(post(`${reviewRoute}/github`, { remote: 'origin', revision }));
+  const occupiedBranch = `papilot-review/${shownScope.request.requestId}`;
+  git(remote, 'branch', occupiedBranch, base);
+  assert.equal((await post(`${endpoint}/${shownScope.request.requestId}/github`, { remote: 'origin', revision })).statusCode, 400);
+  assert.equal(git(remote, 'rev-parse', occupiedBranch), base, 'A review never advances a branch it did not publish');
+  const publishRequest = () => post(`${reviewRoute}/github`, { remote: 'origin', revision });
+  const [published, repeated] = await Promise.all([ok(publishRequest()), ok(publishRequest())]);
   const link = published.git!;
-  assert.equal(git(remote, 'rev-parse', link.branch), base);
+  const context = link.request!;
+  assert.deepEqual(repeated.git, link);
+  assert.equal(git(remote, 'rev-parse', link.branch), context.commit);
+  assert.equal(git(remote, 'rev-parse', `${link.branch}^`), base);
+  assert.equal(git(remote, 'diff', '--name-only', base, context.commit), context.file);
+  assert.equal(git(remote, 'rev-parse', 'main'), base, 'Publishing does not move the manuscript branch');
+  assert.equal(git(root, 'status', '--porcelain'), '', 'Publishing does not write to the manuscript checkout');
+  const shared = git(remote, 'show', `${context.commit}:${context.file}`);
+  assert.deepEqual(handoffRecord(shared, 'request'), review.request);
+  assert.doesNotMatch(shared, /## Selected source|Extra detail\./);
   const prompt = (await get(`${reviewRoute}/prompt?via=git`)).json().text;
-  assert.ok(prompt.includes(link.branch) && prompt.includes(link.proposalFile));
+  assert.ok(prompt.includes(link.branch) && prompt.includes(link.proposalFile) && prompt.includes(context.file) && prompt.includes(context.commit));
   assert.ok(!prompt.includes(initial));
-  for (const text of [space, prompt]) {
+  for (const text of [space, prompt, shared]) {
     assert.ok(text.includes(selected.comment) && text.includes(selected.quote) && text.includes('Keep the meaning.'));
     assert.doesNotMatch(text, /Private author|selected-note|Do not share|Edited after|Old group wording/);
   }
@@ -126,9 +141,15 @@ test('an external review round trips from Git and Space into a pinned task and p
   git(folder, 'clone', '--branch', link.branch, remote, reviewer);
   fs.writeFileSync(path.join(reviewer, link.proposalFile), JSON.stringify(proposal));
   git(reviewer, 'add', '--', link.proposalFile); commit(reviewer, 'Write proposal'); git(reviewer, 'push');
+  store.saveExternalReview(projectId, { ...store.externalReview<ExternalReview>(projectId, composerId)!, git: undefined });
+  assert.deepEqual((await ok(publishRequest())).git, link, 'A retry recovers publication after the reviewer advances the branch');
+  assert.equal(git(remote, 'rev-parse', link.branch), git(reviewer, 'rev-parse', 'HEAD'));
   const imported = await ok(post(`${reviewRoute}/proposal`, { via: 'git' }));
   assert.equal(imported.proposal?.commit, git(reviewer, 'rev-parse', 'HEAD'));
   assert.deepEqual(imported.proposal?.changes, changes);
+  const pasted = { ...proposal, changes: [{ ...changes[0], reason: 'The web chat returned this reason.' }] };
+  const pastedReview = await ok(post(`${reviewRoute}/proposal`, { text: JSON.stringify(pasted) }));
+  assert.equal(pastedReview.proposal?.source, 'paste');
 
   fs.writeFileSync(path.join(root, 'main.tex'), 'A newer independent draft.\n');
   git(root, 'add', '--', 'main.tex'); commit(root, 'Advance the local paper');
@@ -136,7 +157,7 @@ test('an external review round trips from Git and Space into a pinned task and p
   assert.notEqual(local, base);
   assert.deepEqual((await ok(post(endpoint, composerRequest))).request, review.request, 'Retry pins the original scope after HEAD advances');
   assert.match((await post(`${reviewRoute}/task`, { agent: 'codex', digest: 'stale' })).json().error, /This proposal changed/);
-  const starts = await Promise.all([{}, {}].map(() => ok<{ task: Task }>(post(`${reviewRoute}/task`, { agent: 'codex', digest: imported.proposal!.digest }))));
+  const starts = await Promise.all([{}, {}].map(() => ok<{ task: Task }>(post(`${reviewRoute}/task`, { agent: 'codex', digest: pastedReview.proposal!.digest }))));
   assert.equal(starts[0].task.id, starts[1].task.id); assert.equal(tasks.length, 1);
   assert.deepEqual(store.pendingExternalReviewConversations(), [], 'The native task replaces the pending row');
   assert.notEqual(tasks[0].id, `external-${composerId}`, 'The client cannot preclaim a native task ID');
@@ -166,7 +187,11 @@ test('an external review round trips from Git and Space into a pinned task and p
   engineState = { ...engineState, acceptedCommit: accepted };
   const returned = (await ok(publishResult())).result!.published!;
   assert.equal(git(remote, 'rev-parse', `${returned.branch}^`), result.receipt.resultCommit);
-  assert.equal(git(remote, 'diff', '--name-only', `${returned.branch}^`, returned.branch), `papilot-review-${review.request.requestId}-receipt.md`);
+  const receiptFile = `papilot-review-${review.request.requestId}-receipt.md`;
+  assert.deepEqual(git(remote, 'diff', '--name-only', `${returned.branch}^`, returned.branch).split('\n').sort(), [receiptFile, link.proposalFile].sort());
+  assert.deepEqual(JSON.parse(git(remote, 'show', `${returned.branch}:${link.proposalFile}`)), pasted);
+  const publishedReceipt = git(remote, 'show', `${returned.branch}:${receiptFile}`);
+  assert.ok(publishedReceipt.includes(context.file) && publishedReceipt.includes(`](./${link.proposalFile})`));
   assert.deepEqual((await ok(publishResult())).result?.published, returned);
   const reloaded = (await get()).json().reviews[0];
   assert.equal(reloaded.page, page); assert.equal(reloaded.taskId, tasks[0].id); assert.deepEqual(reloaded.result.published, returned);

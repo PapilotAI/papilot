@@ -28,6 +28,8 @@ try {
       const state = { version: 'test', csrf: 'fixture', externalReviews: false, gitAvailable: true, projects: [project], tasks: [], requests: [], runtime, runtimes: { codex: runtime } };
       const base = 'a'.repeat(40), digest = 'b'.repeat(64), requestId = '3382c637-52b0-4014-b3cb-bf125facc656';
       const remote = { name: 'origin', revision: 'remote-v1', repository: 'Example/paper', url: 'https://github.com/Example/paper' };
+      const requestCommit = 'c'.repeat(40), requestFile = `papilot-review-${requestId}-request.md`;
+      const requestUrl = `${remote.url}/blob/${requestCommit}/${requestFile}`;
       const proposal = { schema: 'papilot-handoff/v1', kind: 'proposal', requestId, baseCommit: base, changes: [
         { file: 'paper.tex', original: 'The effect is really small.', suggestion: 'The effect is small.', reason: 'Remove the intensifier.' },
       ] };
@@ -74,7 +76,7 @@ try {
         if (pathname.includes('/external-review/')) {
           if (pathname.endsWith('/github')) {
             assert.deepEqual(body, { remote: 'origin', revision: 'remote-v1' });
-            review.git = { branch: `papilot-review/${id}`, proposalFile: 'proposal.json', remote }; return json(review);
+            review.git = { branch: `papilot-review/${id}`, proposalFile: 'proposal.json', remote, request: { file: requestFile, commit: requestCommit, url: requestUrl } }; return json(review);
           }
           if (pathname.endsWith('/page')) { review.page = body.url; return json(review); }
           if (pathname.endsWith('/prompt')) return json({ text: `${url.searchParams.get('via') === 'git' ? review.git.branch : review.page ?? 'Create a private Page'}\n${base}` });
@@ -132,7 +134,10 @@ try {
       await expect(dialog.locator('input[name="files"]')).toHaveCount(0);
       await dialog.getByLabel(text('What should the reviewer check?')).fill('Clarify the first result.');
       await button('Create review request').click(); await expect(heading('Send to reviewer')).toBeFocused();
+      await expect(button('Publish review branch')).toHaveAccessibleDescription(text('Publishing sends the Git commit, its history, and the review request with selected PDF notes to this remote.'));
       await button('Publish review branch').click(); await expect(button('Copy Git prompt')).toBeVisible();
+      await expect(dialog.getByRole('link', { name: text('Review request'), exact: true })).toHaveAttribute('href', requestUrl);
+      await shot('git-context');
       await expect(dialog.getByRole('textbox', { name: text('Git prompt'), includeHidden: true })).toBeHidden();
       await button('Copy Git prompt').click();
       if (language === 'en') assert.match(await page.evaluate(() => globalThis.copiedReviewText), /papilot-review\//);

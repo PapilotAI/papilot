@@ -52,7 +52,7 @@ export interface ExternalReview {
   /** Timestamp for reviews started from the regular task composer. */
   fromComposerAt?: number;
   page?: string;
-  git?: { remote: ExternalReviewRemote; branch: string; proposalFile: string };
+  git?: { remote: ExternalReviewRemote; branch: string; proposalFile: string; request?: { file: string; commit: string; url?: string } };
   proposal?: { digest: string; changes: ExternalReviewChange[]; source: 'git' | 'paste'; commit?: string };
   taskId?: string;
   result?: { accepted: string; receipt: ExternalReviewReceipt; published?: { branch: string; url?: string } };

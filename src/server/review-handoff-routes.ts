@@ -17,7 +17,7 @@ const route = '/api/projects/:id/external-review';
 const projectScope = { config: { resource: { project: 'id' } } } as const;
 const proposalLimit = 2 * 1024 * 1024;
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
-type SavedReview = ExternalReview & { noteSelection?: string; automaticRequest?: string; result?: NonNullable<ExternalReview['result']> & { publication?: string } };
+type SavedReview = ExternalReview & { noteSelection?: string; automaticRequest?: string; requestPublication?: string; result?: NonNullable<ExternalReview['result']> & { publication?: string } };
 type Params = { id: string; review?: string };
 type ReviewRequest = FastifyRequest<{ Params: Params; Body: Record<string, unknown> }>;
 
@@ -60,8 +60,33 @@ async function automaticReviewFiles(repo: Repo, baseCommit: string, document: ()
   return [main];
 }
 
-async function pushBranch(repo: Repo, remote: string, commit: string, branch: string) {
-  await handoffGit(repo, ['-c', `remote.${remote}.mirror=false`, 'push', '--no-follow-tags', '--', remote, `${commit}:${branchRef(branch)}`], gitOptions);
+async function fetchReviewBranch(repo: Repo, remote: string, branch: string, destination: string) {
+  await handoffGit(repo, ['fetch', '--no-tags', '--no-recurse-submodules', '--no-write-fetch-head', '--', remote, `+${branchRef(branch)}:${destination}`], gitOptions);
+  return handoffCommit(repo, destination);
+}
+
+async function publishReviewBranch(repo: Repo, remote: string, branch: string, commit: string, destination: string) {
+  const ref = branchRef(branch);
+  try {
+    await handoffGit(repo, ['-c', `remote.${remote}.mirror=false`, 'push', '--no-follow-tags',
+      `--force-with-lease=${ref}:`, '--', remote, `${commit}:${ref}`], gitOptions);
+  } catch (error) {
+    // Recover a successful push even if its response was lost and the branch has advanced.
+    const tip = await fetchReviewBranch(repo, remote, branch, destination).catch(() => undefined);
+    if (!tip || (await handoffGit(repo, ['merge-base', commit, tip], { check: false })).toString().trim() !== commit) throw error;
+  }
+}
+
+async function commitReviewFiles(repo: Repo, parent: string, files: Record<string, string>, message: string) {
+  const paths = Object.keys(files).sort();
+  if ((await handoffGit(repo, ['ls-tree', parent, '--', ...paths])).length) throw new Error('A review exchange file already exists in the manuscript.');
+  const commit = await repo.commitWithAsync(parent, Object.fromEntries(paths.map(file => [file, Buffer.from(files[file])])), message);
+  const changed = (await handoffGit(repo, ['diff', '--name-only', '--no-relative', '--no-renames', '--ignore-submodules=none', '-z', parent, commit])).toString().split('\0').filter(Boolean);
+  const published = await Promise.all(paths.map(file => handoffSource(repo, commit, file)));
+  if (changed.sort().join('\0') !== paths.join('\0') || published.some((text, index) => text !== files[paths[index]])) {
+    throw new Error('Could not prepare a Git commit containing only the review exchange files.');
+  }
+  return commit;
 }
 
 function pageLink(value: unknown) {
@@ -177,15 +202,29 @@ export function registerExternalReviewRoutes(app: FastifyInstance, { store, work
     if (!remote) throw new Error('Choose a Git remote with matching fetch and push destinations.');
     if (remote.revision !== body.revision) throw new Error('The review Git remote changed. Restore it to continue or use the Space Page.');
     const { requestId, baseCommit } = review.request, branch = `papilot-review/${requestId}`;
-    await pushBranch(repo, remote.name, baseCommit, branch);
-    return save(id, { ...review, git: { branch, remote, proposalFile: `papilot-review-${requestId}.json` } });
+    const file = `papilot-review-${requestId}-request.md`;
+    let commit = review.requestPublication;
+    if (!commit) {
+      const markdown = await handoffRequestMarkdown(repo, review.request, false);
+      commit = await commitReviewFiles(repo, baseCommit, { [file]: `${markdown}\n` }, 'Record external review request');
+      await repo.updateRefAsync(localRef(requestId, 'request'), commit);
+      review = save(id, { ...review, requestPublication: commit });
+    }
+    await publishReviewBranch(repo, remote.name, branch, commit, localRef(requestId, 'proposal'));
+    const url = remote.url && `${remote.url}/blob/${commit}/${file}`;
+    return save(id, { ...review, git: { branch, remote, proposalFile: `papilot-review-${requestId}.json`, request: { file, commit, ...(url ? { url } : {}) } } });
   }));
   app.get<{ Params: Params; Querystring: { via?: string } }>(`${route}/:review/prompt`, projectScope, async request => {
     const { id, review: key } = request.params, repo = projectRepo(id), review = find(id, key);
     const git = request.query.via === 'git' && review.git;
     if (request.query.via === 'git' && !git) throw new Error('Publish the review branch before copying its prompt.');
+    const context = git && git.request;
     const lead = git
-      ? `Read the selected committed files in ${git.remote.repository ?? `Git remote ${git.remote.name}`} at the base commit below. Use the GitHub app if this is a GitHub repository. Write the proposal JSON to ${git.proposalFile} on the existing branch ${git.branch}. If you cannot write to the branch, return the same JSON here.`
+      ? [
+        `Read the selected committed files in ${git.remote.repository ?? `Git remote ${git.remote.name}`} at the base commit below. Use the GitHub app if this is a GitHub repository.`,
+        ...(context ? [`The shared review request and selected PDF notes are in ${context.file} at ${context.commit} on ${git.branch}.${context.url ? ` Open ${context.url}` : ''} The same request is copied below for reference. Cite the source file paths and verify the exact passages at the requested base commit.`] : []),
+        `Return the proposal as JSON here. If you have write access, save the same JSON to ${git.proposalFile} on the existing branch ${git.branch}.`,
+      ].join('\n\n')
       : `${review.page ? `Open this ChatGPT Space Page ${review.page}.` : 'Create a private ChatGPT Space Page for this review.'} Put the review request and your proposal on the Page. Write the proposal in its own top-level JSON code block. If you cannot write to the Page, return the same JSON here.`;
     return { text: `${lead}\n\n${await handoffRequestMarkdown(repo, review.request, !git)}` };
   });
@@ -195,9 +234,9 @@ export function registerExternalReviewRoutes(app: FastifyInstance, { store, work
     let source: 'git' | 'paste' = 'paste', commit: string | undefined, input = body.text;
     if (body.via === 'git' && review.git) {
       const remote = await gitRemoteFor(repo, review), ref = localRef(requestId, 'proposal');
-      await handoffGit(repo, ['fetch', '--no-tags', '--no-recurse-submodules', '--no-write-fetch-head', '--', remote.name, `+${branchRef(review.git.branch)}:${ref}`], gitOptions);
-      commit = await handoffCommit(repo, ref);
-      if ((await handoffGit(repo, ['merge-base', baseCommit, commit])).toString().trim() !== baseCommit) throw new Error('The review branch no longer contains the requested commit.');
+      commit = await fetchReviewBranch(repo, remote.name, review.git.branch, ref);
+      const ancestor = review.git.request?.commit ?? baseCommit;
+      if ((await handoffGit(repo, ['merge-base', ancestor, commit])).toString().trim() !== ancestor) throw new Error('The review branch no longer contains the requested commit.');
       try { input = await handoffSource(repo, commit, review.git.proposalFile); }
       catch { throw new Error('No readable proposal was found on the review branch. Try again after the reviewer writes it, or paste the JSON.'); }
       source = 'git';
@@ -262,20 +301,24 @@ export function registerExternalReviewRoutes(app: FastifyInstance, { store, work
     const remote = await gitRemoteFor(repo, review), { receipt } = review.result;
     const branch = `${review.git.branch}-result-${receipt.resultCommit.slice(0, 12)}`;
     const file = `papilot-review-${receipt.requestId}-receipt.md`;
-    const markdown = handoffReceiptMarkdown(receipt) + '\n';
+    const request = review.git.request;
+    const context = request?.url ? `[Review request](${request.url})` : request ? `Review request \`${request.file}\` on \`${review.git.branch}\`` : '';
+    const markdown = [handoffReceiptMarkdown(receipt), context, `[Checked proposal](./${review.git.proposalFile})`].filter(Boolean).join('\n\n') + '\n';
     let publication = review.result.publication;
     if (!publication) {
-      if ((await handoffGit(repo, ['ls-tree', receipt.resultCommit, '--', file])).length) throw new Error('The receipt file already exists in the manuscript.');
-      publication = await repo.commitWithAsync(receipt.resultCommit, { [file]: Buffer.from(markdown) }, 'Record external review result');
-      const changed = (await handoffGit(repo, ['diff', '--name-only', '--no-relative', '--no-renames', '--ignore-submodules=none', '-z', receipt.resultCommit, publication])).toString();
-      if (changed !== `${file}\0` || await handoffSource(repo, publication, file) !== markdown) throw new Error('Could not prepare a Git commit containing only the receipt.');
+      const { schema, requestId, baseCommit } = review.request;
+      const proposal = { schema, kind: 'proposal', requestId, baseCommit, changes: review.proposal!.changes };
+      publication = await commitReviewFiles(repo, receipt.resultCommit, {
+        [file]: markdown,
+        [review.git.proposalFile]: `${JSON.stringify(proposal, null, 2)}\n`,
+      }, 'Record external review result');
       await repo.updateRefAsync(localRef(receipt.requestId, 'publication'), publication);
       review = save(id, { ...review, result: { ...review.result, publication } });
     }
     const commit = publication;
     return workspace.reviewWrite(review.taskId!, true, async () => {
       await assertCurrentReceipt(repo, review);
-      await pushBranch(repo, remote.name, commit, branch);
+      await publishReviewBranch(repo, remote.name, branch, commit, localRef(receipt.requestId, 'published-result'));
       return save(id, { ...review, result: { ...review.result!, published: { branch, ...(remote.url ? { url: `${remote.url}/blob/${commit}/${file}` } : {}) } } });
     });
   }));

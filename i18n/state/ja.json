@@ -589,11 +589,6 @@
     "textHash": "6370da3bb7227653c58fa70f48b2794593129ca049210bac01b278d499203624",
     "model": "gemini-4-argon-medium"
   },
-  "Ask the reviewer to write to this branch. If it returns JSON in chat, paste it in the next step.": {
-    "revision": "7fae4bf385517de883deb021597ac8984de2aeed87362d6cdf68c23db39bc252",
-    "textHash": "5b4c331c3a060422e1f4b94b876551f04555dad903b4868d598fa013e3b94c1d",
-    "model": "gemini-4-argon-medium"
-  },
   "Attach up to 10 files per message.": {
     "revision": "b60e698d7133e0c70ebb8b77e2ed86a310d357f4b7522fa1019bfa9418e9fc11",
     "textHash": "e8e9f6e090d7d4f85acdebd1482652183738a12c6a71a0c3f40b367e4adc97d0",
@@ -4542,11 +4537,6 @@
   "Publishing result…": {
     "revision": "cf90d0d664affb25ecaf846dc45906471279390b94999df75bfec539e9bcacf5",
     "textHash": "8ad5b7d0995ac717f6fee8ee04aaef7c176317b9da6d119cc63ae96f5c2fdb61",
-    "model": "gemini-4-argon-medium"
-  },
-  "Publishing sends the complete Git commit and its history to the selected remote. The request names the files to check.": {
-    "revision": "fa96c5e1fef3232f88ce17bf0c856032f1c54e799a49a5c7580b96d71db2d0d5",
-    "textHash": "73c6f0b384d581353b338011cc042c22633f0a91124e17f827bd110deb3ba5eb",
     "model": "gemini-4-argon-medium"
   },
   "Pull": {

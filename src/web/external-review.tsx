@@ -141,7 +141,7 @@ export function ExternalReviewDialog({ api, projectId, projectName, document, ru
   }
   const change = (path: string, body: unknown) => api<ExternalReview>(`${reviewRoute}/${path}`, body).then(update);
   const move = (next: number) => { setError(''); setStep(next); };
-  const errorId = `${id}-error`, pageHint = `${id}-page-hint`;
+  const errorId = `${id}-error`, pageHint = `${id}-page-hint`, gitHint = `${id}-git-hint`, resultHint = `${id}-result-hint`;
   const sending = conversation ? !conversation.result && !task && !review?.proposal : step === 1;
   const importing = conversation ? !conversation.result && !task : step === 2;
   const implementing = conversation ? !conversation.result : step === 3;
@@ -195,8 +195,9 @@ export function ExternalReviewDialog({ api, projectId, projectName, document, ru
           </fieldset>
           {channel === 'git' ? <div className="external-channel">
             {review.git ? <>
-              <p>{t('Ask the reviewer to write to this branch. If it returns JSON in chat, paste it in the next step.')}</p>
+              <p>{t('Paste the reviewer’s JSON in the next step, or fetch it from this branch.')}</p>
               <p className="external-branch"><code>{review.git.branch}</code></p>
+              {review.git.request?.url && <ExternalLink url={review.git.request.url}>{t('Review request')}</ExternalLink>}
               <ReviewText api={api} route={`${reviewRoute}/prompt?via=git`} label={t('Copy Git prompt')} title={t('Git prompt')}/>
             </> : <form method="post" aria-label={t('Publish review branch')} onSubmit={event => { event.preventDefault(); void act(t('Publishing branch…'), () => change('github', { remote: remoteName, revision: remote?.revision })); }}>
               <label htmlFor={`${id}-remote`}>{t('Git remote')}</label>
@@ -204,9 +205,9 @@ export function ExternalReviewDialog({ api, projectId, projectName, document, ru
                 {!remoteName && <option value="">{t('Choose a Git remote')}</option>}
                 {remotes.map(item => <option value={item.name} key={item.name}>{item.repository ? `${item.name} · ${item.repository}` : item.name}</option>)}
               </select>
-              <p className="external-hint">{t('Publishing sends the complete Git commit and its history to the selected remote. The request names the files to check.')}</p>
+              <p className="external-hint" id={gitHint}>{t('Publishing sends the Git commit, its history, and the review request with selected PDF notes to this remote.')}</p>
               {remote?.url && <a href={remote.url} target="_blank" rel="noopener noreferrer">{remote.repository}</a>}
-              <div className="external-actions"><button type="submit" className="button primary" disabled={Boolean(busy)}>{busy || t('Publish review branch')}</button></div>
+              <div className="external-actions"><button type="submit" className="button primary" aria-describedby={gitHint} disabled={Boolean(busy)}>{busy || t('Publish review branch')}</button></div>
             </form>}
           </div> : <div className="external-channel">
             <form method="post" aria-label={t('Save Page link')} onSubmit={event => { event.preventDefault(); void act(t('Saving…'), () => change('page', { url: page.trim() })); }}>
@@ -271,9 +272,10 @@ export function ExternalReviewDialog({ api, projectId, projectName, document, ru
             <p><strong>{review.result.receipt.status === 'no_changes' ? t('No changes accepted') : t('Receipt ready')}</strong> <code>{review.result.receipt.resultCommit.slice(0, 12)}</code></p>
             <p>{t('Paste the receipt on the Space Page or send it to the reviewer in chat.')}</p>
             <CopyText key={`${review.result.receipt.resultCommit}:${task?.updatedAt}`} read={() => api<{ text: string }>(`${reviewRoute}/receipt?resultCommit=${review.result!.receipt.resultCommit}`).then(result => result.text)} label={t('Copy result for Space')} title={t('Review result')}/>
+            {review.git && !review.result.published && <p className="external-hint" id={resultHint}>{t('Publishing shares the accepted edits, checked proposal, and receipt.')}</p>}
             <div className="external-actions">
               <ExternalLink url={review.page ?? 'https://chatgpt.com/'}>{review.page ? t('Open Space Page') : t('Open ChatGPT')}</ExternalLink>
-              {review.git && (!review.result.published ? <button type="button" className="button secondary" disabled={Boolean(busy)} onClick={() => void act(t('Publishing result…'), () => change('result', { resultCommit: review.result?.receipt.resultCommit }))}>{t('Publish result branch')}</button>
+              {review.git && (!review.result.published ? <button type="button" className="button secondary" aria-describedby={resultHint} disabled={Boolean(busy)} onClick={() => void act(t('Publishing result…'), () => change('result', { resultCommit: review.result?.receipt.resultCommit }))}>{t('Publish result branch')}</button>
                 : review.result.published.url ? <ExternalLink url={review.result.published.url}>{t('Open Git receipt')}</ExternalLink>
                 : <code>{review.result.published.branch}</code>)}
             </div>

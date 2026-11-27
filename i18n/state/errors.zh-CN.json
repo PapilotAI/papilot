@@ -459,11 +459,6 @@
     "textHash": "899f82aa64d1058171945e2af9ea01151d99abb81b51b539daff2791c4ef7d25",
     "model": "gemini-4-argon-medium"
   },
-  "Could not prepare a Git commit containing only the receipt.": {
-    "revision": "2487d13a89d1551e907ea5147059c77c3c047825d5659f5a8b50ce3f3d948b02",
-    "textHash": "3db194011a9b9d72b169b1952389fd6928903d97e76afeca87ade182a9bf8b3b",
-    "model": "gemini-4-argon-medium"
-  },
   "Could not reach Overleaf. Papilot keeps trying.": {
     "revision": "50888300d683f9c948c803bfc952dfcae43556d6f828e29cc2c64071d548386d",
     "textHash": "dce36949d3d7350b150dabdd476a90ed1f110d1f1e13e07d6e0fdeba6898d45d",
@@ -1487,11 +1482,6 @@
   "The proposal must match the local request ID and base commit.": {
     "revision": "e2272a8b6b67212c31b93ddb83526198d4a9177a1dd5e5b11e35aead2d184f24",
     "textHash": "5ca7711e459fe6418d6d17eb47e34cd36d67c1ab4d636a49fed9c52687b763b9",
-    "model": "gemini-4-argon-medium"
-  },
-  "The receipt file already exists in the manuscript.": {
-    "revision": "fb8a162e741aac54bcf710929c48e52a0938fc5533a6c3dc379240b228bc6fcd",
-    "textHash": "18d0f19a155aaf12a6d62c249e9593aaf693184c9ffa2ce40d5803f26c95b777",
     "model": "gemini-4-argon-medium"
   },
   "The request must list files to review.": {
