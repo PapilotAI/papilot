@@ -38,19 +38,24 @@ export function kwinLayout(files: string | string[]): WindowButtons | null {
     let group = '';
     const fileLocked = locked.has('*'), lockAfter: string[] = [];
     for (const line of file.split(/\r?\n/)) {
-      const header = /^\s*\[([^\]]*)\]((?:\[[^\]]*\])*)\s*$/.exec(line);
+      // [group][subgroup][$i]: the name is every segment but $ flags.
+      const header = /^\s*((?:\[[^\]]*\])+)\s*$/.exec(line);
       if (header) {
+        const segments = header[1].slice(1, -1).split('][');
+        const flags = segments.filter(segment => segment.startsWith('$')).join('');
+        const name = segments.filter(segment => !segment.startsWith('$')).join('/');
         // A lone [$i] before any group locks the whole file.
-        if (header[1] === '$i' && !group) { locked.add('*'); continue; }
-        group = header[1];
+        if (!name && !group) { if (flags.includes('i')) locked.add('*'); continue; }
+        group = name;
         // A locked group holds its keys even where this file leaves them out.
-        if (header[2].includes('[$i]') && group === 'org.kde.kdecoration2') lockAfter.push('ButtonsOnLeft', 'ButtonsOnRight');
+        if (flags.includes('i') && group === 'org.kde.kdecoration2') lockAfter.push('ButtonsOnLeft', 'ButtonsOnRight');
         continue;
       }
-      const entry = /^\s*(ButtonsOnLeft|ButtonsOnRight)((?:\[[^\]]*\])*)\s*=\s*(.*?)\s*$/.exec(line);
+      // Key[$i]=value; a localized Key[de]=value is a different entry.
+      const entry = /^\s*(ButtonsOnLeft|ButtonsOnRight)((?:\[\$[^\]]*\])*)\s*=\s*(.*?)\s*$/.exec(line);
       if (!entry || group !== 'org.kde.kdecoration2' || fileLocked || locked.has(entry[1])) continue;
       values[entry[1]] = entry[3];
-      if (entry[2].includes('[$i]')) lockAfter.push(entry[1]);
+      if (/\[\$[^\]]*i/.test(entry[2])) lockAfter.push(entry[1]);
     }
     for (const key of lockAfter) locked.add(key);
   }
@@ -74,7 +79,14 @@ const run: Run = (command, args) => new Promise((resolve, reject) => {
 const gnomeDesktops = ['GNOME', 'UNITY', 'BUDGIE', 'PANTHEON'];
 // Resolves to null when the desktop's layout is unknown; the page then keeps
 // its own default.
-export async function detectWindowButtons({ env = process.env, exec = run, read = (file: string) => readFile(file, 'utf8') }: { env?: NodeJS.ProcessEnv; exec?: Run; read?: (file: string) => Promise<string> } = {}): Promise<WindowButtons | null> {
+// The first window waits for this, so a stalled command or file read (a
+// hung network home folder) gives up after two seconds.
+export function detectWindowButtons(options: { env?: NodeJS.ProcessEnv; exec?: Run; read?: (file: string) => Promise<string>; timeout?: number } = {}): Promise<WindowButtons | null> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), options.timeout ?? 2000); });
+  return Promise.race([readWindowButtons(options), timeout]).finally(() => clearTimeout(timer));
+}
+async function readWindowButtons({ env = process.env, exec = run, read = (file: string) => readFile(file, 'utf8') }: { env?: NodeJS.ProcessEnv; exec?: Run; read?: (file: string) => Promise<string> }): Promise<WindowButtons | null> {
   const desktops = (env.XDG_CURRENT_DESKTOP || '').toUpperCase().split(':');
   const gsettings = (schema: string) => exec('gsettings', ['get', schema, 'button-layout']).then(gtkLayout);
   try {

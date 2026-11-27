@@ -1,4 +1,5 @@
 import test from 'node:test';
+import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { detectWindowButtons, gtkLayout, kwinLayout, windowButtonsArgument, xfwmLayout, WINDOW_BUTTONS_ARGUMENT } from '../desktop/window-buttons.ts';
 
@@ -23,6 +24,9 @@ test('KDE and Xfce layouts map their button letters', () => {
   assert.deepEqual(kwinLayout(['[$i]\n[org.kde.kdecoration2]\nButtonsOnLeft=XIA\nButtonsOnRight=\n', '[org.kde.kdecoration2]\nButtonsOnLeft=\nButtonsOnRight=IAX\n']), left, 'A locked file wins over the user');
   assert.deepEqual(kwinLayout(['[org.kde.kdecoration2]\nButtonsOnLeft=XIA\nButtonsOnRight=\n', '[org.kde.kdecoration2]\nButtonsOnLeft=\nButtonsOnRight=IAX\n']), { side: 'right', buttons: ['minimize', 'maximize', 'close'] }, 'Without a lock the user wins');
   assert.deepEqual(kwinLayout(['[org.kde.kdecoration2]\nButtonsOnLeft=X\nButtonsOnRight=\n', 'ButtonsOnLeft=IA\n']), { side: 'left', buttons: ['close'] }, "A group does not carry into the next file's ungrouped keys");
+  assert.deepEqual(kwinLayout('[org.kde.kdecoration2]\nButtonsOnLeft=X\nButtonsOnRight=\n[org.kde.kdecoration2][Extra]\nButtonsOnLeft=IA\n'), { side: 'left', buttons: ['close'] }, 'Subgroups are other groups');
+  assert.deepEqual(kwinLayout('[org.kde.kdecoration2]\nButtonsOnLeft=X\nButtonsOnRight=\nButtonsOnLeft[fr]=IA\n'), { side: 'left', buttons: ['close'] }, 'Localized entries are other keys');
+  assert.deepEqual(kwinLayout(['[org.kde.kdecoration2][Extra][$i]\n', '[org.kde.kdecoration2]\nButtonsOnLeft=X\nButtonsOnRight=\n']), { side: 'left', buttons: ['close'] }, "A locked subgroup does not lock its parent");
   assert.deepEqual(xfwmLayout('O|HMC\n'), { side: 'right', buttons: ['minimize', 'maximize', 'close'] }, 'Xfce default');
   assert.deepEqual(xfwmLayout('CHM|O'), { side: 'left', buttons: ['close', 'minimize', 'maximize'] });
 });
@@ -60,7 +64,15 @@ test('detection reads the layout from the current desktop', async () => {
   assert.equal(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'GNOME' }, exec: async () => { throw Error('no gsettings'); } }), null, 'Unreadable layouts fall back to the page default');
 });
 
+test('detection gives up on a stalled lookup', async () => {
+  const stalled = () => new Promise<string>(() => {});
+  assert.equal(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'KDE' }, read: stalled, timeout: 10 }), null);
+  assert.equal(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'GNOME' }, exec: stalled, timeout: 10 }), null);
+});
+
 test('the layout reaches the preload as one JSON argument', () => {
+  // The sandboxed preload keeps its own copy of the prefix.
+  assert.ok(fs.readFileSync(new URL('../desktop/preload.cts', import.meta.url), 'utf8').includes(`'${WINDOW_BUTTONS_ARGUMENT}'`));
   const argument = windowButtonsArgument({ side: 'right', buttons: ['close'] });
   assert.ok(argument.startsWith(WINDOW_BUTTONS_ARGUMENT));
   assert.deepEqual(JSON.parse(argument.slice(WINDOW_BUTTONS_ARGUMENT.length)), { side: 'right', buttons: ['close'] });
