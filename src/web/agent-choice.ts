@@ -6,6 +6,7 @@ export const agentLabel = (id: AgentId) => id === 'collaboration' ? t('Collabora
 // Whether an agent is turned off: collaboration mode is opt-in, every other
 // agent is on until the author turns it off in Settings → Agents.
 export const agentOff = (id: AgentId, runtimes: Partial<Record<AgentId, RuntimeStatus>>) => id === 'collaboration' ? runtimes.collaboration?.hidden !== false : Boolean(runtimes[id]?.hidden);
+export const canReviewWith = (id: AgentId, runtime?: RuntimeStatus) => id !== 'collaboration' && runtime?.supportsReadOnlyTasks !== false;
 // Offer only reported runtimes that are on and not known to be missing.
 export function offeredAgents(runtimes: Partial<Record<AgentId, RuntimeStatus>>) {
   return AGENT_IDS.filter(id => !agentOff(id, runtimes) && Boolean(runtimes[id] && runtimes[id]!.installed !== false));
@@ -35,6 +36,7 @@ export function agentsSettled(runtimes: Partial<Record<AgentId, RuntimeStatus>>)
 }
 // Wait for startup to settle before preferring an agent ready for the first task.
 export function chosenAgent(saved: AgentId | null, offered: AgentId[], runtimes: Partial<Record<AgentId, RuntimeStatus>>): AgentId {
-  return saved && offered.includes(saved) ? saved
-    : (agentsSettled(runtimes) && offered.find(id => runtimes[id]?.connected && runtimes[id]?.authenticated)) || offered[0] || 'codex';
+  if (saved && offered.includes(saved)) return saved;
+  const available = agentsSettled(runtimes) ? offered.filter(id => runtimes[id]?.connected && runtimes[id]?.authenticated) : [];
+  return available.find(id => !runtimes[id]?.authenticationUnchecked) || available[0] || offered[0] || 'codex';
 }

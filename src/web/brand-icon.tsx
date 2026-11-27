@@ -9,6 +9,7 @@ import grok from './brand-icons/grok.svg';
 import antigravity from './brand-icons/antigravity.svg';
 import kimi from './brand-icons/kimi.svg';
 import glm from './brand-icons/glm.svg';
+import zcode from './brand-icons/zcode.svg';
 import deepseek from './brand-icons/deepseek.svg';
 import qwen from './brand-icons/qwen.svg';
 import opencode from './brand-icons/opencode.svg';
@@ -29,7 +30,7 @@ import { PapilotMark } from './papilot-mark.tsx';
 import { Icon } from './icons.tsx';
 import './brand-icon.css';
 
-const marks = { collaboration: papilot, papilot, pi, codex, claude, cursor, copilot, grok, antigravity, kimi, glm, deepseek, qwen, opencode, qoder, codebuddy, workbuddy, git, latex, openai, gemini, openrouter, mistral, arxiv, overleaf, github, zotero };
+const marks = { collaboration: papilot, papilot, pi, codex, claude, cursor, copilot, grok, antigravity, kimi, glm, zcode, deepseek, qwen, opencode, qoder, codebuddy, workbuddy, git, latex, openai, gemini, openrouter, mistral, arxiv, overleaf, github, zotero };
 export type Brand = keyof typeof marks;
 
 // Decorative beside a visible name. Local assets work offline and inherit theme colors.

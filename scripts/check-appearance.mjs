@@ -138,6 +138,10 @@ try {
   await rootHas('--bg', '#24272b');
   await page.emulateMedia({ colorScheme: 'light' });
   await rootHas('--bg', '#f6f7f8');
+  const editorFont = dialog.getByRole('combobox', { name: 'Editor font size', exact: true });
+  await expect(editorFont).toHaveAttribute('data-value', '12');
+  await choose('Editor font size', '16');
+  await other.waitForFunction(() => localStorage.getItem('papilot:editor-font-size') === '16');
   await page.screenshot({ animations: 'disabled', path: 'test-results/appearance-slate-desktop.png' });
   for (const width of [768, 390, 320]) {
     await page.setViewportSize({ width, height: 844 });
@@ -146,6 +150,7 @@ try {
   }
   await dialog.getByRole('button', { name: 'Reset appearance', exact: true }).click();
   await rootHas('--bg', '#ffffff');
+  await expect(editorFont).toHaveAttribute('data-value', '12');
   await rootHas('--primary', '#0b8af0');
   await expect(reviewOptions.getByRole('radio', { name: 'PDF', exact: true })).toBeChecked();
   await other.waitForFunction(() => document.documentElement.style.getPropertyValue('--bg') === '#ffffff');

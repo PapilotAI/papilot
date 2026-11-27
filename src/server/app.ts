@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+import type { ServerResponse } from 'node:http';
 import { registerFrontend } from './frontend.ts';
 import type { Store } from './store.ts';
 import type { TaskNoteContext, Workspace } from './workspace.ts';
@@ -477,8 +478,11 @@ export async function buildApp(options: AppOptions) {
     store.savePreference('indirect-changes', value || undefined);
     return { indirectChanges: value };
   });
+  const eventStreams = new Set<ServerResponse>();
+  app.addHook('preClose', async () => { for (const stream of eventStreams) stream.end(); });
   app.get('/api/events', (request, reply) => {
     reply.hijack();
+    eventStreams.add(reply.raw);
     reply.raw.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
     reply.raw.write('event: change\ndata: {}\n\n');
     let timer: NodeJS.Timeout | undefined;
@@ -497,7 +501,8 @@ export async function buildApp(options: AppOptions) {
     overleaf.on('presence', presence);
     manuscripts.on('change', paper);
     const heartbeat = setInterval(() => reply.raw.write(': heartbeat\n\n'), 15000);
-    reply.raw.on('close', () => {
+    reply.raw.once('close', () => {
+      eventStreams.delete(reply.raw);
       clearInterval(heartbeat); if (timer) clearTimeout(timer); if (paperTimer) clearTimeout(paperTimer); if (presenceTimer) clearTimeout(presenceTimer); workspace.off('change', change); overleaf.off('change', change); overleaf.off('presence', presence); manuscripts.off('change', paper);
     });
   });
@@ -914,7 +919,8 @@ export async function buildApp(options: AppOptions) {
     const task = store.task(request.params.id), b = (request.body || {}) as Record<string, unknown>;
     if (b.agent !== undefined && !isAgentId(b.agent)) throw new Error('Invalid agent.');
     const settings = helperModelSettings({ ...(b.agent === undefined ? { model: task.model || undefined, effort: task.effort || undefined, serviceTier: task.serviceTier } : {}), ...b });
-    return workspace.commitMessage(task.projectId, task.review?.files || [], { taskId: task.id, agent: b.agent === undefined ? task.agent : agent(b.agent), ...settings, fresh: b.fresh === true, language: commitMessageLanguage(b.language) });
+    const inheritedSpeed = b.agent === undefined && b.serviceTier === undefined && Boolean(settings.serviceTier);
+    return workspace.commitMessage(task.projectId, task.review?.files || [], { taskId: task.id, agent: b.agent === undefined ? task.agent : agent(b.agent), ...settings, ...(inheritedSpeed ? { inheritedSpeed } : {}), fresh: b.fresh === true, language: commitMessageLanguage(b.language) });
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/permissions', task, request => workspace.updateTaskPermissions(request.params.id, (request.body as any)?.permissions));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/model', task, request => {

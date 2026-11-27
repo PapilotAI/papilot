@@ -112,7 +112,7 @@
       <source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="../assets/readme-agents/grid-compact-dark.png">
       <source media="(prefers-color-scheme: dark)" srcset="../assets/readme-agents/grid-dark.png">
       <source media="(max-width: 600px)" srcset="../assets/readme-agents/grid-compact.png">
-      <img src="../assets/readme-agents/grid.png" alt="Papilot Writer, Codex, Claude, Cursor, GitHub Copilot, Grok, Antigravity, Kimi, GLM, DeepSeek, Qwen, OpenCode, Qoder, CodeBuddy, WorkBuddy 및 Pi" width="848">
+      <img src="../assets/readme-agents/grid.png" alt="Papilot Writer, Codex, Claude, Cursor, GitHub Copilot, Grok, Antigravity, Kimi, GLM, ZCode, DeepSeek, Qwen, OpenCode, Qoder, CodeBuddy, WorkBuddy 및 Pi" width="848">
     </picture>
   </a>
 </p>

@@ -87,13 +87,15 @@ function routeParts(route: CollaborationRoute | null | undefined, runtimes: Part
   const model = route.model ? runtime?.models.find(item => item.id === route.model) : runtime?.models.find(item => item.isDefault);
   const name = model?.name || route.model || t('Default model');
   const fast = Boolean(route.serviceTier && route.serviceTier !== 'default');
-  return { agent: route.agent, agentName: AGENT_NAMES[route.agent], name, effort: route.effort || null, fast, model };
+  return { agent: route.agent, agentName: AGENT_NAMES[route.agent], name, effort: route.effort || null, fast, serviceTier: route.serviceTier || null, model };
 }
 
 function formatRoute(route: CollaborationRoute | null | undefined, runtimes: Partial<Record<AgentId, RuntimeStatus>>): string {
   const parts = routeParts(route, runtimes);
   if (!parts) return t('Not configured');
-  const extras = [parts.effort, parts.fast ? t('Fast') : null].filter(Boolean);
+  const speedName = (tier: string) => tier === 'default' ? t('Standard') : tier === 'ultrafast' ? t('Ultrafast') : t('Fast');
+  const fastLabel = parts.serviceTier && parts.serviceTier !== 'default' ? speedName(parts.serviceTier) : null;
+  const extras = [parts.effort, fastLabel].filter(Boolean);
   return `${parts.agentName} · ${parts.name}${extras.length ? ` (${extras.join(', ')})` : ''}`;
 }
 
@@ -109,7 +111,7 @@ function NodePillContent({ route, runtimes, custom, iconSize = 14 }: { route: Co
     </span>
     {hasTags && <span className="collab-model-pill-tags">
       {parts.effort && <span className="collab-micro-tag">{parts.effort}</span>}
-      {parts.fast && <span className="collab-micro-tag collab-micro-fast"><Icon name="bolt" size={10}/>{t('Fast')}</span>}
+      {parts.fast && <span className="collab-micro-tag collab-micro-fast"><Icon name="bolt" size={10}/>{parts.serviceTier === 'ultrafast' ? t('Ultrafast') : t('Fast')}</span>}
     </span>}
   </>;
 }
@@ -269,7 +271,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
           agent,
           model: model.id,
           effort: model.defaultEffort || null,
-          ...(agent === 'codex' && model.fastMode ? { serviceTier: model.fastMode.serviceTier } : {}),
+          ...(agent === 'codex' && model.serviceTiers?.length ? { serviceTier: model.serviceTiers.includes('fast') ? 'fast' : model.serviceTiers[0] } : {}),
         };
       }
     }
@@ -530,10 +532,10 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
     const effParts = routeParts(effective, runtimes);
     const model = effParts?.model;
     const hasEffort = Boolean(effective && model?.efforts.length);
-    const hasFast = Boolean(effective && effective.agent === 'codex' && model?.fastMode);
-    const fastOn = Boolean(hasFast && effective?.serviceTier && effective.serviceTier !== 'default');
+    const serviceTiers = effective && effective.agent === 'codex' && model?.serviceTiers?.length ? model.serviceTiers : undefined;
+    const speed = serviceTiers && effective?.serviceTier && serviceTiers.includes(effective.serviceTier) ? effective.serviceTier : 'default';
+    const fastOn = Boolean(serviceTiers && speed !== 'default');
     const fastId = `${id}-${slotKey}-fast`;
-    const fastDesc = model?.fastMode?.description || '';
 
     return <div ref={inspectorRef} id={inspectorId} className="collab-inspector" data-inspecting={slotKey} role="region" aria-labelledby={`${inspectorId}-title`}
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setSelected(null); } }}>
@@ -569,7 +571,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
                 agent,
                 model: modelId || null,
                 effort: nextModel?.defaultEffort || null,
-                ...(agent === 'codex' && nextModel?.fastMode ? { serviceTier: nextModel.fastMode.serviceTier } : {}),
+                ...(agent === 'codex' && nextModel?.serviceTiers?.length ? { serviceTier: nextModel.serviceTiers.includes('fast') ? 'fast' : nextModel.serviceTiers[0] } : {}),
               });
             }}
           />
@@ -580,14 +582,25 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
             onChange={effort => onUpdate({ ...effective, effort: effort || null })}/>
         </div>}
 
-        {hasFast && effective && model?.fastMode && <div className="settings-row settings-toggle collaboration-fast">
+        {serviceTiers && effective && (serviceTiers.includes('ultrafast') ? <fieldset className="settings-row agent-speed collaboration-speed" aria-describedby={`${fastId}-desc`}>
+          <legend>{t('Speed')}</legend>
+          <small id={`${fastId}-desc`}>{t('Faster, higher usage')}</small>
+          <div className="agent-speed-options">
+            {['default', ...serviceTiers].map(tier => <label key={tier} className="agent-speed-option" htmlFor={`${fastId}-${tier}`}>
+              <input type="radio" id={`${fastId}-${tier}`} name={fastId} value={tier} checked={speed === tier} disabled={!online || saving}
+                onChange={() => onUpdate({ ...effective, serviceTier: tier })}/>
+              {tier !== 'default' && <span className="agent-speed-bolts" aria-hidden="true"><Icon name="bolt" size={13}/>{tier === 'ultrafast' && <Icon name="bolt" size={13}/>}</span>}
+              <span>{tier === 'default' ? t('Standard') : tier === 'ultrafast' ? t('Ultrafast') : t('Fast')}</span>
+            </label>)}
+          </div>
+        </fieldset> : <div className="settings-row settings-toggle collaboration-fast">
           <div className="collaboration-fast-text">
             <label className="collaboration-fast-label" htmlFor={fastId}><Icon name="bolt" size={12}/>{t('Fast mode')}</label>
-            {fastDesc && <p id={`${fastId}-desc`} className="collaboration-fast-hint">{fastDesc}</p>}
+            <p id={`${fastId}-desc`} className="collaboration-fast-hint">{t('Faster, higher usage')}</p>
           </div>
-          <input id={fastId} type="checkbox" className="switch" role="switch" aria-describedby={fastDesc ? `${fastId}-desc` : undefined} checked={fastOn} disabled={!online || saving}
-            onChange={event => onUpdate({ ...effective, serviceTier: event.target.checked ? model.fastMode!.serviceTier : 'default' })}/>
-        </div>}
+          <input id={fastId} type="checkbox" className="switch" role="switch" aria-describedby={`${fastId}-desc`} checked={fastOn} disabled={!online || saving}
+            onChange={event => onUpdate({ ...effective, serviceTier: event.target.checked ? serviceTiers[0] : 'default' })}/>
+        </div>)}
       </div>
     </div>;
   }

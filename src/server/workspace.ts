@@ -25,6 +25,7 @@ import { GrokAgent } from './grok.ts';
 import { PiAgent } from './pi.ts';
 import { CodeBuddyAgent } from './codebuddy.ts';
 import { WorkBuddyAgent } from './workbuddy.ts';
+import { ZCodeAgent } from './zcode.ts';
 import { WriterAgent } from './writer/agent.ts';
 import { customModelUnavailable, isCustomProvider } from './writer/auth.ts';
 import type { CompiledPaper } from './writer/build-map.ts';
@@ -48,7 +49,7 @@ import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress, recentCommitSubjects } from './manuscript.ts';
 import { Memory, memoryDigest, memoryUpdate } from './memory.ts';
 import { MEMORY_EVIDENCE, MEMORY_LANGUAGE, MEMORY_LEARNING, MEMORY_SINCE, acceptedSuggestions, dismissedKey, evidenceHash, hasEvidence, learningPrompt, memoryLearningInstructions, taskEvidence, type EvidenceRecord, type MemoryEvidence } from './memory-learning.ts';
-import { AGENT_IDS, COLLABORATION_WORKERS, DEFAULT_COLLABORATION_CONFIG, isAgentId, isCollaborationStrategy, usesCodex, isTaskReviewNote, collaborationConfig, collaborationRoutes, type CollaborationConfig, type CollaborationRole, type CollaborationRoute, type CollaborationRoutes, type CollaborationSettings, type CollaborationWorkerAgent, type PreparedNoteOptions } from '../shared.ts';
+import { AGENT_IDS, COLLABORATION_WORKERS, DEFAULT_COLLABORATION_CONFIG, isAgentId, isCollaborationStrategy, usesCodex, effectiveServiceTier, modelServiceTier, isTaskReviewNote, collaborationConfig, collaborationRoutes, type CollaborationConfig, type CollaborationRole, type CollaborationRoute, type CollaborationRoutes, type CollaborationSettings, type CollaborationWorkerAgent, type PreparedNoteOptions } from '../shared.ts';
 import type { HelperChoice, Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, PendingBuild, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview, PageView, ToolPlace } from '../shared.ts';
 
 const execute = promisify(execFile);
@@ -59,15 +60,20 @@ const startsBuild = (route: string, value: unknown) => /\/source(?:\/file)?$/.te
 const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 // A Codex model/list entry with the reasoning efforts it supports.
 export const agentModel = (m: any): AgentModel => {
-  // New catalogs name the wire tier explicitly; older ones advertise only "fast".
-  const fast = Array.isArray(m.serviceTiers)
-    ? m.serviceTiers.find((tier: any) => typeof tier?.id === 'string' && (tier.name === 'Fast' || tier.id === 'fast' || tier.id === 'priority'))
-    : m.additionalSpeedTiers?.includes('fast') ? { id: 'priority' } : undefined;
+  // Use explicit wire IDs when the catalog provides them.
+  const catalog: { id: string; name: string }[] = m.serviceTiers;
+  const legacyTiers = Array.isArray(m.additionalSpeedTiers) ? m.additionalSpeedTiers : [];
+  const serviceTiers = Array.isArray(catalog)
+    ? [
+      catalog.find(tier => typeof tier?.id === 'string' && tier.id !== 'ultrafast' && (tier.name === 'Fast' || tier.id === 'fast' || tier.id === 'priority'))?.id,
+      catalog.find(tier => tier?.id === 'ultrafast')?.id,
+    ].filter((id): id is string => Boolean(id))
+    : [legacyTiers.includes('fast') ? 'priority' : '', legacyTiers.includes('ultrafast') ? 'ultrafast' : ''].filter(Boolean);
   return {
     id: m.model || m.id, name: m.displayName || m.model || m.id, ...(typeof m.source === 'string' && m.source ? { source: m.source } : {}), isDefault: Boolean(m.isDefault),
     efforts: (m.supportedReasoningEfforts || []).map((e: any) => e?.reasoningEffort).filter((e: unknown) => typeof e === 'string'),
     defaultEffort: typeof m.defaultReasoningEffort === 'string' ? m.defaultReasoningEffort : null,
-    ...(fast ? { fastMode: { serviceTier: fast.id, description: typeof fast.description === 'string' ? fast.description : '' } } : {}),
+    ...(serviceTiers.length ? { serviceTiers } : {}),
   };
 };
 // An account/rateLimits/read response as the usage Papilot shows; null when
@@ -503,7 +509,7 @@ export class Workspace extends EventEmitter {
     this.attachments = new Attachments(store);
     if (store.preference<number>(MEMORY_SINCE) === undefined) store.savePreference(MEMORY_SINCE, Date.now());
     this.agents = { papilot: others.papilot || new WriterAgent(), pi: others.pi || new PiAgent(), codex, claude: others.claude || new ClaudeAgent(), cursor: others.cursor || new CursorAgent(), copilot: others.copilot || new AcpAgent(ACP_PROFILES.copilot), grok: others.grok || new GrokAgent(), antigravity: others.antigravity || new AntigravityAgent(),
-      kimi: others.kimi || new AcpAgent(ACP_PROFILES.kimi), glm: others.glm || new GlmAgent(), deepseek: others.deepseek || new AcpAgent(ACP_PROFILES.deepseek),
+      kimi: others.kimi || new AcpAgent(ACP_PROFILES.kimi), glm: others.glm || new GlmAgent(), zcode: others.zcode || new ZCodeAgent(), deepseek: others.deepseek || new AcpAgent(ACP_PROFILES.deepseek),
       qwen: others.qwen || new AcpAgent(ACP_PROFILES.qwen), opencode: others.opencode || new AcpAgent(ACP_PROFILES.opencode),
       qoder: others.qoder || new AcpAgent(ACP_PROFILES.qoder), codebuddy: others.codebuddy || new CodeBuddyAgent(), workbuddy: others.workbuddy || new WorkBuddyAgent(),
       collaboration: others.collaboration || new CollaborationRuntime(this.collaborationHost()) };
@@ -604,7 +610,12 @@ export class Workspace extends EventEmitter {
   // Each agent's status with the author's choices in Settings → Agents.
   private runtimeStatus() {
     const off = this.agentsOff, hidden = this.hiddenModels;
-    return Object.fromEntries(AGENTS.map(id => [id, { ...this.runtimes[id], ...(off.includes(id) ? { hidden: true } : {}), ...(hidden[id] ? { hiddenModels: hidden[id] } : {}) }])) as Record<AgentId, RuntimeStatus>;
+    return Object.fromEntries(AGENTS.map(id => [id, {
+      ...this.runtimes[id],
+      ...(this.agents[id].supportsReadOnlyTasks === false ? { supportsReadOnlyTasks: false } : {}),
+      ...(off.includes(id) ? { hidden: true } : {}),
+      ...(hidden[id] ? { hiddenModels: hidden[id] } : {}),
+    }])) as Record<AgentId, RuntimeStatus>;
   }
   /** Loads the SDKs of the agents this host has before the server answers
    *  requests. Evaluating one blocks for up to a few hundred milliseconds,
@@ -661,6 +672,7 @@ export class Workspace extends EventEmitter {
       runtime.permissionOptions = agent.permissionOptions?.() || [];
       runtime.connected = true;
       runtime.authenticated = Boolean(account.account) || account.requiresOpenaiAuth === false;
+      runtime.authenticationUnchecked = account.authenticationUnchecked ? true : undefined;
       runtime.account = account.account?.email || account.account?.type || (runtime.authenticated ? `Local ${name} configuration` : null);
       runtime.error = runtime.authenticated ? null : account.reason || `Sign in to ${name} on this host, then select Refresh.`;
       const [catalog, configuration] = await Promise.allSettled([
@@ -806,6 +818,8 @@ export class Workspace extends EventEmitter {
     const existing = this.store.findTask(input.id);
     if (existing) { if (existing.projectId !== input.projectId || existing.mode !== 'citations') throw new Error('Invalid task ID.'); return existing; }
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
+    this.requireReadOnlyAgent(input.agent);
+    if (input.agent && (this.agentOff(input.agent) || this.runtimes[input.agent].installed === false)) throw new Error('Connect an agent that supports read-only tasks, such as Codex.');
     this.store.project(input.projectId);
     const now = Date.now(), task: Task = {
       id: input.id, projectId: input.projectId, name: `c-${input.id}`, title: 'Check citations', titleSource: 'prompt', instructions: '',
@@ -822,6 +836,7 @@ export class Workspace extends EventEmitter {
     const task = this.store.task(taskId);
     if (task.mode !== 'citations') throw new Error('This task does not check citations.');
     if (task.status === 'running') return task;
+    this.requireReadOnlyAgent(choice?.agent || task.agent);
     this.store.updateTask(task.id, { status: 'running', error: null, ...(choice ? { agent: choice.agent, model: choice.model ?? null, effort: choice.effort ?? null } : {}) });
     this.runCitationCheck?.(this.store.task(task.id));
     return this.store.task(task.id);
@@ -852,7 +867,7 @@ export class Workspace extends EventEmitter {
       if (input.agent && input.agent !== 'codex') throw new Error('Service tiers are only available for Codex.');
       const models = this.runtimes.codex.models;
       const model = input.model ? models.find(model => model.id === input.model) : models.find(model => model.isDefault);
-      if (input.serviceTier !== 'default' && input.serviceTier !== model?.fastMode?.serviceTier) throw new Error('Fast mode is not available for this model.');
+      if (input.serviceTier !== modelServiceTier(model, input.serviceTier)) throw new Error('This speed is not available for this model.');
     }
       const project = this.store.project(input.projectId), skill = input.skill ? findSkill(project.path, input.skill) : undefined;
       if (skill?.output === 'annotations' && !input.prepareReview) throw new Error('Start a new task to run the AI review skill on the current PDF.');
@@ -919,9 +934,9 @@ export class Workspace extends EventEmitter {
       const runtime = this.runtimes[input.agent];
       if (!runtime?.connected || !runtime.authenticated) throw new Error('Connect and sign in to the destination agent before switching.');
       const model = runtime.models.find(model => input.model ? model.id === input.model : model.isDefault);
-      if (!model) throw new Error('Choose an available model for the destination agent.');
-      if (input.effort && !model.efforts.includes(input.effort)) throw new Error('This model does not support that reasoning effort.');
-      if (input.serviceTier && input.serviceTier !== 'default' && (input.agent !== 'codex' || input.serviceTier !== model.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
+      if (!model && (input.model || runtime.models.length)) throw new Error('Choose an available model for the destination agent.');
+      if (input.effort && !model?.efforts.includes(input.effort)) throw new Error('This model does not support that reasoning effort.');
+      if (input.serviceTier && input.serviceTier !== 'default' && (input.agent !== 'codex' || input.serviceTier !== modelServiceTier(model, input.serviceTier))) throw new Error('This speed is not available for this model.');
       this.validateTaskPermissions(permissions, input.agent, task.mode === 'review');
       return model;
     };
@@ -954,7 +969,7 @@ export class Workspace extends EventEmitter {
     }
     // Settings may have changed while the turn stopped.
     const model = destination();
-    return this.handOver(current(), from, { agent: input.agent, model: model.id, effort: input.effort || null, serviceTier: input.agent === 'codex' ? input.serviceTier || 'default' : undefined, permissions: permissions as string });
+    return this.handOver(current(), from, { agent: input.agent, model: model?.id ?? null, effort: input.effort || null, serviceTier: input.agent === 'codex' ? input.serviceTier || 'default' : undefined, permissions: permissions as string });
   }
   // The task continues on another agent, whose next turn starts a session of
   // its own and is given the conversation so far.
@@ -1247,7 +1262,7 @@ ${permissionScope} Never edit other task worktrees or Papilot's own source/state
 ${scope.length ? `The review covers only ${scope.join(', ')} in this worktree, and an edit to any other file stops the PDF build. Leave other files unchanged even when project instructions ask for a matching update; mention that update in your summary instead.\n` : ''}Papilot owns the LaTeX review lifecycle: it compiles and publishes automatically AFTER your turn finishes, and delivers review feedback in a new turn. Do not create another review task, invoke publish, or wait on feedback --wait. This workflow replaces the publish-and-wait loop of any review skill you have. End your turn with a direct answer or, when you made edits, a concise summary of what changed and why; do not describe Papilot's review workflow.
 Preserve meaning and mathematical correctness. Read relevant project instructions. Treat reviewer comments as instructions tied to their round, file and changes. Rejected edits must not be reintroduced unless explicitly requested. If there is a conflict with accepted text, explain it and propose a revision for a new review round; do not overwrite accepted manuscript content unless the user explicitly requests that replacement.
 Never invent a bibliography entry or any of its details. Add a .bib entry only for a work you can identify, take its authors, title, year and venue from the published record, and include its doi or arXiv eprint when it has one. Papilot looks up every added or changed entry in Crossref, DBLP and arXiv and shows the author any it cannot confirm. Name the entries you added or changed in your summary.
-${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. Shell commands follow the current native permission policy; requests needing interactive approval are refused in this headless session.' : this.agentOf(task) === 'papilot' ? 'Use your paper tools to inspect and validate your changes, and view_pages when the look of the pages matters.' : 'You may run tools in the task worktree to inspect and validate your changes.'} ${viewPdf ? `When the look of the pages matters, such as line breaks, spacing, figures, tables or displayed formulas, use the ${VIEW_PDF} tool and open the pages it draws with your image viewer to see them as the author does. It compiles the paper, so do not call it for wording alone. ` : ''}If a decision requires the user, ask through the available user-input tool or explain it in your final response. Use English for your progress updates, questions, and final summaries unless the user explicitly requests another language. Preserve the manuscript language unless asked to translate it.` + remembered;
+${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for manuscript edits. Shell commands follow the current native permission policy; requests needing interactive approval are refused in this headless session.' : this.agentOf(task) === 'papilot' ? 'Use your paper tools to inspect and validate your changes, and view_pages when the look of the pages matters.' : 'You may run tools in the task worktree to inspect and validate your changes.'} ${viewPdf ? `When the look of the pages matters, such as line breaks, spacing, figures, tables or displayed formulas, use the ${VIEW_PDF} tool and open the pages it draws with your image viewer to see them as the author does. It compiles the paper, so do not call it for wording alone. ` : ''}If a decision requires the user, ask through the available user-input tool or explain it in your final response. Use English for your progress updates, questions, and final summaries unless the user explicitly requests another language. Preserve the manuscript language unless asked to translate it.` + remembered;
   }
   private async approvalReviewer(task: Task): Promise<{ approvalsReviewer?: 'user' | 'auto_review' | 'guardian_subagent' }> {
     if (!usesCodex(this.agentOf(task))) return {};
@@ -1369,10 +1384,14 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const models = this.runtimes[this.agentOf(task)].models;
     const model = task.model ? models.find(model => model.id === task.model) : models.find(model => model.isDefault);
     // Explicit defaults replace a previous turn's reasoning override.
-    const effort = task.effort || (usesCodex(this.agentOf(task)) ? model?.defaultEffort : undefined);
+    const codex = usesCodex(this.agentOf(task));
+    const effort = task.effort || (codex ? model?.defaultEffort : undefined);
+    // A catalog refresh can remove an accelerated speed from an existing task.
+    // Keep the saved choice and preserve host inheritance for tasks without one.
+    const serviceTier = effectiveServiceTier(model, task.serviceTier);
     // Apply the native policy (including configured roots and tmp exclusions)
     // and the current worktree reviewer even on already-loaded threads.
-    try { result = await agent.request('turn/start', { threadId: task.threadId, input, cwd: task.worktree, ...permissions?.turn, ...reviewer, clientUserMessageId: run.id, ...(task.model ? { model: task.model } : {}), ...(effort ? { effort } : {}), ...(usesCodex(this.agentOf(task)) && task.serviceTier ? { serviceTier: task.serviceTier } : {}) }); }
+    try { result = await agent.request('turn/start', { threadId: task.threadId, input, cwd: task.worktree, ...permissions?.turn, ...reviewer, clientUserMessageId: run.id, ...(task.model ? { model: task.model } : {}), ...(effort ? { effort } : {}), ...(codex && serviceTier ? { serviceTier } : {}) }); }
     catch (error) {
       if (this.active.get(task.id)?.id !== run.id) return;
       if (error instanceof RpcResponseError) throw error;
@@ -2381,7 +2400,10 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const choice = this.store.preference<QuickModel | null>(QUICK_MODEL);
     return choice && isAgentId(choice.agent) ? choice : null;
   }
-  setQuickModel(choice: QuickModel | null) { this.store.savePreference(QUICK_MODEL, choice); }
+  setQuickModel(choice: QuickModel | null) {
+    this.requireReadOnlyAgent(choice?.agent);
+    this.store.savePreference(QUICK_MODEL, choice);
+  }
   // The agent, model and effort for a quick job. The author's choice wins
   // while it is signed in; otherwise the fallback agent's small model does it.
   private quick(fallback: { agent?: AgentId; model?: string }, what: string) {
@@ -2407,6 +2429,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   /** One quick job's reply, from a read-only turn that has everything it
    * needs in its prompt, and the agent and model that wrote it. */
   async quickReply(options: { instructions: string; prompt: string; what: string; projectId?: string; signal?: AbortSignal; onText?: (text: string) => void; choice?: { agent?: AgentId; model?: string | null; effort?: string | null } }) {
+    this.requireReadOnlyAgent(options.choice?.agent);
     const { id, model, effort } = options.choice?.agent ? await this.chosen(options.choice as { agent: AgentId; model?: string | null; effort?: string | null }, options.what) : this.quick({}, options.what);
     const reply = await this.oneOff(id, { cwd: os.tmpdir(), sandbox: 'read-only', instructions: options.instructions, prompt: options.prompt, model, effort, what: options.what, projectId: options.projectId, signal: options.signal, onText: options.onText });
     return { reply, agent: id, model: model?.name || model?.id || null };
@@ -2426,7 +2449,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const usable = (id: AgentId) => id !== 'collaboration' && this.agents[id].ready && this.runtimes[id].authenticated && (!options.readOnly || this.agents[id].supportsReadOnlyTasks !== false);
     if (usesCustomModel(choice.agent, choice.model) && !usable('papilot')) throw customModelUnavailable();
     if (options.strict && choice.agent) {
-      if (!this.agents[choice.agent].ready || !this.runtimes[choice.agent].authenticated) {
+      if ((options.readOnly && this.agentOff(choice.agent)) || !this.agents[choice.agent].ready || !this.runtimes[choice.agent].authenticated) {
         throw new Error(options.strict === 'commit-message'
           ? 'The selected commit-message agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.'
           : 'The selected conflict-resolution agent is unavailable. Connect it in Settings → Agents or choose another in Settings → Git.');
@@ -2449,7 +2472,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       return r ? { ...choice, agent: r.agent as AgentId, model: r.model || undefined } : choice;
     })() : choice;
     const id = resolvedChoice.agent, runtime = this.runtimes[id];
-    if (!this.agents[id].ready || !runtime.authenticated) throw new Error('Connect the selected agent before diagnosing compilation problems.');
+    if (this.agentOff(id) || !this.agents[id].ready || !runtime.authenticated) throw new Error('Connect the selected agent before diagnosing compilation problems.');
     if (this.agents[id].supportsReadOnlyTasks === false) throw new Error('The selected agent does not support read-only compilation diagnosis. Select another agent.');
     const models = this.helperChoices(id, resolvedChoice.model);
     const model = models.find(item => item.id === resolvedChoice.model) || models.find(item => item.isDefault);
@@ -2618,12 +2641,13 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   // generate button: one read-only turn with the selected model and reasoning
   // effort. The same changes get the message already
   // written, or being written, for them unless the author asks for a fresh one.
-  async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; model?: string; effort?: string; serviceTier?: string; fresh?: boolean; staged?: boolean; taskId?: string; language?: CommitMessageLanguage } = {}) {
+  async commitMessage(projectId: string, paths: string[], choice: { agent?: AgentId; model?: string; effort?: string; serviceTier?: string; inheritedSpeed?: boolean; fresh?: boolean; staged?: boolean; taskId?: string; language?: CommitMessageLanguage } = {}) {
     const project = this.store.project(projectId), { id, model } = this.helper(choice, 'write a commit message', { readOnly: true, strict: 'commit-message' });
     if (choice.model && model?.id !== choice.model) throw new Error('Choose an available model for this agent.');
     if (choice.effort && model && !model.efforts.includes(choice.effort)) throw new Error('This model does not support that reasoning effort.');
-    if (choice.serviceTier && choice.serviceTier !== 'default' && (id !== 'codex' || choice.serviceTier !== model?.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
-    const effort = choice.effort || model?.defaultEffort, serviceTier = id === 'codex' ? choice.serviceTier : undefined;
+    const speed = choice.inheritedSpeed && id === 'codex' ? effectiveServiceTier(model, choice.serviceTier) : choice.serviceTier;
+    if (speed && speed !== 'default' && (id !== 'codex' || speed !== modelServiceTier(model, speed))) throw new Error('This speed is not available for this model.');
+    const effort = choice.effort || model?.defaultEffort, serviceTier = id === 'codex' ? speed : undefined;
     const task = choice.taskId ? this.store.task(choice.taskId) : undefined;
     if (task && task.projectId !== projectId) throw new Error('Invalid task ID.');
     // Saving a task is when Papilot offers what it noticed in the author's reviews.
@@ -2720,9 +2744,15 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   private mergeHandover(task: Task, run: Run): HelperChoice | null {
     const choice = task.mergeAgent;
     if (!run.requestKey.startsWith('merge-review-') || !choice || task.mergeReturn) return null;
-    const differs = choice.agent !== this.agentOf(task) || Boolean(choice.model && choice.model !== task.model)
-      || Boolean(choice.effort && choice.effort !== task.effort) || Boolean(choice.serviceTier && choice.serviceTier !== task.serviceTier);
-    return differs ? choice : null;
+    const agent = this.agentOf(task);
+    const savedSpeed = (id: AgentId, modelId: string | null | undefined, tier?: string) => {
+      const model = id === 'codex' ? this.runtimes.codex.models.find(model => modelId ? model.id === modelId : model.isDefault) : undefined;
+      return effectiveServiceTier(model, tier);
+    };
+    const serviceTier = savedSpeed(choice.agent, choice.model, choice.serviceTier);
+    const differs = choice.agent !== agent || Boolean(choice.model && choice.model !== task.model)
+      || Boolean(choice.effort && choice.effort !== task.effort) || Boolean(serviceTier && serviceTier !== savedSpeed(agent, task.model, task.serviceTier));
+    return differs ? { ...choice, serviceTier } : null;
   }
   // Once no merge is left to resolve, the task's own agent takes over again
   // with its own settings, even if it is now off or offline: its next turn
@@ -2742,7 +2772,7 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     const project = this.store.project(projectId), { id, model } = this.helper(choice, 'resolve conflicts', { strict: 'conflict-resolution' });
     if (choice.model && model?.id !== choice.model) throw new Error('Choose an available model for this agent.');
     if (choice.effort && !model?.efforts.includes(choice.effort)) throw new Error('This model does not support that reasoning effort.');
-    if (choice.serviceTier && choice.serviceTier !== 'default' && (id !== 'codex' || choice.serviceTier !== model?.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
+    if (choice.serviceTier && choice.serviceTier !== 'default' && (id !== 'codex' || choice.serviceTier !== modelServiceTier(model, choice.serviceTier))) throw new Error('This speed is not available for this model.');
     const effort = choice.effort || model?.defaultEffort, serviceTier = id === 'codex' ? choice.serviceTier : undefined;
     const { files, branch, upstream, ours, theirs } = await mergeConflicts(project.path);
     if (!files.length) throw new Error('No file has conflict markers left. Commit the merge.');
@@ -2766,6 +2796,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
   }
   private requireReviewAgent(agent: AgentId) {
     if (this.agents[agent].supportsReadOnlyTasks === false) throw new Error('The selected agent does not support read-only AI review. Select another agent.');
+  }
+  private requireReadOnlyAgent(agent?: AgentId) {
+    if (agent && this.agents[agent].supportsReadOnlyTasks === false) throw new Error('The selected agent does not support read-only tasks. Select another agent.');
   }
   private validateTaskPermissions(value: unknown, agent: AgentId, reviewing: boolean) {
     if (typeof value !== 'string' || !value) throw new Error('Invalid task permissions.');
@@ -2794,9 +2827,9 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
     if (change.model && change.model !== task.model && !model) throw new Error('Choose an available model for this agent.');
     const effort = change.effort ?? (change.model !== undefined && model && !model.efforts.includes(task.effort || '') ? '' : agent === 'collaboration' && !model?.efforts.length ? '' : task.effort);
     if (change.effort && model && !model.efforts.includes(change.effort)) throw new Error('This model does not support that reasoning effort.');
-    const serviceTier = agent === 'collaboration' ? undefined : (change.serviceTier ?? (change.model !== undefined && task.serviceTier !== model?.fastMode?.serviceTier ? 'default' : task.serviceTier));
+    const serviceTier = agent === 'collaboration' ? undefined : (change.serviceTier ?? (task.serviceTier && (model || change.model !== undefined) ? modelServiceTier(model, task.serviceTier) : task.serviceTier));
     if (change.serviceTier !== undefined && agent !== 'codex') throw new Error('Service tiers are only available for Codex.');
-    if (serviceTier && serviceTier !== 'default' && serviceTier !== model?.fastMode?.serviceTier) throw new Error('Fast mode is not available for this model.');
+    if (change.serviceTier && change.serviceTier !== modelServiceTier(model, change.serviceTier)) throw new Error('This speed is not available for this model.');
     return this.store.updateTask(taskId, { model: id || null, effort: effort || null, ...(serviceTier ? { serviceTier } : agent === 'collaboration' && task.serviceTier !== undefined ? { serviceTier: undefined } : {}) });
   }
   renameTask(taskId: string, title: string) {
@@ -2882,7 +2915,17 @@ ${this.agentOf(task) === 'antigravity' ? 'Use file tools for manuscript edits. S
       throw error;
     } finally { this.deletions.delete(taskId); this.schedule(); }
   }
-  close() { this.closing = true; this.toolBridge.close(); for (const taskId of this.workflowStops.keys()) this.stopWorkflow(taskId); for (const stop of this.helperStops) stop(); for (const timer of this.usageTimers.values()) clearTimeout(timer); this.flush(); for (const id of AGENTS) this.agents[id].close(); this.attachments.close(); }
+  close() {
+    this.closing = true;
+    this.toolBridge.close();
+    for (const taskId of this.workflowStops.keys()) this.stopWorkflow(taskId);
+    for (const stop of this.helperStops) stop();
+    for (const timer of this.usageTimers.values()) clearTimeout(timer);
+    this.flush();
+    const agents = AGENTS.map(async id => this.agents[id].close());
+    this.attachments.close();
+    return Promise.allSettled(agents);
+  }
 }
 
 // A loaded Codex thread runs the user's stdio MCP servers in its working

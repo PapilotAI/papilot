@@ -622,6 +622,7 @@ button.collab-note-pill.is-linked:focus-visible{outline:2px solid var(--accent);
 .agent-model-label{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:100%}
 .agent-model-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .agent-model-label>small{flex-shrink:0;font-size:11px;color:var(--text-3)}
+.agent-model-label>.agent-speed-bolts{color:var(--accent-hover)}
 .agent-picker-trigger>svg{flex-shrink:0}
 .agent-picker-agent{flex-shrink:0;font-size:11px;color:var(--text-3)}
 .agent-picker-selection{display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-width:0;line-height:14px;text-align:left}
@@ -661,7 +662,7 @@ button.collab-note-pill.is-linked:focus-visible{outline:2px solid var(--accent);
 .task-permission-option:has(input:checked){background:var(--thumb);color:var(--text);box-shadow:0 0 0 1px var(--line)}
 .task-permission-option:hover{color:var(--text)}
 .task-permission-option:has(input:focus-visible){outline:1px solid var(--accent);outline-offset:1px}
-.task-permission-option input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:inherit}
+:is(.task-permission-option,.agent-speed-option)>input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:inherit}
 .task-permission-option>svg{flex:none;visibility:hidden}
 .task-permission-option:has(input:checked)>svg{visibility:visible}
 .task-permission-detail,.task-permissions-hint{margin:8px 0 0;font-size:11px;line-height:1.5;color:var(--text-3);overflow-wrap:anywhere}
@@ -699,6 +700,18 @@ button.collab-note-pill.is-linked:focus-visible{outline:2px solid var(--accent);
 .agent-fast input:checked{background:var(--accent)}
 .agent-fast input:checked::before{transform:translateX(12px);background:#fff}
 .agent-fast input:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+.agent-speed{min-inline-size:0;margin:12px 0 0;padding:5px 6px 0;border:0;border-top:1px solid var(--line)}
+.agent-speed legend{padding:0 5px 0 0;font-size:12px;font-weight:500}
+.agent-speed small{display:block;color:var(--text-3);font-size:11px;line-height:1.4}
+.agent-speed-options{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;margin-top:6px;padding:4px;border-radius:var(--r-md);background:var(--bg-muted)}
+.agent-speed-option{position:relative;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;align-content:center;gap:2px 3px;min-inline-size:0;min-block-size:48px;padding:5px 2px;border:1px solid transparent;border-radius:var(--r);color:var(--text-2);cursor:pointer;font-size:12px;font-weight:500;line-height:1.3;text-align:center;overflow-wrap:anywhere}
+.agent-speed-option:hover{color:var(--text);background:var(--bg-hover)}
+.agent-speed-option:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:1px}
+.agent-speed-option:has(input:checked){background:var(--accent-soft);border-color:var(--accent-line);color:var(--text)}
+.agent-speed-option:has(input:checked)>.agent-speed-bolts{color:var(--accent-hover)}
+.agent-speed-bolts{display:inline-flex;flex-shrink:0;align-items:center}
+.agent-speed-bolts>svg+svg{margin-inline-start:-5px}
+@media (forced-colors:active){.agent-speed-option:has(input:checked){border-color:Highlight}}
 /* Account usage is one quiet row; reset times and credits expand on demand. */
 .usage{flex:none;min-width:0;font-size:11px;color:var(--text-3)}
 .usage details{min-width:0}
@@ -730,7 +743,8 @@ button.collab-note-pill.is-linked:focus-visible{outline:2px solid var(--accent);
 .usage .critical .usage-value{color:var(--red)}
 .usage-value{font-variant-numeric:tabular-nums;color:var(--text-2)}
 .usage-credits{font-variant-numeric:tabular-nums}
-.chip-select.zoom-chip{height:24px;padding:0 6px 0 8px;border-radius:var(--r);border-color:transparent;font-size:12px;color:var(--text);box-shadow:none;background:var(--bg-muted)}
+/* Percentages share one width, so the toolbar holds still while zooming. */
+.chip-select.zoom-chip{min-width:calc(5ch + 32px);justify-content:space-between;font-variant-numeric:tabular-nums;height:24px;padding:0 6px 0 8px;border-radius:var(--r);border-color:transparent;font-size:12px;color:var(--text);box-shadow:none;background:var(--bg-muted)}
 .chip-select.zoom-chip:hover:not(:disabled),.chip-select.zoom-chip[aria-expanded=true]{background:var(--bg-muted);border-color:var(--line)}
 
 /* Home */

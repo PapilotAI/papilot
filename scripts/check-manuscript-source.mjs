@@ -9,6 +9,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { chromium, expect } from './playwright.mjs';
+import { selectOption } from './select.mjs';
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-source-edit-'));
 process.env.PAPILOT_DATA = path.join(temp, 'data');
@@ -69,6 +70,16 @@ try {
   await page.goto(origin);
   const word = text => page.locator('.pdf-view .textLayer span', { hasText: text }).first();
   await expect(word('pelicans')).toBeVisible({ timeout: 60000 });
+  // The zoom chip keeps one width across percentages, so the toolbar holds still.
+  // (The toolbar shows the chip only when there is room for it.)
+  const viewport = page.viewportSize();
+  await page.setViewportSize({ width: 1800, height: viewport.height });
+  const zoomChip = page.getByRole('combobox', { name: 'Zoom', exact: true });
+  const chipWidths = [];
+  for (const value of ['0.75', '1', '4']) { await selectOption(zoomChip, value); chipWidths.push(await zoomChip.evaluate(element => element.getBoundingClientRect().width)); }
+  assert.equal(new Set(chipWidths).size, 1, `zoom chip widths: ${chipWidths}`);
+  await selectOption(zoomChip, 'page-width');
+  await page.setViewportSize(viewport);
   const rail = page.getByRole('toolbar', { name: 'Marking tools' });
   const panel = page.locator('.source-panel'), field = panel.getByRole('textbox', { name: 'Edit LaTeX source' });
   const tabs = page.getByRole('tablist', { name: 'Manuscript panels' }), close = tabs.locator('.side-tab-close'), unsaved = tabs.locator('.side-tab-close[data-dirty]');
@@ -146,6 +157,45 @@ try {
   await expect(panel.locator('.cm-change-bar')).toHaveCount(0);
   await page.waitForTimeout(700);
   await shot('open');
+
+  // The editor's own font size comes from Settings and changes only the
+  // editor; Ctrl/⌘ +/− stay with the window zoom even while it is focused.
+  const editorFont = () => panel.locator('.cm-content').evaluate(content => [getComputedStyle(content).fontSize, getComputedStyle(content.closest('.cm-scroller')).lineHeight]);
+  const tabFont = () => tabs.getByRole('tab', { name: 'intro.tex' }).evaluate(tab => getComputedStyle(tab).fontSize);
+  const interfaceFont = await tabFont();
+  assert.deepEqual(await editorFont(), ['12px', '20px']);
+  await expect(field).toBeFocused();
+  // Ctrl/⌘ +/− belong to the window zoom: neither the editor nor the PDF
+  // beside it takes them, wherever the focus is.
+  const pageWidth = () => page.locator('.pdf-view .page').first().evaluate(element => element.getBoundingClientRect().width);
+  const pdfWidth = await pageWidth();
+  for (const target of [field, page.locator('.pdf-container')]) {
+    await target.focus();
+    const taken = await page.evaluate(() => {
+      const event = new KeyboardEvent('keydown', { key: '=', code: 'Equal', ctrlKey: true, metaKey: navigator.platform.startsWith('Mac'), bubbles: true, cancelable: true });
+      document.activeElement.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    assert.equal(taken, false, 'Ctrl/⌘ = is left to the window zoom');
+  }
+  assert.deepEqual(await editorFont(), ['12px', '20px'], 'zoom keys do not resize the editor');
+  assert.equal(await pageWidth(), pdfWidth, 'zoom keys do not resize the PDF');
+  await field.focus();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const settings = page.locator('.settings-dialog');
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await selectOption(settings.getByRole('combobox', { name: 'Editor font size', exact: true }), '18');
+  await expect.poll(editorFont).toEqual(['18px', '30px']);
+  await settings.getByRole('button', { name: 'Close', exact: true }).click();
+  await shot('editor-font-18');
+  assert.equal(await tabFont(), interfaceFont, 'the rest of the interface keeps its size');
+  assert.equal(await page.evaluate(() => localStorage.getItem('papilot:editor-font-size')), '18');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await selectOption(settings.getByRole('combobox', { name: 'Editor font size', exact: true }), '12');
+  await expect.poll(editorFont).toEqual(['12px', '20px']);
+  await settings.getByRole('button', { name: 'Close', exact: true }).click();
+  await field.focus();
 
   // What changed since the last commit, as bars beside the lines while editing.
   await page.keyboard.press('End');

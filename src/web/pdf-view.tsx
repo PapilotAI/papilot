@@ -849,10 +849,9 @@ export const PdfView = forwardRef<PdfHandle, {
     const key = (e: KeyboardEvent) => {
       const viewer = tools.current?.viewer, mod = e.metaKey || e.ctrlKey;
       if (!viewer || e.defaultPrevented || latest.current.suspended || !container.current?.clientHeight || document.querySelector('dialog[open]')) return;
+      // Ctrl/⌘ +/−/0 stay with the window zoom, as in other apps; the PDF
+      // zooms with its toolbar, a pinch or Ctrl/⌘ + scroll.
       if (mod && e.key.toLowerCase() === 'f') { e.preventDefault(); if (findInput.current) findInput.current.select(); else setFindOpen(true); }
-      else if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); viewer.increaseScale(); }
-      else if (mod && e.key === '-') { e.preventDefault(); viewer.decreaseScale(); }
-      else if (mod && e.key === '0') { e.preventDefault(); viewer.currentScaleValue = 'page-width'; }
     };
     document.addEventListener('keydown', key);
     return () => document.removeEventListener('keydown', key);

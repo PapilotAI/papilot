@@ -48,7 +48,7 @@ export function ModelDefaultSettings({ agents, agent, model, effort, onSelect, o
         label={t('Default reasoning effort')} description={t('Available levels depend on the selected model.')}/>
         : <div className="settings-text"><span className="settings-name">{t('Default reasoning effort')}</span><p>{t('This model uses its own reasoning settings.')}</p></div>}
     </div>
-    {quick && <QuickModelSettings agents={agents.filter(item => item.value !== 'collaboration')} api={quick}/>}
+    {quick && <QuickModelSettings agents={agents.filter(option => option.value !== 'collaboration' && option.runtime?.supportsReadOnlyTasks !== false)} api={quick}/>}
   </>;
 }
 

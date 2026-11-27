@@ -142,7 +142,8 @@ export async function startWsl(options: { distribution: string; assets: string; 
   const stop = () => stopping ??= new Promise<void>(resolve => {
     controller.abort();
     if (child.exitCode !== null || child.signalCode !== null) return resolve();
-    const timer = setTimeout(() => { terminateTree(child); resolve(); }, 10000);
+    // Allow the bridge to wait for the backend's graceful stop and forced exit.
+    const timer = setTimeout(() => { terminateTree(child); resolve(); }, 18000);
     child.once('exit', () => { clearTimeout(timer); resolve(); });
     child.stdin.end(JSON.stringify({ type: 'papilot:shutdown' }) + '\n');
   });

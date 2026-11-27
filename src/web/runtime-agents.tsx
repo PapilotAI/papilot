@@ -26,6 +26,7 @@ function connectionInfo(id: AgentId) {
     antigravity: t('Uses the local Antigravity CLI and its saved Google login.'),
     kimi: t('Uses Kimi Code CLI and its saved login through ACP.'),
     glm: t('Uses Claude Code or the Claude Agent SDK with ZHIPU_API_KEY or ZAI_API_KEY.'),
+    zcode: t('Uses the local ZCode CLI and its configured default model.'),
     deepseek: t('Uses DeepSeek Harness and the providers configured in dsh.'),
     qwen: t('Uses Qwen Code and its saved login through ACP.'),
     opencode: t('Uses OpenCode with the providers and models you have connected.'),
@@ -33,7 +34,7 @@ function connectionInfo(id: AgentId) {
     codebuddy: t('Uses CodeBuddy CLI and its saved login through ACP.'),
     workbuddy: t('Uses a configured WorkBuddy ACP launcher. Its login must be available to the launcher.'),
   };
-  const commands = { collaboration: '', papilot: '', pi: 'pi → /login', codex: window.papilotDesktop ? 'codex login' : 'papilot codex login', claude: 'claude auth login', cursor: 'CURSOR_API_KEY', copilot: 'copilot login', grok: 'grok login', antigravity: 'agy', kimi: 'kimi login', glm: 'ZHIPU_API_KEY / ZAI_API_KEY', deepseek: 'dsh web', qwen: 'qwen', opencode: 'opencode auth login', qoder: 'qoder login', codebuddy: 'codebuddy', workbuddy: 'PAPILOT_WORKBUDDY_BIN' };
+  const commands = { collaboration: '', papilot: '', pi: 'pi → /login', codex: window.papilotDesktop ? 'codex login' : 'papilot codex login', claude: 'claude auth login', cursor: 'CURSOR_API_KEY', copilot: 'copilot login', grok: 'grok login', antigravity: 'agy', kimi: 'kimi login', glm: 'ZHIPU_API_KEY / ZAI_API_KEY', zcode: 'zcode login', deepseek: 'dsh web', qwen: 'qwen', opencode: 'opencode auth login', qoder: 'qoder login', codebuddy: 'codebuddy', workbuddy: 'PAPILOT_WORKBUDDY_BIN' };
   return { description: descriptions[id], command: commands[id], key: id === 'cursor' || id === 'glm' };
 }
 
@@ -42,7 +43,7 @@ function agentAvailability(online: boolean, runtime?: RuntimeStatus, off = false
   if (off) return 'off';
   if (!online || !runtime) return 'unknown';
   if (runtime.installed === false) return 'missing';
-  if (runtime.connected) return runtime.authenticated ? runtime.usage?.reached ? 'limited' : 'ready' : 'signin';
+  if (runtime.connected) return runtime.authenticated ? runtime.authenticationUnchecked ? 'unchecked' : runtime.usage?.reached ? 'limited' : 'ready' : 'signin';
   return runtime.error ? 'unavailable' : 'connecting';
 }
 
@@ -84,8 +85,8 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
   }
   const cards = useRef<Partial<Record<AgentId, HTMLButtonElement | null>>>({});
   const [reconnecting, setReconnecting] = useState(false), [reconnectError, setReconnectError] = useState(false);
-  const labels = { ready: t('Ready'), limited: t('Limit reached'), missing: t('Not detected'), signin: t('Sign-in required'), connecting: t('Connecting…'), unavailable: t('Unavailable'), unknown: t('Unknown'), off: t('Off') };
-  const icons = { ready: 'check', limited: 'alert', missing: 'minus', signin: 'key', connecting: 'refresh', unavailable: 'alert', unknown: 'minus', off: 'pause' };
+  const labels = { ready: t('Ready'), limited: t('Limit reached'), missing: t('Not detected'), signin: t('Sign-in required'), unchecked: t('Sign-in not checked'), connecting: t('Connecting…'), unavailable: t('Unavailable'), unknown: t('Unknown'), off: t('Off') };
+  const icons = { ready: 'check', limited: 'alert', missing: 'minus', signin: 'key', unchecked: 'key', connecting: 'refresh', unavailable: 'alert', unknown: 'minus', off: 'pause' };
   useEffect(() => { setReconnectError(false); }, [selected]);
   const close = () => { if (selected) cards.current[selected]?.focus(); setSelected(null); };
   const runtime = selected ? runtimes[selected] : undefined;
@@ -114,9 +115,9 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
         // and an agent that is not on this host has nothing to turn off.
         const toggle = save && id !== 'collaboration' && availability !== 'missing';
         return <li key={id} className={'diagnostic-agent-card' + (toggle ? ' has-switch' : '')} data-agent={id} data-availability={availability}>
-          <button type="button" className="diagnostic-agent-button" ref={element => { cards.current[id] = element; }} aria-label={t('{agent} details', { agent: agentLabel(id) })} aria-expanded={selected === id} aria-controls={selected === id ? 'runtime-agent-detail' : undefined} title={availability === 'missing' ? agentSetup(id).reason : t('View installation, account, and usage')} onClick={() => selected === id ? close() : setSelected(id)} onKeyDown={event => { if (event.key === 'Escape' && selected === id) { event.preventDefault(); event.stopPropagation(); close(); } }}>
+          <button type="button" className="diagnostic-agent-button" ref={element => { cards.current[id] = element; }} aria-label={t('{agent} details', { agent: agentLabel(id) })} aria-describedby={`${names}-${id}-availability`} aria-expanded={selected === id} aria-controls={selected === id ? 'runtime-agent-detail' : undefined} title={availability === 'missing' ? agentSetup(id).reason : t('View installation, account, and usage')} onClick={() => selected === id ? close() : setSelected(id)} onKeyDown={event => { if (event.key === 'Escape' && selected === id) { event.preventDefault(); event.stopPropagation(); close(); } }}>
             <div className="diagnostic-agent-heading"><BrandIcon name={id} size={28}/><h4 id={`${names}-${id}`}>{agentLabel(id)}{id === 'papilot' && <small className="diagnostic-agent-subtitle">{t('Based on Pi')}</small>}</h4></div>
-            <div className="diagnostic-agent-footer"><span className={'diagnostic-availability ' + availability}><Icon name={icons[availability]} size={13}/>{labels[availability]}</span><span className="diagnostic-agent-chevron"><Icon name={selected === id ? 'chevronUp' : 'chevronDown'} size={14}/></span></div>
+            <div className="diagnostic-agent-footer"><span id={`${names}-${id}-availability`} className={'diagnostic-availability ' + availability}><Icon name={icons[availability]} size={13}/>{labels[availability]}</span><span className="diagnostic-agent-chevron"><Icon name={selected === id ? 'chevronUp' : 'chevronDown'} size={14}/></span></div>
           </button>
           {toggle && <input type="checkbox" role="switch" className="switch diagnostic-agent-switch" aria-labelledby={`${names}-${id}`} disabled={!online || resetting} checked={!isOff(id)} onChange={event => toggleAgent(id, event.target.checked)}/>}
         </li>;
@@ -147,7 +148,7 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
       <header className="runtime-agent-header">
         {selected === 'papilot' && <BrandIcon name="papilot" size={22}/>}
         <h4 id="runtime-agent-title" tabIndex={-1}>{agentLabel(selected)}</h4>
-        {current && selected !== 'papilot' && <span className="runtime-agent-account" aria-label={t('Account')}>{runtime.account || t('Signed in')}</span>}
+        {current && selected !== 'papilot' && !runtime.authenticationUnchecked && <span className="runtime-agent-account" aria-label={t('Account')}>{runtime.account || t('Signed in')}</span>}
         <button type="button" className="icon-button" aria-label={t('Close agent details')} onClick={close}><Icon name="close" size={16}/></button>
       </header>
       {state === 'off' ? <p className="runtime-agent-note">{t('Off. Papilot does not start it or offer it for new tasks.')}</p> : selected === 'papilot' ? <>

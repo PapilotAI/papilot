@@ -494,6 +494,7 @@ html:is([lang=zh-CN],[lang=zh-Hant]) .hero .review-page :is(del,ins){white-space
 .agent.antigravity{--logo:url("assets/agents/antigravity.svg");--brand:#4285f4}
 .agent.kimi{--logo:url("assets/agents/kimi.svg");--brand:#6366f1}
 .agent.glm{--logo:url("assets/agents/glm.svg");--brand:#5d78e5}
+.agent.zcode{--logo:url("assets/agents/zcode.svg")}
 .agent.deepseek{--logo:url("assets/agents/deepseek.svg");--brand:#4d6bfe}
 .agent.qwen{--logo:url("assets/agents/qwen.svg");--brand:#8b5cf6}
 .agent.opencode{--logo:url("assets/agents/opencode.svg")}

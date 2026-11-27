@@ -89,7 +89,9 @@ function pickEffort(model: AgentModel, preferred: string[]): string | null {
 
 function toRoute(candidate: CandidateModel, effortPreference: string[], wantFastTier = false): CollaborationRoute {
   const effort = pickEffort(candidate.model, effortPreference);
-  const serviceTier = wantFastTier && candidate.agent === 'codex' && candidate.model.fastMode ? candidate.model.fastMode.serviceTier : undefined;
+  const serviceTier = wantFastTier && candidate.agent === 'codex' && candidate.model.serviceTiers?.length
+    ? (candidate.model.serviceTiers.includes('fast') ? 'fast' : candidate.model.serviceTiers[0])
+    : undefined;
   return { agent: candidate.agent, model: candidate.model.id, effort, ...(serviceTier ? { serviceTier } : {}) };
 }
 
@@ -123,7 +125,7 @@ function rigorousScore(candidate: CandidateModel): number {
     else if (/\bgpt-6\b/.test(text)) score += 12;
     else if (/\bgpt-5\b/.test(text)) score += 8;
     if (/\bsol\b/.test(text)) score += 10;
-    if (candidate.model.fastMode) score += 6;
+    if (candidate.model.serviceTiers?.length) score += 6;
   } else if (candidate.family === 'anthropic') {
     score += 52;
     if (/\bopus\b/.test(text)) score += 14;
@@ -195,7 +197,7 @@ function hydrateExplicit(route: CollaborationRoute, runtimes: Partial<Record<Age
   const runtime = runtimes[route.agent];
   if (!runtime) return route;
   const model = route.model ? runtime.models.find(item => item.id === route.model) : runtime.models.find(item => item.isDefault);
-  const serviceTier = route.agent === 'codex' && route.serviceTier && model?.fastMode?.serviceTier === route.serviceTier ? route.serviceTier : undefined;
+  const serviceTier = route.agent === 'codex' && route.serviceTier && model?.serviceTiers?.includes(route.serviceTier) ? route.serviceTier : undefined;
   return { agent: route.agent, model: route.model, effort: route.effort, ...(serviceTier ? { serviceTier } : {}) };
 }
 

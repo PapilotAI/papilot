@@ -5649,6 +5649,11 @@
     "textHash": "d161315f420125460c29ff67b081da30b9bb89537e1a4e4c913f97abe148a42e",
     "model": "gemini-4-argon-medium"
   },
+  "Sign-in not checked": {
+    "revision": "9a242a01bcf306b208e9c05f95fe67d5bf41822aeada151975d9f9a18504b191",
+    "textHash": "dd745634ae99c20884dc3456f2e34e84c24df59537a466933c52d4c1c1937f5c",
+    "model": "manual"
+  },
   "Sign-in required": {
     "revision": "aeec2ecdb291c54c5b3c7743aff0fd7985a81ebb55f372d0927b9bea95fbf898",
     "textHash": "9b29d5d0566d962e332d2a08c45ede16262dcfff04944832df5d6bb051058bb2",
@@ -6779,6 +6784,11 @@
     "textHash": "d11e6b227169614e57b72f9f5330e574073dc5bc2ec818551eff8f8300551924",
     "model": "gemini-4-argon-medium"
   },
+  "Uses the local ZCode CLI and its configured default model.": {
+    "revision": "93700979c97e5db87f15b37b83f5f9e728ffe489bea486108010612d626c3f88",
+    "textHash": "93dfd5f34f781fec358aa29138022ea90d08729a87ccab85ed653ffde12bc6ee",
+    "model": "manual"
+  },
   "Uses your Pi CLI, providers, skills and extensions. Tools run on the host with Pi’s permissions.": {
     "revision": "941354ae7fba28eacddb8fb82f61d5454fd1df6df200f890db013785cb730f71",
     "textHash": "316c501bb072dd34b807d0c2d995df2ab749657628d9cfe8302c088d442ccc5b",
@@ -7104,19 +7114,9 @@
     "textHash": "80f8fbcfa01176339340176adcd440f3e7a8643f2d00acb7117feca389a845ca",
     "model": "gemini-4-argon-medium"
   },
-  "Zoom in (⌘+)": {
-    "revision": "19a0c1e46a52f589807d3e797333940dd753bd45170946601077d12f237478f9",
-    "textHash": "a5f1f6f34710991d5df920b75aaea7580535c6a1515f3eba74bc0e7cbbd8f05c",
-    "model": "gemini-4-argon-medium"
-  },
   "Zoom out": {
     "revision": "c52d4e9e7e6e01897d437efd111083641acf83e3167656df7c957739ace430b7",
     "textHash": "092a4a0ba5504a0bf0f5071e7acd7562297d9f8ce9c16fc54cce2c6487424eb9",
-    "model": "gemini-4-argon-medium"
-  },
-  "Zoom out (⌘−)": {
-    "revision": "6f12a4384e673a7604790d652cea624b38092046fc04be0959eeeefa02bb8f8d",
-    "textHash": "12d197557e248b8f0a36216ddd6d3811cd9e4d2fe94e4439bfd4670952f1668b",
     "model": "gemini-4-argon-medium"
   },
   "Zotero": {

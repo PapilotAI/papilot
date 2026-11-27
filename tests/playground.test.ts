@@ -74,7 +74,7 @@ test('the demo offers every supported agent and persists model controls without 
   assert.equal(astra.id, 'gpt-6-astra');
   assert.equal(astra.defaultEffort, 'xhigh');
   assert.ok(astra.efforts.includes('ultra'));
-  assert.equal(astra.fastMode?.serviceTier, 'priority');
+  assert.deepEqual(astra.serviceTiers, ['priority']);
   const route = '/tasks/example-clarity/model';
   const permissions = '/tasks/example-clarity/permissions';
   await api(permissions, { permissions: 'full' });

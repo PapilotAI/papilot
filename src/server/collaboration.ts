@@ -14,6 +14,7 @@ import { GrokAgent } from './grok.ts';
 import { PiAgent } from './pi.ts';
 import { WorkBuddyAgent } from './workbuddy.ts';
 import { WriterAgent } from './writer/agent.ts';
+import { ZCodeAgent } from './zcode.ts';
 import { editWorkflowSources, type WorkflowChange, type WorkflowEdit } from './collaboration-edits.ts';
 import { realPath } from './real-path.ts';
 import { canonicalGroup, type GroupInstructions } from '../note-groups.ts';
@@ -228,6 +229,7 @@ function createHelperRuntime(agent: CollaborationWorkerAgent, cwd: string, edit?
     case 'cursor': return new CursorAgent();
     case 'pi': return new PiAgent();
     case 'papilot': return new WriterAgent();
+    case 'zcode': return new ZCodeAgent();
   }
 }
 

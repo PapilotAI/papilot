@@ -17,7 +17,7 @@ const errors = [];
 try {
   for (const [width, dark, language] of [[1360, false, 'en'], [390, true, 'en'], [390, false, 'zh-CN']]) {
     const context = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: dark ? 'dark' : 'light', hasTouch: width < 600 });
-    const runtime = { connected: true, authenticated: true, installed: true, account: 'Fixture', error: null, models: [{ id: 'gpt-test', name: 'Test model', isDefault: true, efforts: ['medium', 'high'], defaultEffort: 'high', fastMode: { serviceTier: 'fast', description: 'Priority processing.' } }] };
+    const runtime = { connected: true, authenticated: true, installed: true, account: 'Fixture', error: null, models: [{ id: 'gpt-test', name: 'Test model', isDefault: true, efforts: ['medium', 'high'], defaultEffort: 'high', serviceTiers: ['fast'] }] };
     const gemini = { ...runtime, models: [{ id: 'gemini-test', name: 'Gemini Test', isDefault: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' }] };
     const opencode = { ...runtime, models: [{ id: 'provider/flash-test', name: 'Flash Test', isDefault: false, efforts: ['low', 'high', 'max'], defaultEffort: null }] };
     const collabRuntime = { connected: true, authenticated: true, installed: true, account: 'Papilot Collaboration Mode', error: null, hidden: true, models: [{ id: 'balanced', name: 'Balanced · Auto route & race', isDefault: true, efforts: [], defaultEffort: null }, { id: 'fast', name: 'Fast · Route only', isDefault: false, efforts: [], defaultEffort: null }, { id: 'thorough', name: 'Thorough · Race & verify', isDefault: false, efforts: [], defaultEffort: null }] };

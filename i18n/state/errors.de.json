@@ -564,11 +564,6 @@
     "textHash": "847a9adcd8ed9f830dad3a6aeaddc3a41ac51540615c196603744329f5d5a8b4",
     "model": "codex"
   },
-  "Fast mode is not available for this model.": {
-    "revision": "9b5ebf65e6df90fb9e0a6cc2eafea70e6117f4898baf4c6b007d4b8b85417252",
-    "textHash": "7530a4ebe32a6c7b8cbda49b022f2d436766ec909b804b6091e7b3764d7a7501",
-    "model": "gemini-4-argon-medium"
-  },
   "Files must be 25 MB or smaller.": {
     "revision": "4f4cde8044e87e63dddc69e733548bc518eeff2c115ca149930ea5ca67e929ae",
     "textHash": "6e217f11b036258f8a6449ea9adf436c2b4da919721f8d60b7caa14243a0d3f3",
@@ -1509,6 +1504,11 @@
     "textHash": "1dd4581162f827b1fc261ac787f72191fbec9037c5663c9643f78b5fb3855d0d",
     "model": "codex-manual"
   },
+  "The selected agent does not support read-only tasks. Select another agent.": {
+    "revision": "99ade2298c302057d87686a4bed04f46701cf7fa2047b786ed4b70942d810001",
+    "textHash": "ebfa7b6ff7aa56754363c6ad5ba5c3430eb5ee3d5f8f613c9ea6d1b1c89bbdd6",
+    "model": "manual"
+  },
   "The selected commit-message agent does not support read-only tasks. Choose another in Settings → Git.": {
     "revision": "6ac45d0e55b56a6cd4c98827bea05bc67903883f17b2f8842a4439f9b9ff6ba3",
     "textHash": "66f80b934cd25d44a9571c71efa5967e3dc491f2d2fc03702ad4fa8ed99faf6c",
@@ -2173,6 +2173,31 @@
     "revision": "a1ccf50400d5f5078f072dec819d6da62a5f29acb5d61bea491c4423f3bd33ef",
     "textHash": "31953c1a752bef299f73166b20e7cfd54c7716b3e0ec780803821d7a623613f9",
     "model": "gemini-4-argon-medium"
+  },
+  "ZCode CLI could not be run. Install ZCode CLI 0.18.0 or newer, then select Reconnect.": {
+    "revision": "3e0a6f508820017251c3173520b649fe0ba3b498666f0828a57f1b9c8201d7b9",
+    "textHash": "80d9d7ba32c48970db4818cd7db1f8054591c2e63b148a48a93356de5a798a0e",
+    "model": "manual"
+  },
+  "ZCode CLI was not found. Install it on the Papilot host, then select Reconnect.": {
+    "revision": "ca1df94ace3db50a9a6f16856ee4a84f6dda9e1a9ae7a239737584418e0c7ec1",
+    "textHash": "a91f63c3bee044815b7d9fefb266890a6d5dc2870df93491cd9c20bd54bf41c1",
+    "model": "manual"
+  },
+  "ZCode could not restore this task’s session.": {
+    "revision": "717da8bd45c77c891b0ff5190359c8dcd24fc18a0812a23e8ec8e42ff142f481",
+    "textHash": "449020b51ddd5527650710a46bcb6607fb3442e0113dbaf465263543e209a2dc",
+    "model": "manual"
+  },
+  "ZCode did not exit. Close its process before resuming the task.": {
+    "revision": "ce30b8396647f0a5029169b9e6e9a08ed1d2a329fcdbaa0bc6c04e68cf68ebd1",
+    "textHash": "a975d2d4f963c961ab611c786504e19110fea0570a6ffd44b7abf03aefa72f4d",
+    "model": "manual"
+  },
+  "ZCode stopped without a result.": {
+    "revision": "0f91e7f45bead5434a9a5fbe5600f29272d93daa2df7e161792215c655b1f4aa",
+    "textHash": "a103c6744a2925e4d7035d61b79e7fb11d05933b273eb9b5de62ac12c5daa2cb",
+    "model": "manual"
   },
   "ZIP links and special files are not supported.": {
     "revision": "1199ddcf958b8b9f777daf1bfc053d2d816d0e0a3ae1f37c92c872eda497926d",

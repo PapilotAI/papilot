@@ -61,7 +61,7 @@ const hostRuntimes: Partial<Record<AgentId, RuntimeStatus>> = {
   codex: {
     connected: true, authenticated: true, account: 'codex', error: null,
     models: [
-      { id: 'gpt-6.2-sol', name: 'GPT-6.2-Sol', isDefault: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'], defaultEffort: 'high', fastMode: { serviceTier: 'fast', description: 'Fast' } },
+      { id: 'gpt-6.2-sol', name: 'GPT-6.2-Sol', isDefault: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'], defaultEffort: 'high', serviceTiers: ['fast'] },
     ],
   },
   antigravity: {

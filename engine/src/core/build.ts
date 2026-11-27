@@ -945,7 +945,13 @@ export class Builder {
         .join("");
       pretex += `\\includeonly{${targets.join(",")}}` + (preload ? `\\AtBeginDocument{${preload}}` : "");
     }
-    args.push(`-usepretex=${pretex}`);
+    // On Windows, Git for Windows' Perl can strip backslashes and braces from
+    // a preamble argument. Load the preamble from an rc file.
+    const pretexRc = path.join(folder, "papilot-pretex.latexmkrc");
+    // Encode the UTF-8 bytes so chapter and preload names remain data in Perl.
+    const pretexHex = Buffer.from(pretex, "utf8").toString("hex");
+    await fs.promises.writeFile(pretexRc, "$pre_tex_code = pack('H*', '" + pretexHex + "');\n");
+    args.push("-r", path.relative(cwd, pretexRc).split(path.sep).join("/"), "-usepretex");
     // latexmk only reruns TeX for changed inputs. Output carried over from a
     // build without the trace would stay without one, so TeX runs once more.
     if (fs.existsSync(path.join(out, job + ".fdb_latexmk")) && !fs.existsSync(path.join(out, job + ".papilot"))) args.push("-g");

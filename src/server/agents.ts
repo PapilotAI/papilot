@@ -41,7 +41,7 @@ export interface AgentRuntime extends EventEmitter {
   request(method: string, params: any, timeout?: number): Promise<any>;
   respond(id: string | number, result: unknown): void;
   reject(id: string | number, message: string): void;
-  close(): void;
+  close(): void | Promise<void>;
 }
 
 export { AGENT_NAMES };
