@@ -102,6 +102,10 @@ test('an external review round trips from Git and Space into a pinned task and p
   const space = (await get(`${reviewRoute}/prompt?via=space`)).json().text;
   assert.ok(space.includes(initial)); assert.ok(space.includes(page));
   assert.doesNotMatch(space, /Extra detail\./);
+  const chat = (await get(`${reviewRoute}/prompt?via=chat`)).json().text;
+  assert.match(chat, /JSON code block in this chat/);
+  assert.doesNotMatch(chat, /ChatGPT Space Page|Extra detail\./);
+  assert.ok(chat.includes(initial) && chat.includes(selected.comment));
 
   const [{ revision }] = (await get()).json().remotes;
   assert.equal((await post(`${reviewRoute}/github`, { remote: 'origin', revision: 'stale' })).statusCode, 400);

@@ -37,7 +37,7 @@ try {
       const selected = { id: 'note-to-share', projectId: project.id, key: 'fixture-pdf', page: 0, rect: [1, 1, 5, 4], createdAt: 1,
         comment: 'Explain the measured effect.', quote: 'The effect is really small.', source: { file: settings.files[1], lines: [2, 2] } };
       let annotations = [];
-      let loadingError = true, fetched = false, decided = false, readReceipt = 0, composerId = '';
+      let loadingError = true, fetched = false, decided = false, readReceipt = 0, composerId = '', lastPromptChannel = '', composerPublications = 0;
       const proposalFor = id => ({ ...proposal, requestId: id, changes: id === composerId ? proposal.changes.map(change => ({ ...change, file: selected.source.file })) : proposal.changes });
       await page.addInitScript(language => {
         localStorage.setItem('papilot:language', language);
@@ -76,10 +76,14 @@ try {
         if (pathname.includes('/external-review/')) {
           if (pathname.endsWith('/github')) {
             assert.deepEqual(body, { remote: 'origin', revision: 'remote-v1' });
+            if (id === composerId && ++composerPublications === 1) return error('Temporary Git publishing problem');
             review.git = { branch: `papilot-review/${id}`, proposalFile: 'proposal.json', remote, request: { file: requestFile, commit: requestCommit, url: requestUrl } }; return json(review);
           }
           if (pathname.endsWith('/page')) { review.page = body.url; return json(review); }
-          if (pathname.endsWith('/prompt')) return json({ text: `${url.searchParams.get('via') === 'git' ? review.git.branch : review.page ?? 'Create a private Page'}\n${base}` });
+          if (pathname.endsWith('/prompt')) {
+            lastPromptChannel = url.searchParams.get('via');
+            return json({ text: `${lastPromptChannel === 'git' ? review.git.branch : lastPromptChannel === 'chat' ? 'Reply in chat' : review.page ?? 'Create a private Page'}\n${base}` });
+          }
           if (pathname.endsWith('/proposal')) {
             if (body.via === 'git') { fetched = true; return error('The reviewer has not posted a proposal yet.'); }
             const expected = proposalFor(id);
@@ -159,6 +163,10 @@ try {
         await page.locator('.sidebar-toggle').click();
       }
       await entry.click(); await expect(button('Open local task')).toBeVisible();
+      await button('Import proposal').click();
+      await expect(button('Check pasted proposal')).toHaveCount(0);
+      await expect(button('Fetch Git proposal')).toHaveCount(0);
+      await button('Implement locally').click();
       await button('Continue to result').click(); await button('Prepare receipt').click(); await expect(dialog.getByRole('alert')).toContainText(/Finish reviewing|审阅/);
       decided = true;
       await button('Prepare receipt').click(); await expect(dialog.getByText(text('Receipt ready'))).toBeVisible();
@@ -198,19 +206,52 @@ try {
       await composer.getByRole('button', { name: text('Start task') }).click();
       const conversation = page.locator('.external-conversation');
       await expect(conversation.getByText(question)).toBeVisible();
-      await expect(conversation.locator('.external-base').getByText(settings.files[1])).toBeVisible();
+      await expect(conversation.locator('.external-base')).toBeHidden();
+      await expect(conversation.getByLabel(text('Git remote'))).toBeHidden();
+      await expect(conversation.getByLabel(text('Reply from ChatGPT'))).toBeHidden();
       assert.ok(composerId && !settings.reviews[0].git, 'Starting the task does not publish files');
       await page.reload(); await expect(conversation.getByText(question)).toBeVisible();
       await expect(page.locator('.task-row').filter({ hasText: question })).toHaveCount(1);
+      await shot('composer-conversation');
       await conversation.locator('summary').filter({ hasText: text('PDF notes') }).click();
       await expect(conversation.getByText(selected.comment)).toBeVisible();
       await expect(conversation.getByText('Keep this note private.')).toHaveCount(0);
+      const publish = conversation.getByRole('button', { name: text('Publish and copy prompt') });
+      await expect(publish).toHaveAccessibleDescription(text('Shares the Git commit, its history, and selected PDF notes with {repository}.').replace('{repository}', remote.repository));
+      await publish.click();
+      await expect(conversation.getByRole('status')).toContainText('Temporary Git publishing problem');
+      await publish.click();
+      await expect(conversation.getByRole('link', { name: text('Open ChatGPT') })).toBeVisible();
+      await expect.poll(() => lastPromptChannel).toBe('git');
+      if (language === 'en') await expect(conversation.getByRole('status')).toContainText(text('Copied'));
+      else await expect(conversation.getByRole('textbox', { name: text('Copy prompt') })).toBeFocused();
+      await shot('composer-prompt');
+      await conversation.getByText(text('Review details'), { exact: true }).press('Enter');
+      await expect(conversation.locator('.external-base').getByText(settings.files[1])).toBeVisible();
+      await expect(conversation.getByRole('link', { name: text('Review request'), exact: true })).toBeVisible();
+      await conversation.getByLabel(text('Chat only'), { exact: true }).check();
+      await conversation.getByRole('button', { name: text('Copy prompt'), exact: true }).click();
+      await expect.poll(() => lastPromptChannel).toBe('chat');
+      assert.equal(composerPublications, 2);
       await conversation.getByLabel(text('ChatGPT Space Page'), { exact: true }).check();
-      await expect(conversation.getByRole('button', { name: text('Copy Space prompt') })).toBeVisible();
-      await shot('composer-conversation');
-      await conversation.getByLabel(text('Proposal JSON or Page Markdown')).fill(JSON.stringify(proposalFor(composerId)));
-      await conversation.getByRole('button', { name: text('Check pasted proposal') }).click();
-      await expect(conversation.getByText(text('Proposal checked'))).toBeVisible();
+      await expect(conversation.getByLabel(text('Space Page link (optional)'))).toBeVisible();
+      const savedGit = settings.reviews[0].git;
+      delete settings.reviews[0].git; settings.remotes = [];
+      await page.reload();
+      await conversation.getByRole('button', { name: text('Copy prompt'), exact: true }).click();
+      await expect.poll(() => lastPromptChannel).toBe('chat');
+      assert.equal(composerPublications, 2, 'Without a remote, the default prompt stays in ChatGPT');
+      settings.reviews[0].git = savedGit; settings.remotes = [remote];
+      await page.reload();
+      await expect(conversation.getByRole('button', { name: text('Copy prompt'), exact: true })).toBeVisible();
+      await conversation.getByText(text('Paste reply'), { exact: true }).click();
+      const reply = conversation.getByLabel(text('Reply from ChatGPT'));
+      await reply.fill('incomplete');
+      await conversation.getByRole('button', { name: text('Check reply') }).click();
+      await expect(reply).toHaveAccessibleDescription('Copy the complete JSON block.');
+      await reply.fill(JSON.stringify(proposalFor(composerId)));
+      await conversation.getByRole('button', { name: text('Check reply') }).click();
+      await expect(conversation.getByText(text('Proposal checked'))).toBeFocused();
       await conversation.getByRole('button', { name: text('Start local agent') }).click();
       await expect(conversation).toHaveCount(0);
       await expect(page.locator('.task-row').filter({ hasText: question })).toHaveCount(1);

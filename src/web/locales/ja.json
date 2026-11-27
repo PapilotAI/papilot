@@ -1916,5 +1916,12 @@
   "{tokens} of {window} tokens": "{tokens} / {window} トークン",
   "{tokens} tokens": "{tokens}トークン",
   "{used}% used": "{used}% 使用済み",
-  "§{number} {title}": "§{number} {title}"
+  "§{number} {title}": "§{number} {title}",
+  "Copy prompt": "プロンプトをコピー",
+  "Publish and copy prompt": "公開してプロンプトをコピー",
+  "Shares the Git commit, its history, and selected PDF notes with {repository}.": "Git コミットとその履歴、選択した PDF 注釈を {repository} に共有します。",
+  "Paste reply": "回答を貼り付け",
+  "Reply from ChatGPT": "ChatGPT の回答",
+  "Check reply": "回答を確認",
+  "Review details": "レビューの詳細"
 }

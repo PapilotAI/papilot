@@ -1916,5 +1916,12 @@
   "{tokens} of {window} tokens": "{tokens} / {window} 個 token",
   "{tokens} tokens": "{tokens} 個 token",
   "{used}% used": "已使用 {used}%",
-  "§{number} {title}": "§{number} {title}"
+  "§{number} {title}": "§{number} {title}",
+  "Copy prompt": "複製提示詞",
+  "Publish and copy prompt": "發佈並複製提示詞",
+  "Shares the Git commit, its history, and selected PDF notes with {repository}.": "將 Git 提交及其歷史和選取的 PDF 註解分享至 {repository}。",
+  "Paste reply": "貼上回覆",
+  "Reply from ChatGPT": "ChatGPT 的回覆",
+  "Check reply": "檢查回覆",
+  "Review details": "審閱詳情"
 }

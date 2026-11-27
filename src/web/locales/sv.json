@@ -1916,5 +1916,12 @@
   "{tokens} of {window} tokens": "{tokens} av {window} token",
   "{tokens} tokens": "{tokens} tokens",
   "{used}% used": "{used} % använt",
-  "§{number} {title}": "§{number} {title}"
+  "§{number} {title}": "§{number} {title}",
+  "Copy prompt": "Kopiera prompt",
+  "Publish and copy prompt": "Publicera och kopiera prompt",
+  "Shares the Git commit, its history, and selected PDF notes with {repository}.": "Delar Git-incheckningen, dess historik och valda PDF-anteckningar med {repository}.",
+  "Paste reply": "Klistra in svaret",
+  "Reply from ChatGPT": "Svar från ChatGPT",
+  "Check reply": "Kontrollera svaret",
+  "Review details": "Granskningsdetaljer"
 }

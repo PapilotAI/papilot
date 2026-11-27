@@ -590,5 +590,12 @@
   "{sections} and {n} more": "{sections} 等 {n} 处",
   "{shortcut} sent": "已发送 {shortcut}",
   "{tokens} of {window} tokens": "{tokens} / {window} 个 token",
-  "§{number} {title}": "§{number} {title}"
+  "§{number} {title}": "§{number} {title}",
+  "Copy prompt": "复制提示词",
+  "Publish and copy prompt": "发布并复制提示词",
+  "Shares the Git commit, its history, and selected PDF notes with {repository}.": "将 Git 提交及其历史和选中的 PDF 批注分享到 {repository}。",
+  "Paste reply": "粘贴回复",
+  "Reply from ChatGPT": "ChatGPT 的回复",
+  "Check reply": "检查回复",
+  "Review details": "审阅详情"
 }

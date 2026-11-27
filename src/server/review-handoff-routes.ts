@@ -225,7 +225,9 @@ export function registerExternalReviewRoutes(app: FastifyInstance, { store, work
         ...(context ? [`The shared review request and selected PDF notes are in ${context.file} at ${context.commit} on ${git.branch}.${context.url ? ` Open ${context.url}` : ''} The same request is copied below for reference. Cite the source file paths and verify the exact passages at the requested base commit.`] : []),
         `Return the proposal as JSON here. If you have write access, save the same JSON to ${git.proposalFile} on the existing branch ${git.branch}.`,
       ].join('\n\n')
-      : `${review.page ? `Open this ChatGPT Space Page ${review.page}.` : 'Create a private ChatGPT Space Page for this review.'} Put the review request and your proposal on the Page. Write the proposal in its own top-level JSON code block. If you cannot write to the Page, return the same JSON here.`;
+      : request.query.via === 'chat'
+        ? 'Review the committed source included below and return the proposal in a JSON code block in this chat.'
+        : `${review.page ? `Open this ChatGPT Space Page ${review.page}.` : 'Create a private ChatGPT Space Page for this review.'} Put the review request and your proposal on the Page. Write the proposal in its own top-level JSON code block. If you cannot write to the Page, return the same JSON here.`;
     return { text: `${lead}\n\n${await handoffRequestMarkdown(repo, review.request, !git)}` };
   });
   app.post(`${route}/:review/proposal`, { ...projectScope, bodyLimit: proposalLimit }, change(async (repo, id, review, body) => {

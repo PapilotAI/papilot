@@ -1916,5 +1916,12 @@
   "{tokens} of {window} tokens": "{tokens} / {window} 토큰",
   "{tokens} tokens": "{tokens} 토큰",
   "{used}% used": "{used}% 사용됨",
-  "§{number} {title}": "§{number} {title}"
+  "§{number} {title}": "§{number} {title}",
+  "Copy prompt": "프롬프트 복사",
+  "Publish and copy prompt": "게시하고 프롬프트 복사",
+  "Shares the Git commit, its history, and selected PDF notes with {repository}.": "Git 커밋과 그 기록, 선택한 PDF 주석을 {repository}에 공유합니다.",
+  "Paste reply": "답변 붙여넣기",
+  "Reply from ChatGPT": "ChatGPT 답변",
+  "Check reply": "답변 확인",
+  "Review details": "검토 세부 정보"
 }

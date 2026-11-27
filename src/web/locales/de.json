@@ -1916,5 +1916,12 @@
   "{tokens} of {window} tokens": "{tokens} von {window} Tokens",
   "{tokens} tokens": "{tokens} Tokens",
   "{used}% used": "{used} % verbraucht",
-  "§{number} {title}": "§{number} {title}"
+  "§{number} {title}": "§{number} {title}",
+  "Copy prompt": "Prompt kopieren",
+  "Publish and copy prompt": "Veröffentlichen und Prompt kopieren",
+  "Shares the Git commit, its history, and selected PDF notes with {repository}.": "Teilt den Git-Commit, seinen Verlauf und die ausgewählten PDF-Notizen mit {repository}.",
+  "Paste reply": "Antwort einfügen",
+  "Reply from ChatGPT": "Antwort von ChatGPT",
+  "Check reply": "Antwort prüfen",
+  "Review details": "Prüfdetails"
 }

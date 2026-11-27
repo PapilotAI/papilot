@@ -56,10 +56,11 @@
 .external-review-inline { max-inline-size: 700px; margin-inline: auto; font-size: 13px; }
 .external-review-inline select { inline-size: 100%; }
 .external-question { white-space: pre-wrap; padding: 10px 12px; background: var(--bg-muted); border-radius: var(--r-md); }
-.external-note-preview, .external-result-disclosure { border: 1px solid var(--line); border-radius: var(--r-md); font-size: 13px; }
-.external-note-preview > summary, .external-result-disclosure > summary { cursor: pointer; padding: 8px 12px; }
+.external-note-preview, .external-result-disclosure, .external-disclosure { border: 1px solid var(--line); border-radius: var(--r-md); font-size: 13px; }
+:is(.external-note-preview, .external-result-disclosure, .external-disclosure) > summary { cursor: pointer; padding: 8px 12px; }
 .external-note-preview > summary span { margin-inline-start: 4px; color: var(--text-2); }
 .external-note-preview > :not(summary) { margin: 0 10px 8px; }
+.external-disclosure-body { display: grid; gap: 8px; padding: 0 12px 10px; }
 @media (max-width: 520px) {
   .modal-backdrop.external-review-backdrop { padding: 0; }
   .modal.external-review-dialog { inline-size: 100%; }
@@ -67,5 +68,6 @@
 }
 @media (pointer: coarse) {
   .external-review-dialog :is(.button, .icon-button, .external-steps button, .external-choices label) { min-block-size: 44px; }
+  :is(.external-note-preview, .external-disclosure) > summary { min-block-size: 44px; padding-block: 12px; }
   .external-review-dialog .icon-button { min-inline-size: 44px; }
 }

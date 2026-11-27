@@ -138,7 +138,7 @@ export async function handoffRequestMarkdown(repo: Repo, record: ExternalReviewR
     '# Review request', render(record),
     'Review the requested files at the listed commit. Return one proposal as JSON using the shape below. Use exact original text that appears once in the corresponding file. Include only requested changes. If no changes are warranted, explain that in chat.',
     ...(record.notes?.length ? ['Use the selected PDF annotations in the request to guide your review. A PDF quote or page can refer to a different build. Use the listed commit to verify the original text for each proposal. `delete` marks request deletion of the marked text, or replacement when the comment supplies new wording. In `point` marks, ‸ identifies a position in the PDF quote. Apply color-group instructions only to the marks that carry them. If a mark cannot be located, explain it in chat.'] : []),
-    'Replace the placeholder values in this template. Save the result in a separate JSON file or a `json` code block on the review Page.',
+    'Replace the placeholder values in this template. Return the proposal in a separate JSON file or a `json` code block.',
     handoffFence('text', JSON.stringify(example, null, 2)),
   ];
   if (includeSource) {
