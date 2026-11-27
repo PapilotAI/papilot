@@ -53,34 +53,45 @@ test('Linux pickers report choices, cancellation and unavailability', { skip: pr
   assert.match(String(warn.mock.calls[0].arguments[0]), /cannot open display/);
 });
 
+const until = async (file: string) => {
+  for (let i = 0; i < 200 && !fs.existsSync(file); i++) await new Promise(resolve => setTimeout(resolve, 25));
+  return fs.existsSync(file);
+};
+
 test('a shared picker closes only after every waiting request leaves', { skip: process.platform === 'win32' && 'Uses POSIX shell scripts.' }, async t => {
-  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-picker-')), PATH = process.env.PATH, marker = path.join(bin, 'stopped');
-  t.after(() => { process.env.PATH = PATH; fs.rmSync(bin, { recursive: true, force: true }); });
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-picker-')), PATH = process.env.PATH;
+  const ready = path.join(bin, 'ready'), release = path.join(bin, 'release'), marker = path.join(bin, 'stopped');
+  t.after(() => { closeFolderPicker(); process.env.PATH = PATH; fs.rmSync(bin, { recursive: true, force: true }); });
   process.env.PATH = bin + path.delimiter + PATH;
-  // The fake picker answers after a moment unless it is stopped first.
-  fs.writeFileSync(path.join(bin, 'zenity'), `#!/bin/sh\ntrap 'touch "${marker}"; exit 143' TERM\nsleep 0.4 & wait $!\nprintf "/home/you/kept\\n"\n`); fs.chmodSync(path.join(bin, 'zenity'), 0o755);
+  const write = (body: string) => { fs.writeFileSync(path.join(bin, 'zenity'), '#!/bin/sh\n' + body); fs.chmodSync(path.join(bin, 'zenity'), 0o755); };
+  // Wait for the script to install its TERM trap before releasing or aborting it.
+  write(`trap 'kill $pid 2>/dev/null; touch "${marker}"; exit 143' TERM\ntouch "${ready}"\nwhile [ ! -e "${release}" ]; do sleep 0.02 & pid=$!; wait "$pid"; done\nprintf "/home/you/kept\\n"\n`);
   const env = { DISPLAY: ':0' }, first = new AbortController(), second = new AbortController();
   const one = chooseFolder('Choose', '/home/you', first.signal, 'linux', env), two = chooseFolder('Choose', '/home/you', second.signal, 'linux', env);
+  assert.ok(await until(ready));
   first.abort();
   await assert.rejects(one, { name: 'AbortError' });
+  fs.writeFileSync(release, '');
   assert.deepEqual(await two, { path: '/home/you/kept' }, 'The remaining request still receives the choice');
   assert.equal(fs.existsSync(marker), false);
+  fs.rmSync(ready); fs.rmSync(release);
+  write(`trap 'kill $pid 2>/dev/null; touch "${marker}"; exit 143' TERM\ntouch "${ready}"\nsleep 30 & pid=$!\nwait "$pid"\n`);
   const alone = new AbortController(), only = chooseFolder('Choose', '/home/you', alone.signal, 'linux', env);
-  setTimeout(() => alone.abort(), 50);
+  assert.ok(await until(ready));
+  alone.abort();
   await assert.rejects(only, { name: 'AbortError' });
-  await new Promise(resolve => setTimeout(resolve, 100));
-  assert.equal(fs.existsSync(marker), true, 'The picker stops when nobody is waiting');
+  assert.ok(await until(marker), 'The picker stops when nobody is waiting');
+  write('printf "/home/you/kept\\n"\n');
   assert.deepEqual(await chooseFolder('Choose', '/home/you', undefined, 'linux', env), { path: '/home/you/kept' }, 'A new request opens a new picker');
 });
 
 test('an open picker closes when the server shuts down or exits', { skip: process.platform === 'win32' && 'Uses POSIX shell scripts.' }, async t => {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-picker-')), PATH = process.env.PATH;
   const ready = path.join(bin, 'ready'), stopped = path.join(bin, 'stopped');
-  t.after(() => { process.env.PATH = PATH; fs.rmSync(bin, { recursive: true, force: true }); });
+  t.after(() => { closeFolderPicker(); process.env.PATH = PATH; fs.rmSync(bin, { recursive: true, force: true }); });
   process.env.PATH = bin + path.delimiter + PATH;
   // The fake picker stays open until it is stopped, and reports when it can be.
-  fs.writeFileSync(path.join(bin, 'zenity'), `#!/bin/sh\ntrap 'touch "${stopped}"; exit 143' TERM\ntouch "${ready}"\nsleep 30 & wait $!\n`); fs.chmodSync(path.join(bin, 'zenity'), 0o755);
-  const until = async (file: string) => { for (let i = 0; i < 200 && !fs.existsSync(file); i++) await new Promise(resolve => setTimeout(resolve, 25)); return fs.existsSync(file); };
+  fs.writeFileSync(path.join(bin, 'zenity'), `#!/bin/sh\ntrap 'kill $pid 2>/dev/null; touch "${stopped}"; exit 143' TERM\ntouch "${ready}"\nsleep 30 & pid=$!\nwait "$pid"\n`); fs.chmodSync(path.join(bin, 'zenity'), 0o755);
   const waiting = chooseFolder('Choose', '/home/you', undefined, 'linux', { DISPLAY: ':0' });
   assert.ok(await until(ready));
   closeFolderPicker();
