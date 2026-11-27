@@ -299,7 +299,7 @@ test("side by side shows both versions' whole pages, paired with a blank page, a
     await expect(page.getByRole("button", { name: "Change 2", exact: true })).toBeInViewport();
     await page.waitForTimeout(300);
     await expect(page.locator(".compare-spot.current")).toHaveAttribute("data-stop", "0");
-    await expect(page.locator(".change-nav-position")).toContainText("1");
+    await expect(page.locator(".change-nav-position")).toHaveAttribute("title", "Change 1");
     // Switching back and forth keeps the reader on the new version's pages.
     await toggle.click();
     await expect(page.locator(".paper-page")).toHaveCount(2);

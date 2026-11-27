@@ -1926,15 +1926,26 @@ export function ReviewApp({
       key = !changes && !history && !pendingUnits(stops[index], decisions).length
         ? mixedKey(detail!.round, index, block.units, decisions, variants) : null,
       mixed = key ? mixedPreviews[key] : undefined,
-      at = (base: string) => (strip: Strip) => ({ ...strip, src: base + strip.src, clean: base + strip.clean }),
-      base = shown && option ? option.files : detail!.files;
-    return { index, block: {
-      ...block,
-      before: (shown ? shown.before : block.before).map(at(base)),
-      after: mixed?.status === "ready" && mixed.strips?.length && mixed.files
-        ? mixed.strips.map(at(mixed.files))
-        : (shown ? shown.after : restored ? block.before : block.after).map(at(base)),
-    } };
+      at = (base: string) => (strip: Strip) => ({ ...strip, src: base + strip.src, clean: base + strip.clean });
+    // A preview's crops come from a compile of their own, laid out apart from
+    // the round's new version: each is drawn where the round's crop it
+    // replaces prints, and any further ones follow below the last.
+    const onto = (images: Strip[], base: string): Strip[] => {
+      let top = 0;
+      return block.after.length ? images.map((image, k) => {
+        const place = block.after[Math.min(k, block.after.length - 1)];
+        top = k < block.after.length ? place.top ?? 0 : top;
+        const strip = { ...at(base)(image), page: place.page, label: place.label, top, left: place.left };
+        top += image.height;
+        return strip;
+      }) : [];
+    };
+    const after = mixed?.status === "ready" && mixed.strips?.length && mixed.files
+      ? onto(mixed.strips, mixed.files)
+      : shown && option ? onto(shown.after, option.files)
+      : restored ? onto(block.before, detail!.files)
+      : block.after.map(at(detail!.files));
+    return { index, block: { ...block, before: block.before.map(at(detail!.files)), after } };
   }
   function change(
     block: ChangeBlock,
@@ -2432,6 +2443,10 @@ export function ReviewApp({
       </article>
     );
   }
+  // Rebuilt only when what it shows changes, so the side-by-side marks are
+  // not placed again on every render.
+  const compareChanges = useMemo(() => placed.map(compareChange),
+    [placed, previewing, optionPreview, optionBlocks, variants, decisions, mixedPreviews, changes, history, stops, detail]);
   const fullPaper = Boolean(detail?.pdf) && !detail?.sourceOnly && !detail?.rendering && placeable(placed),
     paperView = fullPaper && !paperUnavailable,
     canCompare = paperView && Boolean(detail?.pdfBefore) && !compareUnavailable && !phoneDock && !narrow,
@@ -2991,7 +3006,7 @@ export function ReviewApp({
                       after={detail.pdf!}
                       resource={resource}
                       files=""
-                      changes={placed.map(compareChange)}
+                      changes={compareChanges}
                       current={current}
                       states={(at) => stopState(stops[at]?.units ?? [], decisions)}
                       controls={(at) => actionBar(at, true)}

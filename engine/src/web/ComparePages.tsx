@@ -67,14 +67,16 @@ function layout(docs: { before: Doc; after: Doc }, changes: PlacedChange[]) {
   // A change with nothing to mark on the pages, such as an edit that prints
   // the same, still has its bar: just below the change before it, as the
   // full paper shows it after that change, or at the top of the first page.
-  let previous: { page: number; bottom: number; lines: typeof newLines } | null = null;
+  let previous: { page: number; top: number; bottom: number; lines: typeof newLines } | null = null;
   for (const { index } of changes) {
     const placedLines = newLines.get(index) ? newLines : oldLines.get(index) ? oldLines : null;
-    if (placedLines) { const extent = placedLines.get(index)!; previous = { page: extent.page, bottom: extent.bottom, lines: placedLines }; continue; }
-    // Kept on the page, at its foot at the latest.
-    const top: number = Math.min(previous ? previous.bottom + 0.012 : 0.03, 0.97), bottom: number = top + 0.02;
+    if (placedLines) { const extent = placedLines.get(index)!; previous = { page: extent.page, top: extent.top, bottom: extent.bottom, lines: placedLines }; continue; }
+    // Below the change before it; near the page's foot, above it instead,
+    // so that bars never sit on one another or off the page.
+    const top: number = !previous ? 0.03 : previous.bottom + 0.032 <= 1 ? previous.bottom + 0.012 : Math.max(0, previous.top - 0.032),
+      bottom: number = top + 0.02;
     (previous?.lines ?? newLines).set(index, { page: previous?.page ?? 0, top, bottom });
-    previous = { page: previous?.page ?? 0, bottom, lines: previous?.lines ?? newLines };
+    previous = { page: previous?.page ?? 0, top, bottom, lines: previous?.lines ?? newLines };
   }
   return { old, next, oldLines, newLines };
 }
@@ -121,6 +123,7 @@ export function ComparePages({ active, restorePlace = true, before, after, resou
   const shown = deselected ? -1 : current;
   const told = useRef(onDeselected); told.current = onDeselected;
   useEffect(() => { told.current?.(active && deselected); }, [active, deselected]);
+  useEffect(() => () => told.current?.(false), []);
   useEffect(() => {
     if (shown < 0 || !active) return;
     // Only a click on the pages away from any change deselects: the bar,
