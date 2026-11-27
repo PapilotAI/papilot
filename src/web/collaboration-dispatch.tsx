@@ -292,13 +292,13 @@ export function CollaborationDispatchCard({
     <section className="collab-dispatch-card" aria-label={t('Routing & dispatch')}>
       <header className="collab-dispatch-head">
         <div className="collab-dispatch-title">
-          <Icon name="workflow" size={14}/>
+          <span className="collab-dispatch-icon" aria-hidden="true"><Icon name="workflow" size={16}/></span>
           <span>{t('Routing & dispatch')}</span>
         </div>
         <div className="collab-dispatch-meta">
           <span className="collab-router-pill" title={`${t('Router')}: ${AGENT_NAMES[dispatch.router.agent]} · ${dispatch.router.model}`}>
             <span className="collab-router-label">{t('Router')}</span>
-            <BrandIcon name={dispatch.router.agent} size={12}/>
+            <BrandIcon name={dispatch.router.agent} size={15}/>
             <span className="collab-router-model">{dispatch.router.model}</span>
           </span>
           {headerStatus}
