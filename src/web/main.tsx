@@ -12,7 +12,7 @@ import { ClearAnnotationsDialog } from './clear-annotations-dialog.tsx';
 import { useGroupInstructions, type GroupDraftChange } from './group-instructions.ts';
 import { markText, NoteQuote, SubmittedNoteContent } from './note-content.tsx';
 import { NoteAttachButton, NoteEditButton, PdfNoteCard, TaskRemoveButton } from './pdf-suggestion.tsx';
-import { StrictMode, Suspense, lazy, memo, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, StrictMode, Suspense, lazy, memo, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal, flushSync } from 'react-dom';
 import { readNotesInstructions, type NoteSummary } from '../notes.ts';
@@ -42,6 +42,7 @@ import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
 import { BrandIcon } from './brand-icon.tsx';
 import { toolIcon, toolNote, toolSentence, toolSummary, workflowKind } from './tool-calls.ts';
+import { CollaborationDispatchCard } from './collaboration-dispatch.tsx';
 import { ContextMeter } from './context-meter.tsx';
 import { ChangeSummary, FileDiffs } from './file-changes.tsx';
 import { UpdateNotice, versionLabel } from './update-notice.tsx';
@@ -463,7 +464,30 @@ function Activity({ runtimes, relatedTasks, onOpenTask, source, onRevealQuote, t
     .flatMap((entry, index, all) => {
       const childSteps = steps.get(entry[0].id);
       const hasNested = Boolean(childSteps?.some(child => steps.has(child.id)));
-      const shown = entry.length > 1 ? <ToolGroup key={entry[0].id} items={entry} agent={agent} root={root} steps={steps}/> : <TimelineEntry key={entry[0].id} item={entry[0]} agent={agent} root={root} steps={childSteps} allSteps={hasNested ? steps : undefined}/>;
+      const hasDispatch = entry.some(item => workflowKind(item) === 'workflow_route');
+      let turnUserId: string | undefined;
+      if (hasDispatch) {
+        for (let i = index - 1; i >= 0; i--) {
+          if (all[i][0].type === 'user') { turnUserId = all[i][0].id; break; }
+        }
+      }
+      const shown = hasDispatch
+        ? <Fragment key={entry[0].id}>
+            <CollaborationDispatchCard
+              items={entry}
+              steps={steps}
+              turnUserId={turnUserId}
+              renderItem={item => {
+                const itemSteps = steps.get(item.id);
+                const itemNested = Boolean(itemSteps?.some(child => steps.has(child.id)));
+                return <TimelineEntry key={item.id} item={item} agent={agent} root={root} pages={false} steps={itemSteps} allSteps={itemNested ? steps : undefined}/>;
+              }}
+            />
+            <PageStrip items={entry}/>
+          </Fragment>
+        : entry.length > 1
+          ? <ToolGroup key={entry[0].id} items={entry} agent={agent} root={root} steps={steps}/>
+          : <TimelineEntry key={entry[0].id} item={entry[0]} agent={agent} root={root} steps={childSteps} allSteps={hasNested ? steps : undefined}/>;
       // A finished turn that changed files ends with where it changed the paper.
       const turn = turnOf(entry[0]), next = all[index + 1];
       if (!turn || (next && (next[0].type !== 'user' && turnOf(next[0]) === turn)) || (!next && active)) return [shown];

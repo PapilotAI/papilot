@@ -166,8 +166,35 @@ export const MAX_NOTE_ALTERNATIVES = 6;
 // Prepared by the editing agent or collaboration race in the same turn, before review-unit IDs exist.
 export interface PreparedNoteOptions { note: number; current: { label: string; reason: string; meta?: NoteOptionMeta }; options: { label: string; reason: string; meta?: NoteOptionMeta; edits: { file: string; find: string; replace: string }[] }[] }
 export interface NoteOptions { noteReturn?: NoteReturnState & { annotation?: Annotation; moved?: boolean }; before?: Record<string, string>; round: number; key: string; options: NoteOption[]; selected?: string; locked?: string; comparisonKey?: string }
+export interface CollaborationDispatchWorker {
+  itemId: string;
+  agent: CollaborationWorkerAgent;
+  model: string;
+}
+export interface CollaborationDispatchEntry {
+  clusterId: string;
+  notes: number[];
+  file: string;
+  laneId: string;
+  laneName: string;
+  mode: 'assign' | 'race' | 'answer';
+  itemId: string;
+  workers: CollaborationDispatchWorker[];
+  judge?: CollaborationDispatchWorker;
+}
+export interface CollaborationDispatchMeta {
+  strategy: CollaborationStrategy;
+  router: { agent: CollaborationWorkerAgent; model: string };
+  entries: CollaborationDispatchEntry[];
+  reason?: string;
+}
+export interface CollaborationRaceResultMeta {
+  winnerModel: string;
+  winnerItemIds: string[];
+  synthesized?: boolean;
+}
 // request: the author's own overall request sent with notes, which the prompt otherwise only embeds.
-export interface MessageMeta { attachments?: Attachment[]; skill?: { id: string; name: string; icon?: SkillIcon }; notes?: NoteSummary[]; request?: string; groupInstructions?: GroupInstructions; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author }
+export interface MessageMeta { attachments?: Attachment[]; skill?: { id: string; name: string; icon?: SkillIcon }; notes?: NoteSummary[]; request?: string; groupInstructions?: GroupInstructions; feedback?: FeedbackSummary; sendsFeedback?: boolean; build?: BuildFailure; author?: Author; dispatch?: CollaborationDispatchMeta; raceResult?: CollaborationRaceResultMeta }
 // Historical attribution on messages and notes from older shared workspaces.
 export interface Author { id: string; name: string }
 // A failed review build as the engine reports it; log is the compiler log's path.

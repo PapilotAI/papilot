@@ -345,6 +345,7 @@ export class Workspace extends EventEmitter {
             return entry.changes!.map(c => fileEdit(c.file, c.diff, outline));
           })()
           : previous?.changes;
+        const meta = entry.meta !== undefined ? entry.meta : previous?.meta;
         this.store.saveItem({
           id: entry.id,
           taskId,
@@ -354,6 +355,7 @@ export class Workspace extends EventEmitter {
           ...(entry.detail !== undefined ? { detail: entry.detail } : {}),
           status: entry.status,
           ...(entry.parent ? { parent: entry.parent } : {}),
+          ...(meta !== undefined ? { meta } : {}),
           ...(changes ? { changes } : {}),
         });
       },

@@ -6,11 +6,13 @@ import {
   AGENT_NAMES,
   isCollaborationStrategy,
   type AgentId,
+  type CollaborationDispatchEntry,
   type CollaborationResolved,
   type CollaborationRole,
   type CollaborationRoute,
   type CollaborationStrategy,
   type CollaborationWorkerAgent,
+  type MessageMeta,
   type NoteSummary,
   type PreparedNoteOptions,
   type RuntimeStatus,
@@ -74,7 +76,7 @@ export interface CollaborationHost {
   availability(): { installed: boolean; ready: boolean };
   resolved(): CollaborationResolved;
   context(threadId: string, clientId?: string): CollaborationTurnContext | null;
-  saveItem(taskId: string, item: { id: string; parent?: string; type: string; text: string; detail?: string; status: string; changes?: WorkflowChange[] }): void;
+  saveItem(taskId: string, item: { id: string; parent?: string; type: string; text: string; detail?: string; status: string; meta?: MessageMeta; changes?: WorkflowChange[] }): void;
   workerStep(taskId: string, parent: string, step: WorkflowStep): void;
   settleWorker(taskId: string, parent: string, runStopped: boolean): void;
   registerWorker(itemId: string, taskId: string, controller: AbortController): () => void;
@@ -239,19 +241,27 @@ export class CollaborationRuntime extends Adapter {
     // Stage 1: Fast Router
     const routeItemId = `${taskId}:${turn.id}:route`;
     const routerWorker = resolved.router || primaryWorker;
+    const routerMeta = { agent: routerWorker.agent, model: shortModel(routerWorker) };
     const routerCanReadOnly = readOnlyAgents[routerWorker.agent] !== false;
     this.host.saveItem(taskId, {
       id: routeItemId, type: 'tool', text: 'workflow_route',
       detail: `${labelOf(routerWorker)}\nStrategy: ${strategy} · ${clusters.length} cluster${clusters.length === 1 ? '' : 's'}`,
       status: 'inProgress',
+      meta: { dispatch: { strategy, router: routerMeta, entries: [] } },
     });
 
     const activeLanes = resolved.lanes?.length ? resolved.lanes : undefined;
     const laneOf = (laneId: string) => activeLanes?.find(l => l.id === laneId);
+    const roleRoute = (role: CollaborationRole) => resolved.routes[role] || primaryWorker;
     const laneRacers = (laneId: string) => {
       const lane = laneOf(laneId);
       if (lane && lane.models.length >= 2) return lane.models;
       return resolved.racers.length >= 2 ? resolved.racers : [lane?.models[0] || primaryWorker];
+    };
+    const answerWorkerOf = () => {
+      const answerCandidates = [resolved.routes.rigorous, resolved.judge, routerWorker, resolved.routes.polish, resolved.routes.quick]
+        .filter((r): r is CollaborationRoute => Boolean(r));
+      return answerCandidates.find(r => readOnlyAgents[r.agent] !== false) || answerCandidates[0];
     };
 
     let plan = deterministicFallbackPlan(clusters, strategy, resolved.racers.length, activeLanes);
@@ -269,11 +279,51 @@ export class CollaborationRuntime extends Adapter {
           plan = parsed;
           if (!parsed.fallback) break;
         } catch (error) {
-          if (signal.aborted) throw error;
+          if (signal.aborted) {
+            this.host.saveItem(taskId, {
+              id: routeItemId, type: 'tool', text: 'workflow_route',
+              detail: `${labelOf(routerWorker)}\nStopped by author.`,
+              status: 'interrupted',
+              meta: { dispatch: { strategy, router: routerMeta, entries: [] } },
+            });
+            throw error;
+          }
           if (attempt === 1) plan = { ...deterministicFallbackPlan(clusters, strategy, resolved.racers.length, activeLanes), reason: `Router fallback (${errorMessage(error)})` };
         }
       }
     }
+    const judgeWorker = resolved.judge || primaryWorker;
+    const dispatchEntries: CollaborationDispatchEntry[] = plan.units.map(u => {
+      const cluster = clusters.find(c => c.id === u.clusterId)!;
+      const lane = laneOf(u.lane);
+      const laneId = lane?.id || u.lane || u.role;
+      const laneName = lane?.name || u.lane || u.role;
+      const notes = cluster.notes.map(n => n.noteNumber);
+      if (u.mode === 'answer') {
+        const worker = answerWorkerOf();
+        const itemId = `${taskId}:${turn.id}:answer:${cluster.id}`;
+        return {
+          clusterId: cluster.id, notes, file: cluster.file, laneId: 'answer', laneName: 'Answer', mode: 'answer',
+          itemId, workers: [{ itemId, agent: worker.agent, model: shortModel(worker) }],
+        };
+      }
+      if (u.mode === 'race') {
+        const racers = laneRacers(u.lane);
+        const raceItemId = `${taskId}:${turn.id}:race:${cluster.id}`;
+        return {
+          clusterId: cluster.id, notes, file: cluster.file, laneId, laneName, mode: 'race',
+          itemId: raceItemId,
+          workers: racers.map((racer, idx) => ({ itemId: `${raceItemId}:r${idx}`, agent: racer.agent, model: shortModel(racer) })),
+          ...(readOnlyAgents[judgeWorker.agent] !== false ? { judge: { itemId: `${raceItemId}:judge`, agent: judgeWorker.agent, model: shortModel(judgeWorker) } } : {}),
+        };
+      }
+      const worker = lane?.models[0] || roleRoute(u.role);
+      const itemId = `${taskId}:${turn.id}:assign:${cluster.id}`;
+      return {
+        clusterId: cluster.id, notes, file: cluster.file, laneId, laneName, mode: 'assign',
+        itemId, workers: [{ itemId, agent: worker.agent, model: shortModel(worker) }],
+      };
+    });
     const planLines = plan.units.map(u => {
       const cluster = clusters.find(c => c.id === u.clusterId)!;
       const nums = cluster.notes.map(n => `#${n.noteNumber}`).join(', ');
@@ -283,12 +333,13 @@ export class CollaborationRuntime extends Adapter {
         ? `${nums} (${cluster.file}): ${laneName} · race (${laneRacers(u.lane).map(shortModel).join(' vs ')})`
         : u.mode === 'answer'
           ? `${nums} (${cluster.file}): answer`
-          : `${nums} (${cluster.file}): ${laneName} → ${shortModel(lane?.models[0] || resolved.routes[u.role] || primaryWorker)}`;
+          : `${nums} (${cluster.file}): ${laneName} → ${shortModel(lane?.models[0] || roleRoute(u.role))}`;
     });
     this.host.saveItem(taskId, {
       id: routeItemId, type: 'tool', text: 'workflow_route',
       detail: `${labelOf(routerWorker)}\n${planLines.join('\n')}${plan.reason ? `\n${plan.reason}` : ''}`,
       status: 'completed',
+      meta: { dispatch: { strategy, router: routerMeta, entries: dispatchEntries, ...(plan.reason ? { reason: plan.reason } : {}) } },
     });
 
     // Stage 2: Execute clusters concurrently (assign + race + answer)
@@ -296,8 +347,6 @@ export class CollaborationRuntime extends Adapter {
     const conflicts: { cluster: NoteCluster; conflict: WorkflowConflict }[] = [];
     const answers: { cluster: NoteCluster; text: string }[] = [];
     const reportLines: string[] = [];
-
-    const roleRoute = (role: CollaborationRole) => resolved.routes[role] || primaryWorker;
 
     const runOneCandidate = async (
       cluster: NoteCluster,
@@ -389,9 +438,7 @@ export class CollaborationRuntime extends Adapter {
       const base = { [cluster.file]: fileBase.get(cluster.file)! };
 
       if (unit.mode === 'answer') {
-        const answerCandidates = [resolved.routes.rigorous, resolved.judge, routerWorker, resolved.routes.polish, resolved.routes.quick]
-          .filter((r): r is CollaborationRoute => Boolean(r));
-        const answerWorker = answerCandidates.find(r => readOnlyAgents[r.agent] !== false) || answerCandidates[0];
+        const answerWorker = answerWorkerOf();
         const itemId = `${taskId}:${turn.id}:answer:${cluster.id}`;
         const plainNums = cluster.notes.map(n => n.noteNumber).join(', ');
         const own = new AbortController();
@@ -536,10 +583,21 @@ export class CollaborationRuntime extends Adapter {
       completedRaces.push({ cluster, base, verdict });
 
       const warnAlts = verdict.alternatives.filter(a => a.rigor === 'warn');
+      const winnerFile = verdict.winner.candidate.files[cluster.file];
+      const winnerItemIds = verdict.winner.candidate.synthesized
+        ? []
+        : results.flatMap((r, idx) => ('candidate' in r && !r.candidate.fidelity.hardFail && r.candidate.files[cluster.file] === winnerFile ? [`${raceItemId}:r${idx}`] : []));
       this.host.saveItem(taskId, {
         id: raceItemId, type: 'tool', text: `workflow_race · Notes ${cluster.notes.map(n => n.noteNumber).join(', ')}`,
         detail: `Selected: ${verdict.winner.label}\n${verdict.judgeSummary}`,
         status: 'completed',
+        meta: {
+          raceResult: {
+            winnerModel: verdict.winner.label,
+            winnerItemIds,
+            ...(verdict.winner.candidate.synthesized ? { synthesized: true } : {}),
+          },
+        },
         ...(verdict.winner.candidate.diffs.length ? { changes: verdict.winner.candidate.diffs } : {}),
       });
       raceReports.set(cluster.id, {

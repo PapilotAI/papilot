@@ -395,7 +395,20 @@ test('CollaborationRuntime orchestrates routing, single-worker assignment, per-a
     assert.equal(savedOptions[0].current.meta?.recommended, true);
     assert.equal(savedOptions[0].options[0].meta?.rigor, 'warn');
     assert.ok(savedItems.some(i => i.text === 'workflow_route' && i.status === 'completed'));
-    assert.ok(savedItems.some(i => i.text.startsWith('workflow_race') && i.status === 'completed'));
+    const completedRoute = savedItems.findLast(i => i.text === 'workflow_route' && i.status === 'completed');
+    assert.ok(completedRoute?.meta?.dispatch, 'workflow_route emits structured dispatch metadata');
+    assert.equal(completedRoute.meta.dispatch.entries.length, 3);
+    const note1Dispatch = completedRoute.meta.dispatch.entries.find((e: { notes: number[] }) => e.notes.includes(1));
+    const note2Dispatch = completedRoute.meta.dispatch.entries.find((e: { notes: number[] }) => e.notes.includes(2));
+    const note3Dispatch = completedRoute.meta.dispatch.entries.find((e: { notes: number[] }) => e.notes.includes(3));
+    assert.equal(note1Dispatch?.mode, 'assign');
+    assert.equal(note1Dispatch?.workers[0]?.agent, resolved.routes.quick?.agent);
+    assert.equal(note2Dispatch?.mode, 'race');
+    assert.equal(note2Dispatch?.workers.length, 2);
+    assert.ok(note2Dispatch?.judge?.itemId.endsWith(':judge'));
+    assert.equal(note3Dispatch?.mode, 'answer');
+    const completedRace = savedItems.findLast(i => i.text.startsWith('workflow_race') && i.status === 'completed');
+    assert.ok(completedRace?.meta?.raceResult?.winnerItemIds.length, 'workflow_race records winning racer itemId');
     assert.ok(savedItems.some(i => i.text.startsWith('workflow_judge') && i.status === 'completed'));
   } finally { f.close(); }
 });

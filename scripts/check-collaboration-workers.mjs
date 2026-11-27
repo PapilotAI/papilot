@@ -120,6 +120,72 @@ try {
     await running.screenshot({ path: `test-results/collaboration-worker-running-${width}${dark ? '-dark' : ''}-${language}.png` });
     await context.close();
   }
+
+  // Collaboration v2 dispatch card: shows Router, per-annotation lane & assigned agent(s),
+  // live race vs judge progress, winner badge, and collapsible raw tool details.
+  const dispatchItems = [
+    { id: 'u1', taskId: task.id, type: 'user', text: 'Address 4 PDF notes', createdAt: at },
+    {
+      id: 'collab-task:turn2:route', taskId: task.id, type: 'tool', text: 'workflow_route', status: 'completed', createdAt: at + 1,
+      detail: 'Antigravity · Gemini 4 Flash\n#1 (main.tex): Simple edits → Gemini 4 Flash\n#2 (main.tex): Prose & polish · race (Gemini 4 Neon vs GPT-6.2-Sol)\n#3 (main.tex): Math & rigorous → GPT-6.2-Sol\n#4 (main.tex): Layout & LaTeX → Gemini 4 Flash',
+      meta: {
+        dispatch: {
+          strategy: 'balanced',
+          router: { agent: 'antigravity', model: 'Gemini 4 Flash' },
+          entries: [
+            { clusterId: 'c1', notes: [1], file: 'main.tex', laneId: 'quick', laneName: 'Simple edits', mode: 'assign', itemId: 'collab-task:turn2:assign:c1', workers: [{ itemId: 'collab-task:turn2:assign:c1', agent: 'antigravity', model: 'Gemini 4 Flash' }] },
+            { clusterId: 'c2', notes: [2], file: 'main.tex', laneId: 'polish', laneName: 'Prose & polish', mode: 'race', itemId: 'collab-task:turn2:race:c2', workers: [{ itemId: 'collab-task:turn2:race:c2:r0', agent: 'antigravity', model: 'Gemini 4 Neon' }, { itemId: 'collab-task:turn2:race:c2:r1', agent: 'codex', model: 'GPT-6.2-Sol' }], judge: { itemId: 'collab-task:turn2:race:c2:judge', agent: 'codex', model: 'GPT-6.2-Sol' } },
+            { clusterId: 'c3', notes: [3], file: 'main.tex', laneId: 'rigorous', laneName: 'Math & rigorous', mode: 'assign', itemId: 'collab-task:turn2:assign:c3', workers: [{ itemId: 'collab-task:turn2:assign:c3', agent: 'codex', model: 'GPT-6.2-Sol' }] },
+            { clusterId: 'c4', notes: [4], file: 'main.tex', laneId: 'layout', laneName: 'Layout & LaTeX', mode: 'assign', itemId: 'collab-task:turn2:assign:c4', workers: [{ itemId: 'collab-task:turn2:assign:c4', agent: 'antigravity', model: 'Gemini 4 Flash' }] },
+          ],
+        },
+      },
+    },
+    { id: 'collab-task:turn2:assign:c1', taskId: task.id, type: 'tool', text: 'workflow_delegate · quick', detail: 'Antigravity · Gemini 4 Flash\nNotes: 1\nFixed typo.', status: 'completed', createdAt: at + 2 },
+    { id: 'collab-task:turn2:race:c2', taskId: task.id, type: 'tool', text: 'workflow_race · Notes 2', detail: 'Selected: GPT-6.2-Sol\nCrisper phrasing with full fidelity.', status: 'completed', createdAt: at + 3, meta: { raceResult: { winnerModel: 'GPT-6.2-Sol', winnerItemIds: ['collab-task:turn2:race:c2:r1'] } } },
+    { id: 'collab-task:turn2:race:c2:r0', parent: 'collab-task:turn2:race:c2', taskId: task.id, type: 'tool', text: 'workflow_racer · Gemini 4 Neon', detail: 'Antigravity · Gemini 4 Neon\nNotes: 2\nPolished.', status: 'completed', createdAt: at + 3.1 },
+    { id: 'collab-task:turn2:race:c2:r1', parent: 'collab-task:turn2:race:c2', taskId: task.id, type: 'tool', text: 'workflow_racer · GPT-6.2-Sol', detail: 'Codex · GPT-6.2-Sol\nNotes: 2\nPolished concisely.', status: 'completed', createdAt: at + 3.2 },
+    { id: 'collab-task:turn2:race:c2:judge', parent: 'collab-task:turn2:race:c2', taskId: task.id, type: 'tool', text: 'workflow_judge · GPT-6.2-Sol', detail: 'Recommended: GPT-6.2-Sol', status: 'completed', createdAt: at + 3.5 },
+    { id: 'collab-task:turn2:assign:c3', taskId: task.id, type: 'tool', text: 'workflow_delegate · rigorous', detail: 'Codex · GPT-6.2-Sol\nNotes: 3\nChecking proof sketch.', status: 'inProgress', createdAt: at + 4 },
+    { id: 'collab-task:turn2:assign:c4', taskId: task.id, type: 'tool', text: 'workflow_delegate · layout', detail: 'Antigravity · Gemini 4 Flash\nNotes: 4\nFormatted table.', status: 'completed', createdAt: at + 5 },
+  ];
+  for (const [width, dark, language] of [[1200, false, 'en'], [390, true, 'zh-CN']]) {
+    const context = await browser.newContext({ locale: 'en-US', viewport: { width, height: 820 }, colorScheme: dark ? 'dark' : 'light', hasTouch: width < 600 });
+    await context.addInitScript(language => { localStorage.setItem('papilot:language', language); localStorage.setItem('papilot:setup-seen', '1'); }, language);
+    await context.route('**/api/**', async route => {
+      const url = new URL(route.request().url()), json = data => route.fulfill({ json: data });
+      if (url.pathname === '/api/runtime/requirements') return json(readyRequirements);
+      if (url.pathname === '/api/state') return json(snapshot);
+      if (url.pathname === '/api/updates') return json({ currentVersion: 'test', phase: 'idle', canUpdate: false });
+      if (url.pathname === '/api/note-alternatives') return json({ noteAlternatives: true, noteAlternativeRange: 'few' });
+      if (url.pathname === '/api/indirect-changes') return json({ indirectChanges: false });
+      if (url.pathname.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
+      if (url.pathname.endsWith('/items')) return json({ items: dispatchItems });
+      if (url.pathname.endsWith('/note-results')) return json({ notes: [] });
+      if (url.pathname.endsWith('/files')) return json({ document: null, files: [] });
+      if (url.pathname.endsWith('/skills')) return json({ skills: [] });
+      if (url.pathname.endsWith('/git')) return json({ files: [], branch: 'main' });
+      if (url.pathname.endsWith('/manuscript')) return json({ git: { files: [] }, annotations: [], build: { status: 'building', current: false } });
+      throw Error(`Unexpected fixture request ${url.pathname}`);
+    });
+    const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`http://127.0.0.1:${server.server.address().port}`);
+    const zh = language === 'zh-CN';
+    await page.getByRole('button', { name: zh ? '对话' : 'Chat', exact: true }).click();
+    const card = page.locator('.collab-dispatch-card');
+    await expect(card).toBeVisible();
+    await expect(card.locator('.collab-dispatch-row')).toHaveCount(4);
+    await expect(card.locator('.collab-dispatch-status')).toContainText(zh ? '1 个运行中' : '1 running');
+    await expect(card.locator('.collab-agent-chip.is-winner')).toContainText('GPT-6.2-Sol');
+    await expect(card.locator('.collab-agent-chip[data-state="running"]')).toContainText('GPT-6.2-Sol');
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    assert.ok(overflow <= 0, `dispatch card has no horizontal overflow at ${width}px`);
+    await card.screenshot({ animations: 'disabled', path: `test-results/collaboration-dispatch-${width}${dark ? '-dark' : ''}-${language}.png` });
+    // Expand Details & steps and verify raw tool rows remain accessible
+    await card.locator('.collab-dispatch-details > summary').click();
+    await expect(card.locator('.collab-dispatch-details > .tool-group-items > .tool-item')).toHaveCount(5);
+    await context.close();
+  }
   assert.deepEqual(errors, []);
-  console.log('PASS: collaboration workers show their latest step, nested steps, changes and a stop control on desktop and mobile.');
+  console.log('PASS: collaboration workers and dispatch card show live per-annotation routing, racing, judging, steps and stop controls on desktop and mobile.');
 } finally { await browser.close(); await server.close(); }
