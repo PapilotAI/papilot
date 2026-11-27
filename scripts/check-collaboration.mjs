@@ -75,20 +75,20 @@ try {
     }
     await toggle.focus(); await page.keyboard.press('Space'); await expect(toggle).toBeChecked();
     await expect(disclosure.getByRole('alert')).toHaveCount(0);
-    // Active team summary, 3 role slots, race pool, and Advanced overrides (router/judge).
-    await expect(disclosure.locator('.collaboration-summary')).toBeVisible();
-    const roleSlots = disclosure.locator('[data-role="quick"], [data-role="polish"], [data-role="rigorous"]');
-    await expect(roleSlots).toHaveCount(3);
-    for (const title of await roleSlots.locator('.settings-name').all()) {
-      await expect(title).not.toHaveCSS('cursor', 'pointer');
-    }
-    const polish = disclosure.locator('[data-role="polish"]'), quick = disclosure.locator('[data-role="quick"]');
-    await expect(polish.locator('[role="combobox"]')).toContainText('Codex');
-    // Fast mode switch renders cleanly for Codex fastMode models without stacking vertically.
-    await expect(polish.locator('.collaboration-fast [role="switch"]')).toBeVisible();
-    await selectOption(polish.locator('[role="combobox"]'), JSON.stringify(['antigravity', 'gemini-test']));
+    // Active team interactive board: Router, Race pool (+ / -), Judge, and Direct roles all live in the graph.
+    await expect(disclosure.locator('.collab-board')).toBeVisible();
+    await expect(disclosure.locator('[data-role="router"]')).toBeVisible();
+    await expect(disclosure.locator('[data-role="judge"]')).toBeVisible();
+    await expect(disclosure.locator('[data-role="quick"], [data-role="polish"], [data-role="rigorous"]')).toHaveCount(3);
+    // Clicking Polish node opens the docked inspector with its model picker, Fast mode toggle, and effort slider.
+    await disclosure.locator('[data-role="polish"]').click();
+    const inspector = disclosure.locator('.collab-inspector');
+    await expect(inspector).toBeVisible();
+    await expect(inspector.locator('[role="combobox"]')).toContainText('Codex');
+    await expect(inspector.locator('.collaboration-fast [role="switch"]')).toBeVisible();
+    await selectOption(inspector.locator('[role="combobox"]'), JSON.stringify(['antigravity', 'gemini-test']));
     await expect.poll(() => config.routes.polish).toEqual({ agent: 'antigravity', model: 'gemini-test', effort: 'medium' });
-    const effort = polish.getByRole('slider');
+    const effort = inspector.getByRole('slider');
     await effort.focus(); await page.keyboard.press('ArrowRight');
     await expect.poll(() => config.routes.polish.effort).toBe('high');
     // Saves go one at a time, so a slow answer for an earlier level cannot undo a later one.
@@ -102,18 +102,25 @@ try {
     await expect.poll(() => saves).toBe(before + 2);
     await expect.poll(() => config.routes.polish.effort).toBe('low');
     await page.waitForTimeout(300); await expect(effort).toHaveValue('0');
-    await selectOption(quick.locator('[role="combobox"]'), JSON.stringify(['opencode', 'provider/flash-test']));
-    await quick.getByRole('slider').focus(); await page.keyboard.press('End');
+    // Switch to Quick node on the graph and configure effort.
+    await disclosure.locator('[data-role="quick"]').click();
+    await selectOption(inspector.locator('[role="combobox"]'), JSON.stringify(['opencode', 'provider/flash-test']));
+    await inspector.getByRole('slider').focus(); await page.keyboard.press('End');
     await expect.poll(() => config.routes.quick).toEqual({ agent: 'opencode', model: 'provider/flash-test', effort: 'max' });
     assert.deepEqual(config.routes.rigorous, codexRoute);
-    // Race pool: Add model expands custom racers cleanly, and Advanced overrides opens router/judge.
-    await disclosure.locator('[data-role="racers"] button').click();
+    // Race pool: + button adds a 3rd model right on the graph, and - removes it cleanly.
+    await expect(disclosure.locator('.collaboration-racer-row')).toHaveCount(2);
+    await disclosure.locator('.collab-add-btn').click();
     await expect(disclosure.locator('.collaboration-racer-row')).toHaveCount(3);
-    await disclosure.locator('.collaboration-advanced > summary').click();
-    await expect(disclosure.locator('[data-role="router"]')).toBeVisible();
-    await expect(disclosure.locator('[data-role="judge"]')).toBeVisible();
+    await expect(inspector).toHaveAttribute('data-inspecting', 'racer-2');
+    await disclosure.locator('.collab-remove-btn').nth(2).click();
+    await expect(disclosure.locator('.collaboration-racer-row')).toHaveCount(2);
+    // Router and Judge nodes are directly clickable on the graph.
+    await disclosure.locator('[data-role="router"]').click();
+    await expect(inspector).toHaveAttribute('data-inspecting', 'router');
+    await disclosure.locator('[data-role="judge"]').click();
+    await expect(inspector).toHaveAttribute('data-inspecting', 'judge');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-    await page.locator('.settings-content').evaluate(element => { element.scrollTop = element.scrollHeight; });
     await page.screenshot({ path: `test-results/collaboration-${width}-${language}.png`, animations: 'disabled' });
     await page.locator('.modal-close').click(); await page.reload(); if (width < 600) await page.locator('.sidebar-toggle').click(); await page.locator('.settings-link').click();
     if (width < 600) await page.locator('[data-settings-page="general"]').click();
@@ -126,12 +133,12 @@ try {
     await page.locator('[data-settings-page="experiments"]').click();
     await expect(toggle).toBeChecked();
     // Saved on the host: the routes come back after reloading.
-    await expect(disclosure.locator('[data-role="polish"] [role="combobox"]')).toContainText('Gemini Test');
-    await toggle.click(); await expect(toggle).not.toBeChecked(); await expect(disclosure.locator('.collaboration-route')).toHaveCount(0);
+    await expect(disclosure.locator('[data-role="polish"]')).toContainText('Gemini Test');
+    await toggle.click(); await expect(toggle).not.toBeChecked(); await expect(disclosure.locator('.collab-board')).toHaveCount(0);
     if (width < 600) await page.locator('.settings-mobile-back').click();
     await page.locator('[data-settings-page="general"]').click();
     await expect(model).toContainText('Codex');
-    assert.equal(saves, language === 'en' ? 10 : 9);
+    assert.equal(saves, language === 'en' ? 11 : 10);
     config = { router: null, judge: null, routes: { quick: codexRoute, polish: codexRoute, rigorous: codexRoute }, racers: [] };
     await context.close();
   }
