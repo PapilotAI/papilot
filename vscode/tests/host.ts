@@ -8,7 +8,7 @@ const waitFor = async <T>(read: () => T | Promise<T>, accept: (value: T) => bool
   throw new Error('Timed out waiting for the extension');
 };
 async function checks() {
-  const extension = vscode.extensions.getExtension('PapilotAI.papilot'); assert.ok(extension);
+  const extension = vscode.extensions.getExtension('PapilotAI.papilot-vscode'); assert.ok(extension);
   const api = await extension.activate();
   await api.refresh();
   assert.equal(api.papers.papers.length, 2, JSON.stringify(api.papers.papers));

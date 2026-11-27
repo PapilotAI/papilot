@@ -13,7 +13,7 @@ Keep LaTeX papers and project code in the same editor. Papilot discovers papers 
 
 Requires VS Code 1.96.4 or newer, Git, a local TeX distribution, and a signed-in agent CLI for agent tasks. Open a trusted workspace containing a committed Git repository. Papilot lists independently buildable TeX roots and refreshes the list when TeX files change; included files stay with their paper.
 
-Install [Papilot from the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=PapilotAI.papilot), or search for `PapilotAI.papilot` in the Extensions view.
+Install [Papilot from the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=PapilotAI.papilot-vscode), or search for `PapilotAI.papilot-vscode` in the Extensions view.
 
 The extension starts and stops its bundled runtime. There is no separate application server to install or start. Remote workspaces run Papilot and TeX on the remote host. The standalone app keeps its current interface and selected document.
 
