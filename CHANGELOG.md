@@ -27,6 +27,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Fixed
 
+- Keep changed PDF text and highlights readable in the VS Code extension's dark theme.
 - The `papilot` command uses the Codex it downloads on the same launch, even when an older copy is on `PATH`.
 
 ## [0.14.1] - 2026-11-23

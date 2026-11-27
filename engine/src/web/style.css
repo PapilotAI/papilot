@@ -1905,12 +1905,15 @@ body {
   width: 100%;
   container-type: inline-size;
   isolation: isolate;
+  /* PDF images have light-mode source colors; the host's filter adapts them. */
+  color-scheme: light;
 }
 .pdf-strip img {
   position: absolute;
   inset: 0;
   user-select: none;
   pointer-events: none;
+  filter: var(--pdf-filter, none);
 }
 .pdf-text {
   position: absolute;
@@ -2119,6 +2122,9 @@ body {
   height: 100%;
   pointer-events: none;
   mix-blend-mode: multiply;
+}
+:root[data-theme="dark"]:not([data-review-theme="light"]) :is(.pdf-focus-marks, .pdf-unit-marks) {
+  mix-blend-mode: screen;
 }
 .pdf-strip[data-unit-hover],
 .pdf-strip[data-unit-hover] .pdf-text {

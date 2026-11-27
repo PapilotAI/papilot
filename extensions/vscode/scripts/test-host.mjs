@@ -79,6 +79,15 @@ try {
     await wait(200);
   }
   if (!review) throw new Error('Working changes did not become reviewable.');
+  // Full PDF pages and changed passages must use the same theme. The latter
+  // are images, so inheriting a light CSS text color cannot make them readable.
+  const strips = review.locator('.pdf-strip img');
+  await expect(strips.first()).toBeVisible();
+  const pageFilter = await review.locator('.paper-slice canvas').first().evaluate(element => getComputedStyle(element).filter);
+  if (pageFilter === 'none') throw new Error('The dark PDF page was not themed.');
+  for (const strip of await strips.all()) await expect(strip).toHaveCSS('filter', pageFilter);
+  for (const marks of await review.locator('.pdf-focus-marks, .pdf-unit-marks').all()) await expect(marks).toHaveCSS('mix-blend-mode', 'screen');
+  await page.screenshot({ path: path.join(temp, 'native-review-pending-dark.png') });
   await review.getByRole('button', { name: /^Stage(?: all)?(?: \(|$)/ }).first().click();
   await expect(review.getByText('Save your edited files before applying or rejecting changes.', { exact: true })).toBeVisible();
   if (execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: fixture, encoding: 'utf8' }).trim()) throw new Error('Review staged a dirty editor.');
@@ -99,6 +108,8 @@ try {
   await page.screenshot({ path: path.join(temp, 'native-review-dark.png') });
   fs.writeFileSync(path.join(temp, 'light-theme'), 'ready');
   await expect(review.locator('html')).toHaveAttribute('data-theme', 'light');
+  for (const strip of await strips.all()) await expect(strip).toHaveCSS('filter', 'none');
+  for (const marks of await review.locator('.pdf-focus-marks, .pdf-unit-marks').all()) await expect(marks).toHaveCSS('mix-blend-mode', 'multiply');
   await page.screenshot({ path: path.join(temp, 'native-review-light.png') });
   console.log('Native host passed: independent papers, source navigation, diagnostics, rendered PDF, separate conversation and Git staging from review.');
   fs.writeFileSync(path.join(temp, 'inspected'), 'done');

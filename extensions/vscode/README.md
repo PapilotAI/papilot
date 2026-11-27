@@ -13,6 +13,8 @@ Requires VS Code 1.119 or newer, Git, a local TeX distribution, and a signed-in 
 
 The extension starts and stops its bundled runtime. There is no separate application server to install or start. Remote workspaces run Papilot and TeX on the remote host. The standalone app keeps its current interface and selected document.
 
+PDF pages, changed passages, and review highlights follow VS Code's light or dark theme.
+
 ## Development
 
 From the repository root:
