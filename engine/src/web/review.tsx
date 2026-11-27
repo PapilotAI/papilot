@@ -2455,13 +2455,15 @@ export function ReviewApp({
   // them while its PDF loads, as the workspace expects.
   // Only the author's switch within a round counts: a new round that
   // renders, or the paper going away, clears them as before.
-  const shownLayout = useRef({ compare, round: detail?.round, paperView });
+  const shownLayout = useRef({ compare, round: detail?.round, paperView, compareUnavailable, chosenLayout });
   useLayoutEffect(() => {
     const before = shownLayout.current;
-    shownLayout.current = { compare, round: detail?.round, paperView };
-    if (before.compare === compare || before.round !== detail?.round || !before.paperView || !paperView) return;
+    shownLayout.current = { compare, round: detail?.round, paperView, compareUnavailable, chosenLayout };
+    // The author's choice changed, not whether the comparison can be shown.
+    if (before.compare === compare || before.round !== detail?.round || !before.paperView || !paperView
+      || before.compareUnavailable !== compareUnavailable || before.chosenLayout === chosenLayout) return;
     return holdReader(window);
-  }, [compare, detail?.round, paperView]);
+  }, [compare, detail?.round, paperView, compareUnavailable, chosenLayout]);
   const [compareOpened, setCompareOpened] = useState(false);
   useEffect(() => { if (compare) setCompareOpened(true); }, [compare]);
   // The comparisons of the next few undecided changes are fetched and decoded

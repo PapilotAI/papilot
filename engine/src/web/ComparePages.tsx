@@ -48,6 +48,18 @@ function place(doc: Doc, changes: PlacedChange[], side: Side): Placed[] {
   return placed;
 }
 
+type Extent = { page: number; top: number; bottom: number };
+// The span of a change's bar in the row pairing old page b with new page a,
+// or null when its bar is in another row: one bar per change, in the row of
+// its new lines, or of its old ones for a deletion, covering its lines on
+// both pages of that row.
+function barSpan(index: number, b: number | null, a: number | null, oldLines: Map<number, Extent>, newLines: Map<number, Extent>) {
+  const left = oldLines.get(index), right = newLines.get(index),
+    l = left && left.page === b ? left : null, r = right && right.page === a ? right : null;
+  if (right ? !r : !l) return null;
+  return { top: Math.min(l?.top ?? 1, r?.top ?? 1), bottom: Math.max(l?.bottom ?? 0, r?.bottom ?? 0) };
+}
+
 // Where each change prints on both versions' pages, and its bar's extent.
 function layout(docs: { before: Doc; after: Doc }, changes: PlacedChange[], pairs: PagePair[]) {
   const old = place(docs.before, changes, "before"), next = place(docs.after, changes, "after");
@@ -71,10 +83,9 @@ function layout(docs: { before: Doc; after: Doc }, changes: PlacedChange[], pair
     const placedLines = newLines.get(index) ? newLines : oldLines.get(index) ? oldLines : null;
     if (placedLines) { const extent = placedLines.get(index)!; previous = { page: extent.page, top: extent.top, bottom: extent.bottom, lines: placedLines }; continue; }
     const lines: typeof newLines = previous?.lines ?? newLines, page: number = previous?.page ?? 0,
-      // The row's bars, beside the old page and the new page it is paired with.
-      mate = pairs.find(([b, a]) => (lines === oldLines ? b : a) === page),
-      other = lines === oldLines ? newLines : oldLines, otherPage = mate ? (lines === oldLines ? mate[1] : mate[0]) : null,
-      taken = [...[...lines.values()].filter((extent) => extent.page === page), ...[...other.values()].filter((extent) => extent.page === otherPage)],
+      // The bars the column draws in this page's row, as it draws them.
+      [b, a] = pairs.find(([b, a]) => (lines === oldLines ? b : a) === page) ?? (lines === oldLines ? [page, null] : [null, page]),
+      taken = [...new Set([...oldLines.keys(), ...newLines.keys()])].flatMap((other) => barSpan(other, b, a, oldLines, newLines) ?? []),
       top = freeSlot(taken, previous ? previous.bottom + BAR_SPACING : 0.03), bottom = top + BAR_HEIGHT;
     lines.set(index, { page, top, bottom });
     previous = { page, top, bottom, lines };
@@ -215,12 +226,9 @@ export function ComparePages({ active, restorePlace = true, before, after, resou
   const gutter = (b: number | null, a: number | null) => (
     <div className="compare-gutter">
       {changes.flatMap(({ index }) => {
-        const left = oldLines.get(index), right = newLines.get(index),
-          l = left && left.page === b ? left : null, r = right && right.page === a ? right : null;
-        // One bar per change: in the row of its new lines, or of its old
-        // ones for a deletion, also when the two print on different rows.
-        if (right ? !r : !l) return [];
-        const top = Math.min(l?.top ?? 1, r?.top ?? 1), bottom = Math.max(l?.bottom ?? 0, r?.bottom ?? 0),
+        const span = barSpan(index, b, a, oldLines, newLines);
+        if (!span) return [];
+        const { top, bottom } = span,
           open = panel === index && index === shown;
         return [
           <div key={index} className={`compare-spot${index === shown ? " current" : ""}`} data-stop={index} data-state={states(index)}
