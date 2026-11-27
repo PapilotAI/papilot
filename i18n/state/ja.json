@@ -809,11 +809,6 @@
     "textHash": "09f25b412bf1de47189b99a7a0aea393177cdd2319372806561e786628fe1897",
     "model": "gemini-4-argon-medium"
   },
-  "Chat only": {
-    "revision": "35e90bbf2013485d3258838202475e115b09a6e820d92841a81bdb1b90e50b8f",
-    "textHash": "9add742dbd648ead5c8ee4a011924666ab6cbbda5e88e7508ea9a57a92021151",
-    "model": "gemini-4-argon-medium"
-  },
   "ChatGPT Pro (web)": {
     "revision": "3a7df6486ff0e426821298b88b46195539d3d95af36501400cfa6a86b160b272",
     "textHash": "cda72d4294178b32d3a8f966279c0d49e9f75ddbc2e9f6957268dbccab9c9673",
