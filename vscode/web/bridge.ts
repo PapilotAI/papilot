@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { OPEN_RESOURCE_COMMAND } from '../src/commands.ts';
 declare function acquireVsCodeApi(): { postMessage(message: unknown): void };
 const host = acquireVsCodeApi();
 function theme() {
@@ -40,6 +41,7 @@ export function useHost<T = any>(): T | undefined {
 }
 export const command = (command: string, values: Record<string, unknown> = {}) => call('command', { command, taskId: current?.task?.id, ...values });
 export const resource = (route: string) => call<string>('resource', { route, taskId: current?.task?.id });
+export const resourceLink = (route: string) => `command:${OPEN_RESOURCE_COMMAND}?${encodeURIComponent(JSON.stringify([route, current?.task?.id]))}`;
 export const ready = () => call('ready');
 // The PDF selection layer fetches word coordinates by URL. Other assets use
 // VS Code resource URIs and continue through the browser's normal fetch.

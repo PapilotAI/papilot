@@ -4,8 +4,8 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { createHash, randomBytes } from 'node:crypto';
 import { Backend } from './backend.ts';
-import { reviewAssets } from './assets.ts';
-import { allowedCommand } from './commands.ts';
+import { assetExtension, reviewAssets } from './assets.ts';
+import { allowedCommand, OPEN_RESOURCE_COMMAND } from './commands.ts';
 import { inside, insideReal, routePath, sourcePath } from './paths.ts';
 import { supportedLanguage } from '../../engine/src/locales.ts';
 import type { GitExtension, Repository } from './git.ts';
@@ -122,21 +122,34 @@ export async function activate(context: vscode.ExtensionContext) {
     diagnostics.clear(); diagnostics.set([...combined].map(([file, entries]) => [vscode.Uri.file(file), entries]));
   }
   const assets = new Map<string, Promise<string>>();
-  async function asset(webview: vscode.Webview, route: string) {
+  function assetFile(route: string) {
     let pending = assets.get(route);
     if (!pending) {
       pending = (async () => {
         const response = await backend.request(route);
         if (response.status >= 400) throw new Error(t('Could not load Papilot asset ({status}).', { status: response.status }));
-        const extension = response.headers['content-type']?.includes('pdf') ? '.pdf' : response.headers['content-type']?.includes('png') ? '.png' : '.bin';
-        const file = path.join(assetRoot, createHash('sha256').update(route).digest('hex') + extension);
+        const file = path.join(assetRoot, createHash('sha256').update(route).digest('hex') + assetExtension(response.headers));
         await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, Buffer.from(response.body, 'base64'));
         return file;
       })();
       assets.set(route, pending); pending.catch(() => assets.delete(route));
     }
-    return webview.asWebviewUri(vscode.Uri.file(await pending)).toString();
+    return pending;
   }
+  async function asset(webview: vscode.Webview, route: string) {
+    return webview.asWebviewUri(vscode.Uri.file(await assetFile(route))).toString();
+  }
+  function conversationResource(route: unknown, taskId: unknown) {
+    const task = snapshot?.tasks.find(task => task.id === taskId && task.id === selectedTask);
+    const pathname = routePath(route);
+    const prefixes = task ? [`/api/projects/${encode(task.projectId)}/attachments/`, `/api/tasks/${encode(task.id)}/pages/`] : [];
+    if (!prefixes.some(prefix => pathname.startsWith(prefix) && /^[^/]+$/.test(pathname.slice(prefix.length)))) throw new Error(t('This resource is not available in this conversation.'));
+    return pathname;
+  }
+  register(OPEN_RESOURCE_COMMAND, async (route: unknown, taskId: unknown) => {
+    const file = await assetFile(conversationResource(route, taskId));
+    await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(file), vscode.ViewColumn.Beside);
+  });
   async function mapAssets(webview: vscode.Webview, value: any, view: View): Promise<any> {
     const scoped = (route: string) => view.kind === 'review' && view.document ? route + (route.includes('?') ? '&' : '?') + 'document=' + encode(view.document) : route;
     if (Array.isArray(value)) return Promise.all(value.map(item => mapAssets(webview, item, view)));
@@ -215,7 +228,8 @@ export async function activate(context: vscode.ExtensionContext) {
     throw new Error(t('This request is not available in this view.'));
   }
   async function wire(webview: vscode.Webview, view: View) {
-    webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.file(assetRoot)] };
+    webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.file(assetRoot)],
+      ...(view.kind === 'chat' && { enableCommandUris: [OPEN_RESOURCE_COMMAND] }) };
     webview.onDidReceiveMessage(async message => {
       if (!message || typeof message.id !== 'number' || typeof message.type !== 'string') return;
       try {
@@ -225,10 +239,7 @@ export async function activate(context: vscode.ExtensionContext) {
           try { await push(webview, view); }
           catch (error) { await webview.postMessage({ type: 'state', view, error: String(error) }); }
         } else if (message.type === 'resource' && view.kind === 'chat') {
-          const task = snapshot?.tasks.find(task => task.id === message.taskId && task.id === selectedTask);
-          const route = routePath(message.route);
-          if (!task || !(route.startsWith(`/api/projects/${task.projectId}/attachments/`) || route.startsWith(`/api/tasks/${task.id}/pages/`))) throw new Error(t('This resource is not available in this conversation.'));
-          value = await asset(webview, message.route);
+          value = await asset(webview, conversationResource(message.route, message.taskId));
         } else if (message.type === 'resource' && view.kind === 'review') {
           const route = routePath(message.route), prefix = view.task ? `/review/${view.project.id}/pdf/${encode(view.task.name)}/` : `/review/${view.project.id}/changes/pdf/`;
           if (!route.startsWith(prefix) || !/^\d+$/.test(route.slice(prefix.length))) throw new Error(t('This PDF is not available in this review.'));

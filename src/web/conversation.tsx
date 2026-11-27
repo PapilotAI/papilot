@@ -1,4 +1,4 @@
-import { Resource } from './resources.tsx';
+import { Resource, ResourceLink } from './resources.tsx';
 import { Fragment, Suspense, lazy, memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import '../../engine/src/web/legacy-storage.ts';
 import { aiReviewSummary, isFeedbackPrompt } from '../conversation.ts';
@@ -198,7 +198,7 @@ export function createConversation(api: ConversationApi) {
     if (!pages.length) return null;
     return <div className="tool-pages">{pages.map(page => {
       const name = page.label ? t('p. {page}', { page: page.label }) : t('PDF page {page}', { page: page.index });
-      return <Resource key={page.url} route={page.url}>{url => <a href={url} target="_blank" rel="noopener noreferrer" title={name}><img src={url} alt={name} loading="lazy"/><span>{name}</span></a>}</Resource>;
+      return <ResourceLink key={page.url} route={page.url} title={name}><Resource route={page.url}>{url => <img src={url} alt="" loading="lazy"/>}</Resource><span>{name}</span></ResourceLink>;
     })}</div>;
   }
 

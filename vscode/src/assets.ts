@@ -16,3 +16,16 @@ export function reviewAssets(value: unknown): string[] {
   collect(value);
   return [...names];
 }
+
+export function assetExtension(headers: Record<string, string>) {
+  const mime = headers['content-type']?.split(';')[0];
+  if (mime === 'application/pdf') return '.pdf';
+  const image = /^image\/(png|jpeg|gif|webp)$/.exec(mime ?? '');
+  if (image) return '.' + image[1];
+  const name = /filename\*=UTF-8''([^;]+)/i.exec(headers['content-disposition'] ?? '')?.[1];
+  if (name) {
+    try { return /\.[a-z\d]{1,16}$/i.exec(decodeURIComponent(name))?.[0] ?? '.bin'; }
+    catch { /* Fall back when the filename is malformed. */ }
+  }
+  return '.bin';
+}

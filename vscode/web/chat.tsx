@@ -7,7 +7,7 @@ import { browserStorage } from '../../src/web/storage.ts';
 import { mergeTimeline } from '../../src/web/refresh.ts';
 import { t } from '../../src/web/i18n.ts';
 import type { Snapshot, Task, TimelineItem, Skill } from '../../src/shared.ts';
-import { api, command, ready, resource, useHost } from './bridge.ts';
+import { api, command, ready, resource, resourceLink, useHost } from './bridge.ts';
 import '../../src/web/style.css';
 import '../../src/web/note-controls.css';
 import './style.css';
@@ -45,5 +45,5 @@ function Chat() {
       onTaskSaved={refresh} reportError={report} pause={() => { setPausing(true); void api(`/tasks/${task.id}/interrupt`, {}).then(refresh).catch(report).finally(() => setPausing(false)); }} pausing={pausing} openReview={() => void command('papilot.review').catch(report)}/>
   </div>;
 }
-createRoot(document.getElementById('root')!).render(<ResourceProvider value={resource}><Chat/></ResourceProvider>);
+createRoot(document.getElementById('root')!).render(<ResourceProvider value={{ resolve: resource, link: resourceLink }}><Chat/></ResourceProvider>);
 void ready();

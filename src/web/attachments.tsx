@@ -1,4 +1,4 @@
-import { Resource } from './resources.tsx';
+import { Resource, ResourceLink } from './resources.tsx';
 import { useMemo, useSyncExternalStore } from 'react';
 import type { Attachment } from '../shared.ts';
 import { AttachmentDraft, attachmentDrafts as drafts, type UploadAttachment } from './attachment-draft.ts';
@@ -35,7 +35,7 @@ export function DraftAttachments({ draft, upload, discard, disabled }: { draft: 
 }
 export function MessageAttachments({ files }: { files?: Attachment[] }) {
   if (!files?.length) return null;
-  return <ul className="message-attachments" aria-label={t('Attachments')}>{files.map(file => <li key={file.id}><Resource route={attachmentUrl(file)}>{url => <a className="attachment" href={url} target="_blank" rel="noreferrer" title={t('Open attachment {name}', { name: file.name })}>
+  return <ul className="message-attachments" aria-label={t('Attachments')}>{files.map(file => <li key={file.id}><ResourceLink className="attachment" route={attachmentUrl(file)} title={t('Open attachment {name}', { name: file.name })}>
     <span className="attachment-icon"><FileIcon file={file}/></span><span className="attachment-info"><span className="attachment-name">{file.name}</span><small>{sizeLabel(file.size)}</small></span><Icon name="external" size={13}/>
-  </a>}</Resource></li>)}</ul>;
+  </ResourceLink></li>)}</ul>;
 }

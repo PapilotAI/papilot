@@ -12,6 +12,7 @@ test('review actions use the current task and protect aliased unsaved buffers', 
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'papilot-host-bridge-'));
   const subscriptions: { dispose(): void }[] = [], commands = new Map<string, (...args: any[]) => any>();
   const responses: any[] = [], errors: string[] = [], opened: string[] = [], requests: string[] = [], apiCalls: string[] = [];
+  const openedResources: string[] = [];
   const disposable = () => ({ dispose() {} });
   const uri = (file: string) => ({ fsPath: file, scheme: 'file', toString: () => pathToFileURL(file).href });
   const manuscript = path.join(directory, 'paper'), worktree = path.join(directory, 'task'), alias = path.join(directory, 'alias');
@@ -26,9 +27,10 @@ test('review actions use the current task and protect aliased unsaved buffers', 
   let snapshot = { projects: [project], tasks: [preparing], requests: [] }, receive: (message: any) => Promise<void>;
   let saveSource: (document: { uri: ReturnType<typeof uri> }) => Promise<void> = async () => assert.fail('Save listener was not registered');
   let resolveChat: () => Promise<void> = async () => assert.fail('Conversation was not registered');
+  let chatOptions: { enableCommandUris?: string[] } | undefined;
   let publish = async () => {};
   const publishRoute = '/api/tasks/task/publish';
-  let requestReply = { status: 200, text: '{}' };
+  let requestReply: { status: number; text: string; headers?: Record<string, string> } = { status: 200, text: '{}' };
   const paperChoices: string[][] = [];
   const textDocuments: any[] = [];
   let manuscriptReads = 0, staleTaskPdf = false;
@@ -53,7 +55,7 @@ test('review actions use the current task and protect aliased unsaved buffers', 
     },
     async request(route: string) {
       requests.push(route);
-      return { status: requestReply.status, headers: {}, body: Buffer.from(requestReply.text).toString('base64') };
+      return { status: requestReply.status, headers: requestReply.headers ?? {}, body: Buffer.from(requestReply.text).toString('base64') };
     },
   };
   const git = {
@@ -73,7 +75,10 @@ test('review actions use the current task and protect aliased unsaved buffers', 
     TreeItem: class {}, TreeItemCollapsibleState: { Expanded: 2 }, ThemeIcon: class {}, Diagnostic: class {}, DiagnosticSeverity: {},
     extensions: { getExtension: () => ({ activate: async () => ({ getAPI: () => git }) }) },
     languages: { createDiagnosticCollection: () => ({ ...disposable(), clear() {}, set() {} }) },
-    commands: { registerCommand(name: string, fn: any) { commands.set(name, fn); return disposable(); }, async executeCommand(name: string, ...args: any[]) { return commands.get(name)?.(...args); } },
+    commands: { registerCommand(name: string, fn: any) { commands.set(name, fn); return disposable(); }, async executeCommand(name: string, ...args: any[]) {
+      if (name === 'vscode.open') openedResources.push(args[0].fsPath);
+      return commands.get(name)?.(...args);
+    } },
     workspace: {
       isTrusted: true, textDocuments, findFiles: async () => discovered.map(paper => uri(path.join(paper.project.path, paper.document))),
       createFileSystemWatcher: () => ({ ...disposable(), onDidCreate: disposable, onDidDelete: disposable, onDidChange: disposable }),
@@ -87,7 +92,8 @@ test('review actions use the current task and protect aliased unsaved buffers', 
         resolveChat = async () => provider.resolveWebviewView({
           visible: false, onDidDispose: disposable,
           webview: {
-            asWebviewUri: (uri: unknown) => uri,
+            set options(value: typeof chatOptions) { chatOptions = value; },
+            asWebviewUri: (resource: ReturnType<typeof uri>) => ({ toString: () => 'webview:' + resource.toString() }),
             onDidReceiveMessage: (listener: typeof receive) => { receive = listener; return disposable(); },
             postMessage: async (message: any) => responses.push(message),
           },
@@ -262,6 +268,26 @@ test('review actions use the current task and protect aliased unsaved buffers', 
     await extension.refresh();
     await commands.get('papilot.openTask')!(manual);
     await resolveChat();
+    const openResource = commands.get('papilot.openResource')!;
+    assert.deepEqual(chatOptions?.enableCommandUris, ['papilot.openResource']);
+    const attachment = '/api/projects/project/attachments/fixture', page = '/api/tasks/task/pages/view-0.png';
+    requests.length = 0;
+    requestReply = { status: 200, text: 'Image data', headers: { 'content-type': 'image/jpeg' } };
+    const thumbnail = await send({ type: 'resource', taskId: manual.id, route: attachment });
+    await openResource(attachment, manual.id);
+    assert.match(openedResources[0], /\.jpeg$/);
+    assert.equal(thumbnail.value, 'webview:' + pathToFileURL(openedResources[0]).href);
+    assert.equal(await fs.readFile(openedResources[0], 'utf8'), requestReply.text);
+    requestReply = { status: 200, text: 'Page data', headers: { 'content-type': 'image/png' } };
+    await openResource(page, manual.id);
+    assert.match(openedResources[1], /\.png$/);
+    await openResource('/api/tasks/local-task/pages/view-0.png', manual.id);
+    await openResource('/api/projects/another/attachments/fixture', manual.id);
+    await openResource(page, local.id);
+    assert.deepEqual(requests, [attachment, page], 'opening reuses the thumbnail cache and only fetches resources for the current conversation');
+    assert.equal(openedResources.length, 2);
+    assert.deepEqual(errors.splice(0), Array(3).fill('This resource is not available in this conversation.'));
+    requestReply = { status: 200, text: '{}' };
     const manualActions = [
       { type: 'api', route: '/api/tasks/task/manual-prompt' },
       { type: 'api', route: '/api/tasks/task/manual-reply', body: { reply: 'Revise the introduction' } },

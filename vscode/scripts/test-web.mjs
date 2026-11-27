@@ -16,6 +16,7 @@ app.get('/', async (_, reply) => reply.type('text/html').send('<!doctype html><h
 app.get('/task-pdf', async (_, reply) => reply.type('text/html').send('<!doctype html><html lang="en"><head><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="/paper/view.css"></head><body class="vscode-dark"><div id="root"></div><script type="module" src="/paper/view.js"></script></body></html>'));
 app.get('/fixture.pdf', async (_, reply) => reply.type('application/pdf').send(await fs.readFile(path.join(root, '../tests/fixtures/outline.pdf'))));
 app.get('/replacement.pdf', async (_, reply) => reply.type('application/pdf').send(await fs.readFile(path.join(root, '../examples/papilot-paper/preview/main.pdf'))));
+app.get('/thumbnail.svg', async (_, reply) => reply.type('image/svg+xml').send('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="white"/></svg>'));
 await app.listen({ host: '127.0.0.1', port: 0 });
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 360, height: 850 } });
@@ -25,6 +26,8 @@ const task = { id: 'first', projectId: 'project', document: 'paper/main.tex', na
 const second = { ...task, id: 'second', name: 'second', title: 'Revise the slides', document: 'slides/main.tex' };
 const runtime = { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'test-model', name: 'Test model', isDefault: true, efforts: ['low', 'medium'], defaultEffort: 'medium' }] };
 const snapshot = { version: 'test', projects: [{ id: 'project', name: 'Project', path: '/tmp/test', createdAt: 1 }], tasks: [task, second], requests: [], runtime, runtimes: { codex: runtime } };
+const attachment = { id: 'figure', projectId: task.projectId, name: 'figure.png', size: 1024, mime: 'image/png' };
+const attachmentRoute = `/api/projects/${task.projectId}/attachments/${attachment.id}`, pageRoute = `/api/tasks/${task.id}/pages/view-0.png`;
 let selected = task, failItems = false, taskPdf = false;
 const state = () => ({ type: 'state', view: { kind: 'chat' }, task: selected, snapshot, skills: [] });
 await page.exposeFunction('hostRequest', message => {
@@ -34,8 +37,15 @@ await page.exposeFunction('hostRequest', message => {
   };
   if (message.type === 'ready') return { state: state(), value: {} };
   if (message.type === 'command') return { value: null };
+  if (message.type === 'resource' && [attachmentRoute, pageRoute].includes(message.route)) return { value: '/thumbnail.svg' };
   if (message.type !== 'api') throw new Error('Unexpected bridge request: ' + message.type);
-  if (/\/items$/.test(message.route)) return failItems ? { error: 'Conversation unavailable' } : { value: { items: [{ id: selected.id + '-reply', taskId: selected.id, type: 'assistant', text: 'Ready to revise ' + selected.document, createdAt: 1 }] } };
+  if (/\/items$/.test(message.route)) return failItems ? { error: 'Conversation unavailable' } : { value: { items: [
+    ...(selected.id === task.id ? [
+      { id: 'user', taskId: task.id, type: 'user', text: 'See the attachment.', createdAt: 1, meta: { attachments: [attachment] } },
+      { id: 'page', taskId: task.id, type: 'pdf', text: '1', createdAt: 2, pages: [{ file: 'view-0.png', index: 0, label: '1' }] },
+    ] : []),
+    { id: selected.id + '-reply', taskId: selected.id, type: 'assistant', text: 'Ready to revise ' + selected.document, createdAt: 3 },
+  ] } };
   if (/\/messages$/.test(message.route)) return { value: selected };
   if (/\/model$/.test(message.route)) return { value: selected };
   if (/\/(?:prepare|reconcile)$/.test(message.route)) return { value: selected };
@@ -68,6 +78,11 @@ try {
   };
   await page.evaluate(colors => { for (const [key, value] of Object.entries(colors)) document.documentElement.style.setProperty('--vscode-' + key, value); }, colors);
   await expect(page.getByText('Ready to revise paper/main.tex')).toBeVisible();
+  for (const [link, route] of [[page.getByRole('link', { name: /figure\.png/ }), attachmentRoute], [page.locator('.tool-pages a'), pageRoute]]) {
+    await expect.poll(() => link.locator('img').evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
+    await expect(link).toHaveAttribute('href', `command:papilot.openResource?${encodeURIComponent(JSON.stringify([route, task.id]))}`, { timeout: 4000 });
+    await expect(link).not.toHaveAttribute('target', '_blank');
+  }
   const input = page.getByRole('textbox', { name: 'Instructions for Codex' });
   await input.fill('Keep this draft for the paper.');
   await select(second);

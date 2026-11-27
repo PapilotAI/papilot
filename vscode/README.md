@@ -7,6 +7,7 @@ Keep LaTeX papers and project code in the same editor. Papilot discovers papers 
 - Compile several papers in the same repository without changing Papilot's default document.
 - Read compilation diagnostics in Problems and the TeX log in Papilot's Output channel. Recoverable errors can accompany a PDF.
 - Add PDF notes, include them in tasks, and review the resulting changes with Papilot's existing viewer.
+- Open chat attachments and page thumbnails in VS Code editor tabs.
 - Browse earlier review rounds and return to the current changes in the same tab. Source navigation opens the task's current worktree.
 - Apply a reviewed task to the working tree, then stage and commit in VS Code's Source Control. Save edits in both the manuscript and the task worktree before applying.
 
