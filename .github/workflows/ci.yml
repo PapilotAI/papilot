@@ -496,13 +496,24 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             engine/package-lock.json
+            vscode/package-lock.json
       - run: npm ci
       - run: npm run setup:review
       - run: npm run typecheck
       - run: npm test
       - name: PDF diff engine tests
         run: npm --prefix engine test
-      - run: npm run build
+      - run: npm --prefix vscode ci
+      - name: Package the VS Code extension from a Node path with spaces
+        run: |
+          $node = (Get-Command node.exe).Source
+          $installation = Split-Path $node
+          $npm = Join-Path $installation 'node_modules/npm/bin/npm-cli.js'
+          $runtime = Join-Path $env:RUNNER_TEMP 'Papilot Node'
+          New-Item -ItemType Directory -Path $runtime | Out-Null
+          Copy-Item $node, (Join-Path $installation 'LICENSE') $runtime
+          $env:Path = "$runtime;$env:Path"
+          & (Join-Path $runtime 'node.exe') $npm --prefix vscode run package
 
   # Which desktop check a pull request or a push to main needs, from the files
   # it changes. Release calls CI for a tag and builds every installer itself.
