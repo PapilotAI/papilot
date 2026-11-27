@@ -369,6 +369,11 @@ body.resizing iframe{pointer-events:none}
 .tool-item summary::-webkit-details-marker{display:none}
 .tool-item summary:hover{background:var(--bg-muted)}
 .tool-item summary>svg{color:var(--text-3)}
+.tool-item[data-workflow="workflow_route"]>summary>svg,.tool-item[data-workflow="workflow_delegate"]>summary>svg{color:var(--accent)}
+.tool-item[data-workflow="workflow_race"]>summary>svg{color:var(--purple)}
+.tool-item[data-workflow="workflow_racer"]>summary>svg{color:var(--amber-text)}
+.tool-item[data-workflow="workflow_judge"]>summary>svg{color:var(--green)}
+.tool-item[data-workflow]>pre{border:1px solid color-mix(in srgb,var(--line) 80%,transparent);background:var(--bg-subtle)}
 .tool-label{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .tool-label>.tool-note{margin-left:8px;color:var(--text-3);font-size:11px}
 /* Commands are code; everything else reads as a sentence. */

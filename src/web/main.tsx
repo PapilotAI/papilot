@@ -41,7 +41,7 @@ import { BulkTaskDialog, type BulkTaskAction } from './bulk-task-dialog.tsx';
 import { ActionMenu } from './action-menu.tsx';
 import { Icon } from './icons.tsx';
 import { BrandIcon } from './brand-icon.tsx';
-import { toolIcon, toolNote, toolSentence, toolSummary } from './tool-calls.ts';
+import { toolIcon, toolNote, toolSentence, toolSummary, workflowKind } from './tool-calls.ts';
 import { ContextMeter } from './context-meter.tsx';
 import { ChangeSummary, FileDiffs } from './file-changes.tsx';
 import { UpdateNotice, versionLabel } from './update-notice.tsx';
@@ -353,9 +353,10 @@ const TimelineEntry = memo(function TimelineEntry({ item, agent, root, pages = t
     ? (steps?.findLast(step => step.type !== 'assistant' && toolState(step) === 'running') ?? steps?.findLast(step => step.type !== 'assistant'))
     : undefined;
   const note = latest ? toolLabel(latest, root) : toolNote(item);
-  const isWorkflowRow = item.type === 'tool' && (item.text.startsWith('workflow_delegate') || item.text.startsWith('workflow_race') || item.text.startsWith('workflow_racer'));
-  const stoppable = item.type === 'tool' && (item.text.startsWith('workflow_delegate') || item.text.startsWith('workflow_racer'));
-  const row = <details className={'tool-item ' + state} data-kind={item.type === 'tool' ? item.tool?.kind || 'tool' : item.type}><summary><Icon name={toolIcon(item)} size={14}/><span className="tool-label">{label}{note && <span className="tool-note">{note}</span>}</span>{state === 'running' ? <span className="spinner" aria-label={t('Running')}/> : state && <span className="tool-status">{item.status === 'declined' ? t('Declined') : state === 'stopped' ? t('Stopped') : t('Failed')}</span>}</summary>
+  const wfKind = workflowKind(item);
+  const isWorkflowRow = wfKind === 'workflow_delegate' || wfKind === 'workflow_race' || wfKind === 'workflow_racer';
+  const stoppable = wfKind === 'workflow_delegate' || wfKind === 'workflow_racer';
+  const row = <details className={'tool-item ' + state} data-kind={item.type === 'tool' ? item.tool?.kind || 'tool' : item.type} data-workflow={wfKind || undefined}><summary><Icon name={toolIcon(item)} size={14}/><span className="tool-label">{label}{note && <span className="tool-note">{note}</span>}</span>{state === 'running' ? <span className="spinner" aria-label={t('Running')}/> : state && <span className="tool-status">{item.status === 'declined' ? t('Declined') : state === 'stopped' ? t('Stopped') : t('Failed')}</span>}</summary>
     {item.type === 'files' ? <FileDiffs changes={item.changes} files={files}/> : detail && <pre>{detail}</pre>}
     {steps?.length && depth < 3 ? <div className="tool-group-items worker-steps">{steps.map(step => step.type === 'assistant'
       ? <div key={step.id} className="worker-message markdown"><Markdown text={step.text}/></div>

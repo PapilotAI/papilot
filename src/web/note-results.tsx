@@ -420,8 +420,12 @@ export function InlineNoteBar({ note }: { note: NoteResult }) {
       <div className="papilot-inline-tabs note-option-tabs" role="tablist" aria-label={t('Options for this note')} aria-busy={saving || previewBusy}>
         {data.options.map((option, index) => {
           const tabName = label(option.id, option.label);
+          const sep = tabName.indexOf(' · ');
+          const tabModel = sep > 0 ? tabName.slice(0, sep) : tabName;
+          const tabTag = sep > 0 ? tabName.slice(sep + 3) : '';
           const meta = option.meta;
           const lineTag = meta?.lineDelta ? `${meta.lineDelta > 0 ? '+' : '−'}${Math.abs(meta.lineDelta)}L` : '';
+          const lineDeltaKind = meta?.lineDelta ? (meta.lineDelta < 0 ? 'shorter' : 'longer') : undefined;
           const lineSpoken = meta?.lineDelta
             ? (meta.lineDelta > 0 ? tn(meta.lineDelta, '+{n} line', '+{n} lines') : tn(Math.abs(meta.lineDelta), '−{n} line', '−{n} lines'))
             : '';
@@ -446,15 +450,16 @@ export function InlineNoteBar({ note }: { note: NoteResult }) {
             target.scrollIntoView({ inline: 'nearest', block: 'nearest' });
           }}><span className="note-option-label">
             {meta?.recommended && <span className="papilot-opt-star" aria-hidden="true">★</span>}
-            {tabName}
+            <span className="papilot-opt-model">{tabModel}</span>
+            {tabTag && <><span className="papilot-opt-sep" aria-hidden="true">·</span><span className="papilot-opt-tag">{tabTag}</span></>}
             {(meta?.rigor === 'warn' || meta?.rigor === 'fail') && <span className="papilot-opt-warn" aria-hidden="true" title={t('Rigor caution')}>!</span>}
-            {lineTag && <span className="papilot-opt-delta" aria-hidden="true">{lineTag}</span>}
+            {lineTag && <span className="papilot-opt-delta" data-delta={lineDeltaKind} aria-hidden="true">{lineTag}</span>}
             {isSelected && previewBusy && <span className="papilot-inline-spinner" aria-hidden="true"/>}
           </span></button>;
         })}
       </div>
       {(saving || previewBusy) && <span className="sr-only" role="status">{saving ? t('Saving choice…') : t('Preparing this option’s PDF diff…')}</span>}
-      {showDetailRow && <div id={panelId} role="tabpanel" aria-labelledby={`${tabsId}-${selected}`} className="papilot-inline-note-detail">
+      {showDetailRow && <div id={panelId} role="tabpanel" aria-labelledby={`${tabsId}-${selected}`} className="papilot-inline-note-detail" data-recommended={active?.meta?.recommended ? 'true' : undefined} data-caution={hasRigorCaution ? 'true' : undefined}>
         {hasRigorCaution && <span className="papilot-inline-caution">{t('Rigor caution')}</span>}
         {active?.reason && <span className="papilot-inline-reason">{active.reason}</span>}
         {editing && <div className="papilot-inline-comment">

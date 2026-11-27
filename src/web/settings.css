@@ -326,25 +326,79 @@
 /* Papilot Writer: built in, based on Pi; its model providers. */
 .diagnostic-agent-subtitle{display:block;margin-top:2px;font-size:11px;font-weight:400;color:var(--text-3)}
 
-.collaboration-route .settings-effort { border-top: 0; padding-top: 0; }
-.collaboration-summary { align-items: center; }
-.settings-content .settings-row.collaboration-fast { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 12px; border-top: 0; padding-block: 4px 10px; }
-.collaboration-fast-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.collaboration-fast-label { font-size: 12px; color: var(--text-2); cursor: pointer; }
-.collaboration-fast-hint { margin: 0; font-size: 11px; color: var(--text-3); }
-.collaboration-racer-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.collaboration-racer-list { display: flex; flex-direction: column; gap: 8px; padding: 0 0 10px; }
-.collaboration-racer-row { border: 1px solid var(--line); border-radius: 7px; background: var(--bg-subtle, var(--bg)); }
-.collaboration-racer-row .settings-row { border-top: 0; padding: 8px 10px; }
-.collaboration-advanced { border-top: 1px solid var(--line); }
-.collaboration-advanced > summary { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 10px 0; font-size: 12px; font-weight: 500; color: var(--text-2); cursor: pointer; list-style: none; }
-.collaboration-advanced > summary::-webkit-details-marker { display: none; }
-.collaboration-advanced > summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .15s; flex: none; }
-.collaboration-advanced[open] > summary::before { transform: rotate(45deg); }
-.collaboration-advanced > summary:hover { color: var(--text); }
-.collaboration-advanced > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
-@media(prefers-reduced-motion:reduce){.collaboration-advanced > summary::before{transition:none}}
-@media(max-width:680px){.collaboration-advanced > summary{min-height:48px;font-size:14px}.collaboration-fast-label{font-size:13px}}
+/* Collaboration mode: visual 3-stage pipeline, role cards with brand marks, and compact race pool. */
+.collab-hero-head,.collab-slot-head{display:flex;align-items:flex-start;gap:10px}
+.collab-slot-copy{min-width:0;flex:1}
+.collab-hero-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;width:28px;height:28px;margin-block-start:1px;border-radius:7px;background:var(--accent-soft);color:var(--accent)}
+.collab-role-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;width:24px;height:24px;margin-block-start:1px;border-radius:6px;background:var(--bg-muted);color:var(--text-2)}
+.collab-role-badge[data-tone="quick"]{background:var(--amber-soft);color:var(--amber-text)}
+.collab-role-badge[data-tone="polish"]{background:var(--purple-soft);color:var(--purple)}
+.collab-role-badge[data-tone="rigorous"]{background:var(--green-soft);color:var(--green)}
+.collab-role-badge[data-tone="race"]{background:var(--accent-soft);color:var(--accent)}
+.collab-pipeline{margin:4px 0 12px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--bg-subtle)}
+.collab-pipeline-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-block-end:10px}
+.collab-pipeline-title{display:flex;align-items:center;gap:8px;min-width:0}
+.collab-mode-badge{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:10.5px;font-weight:500;line-height:1}
+.collab-mode-badge[data-custom="true"]{background:var(--purple-soft);color:var(--purple)}
+.collab-stages{display:grid;grid-template-columns:minmax(0,1.15fr) auto minmax(0,1.45fr) auto minmax(0,1.15fr);align-items:stretch;gap:6px}
+.collab-stage{display:flex;flex-direction:column;gap:6px;min-width:0;padding:8px 9px;border:1px solid color-mix(in srgb,var(--line) 85%,transparent);border-radius:7px;background:var(--bg)}
+.collab-stage-label{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:500;color:var(--text-3);letter-spacing:.01em}
+.collab-stage-models{display:flex;flex-wrap:wrap;align-items:center;gap:5px;min-width:0}
+.collab-race-chip-group{display:inline-flex;align-items:center;gap:4px;min-width:0;max-width:100%}
+.collab-vs{font-size:10px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em}
+.collab-model-pill{display:inline-flex;flex-wrap:wrap;align-items:center;gap:3px 5px;min-width:0;max-width:100%;padding:4px 7px;border:1px solid var(--line);border-radius:6px;background:var(--bg-subtle);font-size:11.5px;font-weight:500;color:var(--text);line-height:1.3}
+.collab-model-pill-main{display:inline-flex;align-items:center;gap:5px;min-width:0;max-width:100%}
+.collab-model-pill-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.collab-model-pill-tags{display:inline-flex;align-items:center;gap:3px;flex-wrap:wrap}
+.collab-micro-tag{flex:none;display:inline-flex;align-items:center;gap:2px;padding:1px 4px;border-radius:4px;background:var(--bg-muted);color:var(--text-2);font-size:10px;font-weight:500;line-height:1.3}
+.collab-micro-fast{background:var(--amber-soft);color:var(--amber-text)}
+.collab-stage-empty{font-size:11.5px;color:var(--text-3)}
+.collab-stage-arrow{display:inline-flex;align-items:center;justify-content:center;color:var(--text-3);flex:none}
+.collab-picker-wrap{display:inline-flex;align-items:center;gap:8px;flex:0 1 auto;max-width:100%;min-width:0}
+.collab-picker-wrap>.select-anchor{min-width:0;flex:0 1 auto}
+.settings-content .collab-picker-wrap>.select-anchor>.chip-select{width:min(260px,100%)}
+.collab-slot-tuning{margin:0 0 12px 34px;padding:8px 12px;border:1px solid color-mix(in srgb,var(--line) 80%,transparent);border-radius:var(--r-md);background:var(--bg-subtle)}
+.collab-slot-tuning>.settings-row{border-top:0;padding:4px 0}
+.collab-slot-tuning>.settings-row+.settings-row{margin-block-start:6px;padding-block-start:8px;border-top:1px solid color-mix(in srgb,var(--line) 75%,transparent)}
+.collaboration-route .settings-effort{border-top:0;padding-top:0}
+.settings-content .settings-row.collaboration-fast{display:flex;flex-direction:row;justify-content:space-between;align-items:center;gap:12px;border-top:0;padding-block:4px}
+.collaboration-fast-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.collaboration-fast-label{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:500;color:var(--text-2);cursor:pointer}
+.collaboration-fast-label>svg{color:var(--amber-text)}
+.collaboration-fast-hint{margin:0;font-size:11px;color:var(--text-3)}
+.collaboration-racer-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.collaboration-racer-list{display:flex;flex-direction:column;gap:8px;padding:0 0 12px}
+.collaboration-racer-row{border:1px solid var(--line);border-radius:var(--r-md);background:var(--bg);box-shadow:0 1px 2px rgb(0 0 0/.03);overflow:hidden}
+.collab-racer-head{display:flex;align-items:center;gap:8px;padding:8px 10px}
+.collab-racer-num{display:inline-grid;place-items:center;flex:none;width:20px;height:20px;border-radius:999px;background:var(--bg-muted);color:var(--text-2);font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}
+.collab-racer-head>.select-anchor{flex:1 1 auto;min-width:0;display:flex}
+.settings-content .collab-racer-head>.select-anchor>.chip-select{width:100%;max-width:none}
+.collab-racer-remove{flex:none;color:var(--text-3)}
+.collab-racer-remove:hover:not(:disabled){color:var(--red);background:var(--red-soft)}
+.collab-racer-tuning{padding:6px 12px 10px;border-top:1px solid color-mix(in srgb,var(--line) 75%,transparent);background:var(--bg-subtle)}
+.collab-racer-tuning>.settings-row{border-top:0;padding:4px 0}
+.collab-racer-tuning>.settings-row+.settings-row{margin-block-start:6px;padding-block-start:8px;border-top:1px solid color-mix(in srgb,var(--line) 75%,transparent)}
+.collaboration-advanced{border-top:1px solid var(--line)}
+.collaboration-advanced>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:42px;padding:8px 0;font-size:12px;font-weight:500;color:var(--text-2);cursor:pointer;list-style:none;transition:color .15s}
+.collaboration-advanced>summary::-webkit-details-marker{display:none}
+.collab-advanced-label{display:inline-flex;align-items:center;gap:6px}
+.collaboration-advanced>summary>svg:last-child{color:var(--text-3);transition:transform .15s}
+.collaboration-advanced[open]>summary>svg:last-child{transform:rotate(180deg)}
+.collaboration-advanced>summary:hover{color:var(--text)}
+.collaboration-advanced>summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:var(--r)}
+@media(prefers-reduced-motion:reduce){.collaboration-advanced>summary,.collaboration-advanced>summary>svg:last-child{transition:none}}
+@media(max-width:680px){
+  .collab-stages{grid-template-columns:1fr;gap:4px}
+  .collab-stage-arrow{padding:2px 0;transform:rotate(90deg)}
+  .collab-slot-tuning{margin-inline-start:0}
+  .collab-racer-remove{width:36px;height:36px}
+  .collaboration-advanced>summary{min-height:48px;font-size:14px}
+  .collaboration-fast-label{font-size:13px}
+}
+@media(max-width:480px){
+  .collab-picker-wrap{width:100%}
+  .collab-picker-wrap>.select-anchor{flex:1 1 auto;display:flex}
+}
 .zotero-key{display:grid;gap:6px}
 .settings-dialog .zotero-key>label{margin:0;font-size:13px;font-weight:500;color:var(--text)}
 .zotero-key-row{display:flex;align-items:stretch;gap:8px}

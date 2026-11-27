@@ -10,8 +10,29 @@ import { t, tn } from './i18n.ts';
 const ICONS: Record<string, string> = {
   read: 'paper', list: 'folder', outline: 'list', search: 'search', references: 'link', build: 'compile',
   lookup: 'library', web: 'globe', ask: 'question', chore: 'checklist', 'chore-end': 'checklist',
+  workflow_route: 'workflow', workflow_race: 'sparkles', workflow_racer: 'bolt', workflow_judge: 'scale', workflow_delegate: 'workflow',
 };
-const kindOf = (item: TimelineItem) => item.type === 'tool' ? item.tool?.kind || 'tool' : item.type;
+
+export function workflowKind(item: TimelineItem): string | null {
+  if (item.type !== 'tool' || !item.text) return null;
+  for (const prefix of ['workflow_route', 'workflow_race', 'workflow_racer', 'workflow_judge', 'workflow_delegate']) {
+    if (item.text === prefix || item.text.startsWith(`${prefix} `)) return prefix;
+  }
+  return null;
+}
+
+const workflowSuffix = (text: string, prefix: string) => {
+  const rest = text.slice(prefix.length).trim();
+  return rest.startsWith('·') ? rest.slice(1).trim() : rest;
+};
+
+const kindOf = (item: TimelineItem) => {
+  if (item.type !== 'tool') return item.type;
+  if (item.tool?.kind) return item.tool.kind;
+  const wf = workflowKind(item);
+  // Keep workflow_delegate grouped under generic tool summary for legacy worker timeline layout.
+  return wf && wf !== 'workflow_delegate' ? wf : 'tool';
+};
 const range = (lines: string) => lines.replace('-', '–');
 const pagesText = (pages?: number[]) => !pages?.length ? '' : pages[0] === pages[pages.length - 1] ? t('page {page}', { page: pages[0] }) : t('pages {first}–{last}', { first: pages[0], last: pages[pages.length - 1] });
 function sectionsText(place: ToolPlace) {
@@ -32,11 +53,23 @@ export function toolIcon(item: TimelineItem) {
   if (item.type === 'command') return 'terminal';
   if (item.type === 'files') return 'diff';
   if (item.type === 'pdf') return 'pdf';
+  const wf = workflowKind(item);
+  if (wf) return ICONS[wf];
   return ICONS[kindOf(item)] || 'tool';
 }
 
 /** One call as a sentence, or null when the agent did not say what it did. */
 export function toolSentence(item: TimelineItem): string | null {
+  const wf = workflowKind(item);
+  if (wf && wf !== 'workflow_delegate') {
+    const suffix = workflowSuffix(item.text, wf);
+    switch (wf) {
+      case 'workflow_route': return suffix ? t('Planned annotation routing · {target}', { target: suffix }) : t('Planned annotation routing');
+      case 'workflow_race': return suffix ? t('Raced models · {target}', { target: suffix }) : t('Raced models');
+      case 'workflow_racer': return suffix ? t('Candidate · {target}', { target: suffix }) : t('Race candidate');
+      case 'workflow_judge': return suffix ? t('Blind judge · {target}', { target: suffix }) : t('Blind judge');
+    }
+  }
   const tool = item.type === 'tool' ? item.tool : undefined;
   if (!tool) return null;
   const target = tool.target || '';
@@ -88,6 +121,10 @@ export function toolSummary(items: TimelineItem[], editedFiles: (item: TimelineI
       case 'web': return tn(n, 'read {n} webpage', 'read {n} webpages');
       case 'ask': return t('asked you a question');
       case 'chore': return t('used chore mode');
+      case 'workflow_route': return t('routed annotations');
+      case 'workflow_race': return tn(n, 'raced {n} annotation', 'raced {n} annotations');
+      case 'workflow_racer': return tn(n, 'ran {n} candidate', 'ran {n} candidates');
+      case 'workflow_judge': return tn(n, 'judged {n} race', 'judged {n} races');
       default: return tn(n, 'used {n} tool', 'used {n} tools');
     }
   };

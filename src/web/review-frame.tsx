@@ -55,7 +55,7 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     .pdf-strip{color-scheme:light}.pdf-strip img{filter:var(--pdf-filter)}
     :root[data-theme="dark"]:not([data-review-theme="light"]) :is(.pdf-focus-marks,.pdf-unit-marks){mix-blend-mode:screen}
     :root[data-theme="dark"][data-review-theme="light"] :is(.sheet,.paper-page,.document .change){
-      color-scheme:light;--bg:#ffffff;--bg-subtle:#fafafa;--bg-muted:#f5f5f5;--bg-hover:#f0f0f0;--bg-active:#e6e6e6;--canvas:#f5f5f5;--raised:#ffffff;
+      color-scheme:light;--bg:#ffffff;--bg-subtle:#fafafa;--bg-muted:#f5f5f5;--bg-hover:#f0f0f0;--bg-active:#e6e6e6;--canvas:#f5f5f5;--raised:#ffffff;--thumb:#ffffff;
       --text:#1e1e1e;--text-2:#5e5e5e;--text-3:#8f8f8f;
       --line:#e6e6e6;--line-strong:#d9d9d9;--line-hover:#c4c4c4;
       --accent:#0b8af0;--accent-hover:#0a76d1;--accent-soft:#e5f3ff;--accent-line:#b3dbff;--primary:#0b8af0;--primary-hover:#0a76d1;

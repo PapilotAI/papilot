@@ -13,8 +13,10 @@ import {
   type CollaborationWorkerAgent,
   type RuntimeStatus,
 } from '../shared.ts';
+import { BrandIcon } from './brand-icon.tsx';
 import { ChipSelect, type SelectOption } from './chip-select.tsx';
 import { EffortSlider } from './effort-slider.tsx';
+import { Icon } from './icons.tsx';
 import { errorText, t } from './i18n.ts';
 
 export type CollaborationPatch = {
@@ -35,20 +37,43 @@ export interface CollaborationSettingsProps {
 }
 
 const roleText = (role: CollaborationRole) => ({
-  quick: { name: t('Quick & routing'), detail: t('Fast dispatcher and simple mechanical edits') },
-  polish: { name: t('Polishing'), detail: t('Natural, readable prose and flow') },
-  rigorous: { name: t('Rigorous & judging'), detail: t('Math, formal claims, blind race judging and conflict resolution') },
+  quick: { name: t('Quick & routing'), detail: t('Fast dispatcher and simple mechanical edits'), icon: 'bolt', tone: 'quick' },
+  polish: { name: t('Polishing'), detail: t('Natural, readable prose and flow'), icon: 'sparkles', tone: 'polish' },
+  rigorous: { name: t('Rigorous & judging'), detail: t('Math, formal claims, blind race judging and conflict resolution'), icon: 'scale', tone: 'rigorous' },
 })[role];
 
 const AUTO_VALUE = '__auto__';
 
-function formatRoute(route: CollaborationRoute | null | undefined, runtimes: Partial<Record<AgentId, RuntimeStatus>>): string {
-  if (!route) return t('Not configured');
+function routeParts(route: CollaborationRoute | null | undefined, runtimes: Partial<Record<AgentId, RuntimeStatus>>) {
+  if (!route) return null;
   const runtime = runtimes[route.agent];
   const model = route.model ? runtime?.models.find(item => item.id === route.model) : runtime?.models.find(item => item.isDefault);
   const name = model?.name || route.model || t('Default model');
-  const extras = [route.effort, route.serviceTier && route.serviceTier !== 'default' ? t('Fast') : null].filter(Boolean);
-  return `${AGENT_NAMES[route.agent]} · ${name}${extras.length ? ` (${extras.join(', ')})` : ''}`;
+  const fast = Boolean(route.serviceTier && route.serviceTier !== 'default');
+  return { agent: route.agent, agentName: AGENT_NAMES[route.agent], name, effort: route.effort || null, fast };
+}
+
+function formatRoute(route: CollaborationRoute | null | undefined, runtimes: Partial<Record<AgentId, RuntimeStatus>>): string {
+  const parts = routeParts(route, runtimes);
+  if (!parts) return t('Not configured');
+  const extras = [parts.effort, parts.fast ? t('Fast') : null].filter(Boolean);
+  return `${parts.agentName} · ${parts.name}${extras.length ? ` (${extras.join(', ')})` : ''}`;
+}
+
+function ModelChip({ route, runtimes }: { route: CollaborationRoute | null | undefined; runtimes: Partial<Record<AgentId, RuntimeStatus>> }) {
+  const parts = routeParts(route, runtimes);
+  if (!parts) return <span className="collab-stage-empty">{t('Not configured')}</span>;
+  const hasTags = Boolean(parts.effort || parts.fast);
+  return <span className="collab-model-pill" title={formatRoute(route, runtimes)}>
+    <span className="collab-model-pill-main">
+      <BrandIcon name={parts.agent} size={13}/>
+      <span className="collab-model-pill-name">{parts.name}</span>
+    </span>
+    {hasTags && <span className="collab-model-pill-tags">
+      {parts.effort && <span className="collab-micro-tag">{parts.effort}</span>}
+      {parts.fast && <span className="collab-micro-tag collab-micro-fast"><Icon name="bolt" size={10}/>{t('Fast')}</span>}
+    </span>}
+  </span>;
 }
 
 export function CollaborationSettings({ enabled, online, runtimes, load, save }: CollaborationSettingsProps) {
@@ -148,6 +173,8 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
     slotKey: string,
     title: string,
     detail: string,
+    icon: string,
+    tone: string,
     route: CollaborationRoute | null,
     resolvedRoute: CollaborationRoute | null,
     onUpdate: (next: CollaborationRoute | null) => void,
@@ -157,48 +184,61 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
     const autoText = allowAuto ? (resolvedRoute ? `${t('Auto')} (${formatRoute(resolvedRoute, runtimes)})` : t('Auto')) : undefined;
     const options = modelOptions(route, autoText, readOnlyOnly);
     const value = route ? JSON.stringify([route.agent, route.model || '']) : AUTO_VALUE;
+    const effective = route || resolvedRoute;
     const runtime = route ? runtimes[route.agent] : undefined;
     const model = route ? (route.model ? runtime?.models.find(item => item.id === route.model) : runtime?.models.find(item => item.isDefault)) : undefined;
     const display = route ? formatRoute(route, runtimes) : autoText || t('Auto');
+    const hasEffort = Boolean(route && model?.efforts.length);
     const hasFast = Boolean(route && route.agent === 'codex' && model?.fastMode);
     const fastOn = Boolean(hasFast && route?.serviceTier && route.serviceTier !== 'default');
     const fastId = `${id}-${slotKey}-fast`;
     const fastDesc = model?.fastMode?.description || '';
 
     return <div key={slotKey} className="collaboration-route" data-role={slotKey} role="group" aria-labelledby={`${id}-${slotKey}`}>
-      <div className="settings-row settings-choice">
-        <div className="settings-text"><span className="settings-name" id={`${id}-${slotKey}`}>{title}</span><p>{detail}</p></div>
-        <ChipSelect
-          className="settings-model-select"
-          label={title}
-          display={display}
-          value={value}
-          options={options}
-          disabled={!online || saving}
-          onChange={chosen => {
-            if (chosen === AUTO_VALUE) { onUpdate(null); return; }
-            const [agent, modelId] = JSON.parse(chosen) as [CollaborationWorkerAgent, string];
-            const nextRuntime = runtimes[agent];
-            const nextModel = modelId ? nextRuntime?.models.find(m => m.id === modelId) : nextRuntime?.models.find(m => m.isDefault);
-            onUpdate({
-              agent,
-              model: modelId || null,
-              effort: nextModel?.defaultEffort || null,
-              ...(agent === 'codex' && nextModel?.fastMode ? { serviceTier: nextModel.fastMode.serviceTier } : {}),
-            });
-          }}
-        />
-      </div>
-      {route && model?.efforts.length ? <div className="settings-row settings-effort">
-        <EffortSlider efforts={model.efforts} value={route.effort || ''} fallback={model.defaultEffort} onChange={effort => onUpdate({ ...route, effort: effort || null })}/>
-      </div> : null}
-      {route && hasFast && <div className="settings-row settings-toggle collaboration-fast">
-        <div className="collaboration-fast-text">
-          <label className="collaboration-fast-label" htmlFor={fastId}>{t('Fast mode')}</label>
-          {fastDesc && <p id={`${fastId}-desc`} className="collaboration-fast-hint">{fastDesc}</p>}
+      <div className="settings-row settings-choice collab-slot-row">
+        <div className="settings-text collab-slot-head">
+          <span className="collab-role-badge" data-tone={tone} aria-hidden="true"><Icon name={icon} size={13}/></span>
+          <div className="collab-slot-copy">
+            <span className="settings-name" id={`${id}-${slotKey}`}>{title}</span>
+            <p>{detail}</p>
+          </div>
         </div>
-        <input id={fastId} type="checkbox" className="switch" role="switch" aria-describedby={fastDesc ? `${fastId}-desc` : undefined} checked={fastOn} disabled={!online || saving}
-          onChange={event => onUpdate({ ...route, serviceTier: event.target.checked ? model!.fastMode!.serviceTier : 'default' })}/>
+        <div className="collab-picker-wrap">
+          {effective && <BrandIcon name={effective.agent} size={15}/>}
+          <ChipSelect
+            className="settings-model-select"
+            label={title}
+            display={display}
+            value={value}
+            options={options}
+            disabled={!online || saving}
+            onChange={chosen => {
+              if (chosen === AUTO_VALUE) { onUpdate(null); return; }
+              const [agent, modelId] = JSON.parse(chosen) as [CollaborationWorkerAgent, string];
+              const nextRuntime = runtimes[agent];
+              const nextModel = modelId ? nextRuntime?.models.find(m => m.id === modelId) : nextRuntime?.models.find(m => m.isDefault);
+              onUpdate({
+                agent,
+                model: modelId || null,
+                effort: nextModel?.defaultEffort || null,
+                ...(agent === 'codex' && nextModel?.fastMode ? { serviceTier: nextModel.fastMode.serviceTier } : {}),
+              });
+            }}
+          />
+        </div>
+      </div>
+      {(hasEffort || hasFast) && <div className="collab-slot-tuning">
+        {hasEffort && route && model && <div className="settings-row settings-effort">
+          <EffortSlider efforts={model.efforts} value={route.effort || ''} fallback={model.defaultEffort} onChange={effort => onUpdate({ ...route, effort: effort || null })}/>
+        </div>}
+        {route && hasFast && <div className="settings-row settings-toggle collaboration-fast">
+          <div className="collaboration-fast-text">
+            <label className="collaboration-fast-label" htmlFor={fastId}><Icon name="bolt" size={12}/>{t('Fast mode')}</label>
+            {fastDesc && <p id={`${fastId}-desc`} className="collaboration-fast-hint">{fastDesc}</p>}
+          </div>
+          <input id={fastId} type="checkbox" className="switch" role="switch" aria-describedby={fastDesc ? `${fastId}-desc` : undefined} checked={fastOn} disabled={!online || saving}
+            onChange={event => onUpdate({ ...route, serviceTier: event.target.checked ? model!.fastMode!.serviceTier : 'default' })}/>
+        </div>}
       </div>}
     </div>;
   }
@@ -248,23 +288,49 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
   const isEnabled = state?.enabled ?? enabled;
 
   return <div className="settings-card collaboration-settings">
-    <div className="settings-row settings-toggle">
-      <div className="settings-text">
-        <label className="settings-name" htmlFor={id}>{t('Enable collaboration mode')}</label>
-        <p id={id + '-detail'}>{t('Routes simple edits to a fast model and races subjective or technical annotations across connected models, with a rigorous judge picking the default proposal.')}</p>
+    <div className="settings-row settings-toggle collab-hero-row">
+      <div className="settings-text collab-hero-head">
+        <span className="collab-hero-icon" aria-hidden="true"><BrandIcon name="collaboration" size={16}/></span>
+        <div className="collab-slot-copy">
+          <label className="settings-name" htmlFor={id}>{t('Enable collaboration mode')}</label>
+          <p id={id + '-detail'}>{t('Routes simple edits to a fast model and races subjective or technical annotations across connected models, with a rigorous judge picking the default proposal.')}</p>
+        </div>
       </div>
       <input id={id} type="checkbox" className="switch" role="switch" aria-describedby={id + '-detail'} checked={isEnabled} disabled={!online || saving} onChange={event => void change({ enabled: event.target.checked })}/>
     </div>
 
     {isEnabled && state && <>
-      {resolved && <div className="settings-row collaboration-summary">
-        <div className="settings-text">
-          <span className="settings-name">{t('Active team')}</span>
-          <p>
-            {t('Router')}: {formatRoute(resolved.router, runtimes)} · {t('Race')}: {resolvedRacers.length >= 2 ? resolvedRacers.map(r => formatRoute(r, runtimes)).join(' vs ') : t('Needs 2+ models')} · {t('Judge')}: {formatRoute(resolved.judge, runtimes)}
-          </p>
+      {resolved && <div className="collaboration-summary collab-pipeline">
+        <div className="collab-pipeline-head">
+          <div className="collab-pipeline-title">
+            <span className="settings-name">{t('Active team')}</span>
+            <span className="collab-mode-badge" data-custom={hasCustom ? 'true' : undefined}>{hasCustom ? t('Custom') : t('Auto')}</span>
+          </div>
+          {hasCustom && <button type="button" className="button secondary compact" disabled={!online || saving} onClick={() => void change({ reset: true })}>{t('Reset to auto')}</button>}
         </div>
-        {hasCustom && <button type="button" className="button secondary compact" disabled={!online || saving} onClick={() => void change({ reset: true })}>{t('Reset to auto')}</button>}
+        <div className="collab-stages">
+          <div className="collab-stage">
+            <span className="collab-stage-label"><Icon name="bolt" size={11}/>{t('Router')}</span>
+            <div className="collab-stage-models"><ModelChip route={resolved.router} runtimes={runtimes}/></div>
+          </div>
+          <span className="collab-stage-arrow" aria-hidden="true"><Icon name="arrowRight" size={13}/></span>
+          <div className="collab-stage collab-stage-race">
+            <span className="collab-stage-label"><Icon name="sparkles" size={11}/>{t('Race')}</span>
+            <div className="collab-stage-models">
+              {resolvedRacers.length >= 2 ? resolvedRacers.map((r, index) => (
+                <span key={`${r.agent}:${r.model || ''}:${index}`} className="collab-race-chip-group">
+                  {index > 0 && <span className="collab-vs" aria-hidden="true">vs</span>}
+                  <ModelChip route={r} runtimes={runtimes}/>
+                </span>
+              )) : <span className="collab-stage-empty">{t('Needs 2+ models')}</span>}
+            </div>
+          </div>
+          <span className="collab-stage-arrow" aria-hidden="true"><Icon name="arrowRight" size={13}/></span>
+          <div className="collab-stage">
+            <span className="collab-stage-label"><Icon name="scale" size={11}/>{t('Judge')}</span>
+            <div className="collab-stage-models"><ModelChip route={resolved.judge} runtimes={runtimes}/></div>
+          </div>
+        </div>
       </div>}
 
       {COLLABORATION_ROLES.map(role => {
@@ -273,6 +339,8 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
           role,
           text.name,
           text.detail,
+          text.icon,
+          text.tone,
           state.routes[role],
           resolved?.routes[role] || null,
           next => void change({ routes: { ...currentConfig().routes, [role]: next } }),
@@ -280,15 +348,18 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
       })}
 
       <div className="collaboration-route collaboration-racers" data-role="racers" role="group" aria-labelledby={`${id}-racers`}>
-        <div className="settings-row settings-choice">
-          <div className="settings-text">
-            <span className="settings-name" id={`${id}-racers`}>{t('Race pool')}</span>
-            <p>{racers.length >= 2 ? t('Models competing in parallel on raced annotations.') : racers.length === 1 ? t('Add a second model to race annotations in parallel.') : resolvedRacers.length ? `${t('Auto')}: ${resolvedRacers.map(r => formatRoute(r, runtimes)).join(' vs ')}` : t('Connect at least two models to race annotations in parallel.')}</p>
+        <div className="settings-row settings-choice collab-slot-row">
+          <div className="settings-text collab-slot-head">
+            <span className="collab-role-badge" data-tone="race" aria-hidden="true"><Icon name="layers" size={13}/></span>
+            <div className="collab-slot-copy">
+              <span className="settings-name" id={`${id}-racers`}>{t('Race pool')}</span>
+              <p>{racers.length >= 2 ? t('Models competing in parallel on raced annotations.') : racers.length === 1 ? t('Add a second model to race annotations in parallel.') : resolvedRacers.length ? `${t('Auto')}: ${resolvedRacers.map(r => formatRoute(r, runtimes)).join(' vs ')}` : t('Connect at least two models to race annotations in parallel.')}</p>
+            </div>
           </div>
           <div className="collaboration-racer-actions">
             {racers.length > 0 && <button type="button" className="button secondary compact" disabled={!online || saving} onClick={() => void change({ racers: [] })}>{t('Auto')}</button>}
             {(racers.length ? racers.length : resolvedRacers.length) < MAX_COLLABORATION_RACERS && offered.length > 0 && (
-              <button type="button" className="button secondary compact" disabled={!online || saving} onClick={addRacer}>{t('Add model')}</button>
+              <button type="button" className="button secondary compact" disabled={!online || saving} onClick={addRacer}><Icon name="plus" size={12}/>{t('Add model')}</button>
             )}
           </div>
         </div>
@@ -298,6 +369,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
             const value = JSON.stringify([racer.agent, racer.model || '']);
             const runtime = runtimes[racer.agent];
             const model = racer.model ? runtime?.models.find(item => item.id === racer.model) : runtime?.models.find(item => item.isDefault);
+            const hasEffort = Boolean(model?.efforts.length);
             const hasFast = Boolean(racer.agent === 'codex' && model?.fastMode);
             const fastOn = Boolean(hasFast && racer.serviceTier && racer.serviceTier !== 'default');
             const fastId = `${id}-racer-${index}-fast`;
@@ -312,7 +384,9 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
               void change({ racers: list });
             };
             return <div key={index} className="collaboration-racer-row" role="group" aria-label={t('Race model {n}', { n: index + 1 })}>
-              <div className="settings-row settings-choice">
+              <div className="collab-racer-head">
+                <span className="collab-racer-num" aria-hidden="true">{index + 1}</span>
+                <BrandIcon name={racer.agent} size={15}/>
                 <ChipSelect
                   className="settings-model-select"
                   label={t('Race model {n}', { n: index + 1 })}
@@ -327,18 +401,20 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
                     updateRacer({ agent, model: modelId || null, effort: nextModel?.defaultEffort || null, ...(agent === 'codex' && nextModel?.fastMode ? { serviceTier: nextModel.fastMode.serviceTier } : {}) });
                   }}
                 />
-                <button type="button" className="button secondary compact" aria-label={t('Remove race model {n}', { n: index + 1 })} disabled={!online || saving} onClick={removeRacer}>{t('Remove')}</button>
+                <button type="button" className="icon-button collab-racer-remove" aria-label={t('Remove race model {n}', { n: index + 1 })} title={t('Remove')} disabled={!online || saving} onClick={removeRacer}><Icon name="close" size={14}/></button>
               </div>
-              {model?.efforts.length ? <div className="settings-row settings-effort">
-                <EffortSlider efforts={model.efforts} value={racer.effort || ''} fallback={model.defaultEffort} onChange={effort => updateRacer({ ...racer, effort: effort || null })}/>
-              </div> : null}
-              {hasFast && <div className="settings-row settings-toggle collaboration-fast">
-                <div className="collaboration-fast-text">
-                  <label className="collaboration-fast-label" htmlFor={fastId}>{t('Fast mode')}</label>
-                  {fastDesc && <p id={`${fastId}-desc`} className="collaboration-fast-hint">{fastDesc}</p>}
-                </div>
-                <input id={fastId} type="checkbox" className="switch" role="switch" aria-describedby={fastDesc ? `${fastId}-desc` : undefined} checked={fastOn} disabled={!online || saving}
-                  onChange={event => updateRacer({ ...racer, serviceTier: event.target.checked ? model!.fastMode!.serviceTier : 'default' })}/>
+              {(hasEffort || hasFast) && <div className="collab-racer-tuning">
+                {hasEffort && model && <div className="settings-row settings-effort">
+                  <EffortSlider efforts={model.efforts} value={racer.effort || ''} fallback={model.defaultEffort} onChange={effort => updateRacer({ ...racer, effort: effort || null })}/>
+                </div>}
+                {hasFast && <div className="settings-row settings-toggle collaboration-fast">
+                  <div className="collaboration-fast-text">
+                    <label className="collaboration-fast-label" htmlFor={fastId}><Icon name="bolt" size={12}/>{t('Fast mode')}</label>
+                    {fastDesc && <p id={`${fastId}-desc`} className="collaboration-fast-hint">{fastDesc}</p>}
+                  </div>
+                  <input id={fastId} type="checkbox" className="switch" role="switch" aria-describedby={fastDesc ? `${fastId}-desc` : undefined} checked={fastOn} disabled={!online || saving}
+                    onChange={event => updateRacer({ ...racer, serviceTier: event.target.checked ? model!.fastMode!.serviceTier : 'default' })}/>
+                </div>}
               </div>}
             </div>;
           })}
@@ -346,11 +422,16 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
       </div>
 
       <details className="collaboration-advanced">
-        <summary>{t('Advanced overrides')}</summary>
+        <summary>
+          <span className="collab-advanced-label"><Icon name="settings" size={13}/>{t('Advanced overrides')}</span>
+          <Icon name="chevronDown" size={14}/>
+        </summary>
         {renderSlotControls(
           'router',
           t('Router'),
           t('Fast read-only dispatcher that assigns or races each annotation cluster.'),
+          'network',
+          'quick',
           state.router ?? null,
           resolved?.router || null,
           next => void change({ router: next }),
@@ -361,6 +442,8 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
           'judge',
           t('Judge'),
           t('Rigorous read-only evaluator that blind-compares race candidates and catches claim drift.'),
+          'shield',
+          'rigorous',
           state.judge ?? null,
           resolved?.judge || null,
           next => void change({ judge: next }),
