@@ -18,6 +18,14 @@ papilot demo   # add the example paper, then start
 papilot        # start
 ```
 
+Desktop installers are available on [GitHub Releases](https://github.com/PapilotAI/papilot/releases/latest) and through platform package managers:
+
+- **macOS (Homebrew tap):** `brew tap PapilotAI/tap && brew trust PapilotAI/tap && brew install --cask PapilotAI/tap/papilot` (ad hoc signed; allow in System Settings → Privacy & Security on first launch)
+- **Windows (Scoop / WinGet):** `scoop bucket add papilot https://github.com/PapilotAI/scoop-bucket && scoop install papilot/papilot` or `winget install PapilotAI.Papilot` (see [Windows setup](windows.md))
+- **Debian / Ubuntu (APT):** official signed repository at `https://papilot.ai/apt` (see [APT setup](apt.md))
+- **Arch Linux (AUR):** `paru -S papilot-bin` (see [Arch Linux setup](aur.md))
+- **Nix:** `nix run github:PapilotAI/papilot -- demo` (see [Nix setup](nix.md))
+
 On Windows, install [Node.js](https://nodejs.org) 22.22 or newer, [Git for Windows](https://git-scm.com/download/win), and a TeX distribution such as [MiKTeX](https://miktex.org) or [TeX Live](https://tug.org/texlive). The same `npm install -g papilot` command then works in PowerShell or CMD. If `papilot doctor` cannot find `latexmk`, add your TeX distribution's `bin` folder to `PATH`. The background service command `papilot service install` is macOS-only; on Windows, run `papilot` from a terminal or add it to the Task Scheduler.
 
 The `papilot` command keeps its state in `~/.papilot`; `--data <folder>` (or `PAPILOT_DATA`) chooses another folder and `--port <number>` (or `PAPILOT_PORT`) another port. `papilot --help` lists every option.

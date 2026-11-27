@@ -1,0 +1,43 @@
+name: Publish Homebrew tap
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+    secrets:
+      PACKAGES_DISPATCH_TOKEN:
+        required: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable tag to dispatch
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.repository == 'PapilotAI/papilot'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch PapilotAI/homebrew-tap sync
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          PACKAGES_DISPATCH_TOKEN: ${{ secrets.PACKAGES_DISPATCH_TOKEN }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          if [[ -n "$PACKAGES_DISPATCH_TOKEN" ]]; then
+            curl -fsS -X POST \
+              -H "Authorization: Bearer $PACKAGES_DISPATCH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              https://api.github.com/repos/PapilotAI/homebrew-tap/dispatches \
+              -d "{\"event_type\":\"papilot-release\",\"client_payload\":{\"tag\":\"$RELEASE_TAG\"}}"
+            echo "Dispatched immediate Homebrew tap sync for $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No PACKAGES_DISPATCH_TOKEN configured; PapilotAI/homebrew-tap will pick up $RELEASE_TAG automatically on its scheduled sync (every 30 minutes)." >> "$GITHUB_STEP_SUMMARY"
+          fi
