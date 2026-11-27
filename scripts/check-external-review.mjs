@@ -37,7 +37,8 @@ try {
       const selected = { id: 'note-to-share', projectId: project.id, key: 'fixture-pdf', page: 0, rect: [1, 1, 5, 4], createdAt: 1,
         comment: 'Explain the measured effect.', quote: 'The effect is really small.', source: { file: settings.files[1], lines: [2, 2] } };
       let annotations = [];
-      let loadingError = true, fetched = false, decided = false, readReceipt = 0, composerId = '', lastPromptChannel = '', composerPublications = 0;
+      let loadingError = true, fetched = false, decided = false, readReceipt = 0, composerId = '', lastPromptChannel = '', composerPublications = 0, composerPrompts = 0;
+      let holdProPrompt = false, releaseProPrompt;
       const proposalFor = id => ({ ...proposal, requestId: id, changes: id === composerId ? proposal.changes.map(change => ({ ...change, file: selected.source.file })) : proposal.changes });
       await page.addInitScript(language => {
         localStorage.setItem('papilot:language', language);
@@ -68,6 +69,7 @@ try {
             assert.match(incomingId, /^[0-9a-f-]{36}$/);
             assert.deepEqual(checkedNotes, [selected.id]);
             created.request.notes = [{ comment: selected.comment, quote: selected.quote, page: 1, source: selected.source }];
+            created.fromComposerAt = 3;
             composerId = incomingId;
             state.externalReviewConversations = [{ id: incomingId, projectId: project.id, title: question, createdAt: 3 }];
           }
@@ -76,12 +78,17 @@ try {
         if (pathname.includes('/external-review/')) {
           if (pathname.endsWith('/github')) {
             assert.deepEqual(body, { remote: 'origin', revision: 'remote-v1' });
-            if (id === composerId && ++composerPublications === 1) return error('Temporary Git publishing problem');
+            if (id === composerId) composerPublications++;
             review.git = { branch: `papilot-review/${id}`, proposalFile: 'proposal.json', remote, request: { file: requestFile, commit: requestCommit, url: requestUrl } }; return json(review);
           }
           if (pathname.endsWith('/page')) { review.page = body.url; return json(review); }
           if (pathname.endsWith('/prompt')) {
             lastPromptChannel = url.searchParams.get('via');
+            if (id === composerId && ++composerPrompts === 1) return error('Temporary prompt problem');
+            if (id === composerId && holdProPrompt) {
+              await new Promise(resolve => { releaseProPrompt = resolve; });
+              return json({ text: 'A stale prompt' }).catch(() => undefined);
+            }
             return json({ text: `${lastPromptChannel === 'git' ? review.git.branch : lastPromptChannel === 'chat' ? 'Reply in chat' : review.page ?? 'Create a private Page'}\n${base}` });
           }
           if (pathname.endsWith('/proposal')) {
@@ -138,6 +145,7 @@ try {
       await expect(dialog.locator('input[name="files"]')).toHaveCount(0);
       await dialog.getByLabel(text('What should the reviewer check?')).fill('Clarify the first result.');
       await button('Create review request').click(); await expect(heading('Send to reviewer')).toBeFocused();
+      await expect(dialog.getByRole('group', { name: text('Share via'), exact: true })).toBeVisible();
       await expect(button('Publish review branch')).toHaveAccessibleDescription(text('Publishing sends the Git commit, its history, and the review request with selected PDF notes to this remote.'));
       await button('Publish review branch').click(); await expect(button('Copy Git prompt')).toBeVisible();
       await expect(dialog.getByRole('link', { name: text('Review request'), exact: true })).toHaveAttribute('href', requestUrl);
@@ -206,8 +214,8 @@ try {
       await composer.getByRole('button', { name: text('Start task') }).click();
       const conversation = page.locator('.external-conversation');
       await expect(conversation.getByText(question)).toBeVisible();
-      await expect(conversation.locator('.external-base')).toBeHidden();
-      await expect(conversation.getByLabel(text('Git remote'))).toBeHidden();
+      await expect(conversation.locator('.external-base')).toHaveCount(0);
+      await expect(conversation.locator('input[type="radio"], select')).toHaveCount(0);
       await expect(conversation.getByLabel(text('Reply from ChatGPT'))).toBeHidden();
       assert.ok(composerId && !settings.reviews[0].git, 'Starting the task does not publish files');
       await page.reload(); await expect(conversation.getByText(question)).toBeVisible();
@@ -216,34 +224,24 @@ try {
       await conversation.locator('summary').filter({ hasText: text('PDF notes') }).click();
       await expect(conversation.getByText(selected.comment)).toBeVisible();
       await expect(conversation.getByText('Keep this note private.')).toHaveCount(0);
-      const publish = conversation.getByRole('button', { name: text('Publish and copy prompt') });
-      await expect(publish).toHaveAccessibleDescription(text('Shares the Git commit, its history, and selected PDF notes with {repository}.').replace('{repository}', remote.repository));
-      await publish.click();
-      await expect(conversation.getByRole('status')).toContainText('Temporary Git publishing problem');
-      await publish.click();
+      const copyPrompt = conversation.getByRole('button', { name: text('Copy prompt'), exact: true });
       await expect(conversation.getByRole('link', { name: text('Open ChatGPT') })).toBeVisible();
-      await expect.poll(() => lastPromptChannel).toBe('git');
+      await copyPrompt.click();
+      await expect(conversation.getByRole('status')).toContainText('Temporary prompt problem');
+      await copyPrompt.click();
+      await expect.poll(() => lastPromptChannel).toBe('chat');
       if (language === 'en') await expect(conversation.getByRole('status')).toContainText(text('Copied'));
       else await expect(conversation.getByRole('textbox', { name: text('Copy prompt') })).toBeFocused();
+      assert.equal(composerPublications, 0);
       await shot('composer-prompt');
-      await conversation.getByText(text('Review details'), { exact: true }).press('Enter');
-      await expect(conversation.locator('.external-base').getByText(settings.files[1])).toBeVisible();
-      await expect(conversation.getByRole('link', { name: text('Review request'), exact: true })).toBeVisible();
-      await conversation.getByLabel(text('Chat only'), { exact: true }).check();
-      await conversation.getByRole('button', { name: text('Copy prompt'), exact: true }).click();
-      await expect.poll(() => lastPromptChannel).toBe('chat');
-      assert.equal(composerPublications, 2);
-      await conversation.getByLabel(text('ChatGPT Space Page'), { exact: true }).check();
-      await expect(conversation.getByLabel(text('Space Page link (optional)'))).toBeVisible();
-      const savedGit = settings.reviews[0].git;
-      delete settings.reviews[0].git; settings.remotes = [];
+      settings.reviews[0].git = { branch: `papilot-review/${composerId}`, proposalFile: 'proposal.json', remote };
+      settings.reviews[0].page = 'https://chatgpt.com/space/page_abc123';
       await page.reload();
-      await conversation.getByRole('button', { name: text('Copy prompt'), exact: true }).click();
+      await expect(conversation.locator('input[type="radio"], select')).toHaveCount(0);
+      lastPromptChannel = '';
+      await copyPrompt.click();
       await expect.poll(() => lastPromptChannel).toBe('chat');
-      assert.equal(composerPublications, 2, 'Without a remote, the default prompt stays in ChatGPT');
-      settings.reviews[0].git = savedGit; settings.remotes = [remote];
-      await page.reload();
-      await expect(conversation.getByRole('button', { name: text('Copy prompt'), exact: true })).toBeVisible();
+      assert.equal(composerPublications, 0, 'Saved Git and Space settings do not affect the web Pro conversation');
       await conversation.getByText(text('Paste reply'), { exact: true }).click();
       const reply = conversation.getByLabel(text('Reply from ChatGPT'));
       await reply.fill('incomplete');
@@ -259,6 +257,24 @@ try {
       await result.locator('summary').click();
       await result.getByRole('button', { name: text('Prepare receipt') }).click();
       await expect(result.getByText(text('Receipt ready'))).toBeVisible();
+      await expect(result.getByRole('button', { name: text('Copy result'), exact: true })).toBeVisible();
+      await expect(result.getByRole('button', { name: text('Publish result branch') })).toHaveCount(0);
+      await expect(result.getByRole('link', { name: text('Open ChatGPT'), exact: true })).toHaveAttribute('href', 'https://chatgpt.com/');
+      if (width < 600 && !await sidebar.evaluate(element => element.classList.contains('is-open'))) await page.locator('.sidebar-toggle').click();
+      await entry.click();
+      await button('Send to reviewer').click();
+      await expect(button('Copy prompt')).toBeVisible();
+      await expect(dialog.locator('input[type="radio"]')).toHaveCount(0);
+      if (language === 'en') {
+        holdProPrompt = true;
+        await page.evaluate(() => { globalThis.copiedReviewText = 'Previous clipboard text'; });
+        await button('Copy prompt').click();
+        await expect.poll(() => typeof releaseProPrompt).toBe('function');
+        const canceled = page.waitForEvent('requestfailed', request => request.url().endsWith('/prompt?via=chat'));
+        try { await button('Go to proposal').click(); await canceled; }
+        finally { releaseProPrompt(); }
+        assert.equal(await page.evaluate(() => globalThis.copiedReviewText), 'Previous clipboard text');
+      }
     } finally { await browser.close(); }
   }
   assert.deepEqual(failures, []);

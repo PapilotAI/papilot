@@ -912,7 +912,6 @@
   "Open Space Page": "Space Page を開く",
   "Open Typeless first.": "先に Typeless を開いてください。",
   "Open a branch to commit": "コミットするブランチを開く",
-  "Open a regular ChatGPT chat, choose Pro, and send the prompt. You can use the same request with another reviewer.": "通常の ChatGPT チャットを開き、Pro を選択してプロンプトを送信します。同じ依頼を他のレビュアーにも使用できます。",
   "Open access": "オープンアクセス",
   "Open agent settings": "エージェント設定を開く",
   "Open attachment {name}": "添付ファイル {name} を開く",
@@ -1670,7 +1669,6 @@
   "What this task accepted, in {n} file:": "このタスクで承認された内容（{n} ファイル）:",
   "What this task accepted, in {n} files:": "このタスクで承認された内容（{n} ファイル）:",
   "Where files differ": "ファイルが異なる場合の処理",
-  "Where should the reviewer write?": "レビュアーはどこに記述しますか？",
   "Where to find it": "確認方法",
   "Whole change": "変更全体",
   "With review feedback": "レビューのフィードバック付き",
@@ -1918,10 +1916,9 @@
   "{used}% used": "{used}% 使用済み",
   "§{number} {title}": "§{number} {title}",
   "Copy prompt": "プロンプトをコピー",
-  "Publish and copy prompt": "公開してプロンプトをコピー",
-  "Shares the Git commit, its history, and selected PDF notes with {repository}.": "Git コミットとその履歴、選択した PDF 注釈を {repository} に共有します。",
   "Paste reply": "回答を貼り付け",
   "Reply from ChatGPT": "ChatGPT の回答",
   "Check reply": "回答を確認",
-  "Review details": "レビューの詳細"
+  "Share via": "共有先",
+  "Copy result": "結果をコピー"
 }

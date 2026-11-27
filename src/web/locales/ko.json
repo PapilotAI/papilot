@@ -912,7 +912,6 @@
   "Open Space Page": "Space Page 열기",
   "Open Typeless first.": "먼저 Typeless를 여세요.",
   "Open a branch to commit": "커밋할 브랜치 열기",
-  "Open a regular ChatGPT chat, choose Pro, and send the prompt. You can use the same request with another reviewer.": "일반 ChatGPT 채팅을 열고 Pro를 선택한 다음 프롬프트를 보내세요. 동일한 요청을 다른 검토자에게도 사용할 수 있습니다.",
   "Open access": "오픈 액세스",
   "Open agent settings": "에이전트 설정 열기",
   "Open attachment {name}": "첨부 파일 {name} 열기",
@@ -1670,7 +1669,6 @@
   "What this task accepted, in {n} file:": "파일 {n}개에서 이 작업이 수락한 내용:",
   "What this task accepted, in {n} files:": "파일 {n}개에서 이 작업이 수락한 내용:",
   "Where files differ": "파일이 다른 경우",
-  "Where should the reviewer write?": "검토자가 어디에 작성해야 하나요?",
   "Where to find it": "확인 방법",
   "Whole change": "전체 변경 사항",
   "With review feedback": "검토 피드백 포함",
@@ -1918,10 +1916,9 @@
   "{used}% used": "{used}% 사용됨",
   "§{number} {title}": "§{number} {title}",
   "Copy prompt": "프롬프트 복사",
-  "Publish and copy prompt": "게시하고 프롬프트 복사",
-  "Shares the Git commit, its history, and selected PDF notes with {repository}.": "Git 커밋과 그 기록, 선택한 PDF 주석을 {repository}에 공유합니다.",
   "Paste reply": "답변 붙여넣기",
   "Reply from ChatGPT": "ChatGPT 답변",
   "Check reply": "답변 확인",
-  "Review details": "검토 세부 정보"
+  "Share via": "공유 방법",
+  "Copy result": "결과 복사"
 }

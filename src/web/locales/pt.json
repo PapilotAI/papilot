@@ -912,7 +912,6 @@
   "Open Space Page": "Abrir página do Space",
   "Open Typeless first.": "Abra o Typeless primeiro.",
   "Open a branch to commit": "Abrir uma branch para fazer commit",
-  "Open a regular ChatGPT chat, choose Pro, and send the prompt. You can use the same request with another reviewer.": "Abra um chat normal do ChatGPT, escolha Pro e envie o prompt. Você pode usar a mesma solicitação com outro revisor.",
   "Open access": "Acesso aberto",
   "Open agent settings": "Abrir configurações do agente",
   "Open attachment {name}": "Abrir anexo {name}",
@@ -1670,7 +1669,6 @@
   "What this task accepted, in {n} file:": "O que esta tarefa aceitou, em {n} arquivo:",
   "What this task accepted, in {n} files:": "O que esta tarefa aceitou, em {n} arquivos:",
   "Where files differ": "Onde os arquivos diferem",
-  "Where should the reviewer write?": "Onde o revisor deve escrever?",
   "Where to find it": "Onde encontrar",
   "Whole change": "Alteração inteira",
   "With review feedback": "Com comentários de revisão",
@@ -1918,10 +1916,9 @@
   "{used}% used": "{used}% utilizado",
   "§{number} {title}": "§{number} {title}",
   "Copy prompt": "Copiar prompt",
-  "Publish and copy prompt": "Publicar e copiar prompt",
-  "Shares the Git commit, its history, and selected PDF notes with {repository}.": "Compartilha com {repository} o commit do Git, seu histórico e as notas de PDF selecionadas.",
   "Paste reply": "Colar resposta",
   "Reply from ChatGPT": "Resposta do ChatGPT",
   "Check reply": "Verificar resposta",
-  "Review details": "Detalhes da revisão"
+  "Share via": "Compartilhar via",
+  "Copy result": "Copiar resultado"
 }

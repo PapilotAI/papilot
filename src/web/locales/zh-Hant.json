@@ -912,7 +912,6 @@
   "Open Space Page": "開啟 Space 頁面",
   "Open Typeless first.": "請先開啟 Typeless。",
   "Open a branch to commit": "開啟分支以提交",
-  "Open a regular ChatGPT chat, choose Pro, and send the prompt. You can use the same request with another reviewer.": "開啟一般的 ChatGPT 對話，選擇 Pro 並傳送提示詞。你也可以對其他審閱者使用同一份請求。",
   "Open access": "開放取用",
   "Open agent settings": "開啟智慧代理設定",
   "Open attachment {name}": "開啟附件 {name}",
@@ -1670,7 +1669,6 @@
   "What this task accepted, in {n} file:": "此任務已接受的變更（共 {n} 個檔案）：",
   "What this task accepted, in {n} files:": "此任務已接受的變更（共 {n} 個檔案）：",
   "Where files differ": "檔案有差異時",
-  "Where should the reviewer write?": "審閱者應在哪裡撰寫？",
   "Where to find it": "如何取得",
   "Whole change": "整處修改",
   "With review feedback": "附帶審閱意見反應",
@@ -1918,10 +1916,9 @@
   "{used}% used": "已使用 {used}%",
   "§{number} {title}": "§{number} {title}",
   "Copy prompt": "複製提示詞",
-  "Publish and copy prompt": "發佈並複製提示詞",
-  "Shares the Git commit, its history, and selected PDF notes with {repository}.": "將 Git 提交及其歷史和選取的 PDF 註解分享至 {repository}。",
   "Paste reply": "貼上回覆",
   "Reply from ChatGPT": "ChatGPT 的回覆",
   "Check reply": "檢查回覆",
-  "Review details": "審閱詳情"
+  "Share via": "分享方式",
+  "Copy result": "複製結果"
 }

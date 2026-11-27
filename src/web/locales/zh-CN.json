@@ -294,7 +294,6 @@
   "Open Git receipt": "打开 Git 回执",
   "Open Space Page": "打开 Space Page",
   "Open Typeless first.": "请先打开 Typeless。",
-  "Open a regular ChatGPT chat, choose Pro, and send the prompt. You can use the same request with another reviewer.": "打开普通 ChatGPT 对话，选择 Pro 并发送提示词。你也可以将同一请求发送给其他审阅者。",
   "Open access": "开放获取",
   "Open agent settings": "打开智能体设置",
   "Open existing folder": "打开现有文件夹",
@@ -506,7 +505,6 @@
   "Waiting for the model… {n} s": "等待模型… {n} 秒",
   "What should the reviewer check?": "需要审阅者检查哪些内容？",
   "Where files differ": "文件有差异时",
-  "Where should the reviewer write?": "审阅者应将内容写入何处？",
   "Where to find it": "在哪里查找",
   "Work in the original folder. Changes are saved directly to your files.": "直接使用原始文件夹。更改会保存到原始文件中。",
   "Workflow": "工作流",
@@ -592,10 +590,9 @@
   "{tokens} of {window} tokens": "{tokens} / {window} 个 token",
   "§{number} {title}": "§{number} {title}",
   "Copy prompt": "复制提示词",
-  "Publish and copy prompt": "发布并复制提示词",
-  "Shares the Git commit, its history, and selected PDF notes with {repository}.": "将 Git 提交及其历史和选中的 PDF 批注分享到 {repository}。",
   "Paste reply": "粘贴回复",
   "Reply from ChatGPT": "ChatGPT 的回复",
   "Check reply": "检查回复",
-  "Review details": "审阅详情"
+  "Share via": "共享方式",
+  "Copy result": "复制结果"
 }

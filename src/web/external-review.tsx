@@ -6,7 +6,7 @@ import { t } from './i18n.ts';
 import './external-review.css';
 
 type Api = <T>(route: string, body?: unknown, signal?: AbortSignal) => Promise<T>;
-type Channel = 'git' | 'space' | 'chat';
+type Channel = 'git' | 'space';
 type ReviewProps = {
   api: Api; projectId: string; projectName: string; document?: string; runtimes: Partial<Record<AgentId, RuntimeStatus>>; preferredAgent: AgentId;
   tasks: Task[]; onClose?: () => void; onTask: (id: string) => void; onAgentSettings: () => void;
@@ -18,44 +18,63 @@ function ExternalLink({ url, children }: { url: string; children: ReactNode }) {
   return <a className="button secondary" href={url} target="_blank" rel="noopener noreferrer">{children}<Icon name="external" size={14}/></a>;
 }
 
-function CopyText({ text = '', read, title, label, actions, showToggle = true, working, descriptionId }: {
-  text?: string; read?: () => Promise<string>; title: string; label: string;
-  actions?: ReactNode; showToggle?: boolean; working?: string; descriptionId?: string;
+function CopyText({ text = '', read, title, label, actions, showToggle = true }: {
+  text?: string; read?: (signal: AbortSignal) => Promise<string>; title: string; label: string;
+  actions?: ReactNode; showToggle?: boolean;
 }) {
   const field = useRef<HTMLTextAreaElement>(null), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined), pending = useRef(false);
+  const lifetime = useRef<AbortController>(null);
   const id = useId(), [feedback, setFeedback] = useState(''), [show, setShow] = useState(false), [current, setCurrent] = useState('');
-  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    const controller = new AbortController();
+    lifetime.current = controller;
+    return () => { controller.abort(); clearTimeout(timer.current); };
+  }, []);
   async function copy() {
-    if (pending.current || working) return;
+    const signal = lifetime.current?.signal;
+    if (pending.current || !signal || signal.aborted) return;
     pending.current = true;
     clearTimeout(timer.current);
-    const fresh = read ? read() : Promise.resolve(text);
+    if (read) setFeedback(t('Preparing text…'));
+    const fresh = read ? read(signal).then(value => { signal.throwIfAborted(); return value; }) : Promise.resolve(text);
     try {
       // Start clipboard access in the click event, including on Safari. The
-      // promised blob only resolves once the server rechecks the receipt.
+      // promised blob resolves after the server prepares the text.
       if (read && typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
         const blob = fresh.then(value => new Blob([value], { type: 'text/plain' }));
         void blob.catch(() => undefined);
         await navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]);
       } else await navigator.clipboard.writeText(await fresh);
+      if (signal.aborted) return;
       if (read && show) setCurrent(await fresh);
       setFeedback(message => message === t('Copied') ? `${t('Copied')}\u00a0` : t('Copied'));
       timer.current = setTimeout(() => setFeedback(''), 2200);
     } catch {
       try {
-        setCurrent(await fresh); setShow(true); setFeedback(t('Copy the text from the field below.'));
+        const value = await fresh;
+        if (signal.aborted) return;
+        setCurrent(value); setShow(true); setFeedback(t('Copy the text from the field below.'));
         if (show) requestAnimationFrame(() => { field.current?.focus(); field.current?.select(); });
-      } catch (error) { setShow(false); setFeedback(error instanceof Error ? error.message : String(error)); }
+      } catch (error) { if (!signal.aborted) { setShow(false); setFeedback(error instanceof Error ? error.message : String(error)); } }
     } finally { pending.current = false; }
   }
   useEffect(() => { if (show && feedback) { field.current?.focus(); field.current?.select(); } }, [show]);
   async function toggleText() {
     if (show) { setShow(false); return; }
-    try { if (read) setCurrent(await read()); setShow(true); }
-    catch (error) { setFeedback(error instanceof Error ? error.message : String(error)); }
+    const signal = lifetime.current?.signal;
+    if (!signal || signal.aborted) return;
+    try {
+      if (read) {
+        const value = await read(signal);
+        if (signal.aborted) return;
+        setCurrent(value);
+      }
+      setShow(true);
+    }
+    catch (error) { if (!signal.aborted) setFeedback(error instanceof Error ? error.message : String(error)); }
   }
   return <div className="external-copy">
-    <div className="external-actions"><button type="button" className="button primary" aria-describedby={descriptionId} aria-disabled={working ? true : undefined} onClick={() => void copy()}><Icon name="copy" size={15}/>{working || label}</button>
+    <div className="external-actions"><button type="button" className="button primary" onClick={() => void copy()}><Icon name="copy" size={15}/>{label}</button>
       {(showToggle || show) && <button type="button" className="button secondary" aria-expanded={show} aria-controls={id} onClick={() => void toggleText()}>{show ? t('Hide text') : t('Show text')}</button>}
       {actions}
       <span role="status">{feedback}</span></div>
@@ -99,6 +118,7 @@ export function ExternalReviewDialog({ api, projectId, projectName, document, ru
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [replyError, setReplyError] = useState('');
   const review = options?.reviews.find(item => item.request.requestId === selected);
   const compact = Boolean(conversation && !conversation.result);
+  const chatOnly = compact || review?.fromComposerAt !== undefined;
   const reviewRoute = `${endpoint}/${selected}`;
   const task = review?.taskId ? tasks.find(item => item.id === review.taskId) : undefined;
   const remotes = options?.remotes ?? [], remote = remotes.find(item => item.name === remoteName);
@@ -131,7 +151,7 @@ export function ExternalReviewDialog({ api, projectId, projectName, document, ru
     setSelected(next?.request.requestId ?? ''); setStep(activeStep(next)); setPage(next?.page ?? ''); setQuestion('');
     setProposal(''); setError(''); setReplyError('');
     setRemoteName(next?.git?.remote.name ?? available?.remotes.find(item => item.name === 'origin')?.name ?? available?.remotes[0]?.name ?? '');
-    setChannel(compact && next?.git ? 'git' : next?.page ? 'space' : (next?.git || available?.remotes.length ? 'git' : compact ? 'chat' : 'space'));
+    setChannel(next?.page ? 'space' : (next?.git || available?.remotes.length ? 'git' : 'space'));
   }
   function update(next: ExternalReview) {
     const key = next.request.requestId;
@@ -139,15 +159,12 @@ export function ExternalReviewDialog({ api, projectId, projectName, document, ru
       ? value.reviews.map(item => item.request.requestId === key ? next : item) : [next, ...value.reviews] });
     setSelected(key);
   }
-  async function perform<T>(label: string, work: () => Promise<T>) {
-    pending.current = true; setBusy(label); setError('');
-    try { return await work(); }
-    finally { pending.current = false; setBusy(''); }
-  }
   async function act(label: string, work: () => Promise<void>, reportError = setError) {
     if (pending.current) return;
-    try { await perform(label, work); }
+    pending.current = true; setBusy(label); setError('');
+    try { await work(); }
     catch (failure) { reportError(failure instanceof Error ? failure.message : String(failure)); }
+    finally { pending.current = false; setBusy(''); }
   }
   const change = (path: string, body: unknown) => api<ExternalReview>(`${reviewRoute}/${path}`, body).then(update);
   const move = (next: number) => { setError(''); setStep(next); };
@@ -156,18 +173,9 @@ export function ExternalReviewDialog({ api, projectId, projectName, document, ru
   const importing = conversation ? !conversation.result && !task : step === 2;
   const implementing = conversation ? !conversation.result : step === 3;
   const returning = conversation ? conversation.result : step === 4;
-  const needsPublication = channel === 'git' && !review?.git;
-  async function copyProPrompt() {
-    if (pending.current) throw new Error(t('Preparing text…'));
-    return perform(needsPublication ? t('Publishing branch…') : t('Preparing text…'), async () => {
-      if (needsPublication) await change('github', { remote: remoteName, revision: remote?.revision });
-      return (await api<{ text: string }>(`${reviewRoute}/prompt?via=${channel}`)).text;
-    });
-  }
   const baseInfo = review && <div className="external-base"><span>{review.request.files.join(', ')}</span><code title={review.request.baseCommit}>{review.request.baseCommit.slice(0, 12)}</code></div>;
-  const channels = <fieldset className="external-choices" disabled={Boolean(busy)}><legend>{t('Where should the reviewer write?')}</legend>
+  const channels = <fieldset className="external-choices" disabled={Boolean(busy)}><legend>{t('Share via')}</legend>
     <label><input type="radio" name={`${id}-channel`} value="git" checked={channel === 'git'} disabled={!remotes.length && !review?.git} onChange={() => setChannel('git')}/><span>{t('Git branch')}</span></label>
-    {compact && <label><input type="radio" name={`${id}-channel`} value="chat" checked={channel === 'chat'} onChange={() => setChannel('chat')}/><span>{t('Chat only')}</span></label>}
     <label><input type="radio" name={`${id}-channel`} value="space" checked={channel === 'space'} onChange={() => setChannel('space')}/><span>{t('ChatGPT Space Page')}</span></label>
   </fieldset>;
   const remotePicker = <>
@@ -184,16 +192,16 @@ export function ExternalReviewDialog({ api, projectId, projectName, document, ru
       <button type="submit" className="button secondary" disabled={Boolean(busy) || page.trim() === (review?.page ?? '')}>{t('Save Page link')}</button></div>
   </form>;
   const fetchProposal = review?.git && <div className="external-actions"><button type="button" className="button secondary" disabled={Boolean(busy)} onClick={() => void act(t('Fetching proposal…'), () => change('proposal', { via: 'git' }))}>{busy || t('Fetch Git proposal')}</button></div>;
-  const pasteForm = <form method="post" aria-label={compact ? t('Paste reply') : t('Import proposal')} onSubmit={event => {
+  const pasteForm = <form method="post" aria-label={chatOnly ? t('Paste reply') : t('Import proposal')} onSubmit={event => {
     event.preventDefault(); setReplyError('');
-    void act(t('Checking proposal…'), () => change('proposal', { text: proposal }), compact ? setReplyError : setError);
+    void act(t('Checking proposal…'), () => change('proposal', { text: proposal }), chatOnly ? setReplyError : setError);
   }}>
-    <label htmlFor={`${id}-proposal`}>{compact ? t('Reply from ChatGPT') : t('Proposal JSON or Page Markdown')}</label>
+    <label htmlFor={`${id}-proposal`}>{chatOnly ? t('Reply from ChatGPT') : t('Proposal JSON or Page Markdown')}</label>
     <textarea id={`${id}-proposal`} name="proposal" rows={5} required spellCheck={false} value={proposal}
       aria-invalid={replyError ? true : undefined} aria-describedby={replyError ? replyErrorId : undefined}
-      onChange={event => { (compact ? setReplyError : setError)(''); setProposal(event.target.value); }}/>
+      onChange={event => { (chatOnly ? setReplyError : setError)(''); setProposal(event.target.value); }}/>
     {replyError && <p className="inline-error" id={replyErrorId} role="alert">{replyError}</p>}
-    <div className="external-actions"><button type="submit" className="button secondary" disabled={Boolean(busy)}>{compact ? t('Check reply') : t('Check pasted proposal')}</button></div>
+    <div className="external-actions"><button type="submit" className="button secondary" disabled={Boolean(busy)}>{chatOnly ? t('Check reply') : t('Check pasted proposal')}</button></div>
   </form>;
 
   const content = <section className={conversation ? 'external-review-dialog external-review-inline' : 'modal external-review-dialog'} aria-labelledby={conversation ? `${id}-step` : undefined}>
@@ -219,7 +227,7 @@ export function ExternalReviewDialog({ api, projectId, projectName, document, ru
         {!options && (error ? <button type="button" className="button secondary" onClick={() => { setError(''); setLoadAttempt(loadAttempt + 1); }}>{t('Try again')}</button> : <p>{t('Loading…')}</p>)}
         {!returning && review && (conversation || step === 1) && <>
           {conversation && <p className="external-question">{review.request.question}</p>}
-          {!compact && baseInfo}
+          {!chatOnly && baseInfo}
           {review.request.notes?.length ? <details className="external-note-preview">
             <summary>{t('PDF notes')} <span>{review.request.notes.length}</span></summary>
             <div className="external-proposal"><ol>{review.request.notes.map((note, index) => <li key={index}>
@@ -236,14 +244,12 @@ export function ExternalReviewDialog({ api, projectId, projectName, document, ru
           <textarea id={`${id}-question`} name="question" required rows={3} value={question} onChange={event => setQuestion(event.target.value)} placeholder={t('For example, check whether the introduction overstates the results.')}/>
           <div className="external-actions"><button type="submit" className="button primary" disabled={Boolean(busy)}>{busy || t('Create review request')}</button></div>
         </form>}
-        {review && sending && compact && <>
-          {needsPublication && <p className="external-hint" id={gitHint}>{t('Shares the Git commit, its history, and selected PDF notes with {repository}.', { repository: remote?.repository ?? remoteName })}</p>}
-          <CopyText key={`${channel}:${review.page ?? ''}`} read={copyProPrompt} title={t('Copy prompt')} label={needsPublication ? t('Publish and copy prompt') : t('Copy prompt')}
-            showToggle={false} working={busy} descriptionId={needsPublication ? gitHint : undefined}
-            actions={!needsPublication && <ExternalLink url="https://chatgpt.com/">{t('Open ChatGPT')}</ExternalLink>}/>
-        </>}
-        {review && sending && !compact && <>
-          <p>{t('Open a regular ChatGPT chat, choose Pro, and send the prompt. You can use the same request with another reviewer.')}</p>
+        {review && sending && chatOnly && <CopyText key={reviewRoute} read={signal => api<{ text: string }>(`${reviewRoute}/prompt?via=chat`, undefined, signal).then(result => result.text)}
+          title={t('Copy prompt')} label={t('Copy prompt')} showToggle={false} actions={<>
+            <ExternalLink url="https://chatgpt.com/">{t('Open ChatGPT')}</ExternalLink>
+            {!conversation && <button type="button" className="button secondary" onClick={() => move(2)}>{t('Go to proposal')}</button>}
+          </>}/>}
+        {review && sending && !chatOnly && <>
           {channels}
           {channel === 'git' ? <div className="external-channel">
             {review.git ? <>
@@ -269,7 +275,7 @@ export function ExternalReviewDialog({ api, projectId, projectName, document, ru
           {compact ? <details className="external-disclosure" key={review.proposal?.digest ?? 'paste'}>
             <summary>{t('Paste reply')}</summary>
             <div className="external-disclosure-body">{pasteForm}</div>
-          </details> : <>
+          </details> : chatOnly ? !task && pasteForm : <>
             <p>{t('Fetch the proposal from Git or paste the JSON block from Space or chat. Papilot checks the commit and quoted text.')}</p>
             {!task && <>{fetchProposal}{pasteForm}</>}
           </>}
@@ -279,20 +285,6 @@ export function ExternalReviewDialog({ api, projectId, projectName, document, ru
             {!conversation && <div className="external-actions"><button type="button" className="button primary" disabled={Boolean(busy)} onClick={() => move(3)}>{t('Continue to local agent')}</button></div>}
           </div>}
         </>}
-        {review && compact && <details className="external-disclosure">
-          <summary>{t('Review details')}</summary>
-          <div className="external-disclosure-body">
-            {baseInfo}
-            {sending && channels}
-            {sending && needsPublication && <div className="external-channel">{remotePicker}</div>}
-            {sending && channel === 'space' && <div className="external-channel">{pageSettings}{review.page && <ExternalLink url={review.page}>{t('Open Space Page')}</ExternalLink>}</div>}
-            {review.git && <>
-              <p className="external-branch"><code>{review.git.branch}</code></p>
-              {review.git.request?.url && <div className="external-actions"><ExternalLink url={review.git.request.url}>{t('Review request')}</ExternalLink></div>}
-              {importing && fetchProposal}
-            </>}
-          </div>
-        </details>}
         {review?.proposal && implementing && <>
           <p>{t('The local agent works from the request’s commit. Review its PDF changes in the resulting task.')}</p>
           {task ? <>
@@ -325,12 +317,12 @@ export function ExternalReviewDialog({ api, projectId, projectName, document, ru
           </div>
           {review.result && <div className="external-channel">
             <p><strong>{review.result.receipt.status === 'no_changes' ? t('No changes accepted') : t('Receipt ready')}</strong> <code>{review.result.receipt.resultCommit.slice(0, 12)}</code></p>
-            <p>{t('Paste the receipt on the Space Page or send it to the reviewer in chat.')}</p>
-            <CopyText key={`${review.result.receipt.resultCommit}:${task?.updatedAt}`} read={() => api<{ text: string }>(`${reviewRoute}/receipt?resultCommit=${review.result!.receipt.resultCommit}`).then(result => result.text)} label={t('Copy result for Space')} title={t('Review result')}/>
-            {review.git && !review.result.published && <p className="external-hint" id={resultHint}>{t('Publishing shares the accepted edits, checked proposal, and receipt.')}</p>}
+            {!chatOnly && <p>{t('Paste the receipt on the Space Page or send it to the reviewer in chat.')}</p>}
+            <CopyText key={`${review.result.receipt.resultCommit}:${task?.updatedAt}`} read={signal => api<{ text: string }>(`${reviewRoute}/receipt?resultCommit=${review.result!.receipt.resultCommit}`, undefined, signal).then(result => result.text)} label={chatOnly ? t('Copy result') : t('Copy result for Space')} title={t('Review result')} showToggle={!chatOnly}/>
+            {!chatOnly && review.git && !review.result.published && <p className="external-hint" id={resultHint}>{t('Publishing shares the accepted edits, checked proposal, and receipt.')}</p>}
             <div className="external-actions">
-              <ExternalLink url={review.page ?? 'https://chatgpt.com/'}>{review.page ? t('Open Space Page') : t('Open ChatGPT')}</ExternalLink>
-              {review.git && (!review.result.published ? <button type="button" className="button secondary" aria-describedby={resultHint} disabled={Boolean(busy)} onClick={() => void act(t('Publishing result…'), () => change('result', { resultCommit: review.result?.receipt.resultCommit }))}>{t('Publish result branch')}</button>
+              <ExternalLink url={(!chatOnly && review.page) || 'https://chatgpt.com/'}>{!chatOnly && review.page ? t('Open Space Page') : t('Open ChatGPT')}</ExternalLink>
+              {!chatOnly && review.git && (!review.result.published ? <button type="button" className="button secondary" aria-describedby={resultHint} disabled={Boolean(busy)} onClick={() => void act(t('Publishing result…'), () => change('result', { resultCommit: review.result?.receipt.resultCommit }))}>{t('Publish result branch')}</button>
                 : review.result.published.url ? <ExternalLink url={review.result.published.url}>{t('Open Git receipt')}</ExternalLink>
                 : <code>{review.result.published.branch}</code>)}
             </div>

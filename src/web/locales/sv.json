@@ -912,7 +912,6 @@
   "Open Space Page": "Öppna Space Page",
   "Open Typeless first.": "Öppna Typeless först.",
   "Open a branch to commit": "Öppna en gren för att checka in",
-  "Open a regular ChatGPT chat, choose Pro, and send the prompt. You can use the same request with another reviewer.": "Öppna en vanlig ChatGPT-chatt, välj Pro och skicka prompten. Du kan använda samma förfrågan med en annan granskare.",
   "Open access": "Öppen tillgång",
   "Open agent settings": "Öppna agentinställningar",
   "Open attachment {name}": "Öppna bilaga {name}",
@@ -1670,7 +1669,6 @@
   "What this task accepted, in {n} file:": "Vad denna uppgift godkände, i {n} fil:",
   "What this task accepted, in {n} files:": "Vad denna uppgift godkände, i {n} filer:",
   "Where files differ": "Där filer skiljer sig åt",
-  "Where should the reviewer write?": "Var ska granskaren skriva?",
   "Where to find it": "Var du hittar den",
   "Whole change": "Hela ändringen",
   "With review feedback": "Med granskningsåterkoppling",
@@ -1918,10 +1916,9 @@
   "{used}% used": "{used} % använt",
   "§{number} {title}": "§{number} {title}",
   "Copy prompt": "Kopiera prompt",
-  "Publish and copy prompt": "Publicera och kopiera prompt",
-  "Shares the Git commit, its history, and selected PDF notes with {repository}.": "Delar Git-incheckningen, dess historik och valda PDF-anteckningar med {repository}.",
   "Paste reply": "Klistra in svaret",
   "Reply from ChatGPT": "Svar från ChatGPT",
   "Check reply": "Kontrollera svaret",
-  "Review details": "Granskningsdetaljer"
+  "Share via": "Dela via",
+  "Copy result": "Kopiera resultat"
 }

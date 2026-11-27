@@ -3859,11 +3859,6 @@
     "textHash": "ff104b36563f84bdfef708dced0b4043473822fb160e3b1831b6f5ad7f4adc80",
     "model": "gemini-4-argon-high"
   },
-  "Open a regular ChatGPT chat, choose Pro, and send the prompt. You can use the same request with another reviewer.": {
-    "revision": "5bf176e773bbaf9dba8e3a504b83f8e9bca1dcfa6122bc5f002ccb3ab1964331",
-    "textHash": "5586d9ef6e372d78671a4b4d8586a5711ad4102f61284d5f95d0d4034564fecd",
-    "model": "gemini-4-argon-medium"
-  },
   "Open access": {
     "revision": "237c668f59b07cd3cc5aa7fc566b490fd5490302bc9db9571828755d750d45f5",
     "textHash": "62406bb0778c464ddef0fe243d60a61f5b069eb66d4427bf44711f32daf84dfb",
@@ -7017,11 +7012,6 @@
   "Where files differ": {
     "revision": "3ebe74ba05ddad02f24867300366b4b76da69c9b7fd1a6f3f16f0027172d1074",
     "textHash": "638d10a23070daa9a8892c7ebbefdd1e37a26dcc42cf4343208fb00f0beb5ba7",
-    "model": "gemini-4-argon-medium"
-  },
-  "Where should the reviewer write?": {
-    "revision": "6fd6f62da0d23d35b5fe0c3316590f262fcdfb7208eca80ba572bf359dde9d19",
-    "textHash": "358c15cd2ae66e10abcc320f792bd2dee69b7b36d8f619b1aeb91a6653d0c95b",
     "model": "gemini-4-argon-medium"
   },
   "Where to find it": {
