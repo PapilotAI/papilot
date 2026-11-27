@@ -34,11 +34,54 @@ const LOGIN_PROVIDERS: { id: string; name: string }[] = [
 ];
 const SUBSCRIPTION_TOKEN = /^sk-ant-oat/;
 const CUSTOM_API = 'custom-api';
+export const GATEWAY_PROVIDER = 'model-gateway';
+export type GatewayApiFormat = 'openai-responses' | 'anthropic-messages' | 'google-generative-ai' | 'openai-completions';
+const GATEWAY_APIS = new Set<GatewayApiFormat>(['openai-responses', 'anthropic-messages', 'google-generative-ai', 'openai-completions']);
+export interface WriterGatewayConfig {
+  baseUrl: string;
+  keyEnv: string;
+  key: string;
+  api: GatewayApiFormat;
+  name: string;
+  exclusive: boolean;
+}
 type CustomApi = WriterCustomApi & { key: string };
 export const isCustomProvider = (id: string) => id.startsWith(`${CUSTOM_API}-`);
+export const isGatewayProvider = (id: string) => id === GATEWAY_PROVIDER;
 export const customModelUnavailable = () => new Error('This custom API model is unavailable. Choose an available model to continue.');
 // A task's saved model identifies the endpoint as well as the model name.
 const customId = (baseUrl: string) => `${CUSTOM_API}-${createHash('sha256').update(baseUrl).digest('hex').slice(0, 24)}`;
+
+export function parseGatewayApi(value: unknown, fallback: GatewayApiFormat = 'openai-responses'): GatewayApiFormat {
+  return typeof value === 'string' && GATEWAY_APIS.has(value as GatewayApiFormat) ? value as GatewayApiFormat : fallback;
+}
+
+/** Validates an HTTPS (or localhost HTTP) gateway URL without credentials,
+ *  query string, or fragment. When `allowedOrigin` is given, rejects any
+ *  cross-origin URL so model discovery cannot redirect credentials elsewhere. */
+export function validateGatewayBaseUrl(rawUrl: unknown, allowedOrigin?: string): string | null {
+  const trimmed = typeof rawUrl === 'string' ? rawUrl.trim() : '';
+  if (!trimmed || trimmed.length > 2048 || /[?#]/.test(trimmed)) return null;
+  const parsed = URL.parse(trimmed);
+  const loopback = parsed && ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+  if (!parsed || (parsed.protocol !== 'https:' && !(loopback && parsed.protocol === 'http:')) || parsed.username || parsed.password) return null;
+  if (allowedOrigin && parsed.origin !== allowedOrigin) return null;
+  return parsed.href.replace(/\/+$/, '');
+}
+
+const isGatewayOnlyEnv = (env: NodeJS.ProcessEnv) => env.PAPILOT_WRITER_GATEWAY_ONLY === '1' || env.PAPILOT_WRITER_GATEWAY_ONLY === 'true';
+
+function readGatewayConfig(env: NodeJS.ProcessEnv): WriterGatewayConfig | undefined {
+  const baseUrl = validateGatewayBaseUrl(env.PAPILOT_WRITER_GATEWAY_URL);
+  if (!baseUrl) return undefined;
+  const parsed = new URL(baseUrl);
+  const keyEnv = (typeof env.PAPILOT_WRITER_GATEWAY_KEY_ENV === 'string' && env.PAPILOT_WRITER_GATEWAY_KEY_ENV.trim()) || 'PAPILOT_WRITER_GATEWAY_KEY';
+  const key = typeof env[keyEnv] === 'string' ? env[keyEnv]!.trim() : '';
+  if (!key || key.length > 4096 || /[^!-~]/.test(key)) return undefined;
+  const api = parseGatewayApi(env.PAPILOT_WRITER_GATEWAY_API, 'openai-responses');
+  const name = (typeof env.PAPILOT_WRITER_GATEWAY_NAME === 'string' && env.PAPILOT_WRITER_GATEWAY_NAME.trim()) || parsed.host || 'Model Gateway';
+  return { baseUrl, keyEnv, key, api, name, exclusive: isGatewayOnlyEnv(env) };
+}
 
 function customApi(input: Record<string, unknown>, previous?: CustomApi): CustomApi {
   const base = typeof input.baseUrl === 'string' && input.baseUrl.length <= 2048 ? input.baseUrl.trim() : '';
@@ -68,13 +111,35 @@ interface Login extends WriterLogin { abort: AbortController; prompt?: Pending; 
 export class WriterCredentials {
   private logins = new Map<string, Login>();
   private custom?: CustomApi;
+  private gatewayConfig?: WriterGatewayConfig;
+  private exclusiveGateway: boolean;
   constructor(
     private storage: AuthStorage, private env: NodeJS.ProcessEnv = process.env, private changed: () => void = () => {},
     private customStore?: { file: string; registry: ModelRegistry },
   ) {
-    if (!customStore) return;
+    this.exclusiveGateway = isGatewayOnlyEnv(this.env);
+    this.gatewayConfig = readGatewayConfig(this.env);
+    if (this.gatewayConfig) {
+      this.storage.setRuntimeApiKey(GATEWAY_PROVIDER, this.gatewayConfig.key);
+      // Enable Authorization: Bearer across every wire format (including Google Gemini).
+      customStore?.registry.registerProvider(GATEWAY_PROVIDER, {
+        name: this.gatewayConfig.name,
+        baseUrl: this.gatewayConfig.baseUrl,
+        api: this.gatewayConfig.api,
+        apiKey: GATEWAY_PROVIDER,
+        authHeader: true,
+        models: [],
+      });
+    }
+    if (!customStore || this.exclusiveGateway) return;
     try { this.applyCustom(customApi(JSON.parse(fs.readFileSync(customStore.file, 'utf8')))); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.warn('Could not read the Papilot Writer custom API configuration.'); }
+  }
+
+  gateway(): WriterGatewayConfig | undefined { return this.gatewayConfig; }
+  gatewayOnly(): boolean { return this.exclusiveGateway; }
+  private rejectIfGatewayOnly() {
+    if (this.exclusiveGateway) throw new Error('This host manages Papilot Writer through a configured model gateway.');
   }
 
   private applyCustom(next?: CustomApi) {
@@ -103,6 +168,7 @@ export class WriterCredentials {
   }
 
   setCustomApi(input: Record<string, unknown>) {
+    this.rejectIfGatewayOnly();
     if (!this.customStore) throw new Error('Custom API setup is unavailable.');
     const next = customApi(input, this.custom), file = this.customStore.file;
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -116,12 +182,16 @@ export class WriterCredentials {
   }
 
   redactCustomErrors(provider: string) {
-    const key = this.custom && customId(this.custom.baseUrl) === provider ? this.custom.key : '';
+    const key = provider === GATEWAY_PROVIDER
+      ? (this.gatewayConfig?.key || '')
+      : (this.custom && customId(this.custom.baseUrl) === provider ? this.custom.key : '');
     return (message: string) => key ? message.replaceAll(key, '[redacted]') : message;
   }
 
   /** Whether a provider's credential may be used. */
   usable(provider: string) {
+    if (provider === GATEWAY_PROVIDER) return Boolean(this.gatewayConfig);
+    if (this.exclusiveGateway) return false;
     if (provider === CUSTOM_API) return Boolean(this.custom);
     if (provider !== 'anthropic') return this.storage.hasAuth(provider);
     const stored = this.storage.get('anthropic');
@@ -130,7 +200,15 @@ export class WriterCredentials {
   }
 
   status(): WriterAuth {
+    const gw = this.gatewayConfig;
+    const gatewayProvider: WriterProvider[] = gw
+      ? [{ id: GATEWAY_PROVIDER, name: gw.name, kind: 'gateway', env: gw.keyEnv, configured: true, source: 'environment' }]
+      : [];
+    if (this.exclusiveGateway) {
+      return { providers: gatewayProvider, logins: [], gatewayOnly: true };
+    }
     const providers: WriterProvider[] = [
+      ...gatewayProvider,
       ...LOGIN_PROVIDERS.map(({ id, name }) => ({ id, name, kind: 'login' as const, configured: this.storage.get(id)?.type === 'oauth', source: this.storage.get(id)?.type === 'oauth' ? 'stored' as const : null })),
       ...KEY_PROVIDERS.map(({ id, name, env }) => {
         const stored = this.storage.get(id)?.type === 'api_key', fromEnv = Boolean(this.env[env]) && !(id === 'anthropic' && claudeSubscription(this.env[env]));
@@ -148,6 +226,7 @@ export class WriterCredentials {
   }
 
   setKey(provider: string, key: string) {
+    this.rejectIfGatewayOnly();
     if (!KEY_PROVIDERS.some(item => item.id === provider)) throw new Error('This provider does not take an API key here.');
     key = key.trim();
     if (!key || key.length > 4096 || /\s/.test(key)) throw new Error('Paste the API key exactly as the provider shows it.');
@@ -156,6 +235,7 @@ export class WriterCredentials {
     this.changed();
   }
   remove(provider: string) {
+    this.rejectIfGatewayOnly();
     if (provider === CUSTOM_API && this.customStore) {
       fs.rmSync(this.customStore.file, { force: true });
       this.applyCustom();
@@ -169,6 +249,7 @@ export class WriterCredentials {
 
   /** Starts a subscription sign-in. Its progress is read through status(). */
   login(provider: string, enterprise = '') {
+    this.rejectIfGatewayOnly();
     const known = LOGIN_PROVIDERS.find(item => item.id === provider);
     if (!known) throw new Error('This provider has no sign-in here.');
     for (const other of this.logins.values()) if (other.provider === provider && other.status === 'waiting') this.cancel(other.id);

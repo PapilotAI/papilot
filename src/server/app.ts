@@ -358,7 +358,18 @@ export async function buildApp(options: AppOptions) {
     return { ...state, document: scopeDocument.document, annotations, inFlightMarks, ...(scope ? { noteSections: scope.sections, unplacedSectionNotes: scope.unplaced, ...(scope.pageLayouts && Object.keys(scope.pageLayouts).length ? { notePageLayouts: scope.pageLayouts } : {}) } : {}) };
   }
 
-  app.get('/api/health', () => ({ ok: true, name: 'Papilot', version: options.version, ...(options.desktopInstance ? { desktopInstance: options.desktopInstance } : {}), ...(options.updateInstance ? { updateInstance: options.updateInstance } : {}) }));
+  app.get<{ Querystring: { busy?: string } }>('/api/health', request => {
+    const includeBusy = request.query?.busy === '1' || request.query?.busy === 'true';
+    const status = includeBusy ? workspace.busyStatus() : null;
+    return {
+      ok: true,
+      name: 'Papilot',
+      version: options.version,
+      ...(options.desktopInstance ? { desktopInstance: options.desktopInstance } : {}),
+      ...(options.updateInstance ? { updateInstance: options.updateInstance } : {}),
+      ...(status ? { busy: { computing: status.computing || manuscripts.busyForUpdate || changes.busyForUpdate, waitingForUser: status.waitingForUser } } : {}),
+    };
+  });
   app.get('/api/runtime/requirements', () => (options.systemRequirements || systemRequirements)());
   // Detection starts host processes. All tabs and personal remote connections
   // share one budget and one in-flight probe; polling other routes is unaffected.

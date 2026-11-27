@@ -26,6 +26,20 @@ export { anchor, followLines, parseSynctex, settleLines, sourceExcerpt, type Anc
 
 type Rect = [number, number, number, number];
 
+/** Path-independent preview identity for a compiled PDF, derived from the
+ *  build's cache key and the PDF's relative path inside its build folder so
+ *  relocated caches keep their preview and annotation identities. */
+export function previewKey(buildKey: string, pdfPath: string, buildRoot?: string): string {
+  let target = pdfPath;
+  if (buildRoot) {
+    const folder = path.dirname(path.resolve(buildRoot));
+    const relative = path.relative(folder, path.resolve(pdfPath));
+    if (relative && relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)) target = relative.replaceAll('\\', '/');
+  }
+  return createHash('sha256').update(`${buildKey}:${target}`).digest('hex').slice(0, 16);
+}
+const legacyPreviewKey = (buildKey: string, pdfPath: string) => createHash('sha256').update(buildKey + pdfPath).digest('hex').slice(0, 16);
+
 const exec = promisify(execFile);
 async function git(root: string, args: string[], env: NodeJS.ProcessEnv = {}) {
   return (await exec('git', args, { cwd: root, timeout: 30_000, env: { ...process.env, ...env }, maxBuffer: 64 * 1024 * 1024 })).stdout;
@@ -722,7 +736,7 @@ export class Manuscripts extends EventEmitter {
         };
         const result = tested?.result ?? await new Builder(project, new Repo(root)).build(tree, ['full'], null, { force, signal: build.stop!.signal, priority: () => Date.now() - (this.viewed.get(projectId) ?? 0) < 15000 ? 'foreground' : 'normal', pass: (preview: { pdf: string; root: string }) => void pass(preview).catch(() => undefined), progress: (progress: Omit<BuildProgress, 'startedAt'>) => { if (this.builds.get(projectId) === build) build.progress = { ...progress, startedAt }; } });
         const pages = tested?.pages ?? await sizes(result.pdf);
-        const key = createHash('sha256').update(result.key + result.pdf).digest('hex').slice(0, 16);
+        const key = previewKey(result.key, result.pdf, result.root);
         this.remember(projectId, key, result.pdf, result.root, project!.source_dir || '', project!.main);
         if (this.builds.get(projectId) !== build) return;
         const log = String(result.pdf).replace(/\.pdf$/, '.log');
@@ -975,12 +989,26 @@ export class Manuscripts extends EventEmitter {
         if (!entry.isDirectory() || entry.name.endsWith('.lock')) return;
         try {
           const folder = path.join(cache, entry.name), saved = JSON.parse(await fs.promises.readFile(path.join(folder, 'result.json'), 'utf8'));
-          if (typeof saved.pdf !== 'string' || createHash('sha256').update(saved.key + saved.pdf).digest('hex').slice(0, 16) !== key) return;
+          if (typeof saved.pdf !== 'string' || typeof saved.key !== 'string') return;
+          if (previewKey(saved.key, saved.pdf, saved.root) !== key && legacyPreviewKey(saved.key, saved.pdf) !== key) return;
           // A build from before the state folder moved names its PDF by the
-          // former path, which the link left there keeps valid.
+          // former path, which the link left there keeps valid; also fall back
+          // to the equivalent relative path inside a copied or relocated folder.
           const inside = (file: string, base: string) => path.resolve(file).startsWith(path.resolve(base) + path.sep);
-          if (!inside(saved.pdf, folder) && !inside(await fs.promises.realpath(saved.pdf).catch(() => ''), await fs.promises.realpath(folder))) return;
-          if (fs.existsSync(saved.pdf)) found = saved.pdf;
+          const realFolder = await fs.promises.realpath(folder).catch(() => path.resolve(folder));
+          const inFolder = async (file: string) => (inside(file, folder) || inside(await fs.promises.realpath(file).catch(() => ''), realFolder))
+            && inside(await fs.promises.realpath(file).catch(() => ''), realFolder);
+          let candidate: string | null = null;
+          if (fs.existsSync(saved.pdf) && await inFolder(saved.pdf)) {
+            candidate = saved.pdf;
+          } else if (typeof saved.root === 'string') {
+            const rel = path.relative(path.dirname(path.resolve(saved.root)), path.resolve(saved.pdf));
+            if (rel && rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel)) {
+              const moved = path.resolve(folder, rel);
+              if (fs.existsSync(moved) && await inFolder(moved)) candidate = moved;
+            }
+          }
+          if (candidate) found = candidate;
         } catch { /* Incomplete builds have no usable PDF. */ }
       }));
     this.oldPdfs.set(lookup, found); return found;
@@ -1013,7 +1041,7 @@ export class Manuscripts extends EventEmitter {
   // a restart, reuses the lines kept beside the review PDFs.
   private reviewLines = new Map<string, Promise<ReviewSnapshot>>();
   private reviewSnapshot(state: string, build: { key: string; pdf: string }) {
-    const id = createHash('sha256').update(build.key + build.pdf).digest('hex').slice(0, 24);
+    const id = createHash('sha256').update(build.key).digest('hex').slice(0, 24);
     const cached = this.reviewLines.get(id);
     if (cached) return cached;
     const folder = path.join(state, 'ai-reviews', 'snapshots'), file = path.join(folder, id + '.json');

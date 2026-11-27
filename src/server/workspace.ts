@@ -527,9 +527,20 @@ export class Workspace extends EventEmitter {
   private projectChanges = new Set<string>();
   private projectRequests = new Map<string, number>();
   importsBusy = () => false;
+  /** Splits active computation from tasks paused on user input so external
+   *  supervisors know when a restart or pause will not interrupt work. */
+  busyStatus(): { computing: boolean; waitingForUser: boolean } {
+    const tasks = this.store.tasks();
+    const tasksById = new Map(tasks.map(task => [task.id, task]));
+    const waitingForUser = tasks.some(task => task.status === 'waiting_input');
+    const activeComputing = [...this.active.keys()].some(id => tasksById.get(id)?.status !== 'waiting_input');
+    const computing = Boolean(this.importsBusy() || this.projectChanges.size || this.switching.size || activeComputing || this.preparing.size || this.publishing.size || this.reviewWrites.size || this.commentWrites.size || this.committing.size || this.deletions.size || this.helperStops.size || this.titles.size
+      || tasks.some(task => ['preparing', 'queued', 'running', 'building', 'uncertain', 'deleting'].includes(task.status) || task.pendingReview));
+    return { computing, waitingForUser };
+  }
   get busyForUpdate() {
-    return Boolean(this.importsBusy() || this.projectChanges.size || this.active.size || this.preparing.size || this.publishing.size || this.reviewWrites.size || this.commentWrites.size || this.committing.size || this.deletions.size || this.helperStops.size || this.titles.size
-      || this.store.tasks().some(task => ['preparing', 'queued', 'running', 'waiting_input', 'building', 'uncertain', 'deleting'].includes(task.status) || task.pendingReview));
+    const { computing, waitingForUser } = this.busyStatus();
+    return computing || waitingForUser;
   }
   readonly attachments: Attachments;
   constructor(public store: Store, public codex: AgentRuntime = new Codex(), private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {

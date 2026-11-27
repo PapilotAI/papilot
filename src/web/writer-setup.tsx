@@ -54,6 +54,8 @@ export function WriterSetup({ writer, online }: { writer: (route: string, body?:
   }
   if (!auth) return error ? <p className="runtime-agent-error" role="alert">{errorText(error)}</p> : <p className="runtime-agent-note" role="status">{t('Checking…')}</p>;
   const connected = auth.providers.filter(provider => provider.configured).length;
+  const loginProviders = auth.providers.filter(provider => provider.kind === 'login');
+  const keyProviders = auth.providers.filter(provider => provider.kind !== 'login');
   const unavailable = !online || Boolean(busy);
   const status = (provider: WriterProvider) => provider.configured ? provider.kind === 'login' ? t('Signed in') : provider.source === 'environment' ? t('Environment variable') : t('Saved') : t('API key');
   const providerName = (provider: WriterProvider) => provider.kind === 'custom' ? t('Custom API') : provider.name;
@@ -63,10 +65,10 @@ export function WriterSetup({ writer, online }: { writer: (route: string, body?:
       <div><h5>{t('Model providers')}</h5><p>{t('Sign in with a subscription or add an API key.')}</p></div>
       {connected > 0 && <span className="writer-connected"><span/>{connected} {t('Connected')}</span>}
     </header>
-    <section aria-labelledby="writer-subscriptions-title">
+    {loginProviders.length > 0 && <section aria-labelledby="writer-subscriptions-title">
       <div className="writer-section-heading"><h5 id="writer-subscriptions-title">{t('Subscriptions')}</h5><Icon name="key" size={14}/></div>
       <ul className="writer-subscriptions">
-        {auth.providers.filter(provider => provider.kind === 'login').map(provider => {
+        {loginProviders.map(provider => {
           const login = auth.logins.filter(item => item.provider === provider.id).at(-1);
           const live = login?.status === 'waiting';
           return <li key={provider.id} className="writer-subscription" data-configured={provider.configured} data-waiting={live || undefined}>
@@ -91,11 +93,11 @@ export function WriterSetup({ writer, online }: { writer: (route: string, body?:
           </li>;
         })}
       </ul>
-    </section>
-    <section aria-labelledby="writer-keys-title">
+    </section>}
+    {keyProviders.length > 0 && <section aria-labelledby="writer-keys-title">
       <div className="writer-section-heading"><h5 id="writer-keys-title">{t('API keys')}</h5><Icon name="key" size={14}/></div>
       <ul className="writer-providers">
-        {auth.providers.filter(provider => provider.kind !== 'login').map(provider => <li key={provider.id}>
+        {keyProviders.map(provider => <li key={provider.id}>
           <button type="button" className="writer-provider" disabled={Boolean(busy)} ref={element => { providerButtons.current[provider.id] = element; }} data-configured={provider.configured} aria-expanded={selected === provider.id} aria-controls={selected === provider.id ? editorId : undefined} onClick={() => { if (selected === provider.id) closeEditor(); else { setError(null); setSelected(provider.id); } }}>
             <ProviderMark id={provider.id}/>
             <span className="writer-provider-copy"><strong>{providerName(provider)}</strong><small className={'writer-provider-status' + (provider.configured ? ' connected' : '')}>{provider.configured && <Icon name="check" size={11}/>}<span>{status(provider)}</span></small></span>
@@ -116,9 +118,9 @@ export function WriterSetup({ writer, online }: { writer: (route: string, body?:
           <div className="writer-key"><input id="writer-api-key" type="password" autoComplete="off" spellCheck={false} placeholder={selectedProvider.env} value={keys[selectedProvider.id] || ''} onChange={event => setKeys(current => ({ ...current, [selectedProvider.id]: event.target.value }))}/><button type="submit" className="button primary compact" disabled={unavailable || !keys[selectedProvider.id]?.trim()}>{busy === selectedProvider.id && <span className="spinner"/>}{t('Save')}</button></div>
         </form>}
       </div>}
-    </section>
+    </section>}
     {error && selectedProvider?.kind !== 'custom' && <p className="runtime-agent-error writer-error" role="alert">{errorText(error)}</p>}
-    <details className="writer-storage-note"><summary><Icon name="info" size={13}/>{t('Installation & setup')}<Icon name="chevronDown" size={13}/></summary><p>{t('Claude works with an Anthropic API key only. Papilot keeps these credentials in its own data folder, separate from any Pi installation.')}</p></details>
+    {!auth.gatewayOnly && <details className="writer-storage-note"><summary><Icon name="info" size={13}/>{t('Installation & setup')}<Icon name="chevronDown" size={13}/></summary><p>{t('Claude works with an Anthropic API key only. Papilot keeps these credentials in its own data folder, separate from any Pi installation.')}</p></details>}
   </section>;
 }
 
