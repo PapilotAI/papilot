@@ -9,9 +9,16 @@ import { permissionText } from './task-permissions.tsx';
 import { PickerUsage, type RefreshUsage } from './usage.tsx';
 import { shownModels } from './agent-choice.ts';
 
+function SpeedBolts({ tier, size }: { tier: string; size: number }) {
+  return <span className="agent-speed-bolts" aria-hidden="true">
+    <Icon name="bolt" size={size}/>
+    {tier === 'ultrafast' && <Icon name="bolt" size={size}/>}
+  </span>;
+}
+
 // The picker and an existing conversation use the same compact model label.
-export function ModelLabel({ model, effort, fast }: { model: string; effort?: string | null; fast?: boolean }) {
-  return <span className="agent-model-label"><span className="agent-model-name">{model}</span>{effort && <small>{effortName(effort)}</small>}{fast && <Icon name="bolt" size={13}/>}</span>;
+function ModelLabel({ model, effort, speed }: { model: string; effort?: string | null; speed?: string }) {
+  return <span className="agent-model-label"><span className="agent-model-name">{model}</span>{effort && <small>{effortName(effort)}</small>}{speed && <SpeedBolts tier={speed} size={13}/>}</span>;
 }
 
 export function AgentConnectionNotice({ name, runtime, reconnecting, onReconnect }: { name: string; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void }) {
@@ -199,7 +206,7 @@ export function AgentPicker({ label, agents, agent, model, effort, serviceTier, 
       onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); show(); } }}>
       {noAgent ? <span className="agent-picker-selection">{t('No agent')}</span> : <><BrandIcon name={agent} size={15}/>{!permission && modelName !== agentName && <span className="agent-picker-agent">{agentName}</span>}
       <span className="agent-picker-selection">
-        <ModelLabel model={modelName} effort={permission ? undefined : currentEffort} fast={accelerated}/>
+        <ModelLabel model={modelName} effort={permission ? undefined : currentEffort} speed={accelerated ? speed : undefined}/>
         {permission && <small className="agent-permission-label" data-mode={permission.value}>{permissionText(permission.label)}</small>}
       </span>
       <Icon name="chevronDown" size={13}/>{disconnected && <span className="agent-status-mark"><Icon name="alert" size={13}/></span>}</>}
@@ -235,9 +242,10 @@ export function AgentPicker({ label, agents, agent, model, effort, serviceTier, 
         <legend>{t('Speed')}</legend>
         <small id={`${id}-speed-detail`}>{t('Faster, higher usage')}</small>
         <div className="agent-speed-options">
-          {['default', ...tiers].map(tier => <label key={tier} htmlFor={`${id}-speed-${tier}`}>
+          {['default', ...tiers].map(tier => <label key={tier} className="agent-speed-option" htmlFor={`${id}-speed-${tier}`}>
             <input type="radio" id={`${id}-speed-${tier}`} name={`${id}-speed`} value={tier} checked={speed === tier} onChange={() => onChange({ serviceTier: tier })}/>
-            {speedName(tier)}
+            {tier === 'default' ? <Icon name="minus" size={16}/> : <SpeedBolts tier={tier} size={16}/>}
+            <span>{speedName(tier)}</span>
           </label>)}
         </div>
       </fieldset> : tiers?.length ? <label className="agent-fast">

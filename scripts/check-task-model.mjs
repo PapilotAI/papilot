@@ -75,8 +75,11 @@ try {
   const taskSpeed = taskModelMenu.getByRole('group', { name: 'Speed', exact: true });
   await taskSpeed.getByRole('radio', { name: 'Fast', exact: true }).check();
   await expect.poll(() => task.serviceTier).toBe('priority');
+  await expect(taskSettings.locator('.agent-speed-bolts svg')).toHaveCount(1);
   await taskSpeed.getByRole('radio', { name: 'Fast', exact: true }).press('ArrowRight');
   await expect.poll(() => task.serviceTier).toBe('ultrafast');
+  await expect(taskSpeed.getByRole('radio', { name: 'Ultrafast', exact: true })).toBeFocused();
+  await expect(taskSettings.locator('.agent-speed-bolts svg')).toHaveCount(2);
   await taskModelMenu.getByRole('button', { name: 'Model default', exact: true }).click();
   await expect.poll(() => task.effort).toBe(null);
   await expect(taskSettings).toContainText('High');
