@@ -18,6 +18,14 @@ papilot demo   # add the example paper, then start
 papilot        # start
 ```
 
+Desktop installers are available on [GitHub Releases](https://github.com/PapilotAI/papilot/releases/latest) and through platform package managers:
+
+- **macOS (Homebrew tap):** `brew tap PapilotAI/tap && brew trust PapilotAI/tap && brew install --cask PapilotAI/tap/papilot` (ad hoc signed; allow in System Settings → Privacy & Security on first launch)
+- **Windows (Scoop / WinGet):** `scoop bucket add papilot https://github.com/PapilotAI/scoop-bucket && scoop install papilot/papilot` or `winget install PapilotAI.Papilot` (see [Windows setup](windows.md))
+- **Debian / Ubuntu (APT):** official signed repository at `https://papilot.ai/apt` (see [APT setup](apt.md))
+- **Arch Linux (AUR):** `paru -S papilot-bin` (see [Arch Linux setup](aur.md))
+- **Nix:** `nix run github:PapilotAI/papilot -- demo` (see [Nix setup](nix.md))
+
 On Windows, install [Node.js](https://nodejs.org) 22.22 or newer, [Git for Windows](https://git-scm.com/download/win), and a TeX distribution such as [MiKTeX](https://miktex.org) or [TeX Live](https://tug.org/texlive). The same `npm install -g papilot` command then works in PowerShell or CMD. If `papilot doctor` cannot find `latexmk`, add your TeX distribution's `bin` folder to `PATH`. The background service command `papilot service install` is macOS-only; on Windows, run `papilot` from a terminal or add it to the Task Scheduler.
 
 The `papilot` command keeps its state in `~/.papilot`; `--data <folder>` (or `PAPILOT_DATA`) chooses another folder and `--port <number>` (or `PAPILOT_PORT`) another port. `papilot --help` lists every option.
@@ -78,7 +86,7 @@ Each task runs on one agent and model, chosen from the model menu below the prom
 
 **Settings → General → Quick model** chooses the model for quick background jobs: checking citations in the Library and naming tasks. **Automatic** lets each job use the small model of the agent it would use anyway, such as a task's own agent for its title. A model you choose, such as DeepSeek V4.1 Flash UltraFast from DeepSeek Harness, does all of them; it is saved on the Papilot host, where the jobs run, and while its agent is signed out or off the jobs fall back to **Automatic**.
 
-Each agent card on the **Agents** page has a switch. Papilot neither starts an agent that is off nor offers it in any model menu, including the agent choices in **Settings → Git**, and automatic helpers such as task titles skip it. A task that already uses it can still continue: sending it a message starts the agent for that task. In an agent's details, select a model to hide it from the model menus, or use **Hide all** and **Show all**; hiding every model turns the agent off, and a model a task or setting already uses stays selectable there. New models an agent reports later are shown. These choices are saved on the Papilot host, so the desktop app and every browser show the same menus. **Reset** above the cards turns every agent back on and shows every model. Collaboration mode is turned on and off in **Settings → Experiments**.
+Each agent card on the **Agents** page has a switch. Papilot neither starts an agent that is off nor offers it in any model menu, including the agent choices in **Settings → Git**, and automatic helpers such as task titles skip it. A task that already uses it can still continue: sending it a message starts the agent for that task. In an agent's details, select a model to hide it from the model menus, or use **Hide all** and **Show all**; hiding every model turns the agent off, and a model a task or setting already uses stays selectable there. New models an agent reports later are shown. These choices are saved on the Papilot host, so the desktop app and every browser show the same menus. **Reset** above the cards turns every agent back on and shows every model. Collaboration mode and **ChatGPT Pro (web)** are turned on and off in **Settings → Experiments**; when ChatGPT Pro (web) is enabled, you can send annotations from the Manuscript like any other agent, optionally sync the task snapshot to a GitHub remote branch for full-repository context, copy the prompt into ChatGPT Pro, paste its reply into the same task chat, and choose which local agent, model and reasoning effort applies the edits.
 
 CLI agents, including Claude when Claude Code is installed, use their own login and configuration on this host. The SDK-based agents (Cursor, GLM, and Claude without Claude Code) take their key from Papilot's environment and receive it only for their own service. Papilot never stores a credential. Each agent starts in the task's worktree and leaves compiling and publishing the review to Papilot.
 

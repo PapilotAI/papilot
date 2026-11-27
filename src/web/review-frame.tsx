@@ -52,8 +52,6 @@ function compactReviewFrame(doc: Document, reserve: number, lead: number, change
     /* Review previews, difference rows and embedded controls share one mode.
        The surrounding toolbar and workspace keep the application's theme. */
     .document{--pdf-filter:var(--review-filter);--pdf-page:var(--review-page);--before:var(--review-before);--after:var(--review-after)}
-    .pdf-strip{color-scheme:light}.pdf-strip img{filter:var(--pdf-filter)}
-    :root[data-theme="dark"]:not([data-review-theme="light"]) :is(.pdf-focus-marks,.pdf-unit-marks){mix-blend-mode:screen}
     :root[data-theme="dark"][data-review-theme="light"] :is(.sheet,.paper-page,.document .change){
       color-scheme:light;--bg:#ffffff;--bg-subtle:#fafafa;--bg-muted:#f5f5f5;--bg-hover:#f0f0f0;--bg-active:#e6e6e6;--canvas:#f5f5f5;--raised:#ffffff;--thumb:#ffffff;
       --text:#1e1e1e;--text-2:#5e5e5e;--text-3:#8f8f8f;

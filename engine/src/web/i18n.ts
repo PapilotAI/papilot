@@ -2,8 +2,8 @@ import { supportedLanguage, singularCount, interpolateMessage, type Language } f
 import { messages } from './locales/index.ts';
 export type { Language };
 
-export function pageLanguage(search = location.search): Language {
-  return supportedLanguage(new URLSearchParams(search).get('lang')) || 'en';
+export function pageLanguage(search = location.search, documentLanguage = typeof document === 'undefined' ? '' : document.documentElement.lang): Language {
+  return supportedLanguage(new URLSearchParams(search).get('lang')) || supportedLanguage(documentLanguage) || 'en';
 }
 const current: Language =
   typeof location === "undefined" ? "en" : pageLanguage();

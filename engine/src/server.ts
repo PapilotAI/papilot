@@ -7,7 +7,7 @@ import compress from "@fastify/compress";
 import { WEB, codeVersion, environmentVersion } from "./runtime.ts";
 import { Repo, cleanPath, stateDir } from "./core/git.ts";
 import { serverHome } from "./client.ts";
-import { buildOverridesFile, compilerFile, documentsFile, loadProject, projectFor, settingsFile, type Project } from "./core/config.ts";
+import { buildWorkers, readSettings, buildOverridesFile, compilerFile, documentsFile, loadProject, projectFor, settingsFile, type Project } from "./core/config.ts";
 import { Store } from "./core/store.ts";
 import { Tasks } from "./core/tasks.ts";
 import { Review } from "./core/review.ts";
@@ -201,7 +201,7 @@ export function createServer(app: App) {
       environment: environmentVersion(),
       pid: process.pid,
       busy: app.publisher.busy(),
-      build_workers: app.project.build_workers,
+      build_workers: buildWorkers(readSettings(app.root)),
       csrf: app.csrf,
       runtime: "typescript",
     }));

@@ -1,0 +1,141 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import Fastify from 'fastify';
+import staticFiles from '@fastify/static';
+import { chromium, expect } from '../../scripts/playwright.mjs';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const artifacts = await fs.mkdtemp(path.join(os.tmpdir(), 'papilot-vscode-chat-'));
+const app = Fastify();
+await app.register(staticFiles, { root: path.join(root, 'dist/web/chat') });
+await app.register(staticFiles, { root: path.join(root, 'dist/web/paper'), prefix: '/paper/', decorateReply: false });
+app.get('/', async (_, reply) => reply.type('text/html').send('<!doctype html><html><head><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="/view.css"></head><body class="vscode-dark"><div id="root"></div><script type="module" src="/view.js"></script></body></html>'));
+app.get('/task-pdf', async (_, reply) => reply.type('text/html').send('<!doctype html><html lang="en"><head><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="/paper/view.css"></head><body class="vscode-dark"><div id="root"></div><script type="module" src="/paper/view.js"></script></body></html>'));
+app.get('/fixture.pdf', async (_, reply) => reply.type('application/pdf').send(await fs.readFile(path.join(root, '../tests/fixtures/outline.pdf'))));
+app.get('/replacement.pdf', async (_, reply) => reply.type('application/pdf').send(await fs.readFile(path.join(root, '../examples/papilot-paper/preview/main.pdf'))));
+app.get('/thumbnail.svg', async (_, reply) => reply.type('image/svg+xml').send('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="white"/></svg>'));
+await app.listen({ host: '127.0.0.1', port: 0 });
+const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 360, height: 850 } });
+const errors = [], requests = [];
+page.on('pageerror', error => errors.push(error.message));
+const task = { id: 'first', projectId: 'project', document: 'paper/main.tex', name: 'first', title: 'Clarify the paper', instructions: '', worktree: '/tmp/test', threadId: null, turnId: null, model: null, agent: 'codex', status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: null };
+const second = { ...task, id: 'second', name: 'second', title: 'Revise the slides', document: 'slides/main.tex' };
+const runtime = { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'test-model', name: 'Test model', isDefault: true, efforts: ['low', 'medium'], defaultEffort: 'medium' }] };
+const snapshot = { version: 'test', projects: [{ id: 'project', name: 'Project', path: '/tmp/test', createdAt: 1 }], tasks: [task, second], requests: [], runtime, runtimes: { codex: runtime } };
+const attachment = { id: 'figure', projectId: task.projectId, name: 'figure.png', size: 1024, mime: 'image/png' };
+const attachmentRoute = `/api/projects/${task.projectId}/attachments/${attachment.id}`, pageRoute = `/api/tasks/${task.id}/pages/view-0.png`;
+let selected = task, failItems = false, taskPdf = false;
+const state = () => ({ type: 'state', view: { kind: 'chat' }, task: selected, snapshot, skills: [] });
+await page.exposeFunction('hostRequest', message => {
+  requests.push(message);
+  if (taskPdf && message.type === 'ready') return {
+    value: {}, state: { type: 'state', view: { kind: 'taskPdf', id: task.id }, pdf: '/fixture.pdf', place: { key: 'task-build', at: 1, place: { page: 1, rect: [0.2, 0.2, 0.5, 0.25] } } },
+  };
+  if (message.type === 'ready') return { state: state(), value: {} };
+  if (message.type === 'command') return { value: null };
+  if (message.type === 'resource' && [attachmentRoute, pageRoute].includes(message.route)) return { value: '/thumbnail.svg' };
+  if (message.type !== 'api') throw new Error('Unexpected bridge request: ' + message.type);
+  if (/\/items$/.test(message.route)) return failItems ? { error: 'Conversation unavailable' } : { value: { items: [
+    ...(selected.id === task.id ? [
+      { id: 'user', taskId: task.id, type: 'user', text: 'See the attachment.', createdAt: 1, meta: { attachments: [attachment] } },
+      { id: 'page', taskId: task.id, type: 'pdf', text: '1', createdAt: 2, pages: [{ file: 'view-0.png', index: 0, label: '1' }] },
+    ] : []),
+    { id: selected.id + '-reply', taskId: selected.id, type: 'assistant', text: 'Ready to revise ' + selected.document, createdAt: 3 },
+  ] } };
+  if (/\/messages$/.test(message.route)) return { value: selected };
+  if (/\/model$/.test(message.route)) return { value: selected };
+  if (/\/(?:prepare|reconcile)$/.test(message.route)) return { value: selected };
+  if (message.route === '/api/reconnect') return { value: {} };
+  if (/\/usage$/.test(message.route)) return { value: { usage: null } };
+  if (message.route === '/api/quick-notes') return { value: { notes: [] } };
+  if (message.route === '/api/settings/effects') return { value: { enabled: true } };
+  if (message.route === '/api/settings/note-alternatives') return { value: { enabled: true, range: 'few' } };
+  throw new Error('Unexpected bridge route: ' + message.route);
+});
+await page.addInitScript(() => {
+  window.acquireVsCodeApi = () => ({ postMessage: async message => {
+    let response;
+    try { response = await window.hostRequest(message); }
+    catch (error) { response = { error: error.message }; }
+    if (response.state) window.dispatchEvent(new MessageEvent('message', { data: response.state }));
+    window.dispatchEvent(new MessageEvent('message', { data: { id: message.id, ...response } }));
+  } });
+});
+const select = async value => { selected = value; await page.evaluate(value => window.dispatchEvent(new MessageEvent('message', { data: value })), state()); };
+try {
+  await page.goto(`http://127.0.0.1:${app.server.address().port}`);
+  // VS Code supplies these variables; exercise the same CSS in a narrow sidebar.
+  const colors = {
+    'font-family': 'sans-serif', 'editor-font-family': 'monospace', 'font-size': '13px',
+    'editor-background': '#1e1e1e', 'sideBar-background': '#252526', 'input-background': '#313131',
+    'list-hoverBackground': '#2a2d2e', 'list-activeSelectionBackground': '#094771', 'editorWidget-background': '#252526',
+    foreground: '#cccccc', descriptionForeground: '#aaaaaa', 'panel-border': '#454545', 'focusBorder': '#007fd4',
+    'button-background': '#0e639c', 'button-foreground': '#ffffff', errorForeground: '#f48771',
+  };
+  await page.evaluate(colors => { for (const [key, value] of Object.entries(colors)) document.documentElement.style.setProperty('--vscode-' + key, value); }, colors);
+  await expect(page.getByText('Ready to revise paper/main.tex')).toBeVisible();
+  for (const [link, route] of [[page.getByRole('link', { name: /figure\.png/ }), attachmentRoute], [page.locator('.tool-pages a'), pageRoute]]) {
+    await expect.poll(() => link.locator('img').evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
+    await expect(link).toHaveAttribute('href', `command:papilot.openResource?${encodeURIComponent(JSON.stringify([route, task.id]))}`, { timeout: 4000 });
+    await expect(link).not.toHaveAttribute('target', '_blank');
+  }
+  const input = page.getByRole('textbox', { name: 'Instructions for Codex' });
+  await input.fill('Keep this draft for the paper.');
+  await select(second);
+  await expect(input).toHaveValue('');
+  await input.fill('Shorten the slides.');
+  await input.press('Enter');
+  await expect(input).toHaveValue('');
+  assert.equal(requests.find(request => request.route === '/api/tasks/second/messages')?.body.text, 'Shorten the slides.');
+  await select(task);
+  await expect(input).toHaveValue('Keep this draft for the paper.');
+  await select({ ...second, status: 'uncertain', error: 'The last review request could not be confirmed.' });
+  await page.getByRole('button', { name: 'Check status', exact: true }).click();
+  assert.ok(requests.some(request => request.route === '/api/tasks/second/reconcile'));
+  await select({ ...second, status: 'failed', error: 'Could not prepare the task.', preparation: { stage: 'failed' } });
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  assert.ok(requests.some(request => request.route === '/api/tasks/second/prepare'));
+  await select(task);
+  await page.getByRole('button', { name: 'Review', exact: true }).click();
+  assert.equal(requests.find(request => request.command === 'papilot.review')?.taskId, task.id);
+  await page.screenshot({ path: path.join(artifacts, 'chat-dark.png') });
+  failItems = true;
+  await expect(page.getByText('Conversation unavailable', { exact: true })).toBeVisible();
+  failItems = false;
+  await expect(page.getByText('Conversation unavailable', { exact: true })).toHaveCount(0);
+  await expect(input).toHaveValue('Keep this draft for the paper.');
+  await page.evaluate(() => { document.body.className = 'vscode-light'; for (const [key, value] of Object.entries({ 'editor-background': '#ffffff', 'sideBar-background': '#f3f3f3', 'input-background': '#ffffff', 'editorWidget-background': '#f3f3f3', foreground: '#333333', descriptionForeground: '#616161' })) document.documentElement.style.setProperty('--vscode-' + key, value); });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.setViewportSize({ width: 700, height: 850 });
+  await page.screenshot({ path: path.join(artifacts, 'chat-light.png') });
+  taskPdf = true;
+  await page.setViewportSize({ width: 1000, height: 850 });
+  await page.goto(`http://127.0.0.1:${app.server.address().port}/task-pdf`);
+  await page.evaluate(colors => { for (const [key, value] of Object.entries(colors)) document.documentElement.style.setProperty('--vscode-' + key, value); }, colors);
+  const sourceMark = page.locator('[data-page-number="2"] .problem-flash');
+  await expect(sourceMark).toHaveCSS('position', 'absolute');
+  await expect(sourceMark).toBeInViewport();
+  await expect(page.getByRole('button', { name: 'New task', exact: true })).toHaveCount(0);
+  await page.screenshot({ path: path.join(artifacts, 'task-source-in-pdf.png') });
+  const sendPdf = (pdf, place) => page.evaluate(data => window.dispatchEvent(new MessageEvent('message', { data })), {
+    type: 'state', view: { kind: 'taskPdf', id: task.id }, pdf, place,
+  });
+  let releaseSlow;
+  const slow = new Promise(resolve => { releaseSlow = resolve; });
+  await page.route('**/fixture.pdf?slow=1', async route => { await slow; await route.abort().catch(() => {}); });
+  try {
+    const requested = page.waitForRequest('**/fixture.pdf?slow=1');
+    await sendPdf('/fixture.pdf?slow=1', { key: 'slow-build', at: 2, place: { page: 1, rect: [0.2, 0.2, 0.5, 0.25] } });
+    await requested;
+    await sendPdf('/replacement.pdf');
+    await expect(page.locator('.pdfViewer .page')).toHaveCount(26);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await expect(page.locator('.problem-flash')).toHaveCount(0);
+  } finally { releaseSlow(); }
+  assert.deepEqual(errors, []);
+  console.log('Conversation and task PDF passed: independent drafts, task-bound review, send, recovery, themes and source placement. Screenshots: ' + artifacts);
+} finally { await browser.close(); await app.close(); }

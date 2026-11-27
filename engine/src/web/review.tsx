@@ -51,7 +51,7 @@ import {
 import { bindingLabel, readShortcuts, resolveShortcuts, shortcutAction, SHORTCUT_EVENT, SHORTCUT_STORAGE } from "./shortcuts.ts";
 import { sendsMessage } from "./send-key.ts";
 import { CURRENT_CHANGE_EVENT, DECIDE_EVENT, OPEN_SOURCE_EVENT, RETRY_COMPARISON_EVENT, REVIEW_CHANGES_EVENT, SELECT_SOURCE_EVENT, SOURCE_SAVED_EVENT, UNDO_EVENT, type CurrentChange, type DecideChange, type OpenSource, type ReviewChanges, type SelectSource, type SourceSaved } from "./review-events.ts";
-import { DecisionQueue, Unreachable, withQueued, type QueuedDecision } from "./decision-queue.ts";
+import { DecisionQueue, Unreachable, reviewResponseError, withQueued, type QueuedDecision } from "./decision-queue.ts";
 import {
   STATE,
   buildStops,
@@ -186,12 +186,23 @@ export function ReviewApp({
   pinned,
   changes = false,
   transport,
+  resource,
+  live = !transport,
+  onNavigate,
+  onOpenSource,
 }: {
   task: string;
   pinned: number | null;
   changes?: boolean;
   /** A host can provide local review data without running the HTTP server. */
   transport?: <T>(route: string, body?: unknown) => Promise<T>;
+  resource?: (url: string) => Promise<string>;
+  /** Hosts with a live backend retain previews, decision recovery and build priorities. */
+  live?: boolean;
+  /** Hosts can select a round without navigating the page; null resumes the current review. */
+  onNavigate?: (round: number | null) => void;
+  /** A native editor can open the current file using line ranges alone. */
+  onOpenSource?: (source: OpenSource) => void;
 }) {
   const [state, setState] = useState<PageState | null>(null),
     [publishedDetail, setDetail] = useState<RoundDetail | null>(null),
@@ -284,20 +295,24 @@ export function ReviewApp({
   // page has its state: the server takes decisions only with the token in it.
   const restored = useRef(false);
   useEffect(() => {
-    if (!queueKey || transport || restored.current || !state?.csrf) return;
+    if (!queueKey || !live || restored.current || !state?.csrf) return;
     restored.current = true;
     const saved = DecisionQueue.saved<Queued>(queueKey).filter((entry) => !queue.current!.pending.some((queued) => queued.id === entry.id));
     for (const entry of saved) queue.current!.push(entry);
     if (saved.length) { setQueued(queue.current!.pending); setSettling(true); }
   }, [Boolean(state?.csrf)]);
   useEffect(() => {
-    if (!queueKey || transport) return;
+    if (!queueKey || !live) return;
     // A page that goes away sends what is left at once; the browser finishes
     // those requests even after the page is gone.
     const listener = (event: Event) => {
       if (document.visibilityState !== "hidden" && event.type !== "pagehide") return;
       const csrf = snapshot.current.state?.csrf ?? "";
       queue.current!.flush((entry) => {
+        if (transport) {
+          void api('/decide', { id: entry.id, action: entry.kind, round: entry.round, changes: entry.changes, body: entry.body, noteKey: entry.noteKey }).catch(() => undefined);
+          return;
+        }
         void fetch(`/api/tasks/${encodeURIComponent(task)}/decide`, {
           method: "POST",
           keepalive: true,
@@ -564,14 +579,7 @@ export function ReviewApp({
       if (response.ok) throw error;
       return {};
     });
-    if (!response.ok) {
-      const message = value.error || `HTTP ${response.status}`;
-      // A gateway or a restarting host did not answer for the server. The
-      // same decision sent again by a page that came back, while the server
-      // still applies the first send, is refused for now: it is sent again
-      // too, and then confirmed as applied.
-      throw [502, 503, 504].includes(response.status) || (response.status === 400 && /review action is already in progress/i.test(message)) ? new Unreachable(message) : new Error(message);
-    }
+    if (!response.ok) throw reviewResponseError(response.status, value.error || `HTTP ${response.status}`);
     return value as T;
   }
   function select(index: number, scroll = true) {
@@ -675,24 +683,24 @@ export function ReviewApp({
     window.addEventListener(DECIDE_EVENT, chosen);
     return () => window.removeEventListener(DECIDE_EVENT, chosen);
   });
+  const hasCurrentText = (unit: Unit) => unit.kind === "text" && unit.status !== "deleted";
   // A change's source, offered to the workspace's editor: true when it opened there.
   function offerSource(chosen: Unit[]) {
-    // The editor shows the task's files as they are now, with the latest
-    // round's changes. An earlier round, a closed task or a previewed option
-    // keeps the inline LaTeX, and so do changes without character-level
-    // operations, such as a new file or a bibliography entry, which have no
-    // card in the editor.
     if (!latest || !detail) return false;
-    const shown = chosen.filter((item) => item.kind === "text" && item.status !== "deleted");
-    if (!shown.length || shown.some((item) => !item.text_ops?.length)) return false;
-    // Nor can the editor place cards in a file with CRLF line endings, whose
-    // offsets count the carriage returns; its context shows them.
-    if (shown.some((item) => /\r/.test(item.old_text + item.new_text + (item.old_context?.text ?? "")))) return false;
+    const shown = chosen.filter(hasCurrentText);
+    if (!shown.length) return false;
+    // The workspace's LaTeX editor requires character-level operations to
+    // place its cards, and its offsets do not count carriage returns.
+    if (!onOpenSource && shown.some((item) => !item.text_ops?.length || /\r/.test(item.old_text + item.new_text + (item.old_context?.text ?? "")))) return false;
     const unit = shown[0];
     const marks = chosen.filter((item) => item.file === unit.file && item.kind === "text").flatMap(unitLines);
-    if (!marks.length) return false;
+    if (!marks.length) {
+      if (!onOpenSource) return false;
+      marks.push([Math.max(0, unit.new_start - 1), unit.new_end]);
+    }
     const request: OpenSource = { round: detail.round, change: unit.id, file: unit.file, marks,
       lines: [Math.min(...marks.map((range) => range[0])), Math.max(...marks.map((range) => Math.max(range[1], range[0] + 1)))] };
+    if (onOpenSource) { onOpenSource(request); return true; }
     // The editor shows the changes of the round it opens in.
     announceChanges();
     return !window.dispatchEvent(new CustomEvent(OPEN_SOURCE_EVENT, { detail: request, cancelable: true }));
@@ -1065,7 +1073,7 @@ export function ReviewApp({
     };
   }, [detail?.round, detail?.before, detail?.after]);
   useEffect(() => {
-    if (!detail || changes || history || transport || previewing || detail.sourceOnly || detail.rendering) return;
+    if (!detail || changes || history || !live || previewing || detail.sourceOnly || detail.rendering) return;
     const gen = mixedGen.current;
     for (const { block, index } of placed) {
       if (pendingUnits(stops[index], decisions).length) continue;
@@ -1095,7 +1103,7 @@ export function ReviewApp({
           setMixedPreviews((prev) => ({ ...prev, [key]: { status: "error" } }));
         });
     }
-  }, [detail, placed, stops, decisions, variants, changes, history, transport, previewing]);
+  }, [detail, placed, stops, decisions, variants, changes, history, live, previewing]);
   // A block with an edit accepted in a note option's wording shows the
   // option's own comparison, the one its preview showed, until the block is
   // decided with rejections too. The engine compiles each wording once.
@@ -1113,7 +1121,7 @@ export function ReviewApp({
   // for is not asked again on this page, failed or not.
   const building = state?.job?.status === "queued" || state?.job?.status === "running";
   useEffect(() => {
-    if (!detail || changes || transport || previewing || detail.sourceOnly || building) return;
+    if (!detail || changes || !live || previewing || detail.sourceOnly || building) return;
     for (const { block } of placed) {
       const key = optionKey(block.units);
       if (!key || optionRequested.current.has(key)) continue;
@@ -1122,7 +1130,7 @@ export function ReviewApp({
       void api<RoundDetail>(`/source/options/preview`, { id: "accepted", round, edits, background: true })
         .then((value) => setOptionBlocks((prev) => ({ ...prev, [key]: value })), () => {});
     }
-  }, [detail, placed, variants, changes, transport, previewing, building]);
+  }, [detail, placed, variants, changes, live, previewing, building]);
   // Clear stale selectedUnit if its unit disappeared or its block resolved.
   const multiUnitAt = (index: number) => {
     const meta = blockUnitStatic.get(index),
@@ -2317,7 +2325,7 @@ export function ReviewApp({
                 key={unit.id}
               >
                 <SourceEditor key={`${detail!.round}:${unit.id}`} task={task} round={detail!.round} change={unit.id} api={api}
-                  editable={Boolean(!previewing && state?.sourceEditing && !changes && !pinned && unit.kind !== "binary")}
+                  editable={Boolean(!previewing && state?.sourceEditing && !changes && !pinned && unit.kind !== "binary" && (!onOpenSource || hasCurrentText(unit)))}
                   building={Boolean(state?.job && ["queued", "running"].includes(state.job.status))}
                   locked={!latest ? t("A newer round is available. Reload the page.") : decisions[unit.id] === "rejected" ? t("This change was rejected. Undo that decision before editing it.") : actionLock("source") || (waiting.has(unit.id) && detail!.rendering !== "failed" ? t("PDF comparison in progress") : null)}
                   onSaving={saving => { snapshot.current.busy = saving; setBusy(saving); }}
@@ -2430,7 +2438,7 @@ export function ReviewApp({
   // What the author reads now compiles first: the page says which view it
   // shows while it is on screen.
   useEffect(() => {
-    if (changes || transport || !task) return;
+    if (changes || !live || !task) return;
     const mode = paperView ? "pdf" : "changes";
     // Only with the page's token, which the first state brings.
     const look = () => { if (!document.hidden && snapshot.current.state?.csrf) void api("/look", { mode }).catch(() => undefined); };
@@ -2438,7 +2446,7 @@ export function ReviewApp({
     const timer = setInterval(look, 5000);
     document.addEventListener("visibilitychange", look);
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", look); };
-  }, [task, paperView, changes, Boolean(state?.csrf)]);
+  }, [task, paperView, changes, live, Boolean(state?.csrf)]);
   // A host shows its PDF navigation controls while the whole paper is shown,
   // and keeps their place while the round's comparison renders again.
   const paperPending = !paperView && !paperUnavailable && !detail?.sourceOnly
@@ -2697,7 +2705,8 @@ export function ReviewApp({
               aria-label={t("Review history")}
               value={detail.round}
               onChange={(e) => {
-                location.href = withLanguage(
+                if (onNavigate) onNavigate(Number(e.target.value));
+                else location.href = withLanguage(
                   `?task=${encodeURIComponent(task)}&round=${e.target.value}&history=1`,
                 );
               }}
@@ -2743,11 +2752,12 @@ export function ReviewApp({
           <button
             className="ghost"
             onClick={() => {
-              if (pinned)
-                location.href = withLanguage(
+              if (pinned) {
+                if (onNavigate) onNavigate(null);
+                else location.href = withLanguage(
                   `?task=${encodeURIComponent(task)}`,
                 );
-              else {
+              } else {
                 setHistory(false);
                 setCurrent(nextPending(stops, decisions, -1, focused));
               }
@@ -2875,7 +2885,9 @@ export function ReviewApp({
           {!changes && detail && state?.latest && detail.round !== state.latest && (
             <div className="banner">
               {t("Viewing earlier changes.")}{" "}
-              <a href={withLanguage(`?task=${encodeURIComponent(task)}`)}>
+              <a href={withLanguage(`?task=${encodeURIComponent(task)}`)} onClick={event => {
+                if (onNavigate) { event.preventDefault(); onNavigate(null); }
+              }}>
                 {t("Back to current changes →")}
               </a>
             </div>
@@ -2945,6 +2957,7 @@ export function ReviewApp({
                       active={compare}
                       before={detail.pdfBefore!}
                       after={detail.pdf!}
+                      resource={resource}
                       files={detail.files}
                       changes={placed}
                       current={current}
@@ -2967,6 +2980,7 @@ export function ReviewApp({
                   key={`${placeKey}:pdf:${detail.round}:${detail.pdf}`}
                   active={!compare}
                   url={detail.pdf!}
+                  resource={resource}
                   passes={detail.passes}
                   errors={detail.revisedErrors}
                   changes={placed}

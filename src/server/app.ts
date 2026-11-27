@@ -2,9 +2,10 @@ import { PaperTools, searchPaper } from './paper-tools.ts';
 import { buildActivityReport, type ActivityEventRow } from './activity.ts';
 import { canonicalGroup, isNoteGroup, regroupAnnotation, sameAnnotationGroup } from '../note-groups.ts';
 import { isCommitMessageLanguage, type CommitMessageLanguage } from '../commit.ts';
-import { AGENT_NAMES, noteAlternativeRange, NOTE_ALTERNATIVE_RANGES, validLanes, validRacers, validRoute, validRoutes, taskFinished, type CollaborationRoute, type InFlightMark } from '../shared.ts';
+import { AGENT_NAMES, isManualAgent, noteAlternativeRange, NOTE_ALTERNATIVE_RANGES, validLanes, validRacers, validRoute, validRoutes, taskFinished, type CollaborationRoute, type InFlightMark } from '../shared.ts';
 import Fastify from 'fastify';
 import compress from '@fastify/compress';
+import staticFiles from '@fastify/static';
 import { registerImportUpload } from './import-upload.ts';
 import { listFolders, nearestFolder } from './folders.ts';
 import { isLocalRequest } from './security.ts';
@@ -20,7 +21,7 @@ import type { Store } from './store.ts';
 import type { TaskNoteContext, Workspace } from './workspace.ts';
 import { WriterAgent } from './writer/agent.ts';
 import { AGENT_TURN, reviewClient, retryReviewRead, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState, taskRoute } from './review.ts';
-import { fullPaperPdf, nextPaperPass, paperBuildPdf, paperPassPdf, retainedPaperBuild, retainedPaperPdf } from './pdf.ts';
+import { fullPaperPdf, fullPaperSource, nextPaperPass, paperBuildPdf, paperPassPdf, retainedPaperBuild, retainedPaperPdf } from './pdf.ts';
 import { withNotePages } from './note-pages.ts';
 import { type ChangeAction, Changes } from './changes.ts';
 import { citationChecks, citationSuggestions, citations, currentSuggestions, confirmEntry, forgetFinding, library, libraryInputs, libraryReport, recordFinding, stopLibrary } from './references.ts';
@@ -31,7 +32,7 @@ import type { Library } from './library.ts';
 import { plain } from '../../engine/src/core/verify.ts';
 import { type Manuscripts, gitAbortMerge, gitCommit, gitDiff, gitDiscard, gitFinishMerge, gitIgnore, gitRemote, gitStage, gitStatus, gitSync } from './manuscript.ts';
 import { gitHistory, gitVersion, gitVersionDiff, gitRestoreVersion } from './git-history.ts';
-import { locateSource, placeSource, readFile, saveSource } from './manuscript-source.ts';
+import { locateSource, placeCompiledSource, placeSource, readFile, saveSource } from './manuscript-source.ts';
 import { captureAnchor, resolveAnchors, isSourceAnchor } from './manuscript-anchors.ts';
 import { gitOverview } from './git-overview.ts';
 import { findSkill, listedSkill, loadSkills } from './skills.ts';
@@ -298,22 +299,32 @@ export async function buildApp(options: AppOptions) {
   // again, as the file menu offers it: a root document, or one compiled
   // before, even while it lacks \documentclass of its own. One on a main file
   // since renamed or removed moves to the current document.
-  async function paperNoteScope(id: string) {
-    const root = store.project(id).path, document = await manuscripts.document(id, root);
+  async function paperNoteScope(id: string, session = id) {
+    const root = store.project(id).path, document = await manuscripts.document(session, root);
     const inDocument = await noteDocumentFilter(root, document);
-    return { document, includes: (note: Annotation) => !isTaskReviewNote(note) && inDocument(note) };
+    const fallback = session === id ? document : await manuscripts.document(id, root);
+    return { document, includes: (note: Annotation) => !isTaskReviewNote(note) && inDocument(note)
+      && (session === id || note.document === document || document === fallback) };
   }
   async function paperNotes(id: string) {
     const scope = await paperNoteScope(id);
     return store.annotations(id).filter(note => !note.taskId && scope.includes(note));
   }
-  async function manuscript(id: string, rebuild = false) {
+  async function requestedDocument(request: { params: { id: string }; query: unknown }) {
+    const document = (request.query as { document?: unknown })?.document;
+    return document === undefined ? undefined : checkDocument(store.project(request.params.id).path, document);
+  }
+  async function requestedSession(request: { params: { id: string }; query: unknown }) {
+    return manuscripts.session(request.params.id, await requestedDocument(request));
+  }
+  async function manuscript(id: string, rebuild = false, document?: string) {
     await options.prepareDemo?.();
-    const root = store.project(id).path, state = await manuscripts.state(id, root, rebuild);
-    const { document, includes } = await paperNoteScope(id);
+    const root = store.project(id).path, session = manuscripts.session(id, document);
+    const state = await manuscripts.state(session, root, rebuild);
+    const scopeDocument = await paperNoteScope(id, session), { includes } = scopeDocument;
     const paperNote = (note: Annotation) => !note.taskId && includes(note);
     const notes = store.annotations(id).filter(paperNote);
-    const placed = await manuscripts.reanchor(id, root, notes).catch(() => notes);
+    const placed = await manuscripts.reanchor(session, root, notes).catch(() => notes);
     for (let index = 0; index < notes.length; index++) {
       const next = placed[index], previous = notes[index];
       if (next.key === previous.key || next.key !== state.build.key) continue;
@@ -328,7 +339,7 @@ export async function buildApp(options: AppOptions) {
     // A cold section lookup must not hold up notes or their source locations.
     // Ready assignments return immediately; pending ones arrive on the next poll.
     const scope = state.build.key ? await Promise.race([
-      manuscripts.noteSections(id, state.build.key, annotations).catch(() => null),
+      manuscripts.noteSections(session, state.build.key, annotations).catch(() => null),
       new Promise<null>(resolve => setImmediate(resolve, null)),
     ]) : null;
     const inFlightTask = (note: Annotation) => {
@@ -338,13 +349,13 @@ export async function buildApp(options: AppOptions) {
     const sent = store.annotations(id).filter(note => includes(note) && inFlightTask(note));
     // Reuse confirmed placements, without rewriting the task's source snapshot.
     // Recheck after the lookup: delivery or deletion may have finished meanwhile.
-    const positions = await manuscripts.reanchor(id, root, sent).catch(() => sent);
+    const positions = await manuscripts.reanchor(session, root, sent).catch(() => sent);
     const inFlightMarks: InFlightMark[] = positions.flatMap(note => {
       const current = store.annotation(id, note.id), task = inFlightTask(current);
       return current.deletedAt === undefined && task && current.taskId === note.taskId
         ? [{ note, taskId: task.id, title: task.title, status: task.status, ...(task.status === 'building' && task.review?.ready ? { ready: true as const } : {}) }] : [];
     });
-    return { ...state, document, annotations, inFlightMarks, ...(scope ? { noteSections: scope.sections, unplacedSectionNotes: scope.unplaced, ...(scope.pageLayouts && Object.keys(scope.pageLayouts).length ? { notePageLayouts: scope.pageLayouts } : {}) } : {}) };
+    return { ...state, document: scopeDocument.document, annotations, inFlightMarks, ...(scope ? { noteSections: scope.sections, unplacedSectionNotes: scope.unplaced, ...(scope.pageLayouts && Object.keys(scope.pageLayouts).length ? { notePageLayouts: scope.pageLayouts } : {}) } : {}) };
   }
 
   app.get('/api/health', () => ({ ok: true, name: 'Papilot', version: options.version, ...(options.desktopInstance ? { desktopInstance: options.desktopInstance } : {}), ...(options.updateInstance ? { updateInstance: options.updateInstance } : {}) }));
@@ -437,6 +448,27 @@ export async function buildApp(options: AppOptions) {
     if (enabled !== undefined) workspace.setCollaborationEnabled(enabled);
     return workspace.collaborationSettings();
   });
+  app.get('/api/chatgpt-pro', () => workspace.chatgptProSettings());
+  app.post('/api/chatgpt-pro', (request, reply) => {
+    const { enabled, executor, autoSyncGithub } = (request.body as any) || {};
+    if (enabled === undefined && executor === undefined && autoSyncGithub === undefined) return reply.code(400).send({ error: 'Send enabled, executor, or autoSyncGithub.' });
+    if (enabled !== undefined && typeof enabled !== 'boolean') return reply.code(400).send({ error: 'Send enabled as true or false.' });
+    if (autoSyncGithub !== undefined && typeof autoSyncGithub !== 'boolean') return reply.code(400).send({ error: 'Send autoSyncGithub as true or false.' });
+    if (executor !== undefined && executor !== null) {
+      if (typeof executor !== 'object' || !isAgentId(executor.agent) || executor.agent === 'collaboration' || executor.agent === 'chatgpt') {
+        return reply.code(400).send({ error: 'Choose a local agent to apply ChatGPT Pro’s suggestions.' });
+      }
+      if ((executor.model !== undefined && executor.model !== null && typeof executor.model !== 'string') || (executor.effort !== undefined && executor.effort !== null && typeof executor.effort !== 'string')) {
+        return reply.code(400).send({ error: 'Choose a model and reasoning effort.' });
+      }
+      workspace.setChatgptProExecutor({ agent: executor.agent, ...(executor.model ? { model: executor.model } : {}), ...(executor.effort ? { effort: executor.effort } : {}) });
+    } else if (executor === null) {
+      workspace.setChatgptProExecutor(null);
+    }
+    if (autoSyncGithub !== undefined) workspace.setChatgptProAutoSyncGithub(autoSyncGithub);
+    if (enabled !== undefined) workspace.setChatgptProEnabled(enabled);
+    return workspace.chatgptProSettings();
+  });
   // Turns an agent on or off, hides some of its models, or resets both.
   // The model quick background jobs use: null lets each job pick the small
   // model of the agent it would use anyway.
@@ -445,7 +477,7 @@ export async function buildApp(options: AppOptions) {
   app.post('/api/quick-model', (request, reply) => {
     const { agent, model, effort } = (request.body as any) || {};
     if (agent === null) { workspace.setQuickModel(null); return quickModelState(); }
-    if (!isAgentId(agent) || agent === 'collaboration') return reply.code(400).send({ error: 'Unknown agent.' });
+    if (!isAgentId(agent) || agent === 'collaboration' || agent === 'chatgpt') return reply.code(400).send({ error: 'Unknown agent.' });
     if ((model !== undefined && model !== null && typeof model !== 'string') || (effort !== undefined && effort !== null && typeof effort !== 'string')) return reply.code(400).send({ error: 'Choose a model and reasoning effort.' });
     workspace.setQuickModel({ agent, model: model || null, effort: effort || null });
     return quickModelState();
@@ -453,7 +485,7 @@ export async function buildApp(options: AppOptions) {
   app.post('/api/agent-settings', (request, reply) => {
     const { agent, enabled, hiddenModels, reset } = (request.body as any) || {};
     if (reset === true) { workspace.resetAgentSettings(); return { ok: true }; }
-    if (!isAgentId(agent) || agent === 'collaboration') return reply.code(400).send({ error: 'Unknown agent.' });
+    if (!isAgentId(agent) || agent === 'collaboration' || agent === 'chatgpt') return reply.code(400).send({ error: 'Unknown agent.' });
     if (enabled === undefined && hiddenModels === undefined) return reply.code(400).send({ error: 'Send enabled or hiddenModels.' });
     if (enabled !== undefined && typeof enabled !== 'boolean') return reply.code(400).send({ error: 'Send enabled as true or false.' });
     if (hiddenModels !== undefined && !(Array.isArray(hiddenModels) && hiddenModels.every(model => typeof model === 'string' && model))) return reply.code(400).send({ error: 'Send hiddenModels as a list of model IDs.' });
@@ -557,6 +589,12 @@ export async function buildApp(options: AppOptions) {
   });
   app.post('/api/projects/create', request => creations!.create((request.body || {}) as any, (root, name) => workspace.addProject(root, name)));
   app.post('/api/projects/open', request => openFolder((request.body || {}) as any, root => workspace.projectByPath(root), (root, name) => workspace.addProject(root, name)));
+  // Hosts with their own file browser can register an existing repository
+  // without selecting a default document or changing its build settings.
+  app.post('/api/projects/register', async request => {
+    const root = await workspace.projectRoot(string((request.body as any)?.path, 'Repository path'));
+    return { project: await workspace.addProject(root) };
+  });
   registerImportUpload(app, imports);
   app.post('/api/folders', request => listFolders((request.body || {}) as any));
   // The system picker appears on this computer's screen, so only a browser here may open it.
@@ -620,7 +658,8 @@ export async function buildApp(options: AppOptions) {
         if (context) noteContexts[note.id] = { note, context };
       }
     }
-    return workspace.createTask({ id, projectId, noteContexts, ...(reviewing ? { prepareReview: (worktree: string, document?: string) => manuscripts.captureReview(store.project(projectId).path, worktree, id, document) } : {}), title: string(b.title, 'Task title', 120), permissions: b.permissions, instructions: skill || annotations?.length || attachments.length ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, annotations, groupInstructions, attachments, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64) });
+    const document = b.document === undefined ? undefined : await checkDocument(store.project(projectId).path, b.document);
+    return workspace.createTask({ id, projectId, document, noteContexts, ...(reviewing ? { prepareReview: (worktree: string, document?: string) => manuscripts.captureReview(store.project(projectId).path, worktree, id, document) } : {}), title: string(b.title, 'Task title', 120), permissions: b.permissions, instructions: skill || annotations?.length || attachments.length ? optional(b.instructions, 'Instructions') : string(b.instructions, 'Instructions'), skill, annotations, groupInstructions, attachments, agent: agent(b.agent), model: typeof b.model === 'string' ? b.model : undefined, effort: effort(b.effort), serviceTier: b.serviceTier === undefined ? undefined : string(b.serviceTier, 'Service tier', 64) });
   });
   // Retry for a task whose preparation failed; it answers at once as well.
   app.post<{ Params: { id: string } }>('/api/tasks/:id/prepare', task, request => workspace.retryTask(request.params.id));
@@ -817,7 +856,7 @@ export async function buildApp(options: AppOptions) {
       // What applying writes: the accepted text merged with the files on
       // disk as the application merges them, or nothing while it would conflict.
       const preview = await client.get<{ files: Record<string, string | null> | null }>(`${taskRoute(current.name)}/preview`);
-      if (preview.files) await manuscripts.predict(project.id, project.path, Object.fromEntries(Object.entries(preview.files).map(([file, data]) => [file, data === null ? null : Buffer.from(data, 'base64')])));
+      if (preview.files) await manuscripts.predict(manuscripts.existingSession(project.id, current.document), project.path, Object.fromEntries(Object.entries(preview.files).map(([file, data]) => [file, data === null ? null : Buffer.from(data, 'base64')])));
     })().catch(() => undefined);
   };
   // A task's final selection: predict what applying it writes.
@@ -827,6 +866,14 @@ export async function buildApp(options: AppOptions) {
   app.post<{ Params: { id: string } }>('/api/tasks/:id/predict', task, request => {
     predict(store.task(request.params.id).id);
     return { ok: true };
+  });
+  app.get<{ Params: { id: string }; Querystring: { file?: string; start?: string; end?: string } }>('/api/tasks/:id/source/place', task, async request => {
+    const current = store.task(request.params.id), project = store.project(current.projectId), round = current.review?.round;
+    if (!round || !current.worktree) return { place: null };
+    const { file, start, end } = request.query;
+    const build = await fullPaperSource(connectReview, project.path, current.name, round);
+    const found = await placeCompiledSource(build, file, start, end, undefined, undefined, current.worktree);
+    return found.place ? { place: found.place, key: build.key, url: `/api/tasks/${encodeURIComponent(current.id)}/pdf?round=${round}&build=${build.key}` } : found;
   });
   app.get<{ Params: { id: string }; Querystring: { round?: string; version?: string; download?: string; retained?: string; metadata?: string; build?: string } }>('/api/tasks/:id/pdf', task, async (request, reply) => {
     const task = store.task(request.params.id), project = store.project(task.projectId);
@@ -901,6 +948,34 @@ export async function buildApp(options: AppOptions) {
     }
     return workspace.enqueue(task.id, text, string(b.requestKey, 'Request ID', 100), true, { skill, feedback, reviewNotes, attachments, returnedNotes });
   });
+  app.get<{ Params: { id: string } }>('/api/tasks/:id/manual-prompt', task, request => workspace.manualPrompt(request.params.id));
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/manual-github-sync', task, request => {
+    const current = store.task(request.params.id);
+    const b = (request.body || {}) as Record<string, unknown>;
+    const remote = b.remote === undefined ? undefined : string(b.remote, 'Git remote', 100);
+    return serialGit(current.projectId, () => workspace.syncManualGithub(current.id, remote));
+  });
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/manual-reply', { ...task, bodyLimit: 4 * 1024 * 1024 }, request => {
+    const b = (request.body || {}) as Record<string, unknown>;
+    const reply = string(b.reply, 'ChatGPT Pro reply', 2_000_000);
+    const requestKey = b.requestKey === undefined ? undefined : string(b.requestKey, 'Request ID', 100);
+    let executor: import('../shared.ts').HelperChoice | undefined;
+    if (b.executor !== undefined && b.executor !== null) {
+      const raw = b.executor as Record<string, unknown>;
+      if (typeof raw !== 'object' || !isAgentId(raw.agent) || raw.agent === 'collaboration' || isManualAgent(raw.agent)) {
+        throw new Error('Choose a local agent to apply ChatGPT Pro’s suggestions.');
+      }
+      if ((raw.model !== undefined && raw.model !== null && typeof raw.model !== 'string') || (raw.effort !== undefined && raw.effort !== null && typeof raw.effort !== 'string')) {
+        throw new Error('Choose a model and reasoning effort.');
+      }
+      executor = {
+        agent: raw.agent,
+        ...(typeof raw.model === 'string' && raw.model ? { model: raw.model } : {}),
+        ...(typeof raw.effort === 'string' && raw.effort ? { effort: raw.effort } : {}),
+      };
+    }
+    return workspace.submitManualReply(request.params.id, reply, requestKey, executor);
+  });
   // Applying writes the manuscript only once its delivery is complete: not
   // for a confirmation, a merge suggestion, a pending delivery or a branch.
   const delivered = (delivery: Task['delivery']) => Boolean(delivery && !delivery.pending && delivery.mode !== 'branch');
@@ -910,7 +985,7 @@ export async function buildApp(options: AppOptions) {
     const retryCommit = b.message === undefined && task.delivery?.mode === 'commit' && task.delivery.pending;
     // The conflict-resolution agent chosen in Settings → Git, for a merge suggestion.
     const conflict = b.conflictAgent;
-    if (conflict !== undefined && (!conflict || typeof conflict !== 'object' || !isAgentId(conflict.agent))) throw new Error('Choose a supported agent.');
+    if (conflict !== undefined && (!conflict || typeof conflict !== 'object' || !isAgentId(conflict.agent) || isManualAgent(conflict.agent))) throw new Error('Choose a supported agent.');
     const mergeAgent = conflict ? { agent: agent(conflict.agent), ...helperModelSettings(conflict) } : undefined;
     const result = await serialGit(task.projectId, () => workspace.applyTask(task.id, b.keepCurrent === true, b.mode === 'commit' ? { message: retryCommit ? undefined : string(b.message, 'Commit message', 5000), ...(b.confirmation ? { confirmation: string(b.confirmation, 'Commit confirmation', 100) } : {}) } : undefined, mergeAgent));
     if (delivered(result.delivery)) refreshManuscript(task.projectId);
@@ -921,9 +996,12 @@ export async function buildApp(options: AppOptions) {
   app.post<{ Params: { id: string } }>('/api/tasks/:id/commit-message', task, request => {
     const task = store.task(request.params.id), b = (request.body || {}) as Record<string, unknown>;
     if (b.agent !== undefined && !isAgentId(b.agent)) throw new Error('Invalid agent.');
-    const settings = helperModelSettings({ ...(b.agent === undefined ? { model: task.model || undefined, effort: task.effort || undefined, serviceTier: task.serviceTier } : {}), ...b });
+    const inheritedAgent = isManualAgent(task.agent) ? task.manualExecutor?.agent : task.agent;
+    const inheritedModel = isManualAgent(task.agent) ? task.manualExecutor?.model || undefined : task.model || undefined;
+    const inheritedEffort = isManualAgent(task.agent) ? task.manualExecutor?.effort || undefined : task.effort || undefined;
+    const settings = helperModelSettings({ ...(b.agent === undefined ? { model: inheritedModel, effort: inheritedEffort, serviceTier: isManualAgent(task.agent) ? undefined : task.serviceTier } : {}), ...b });
     const inheritedSpeed = b.agent === undefined && b.serviceTier === undefined && Boolean(settings.serviceTier);
-    return workspace.commitMessage(task.projectId, task.review?.files || [], { taskId: task.id, agent: b.agent === undefined ? task.agent : agent(b.agent), ...settings, ...(inheritedSpeed ? { inheritedSpeed } : {}), fresh: b.fresh === true, language: commitMessageLanguage(b.language) });
+    return workspace.commitMessage(task.projectId, task.review?.files || [], { taskId: task.id, agent: b.agent === undefined ? inheritedAgent : agent(b.agent), ...settings, ...(inheritedSpeed ? { inheritedSpeed } : {}), fresh: b.fresh === true, language: commitMessageLanguage(b.language) });
   });
   app.post<{ Params: { id: string } }>('/api/tasks/:id/permissions', task, request => workspace.updateTaskPermissions(request.params.id, (request.body as any)?.permissions));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/model', task, request => {
@@ -969,7 +1047,7 @@ export async function buildApp(options: AppOptions) {
     void workspace.publish(task.id); return { ok: true };
   });
   // The manuscript preview compiles each paper's working tree and reports its Git status.
-  app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript', project(), request => manuscript(request.params.id));
+  app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript', project(), async request => manuscript(request.params.id, false, await requestedDocument(request)));
   app.get<{ Params: { id: string } }>('/api/projects/:id/git', project(), request => gitStatus(store.project(request.params.id).path));
   // The paper's library: every bibliography entry, its problems, its online
   // check and its PDF. Online, missing PDFs are looked for; Zotero's are
@@ -1194,7 +1272,7 @@ export async function buildApp(options: AppOptions) {
   // A merge in progress is resolved by an agent, committed, or abandoned.
   app.post<{ Params: { id: string } }>('/api/projects/:id/git/resolve', project(), request => {
     const project = store.project(request.params.id), b = request.body as any;
-    if (b.agent !== undefined && !isAgentId(b.agent)) throw new Error('Choose a supported agent.');
+    if (b.agent !== undefined && (!isAgentId(b.agent) || isManualAgent(b.agent))) throw new Error('Choose a supported agent.');
     return serialGit(project.id, () => workspace.resolveConflicts(project.id, { agent: b.agent, ...helperModelSettings(b) }));
   });
   app.post<{ Params: { id: string } }>('/api/projects/:id/git/finish', project(), request => {
@@ -1232,7 +1310,7 @@ export async function buildApp(options: AppOptions) {
     // network waits. Other remote operations can change HEAD or working files.
     return action === 'fetch' ? work() : serialGit(project.id, work);
   });
-  app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript', project(), request => manuscript(request.params.id, true));
+  app.post<{ Params: { id: string } }>('/api/projects/:id/manuscript', project(), async request => manuscript(request.params.id, true, await requestedDocument(request)));
   // The file browser: the repository's files, and the root document the
   // paper compiles, which can be any of its root documents.
   app.get<{ Params: { id: string } }>('/api/projects/:id/files', project(), async request => {
@@ -1464,8 +1542,8 @@ export async function buildApp(options: AppOptions) {
     });
   }
   // What the last build reported, placed on its PDF, and the TeX log itself.
-  app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript/problems', project(), request => manuscripts.problems(store.project(request.params.id).id));
-  app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript/log', project(), (request, reply) => reply.type('text/plain; charset=utf-8').header('Cache-Control', 'no-store').send(manuscripts.log(store.project(request.params.id).id)));
+  app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript/problems', project(), async request => manuscripts.problems(await requestedSession(request)));
+  app.get<{ Params: { id: string } }>('/api/projects/:id/manuscript/log', project(), async (request, reply) => reply.type('text/plain; charset=utf-8').header('Cache-Control', 'no-store').send(manuscripts.log(await requestedSession(request))));
   app.post<{ Params: { id: string }; Body: { failureId?: unknown; agent?: unknown; model?: unknown } }>('/api/projects/:id/manuscript/repair', project(), request => {
     const paper = store.project(request.params.id), body = request.body;
     const selected = body?.agent;
@@ -1506,32 +1584,36 @@ export async function buildApp(options: AppOptions) {
     if (!equals(String(request.headers['x-review-token'] || ''), options.csrf)) throw Object.assign(new Error('This page has expired. Refresh it and try again.'), { statusCode: 403 });
   };
   const CHANGE_ACTIONS: Record<string, ChangeAction> = { accept: 'stage', unstage: 'unstage', reject: 'revert' };
-  app.get<{ Params: { projectId: string }; Querystring: { round?: string } }>('/review/:projectId/api/changes/state', changesAccess, request => {
+  async function requestedChanges(request: { params: { projectId: string }; query: unknown }) {
+    const document = await requestedDocument({ params: { id: request.params.projectId }, query: request.query });
+    return document === undefined ? changes : changes.forDocument(request.params.projectId, document);
+  }
+  app.get<{ Params: { projectId: string }; Querystring: { round?: string } }>('/review/:projectId/api/changes/state', changesAccess, async request => {
     const project = store.project(request.params.projectId), round = Number(request.query.round);
-    return changes.state(project.id, project.path, options.csrf, Number.isSafeInteger(round) && round > 0 ? round : undefined);
+    return (await requestedChanges(request)).state(project.id, project.path, options.csrf, Number.isSafeInteger(round) && round > 0 ? round : undefined);
   });
-  app.get<{ Params: { projectId: string; number: string } }>('/review/:projectId/api/changes/rounds/:number', changesAccess, request => changes.detail(store.project(request.params.projectId).id, Number(request.params.number)));
-  app.get<{ Params: { projectId: string; number: string; unit: string } }>('/review/:projectId/api/changes/rounds/:number/effects/:unit', changesAccess, request =>
-    changes.effects(store.project(request.params.projectId).id, Number(request.params.number), request.params.unit));
-  app.get<{ Params: { projectId: string; number: string }; Querystring: { check?: string; retry?: string } }>('/review/:projectId/api/changes/rounds/:number/references', changesAccess, request => {
+  app.get<{ Params: { projectId: string; number: string } }>('/review/:projectId/api/changes/rounds/:number', changesAccess, async request => (await requestedChanges(request)).detail(store.project(request.params.projectId).id, Number(request.params.number)));
+  app.get<{ Params: { projectId: string; number: string; unit: string } }>('/review/:projectId/api/changes/rounds/:number/effects/:unit', changesAccess, async request =>
+    (await requestedChanges(request)).effects(store.project(request.params.projectId).id, Number(request.params.number), request.params.unit));
+  app.get<{ Params: { projectId: string; number: string }; Querystring: { check?: string; retry?: string } }>('/review/:projectId/api/changes/rounds/:number/references', changesAccess, async request => {
     const project = store.project(request.params.projectId);
-    return changes.references(project.id, project.path, Number(request.params.number), request.query.check === '1', request.query.retry === '1');
+    return (await requestedChanges(request)).references(project.id, project.path, Number(request.params.number), request.query.check === '1', request.query.retry === '1');
   });
-  app.post<{ Params: { projectId: string; number: string } }>('/review/:projectId/api/changes/rounds/:number/references/confirm', changesAccess, request => {
+  app.post<{ Params: { projectId: string; number: string } }>('/review/:projectId/api/changes/rounds/:number/references/confirm', changesAccess, async request => {
     changesToken(request);
     const project = store.project(request.params.projectId), b = request.body as any;
     if (typeof b?.id !== 'string' || typeof b?.confirmed !== 'boolean') throw new Error('Choose an entry to confirm.');
-    return changes.confirmReference(project.id, project.path, Number(request.params.number), b.id, b.confirmed);
+    return (await requestedChanges(request)).confirmReference(project.id, project.path, Number(request.params.number), b.id, b.confirmed);
   });
-  app.get<{ Params: { projectId: string; number: string } }>('/review/:projectId/changes/pdf/:number', changesAccess, (request, reply) => {
-    const pdf = changes.pdf(store.project(request.params.projectId).id, Number(request.params.number));
+  app.get<{ Params: { projectId: string; number: string } }>('/review/:projectId/changes/pdf/:number', changesAccess, async (request, reply) => {
+    const pdf = (await requestedChanges(request)).pdf(store.project(request.params.projectId).id, Number(request.params.number));
     return reply.type('application/pdf').sendFile(path.basename(pdf), path.dirname(pdf), { cacheControl: false });
   });
-  app.get<{ Params: { projectId: string; number: string; file: string } }>('/review/:projectId/changes/files/:number/:file', changesAccess, (request, reply) => {
-    const file = changes.file(store.project(request.params.projectId).id, Number(request.params.number), request.params.file);
+  app.get<{ Params: { projectId: string; number: string; file: string } }>('/review/:projectId/changes/files/:number/:file', changesAccess, async (request, reply) => {
+    const file = (await requestedChanges(request)).file(store.project(request.params.projectId).id, Number(request.params.number), request.params.file);
     return reply.header('Cache-Control', 'private, max-age=31536000, immutable').type(file.endsWith('.svg') ? 'image/svg+xml' : 'image/png').send(fs.createReadStream(file));
   });
-  app.post<{ Params: { projectId: string } }>('/review/:projectId/api/changes/decide', changesAccess, request => {
+  app.post<{ Params: { projectId: string } }>('/review/:projectId/api/changes/decide', changesAccess, async request => {
     changesToken(request);
     const project = store.project(request.params.projectId), b = request.body as any, action = CHANGE_ACTIONS[String(b?.action)];
     if (!action) throw new Error('Choose stage, unstage or revert.');
@@ -1539,7 +1621,7 @@ export async function buildApp(options: AppOptions) {
     const round = Number(b.round);
     const act = async () => {
       let applied: { base: string; signatures: string[]; revertId?: string } | undefined;
-      const result = await changes.act(project.id, project.path, options.csrf, action, round, ids, info => { applied = info; });
+      const result = await (await requestedChanges(request)).act(project.id, project.path, options.csrf, action, round, ids, info => { applied = info; });
       if (applied) {
         if (action === 'stage') {
           for (const sig of applied.signatures) {
@@ -1570,11 +1652,11 @@ export async function buildApp(options: AppOptions) {
     };
     return serialGit(project.id, () => action === 'revert' ? workspace.exclusiveCommit(project.id, act) : act());
   });
-  app.post<{ Params: { projectId: string } }>('/review/:projectId/api/changes/undo', changesAccess, request => {
+  app.post<{ Params: { projectId: string } }>('/review/:projectId/api/changes/undo', changesAccess, async request => {
     changesToken(request);
     const project = store.project(request.params.projectId), id = string((request.body as any)?.id, 'Revert ID', 80);
     return serialGit(project.id, () => workspace.exclusiveCommit(project.id, async () => {
-      const result = await changes.undo(project.id, project.path, options.csrf, id);
+      const result = await (await requestedChanges(request)).undo(project.id, project.path, options.csrf, id);
       const key = `decision:changes:${project.id}:${id}`, revert = store.activityEvent(key);
       store.undoActivity(key);
       // Undoing a revert stages its changes again, and with them their acceptances.
@@ -1723,6 +1805,9 @@ export async function buildApp(options: AppOptions) {
   });
 
   if (options.dist) await registerFrontend(app, options.dist);
-  else app.get('/', (_request, reply) => reply.type('text/plain').send('Papilot: run npm run build, then restart the server.'));
+  else {
+    await app.register(staticFiles, { root: DATA, serve: false });
+    app.get('/', (_request, reply) => reply.type('text/plain').send('Papilot: run npm run build, then restart the server.'));
+  }
   return app;
 }

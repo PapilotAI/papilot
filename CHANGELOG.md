@@ -7,6 +7,8 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 ### Added
 
 - Compare a task's changes **side by side**, as in Draftable's comparison export: the new two-page button in the review toolbar shows the old version's whole pages beside the new version's, paired by their content with blank pages where one version has more, removed words in red and added words in green. A bar between the pages marks each change with its number; selecting it shades the change's lines on both pages and opens its decisions, copy reference and LaTeX source. The page, contents, zoom and find controls work as in the full PDF, and switching layouts keeps your page. The review remembers the choice; narrow windows keep the stacked layout. Thanks to [@CatIIIIIIII](https://github.com/CatIIIIIIII) for proposing a side-by-side review in [#40](https://github.com/PapilotAI/papilot/pull/40).
+- Use **ChatGPT Pro (web)** manually inside standard Papilot tasks via **Settings → Experiments**. Send PDF annotations from the Manuscript like any other agent, copy the prepared prompt (or sync a non-destructive task snapshot branch to your paper's GitHub remote for full-repository context through ChatGPT Pro's GitHub connector), paste any free-form reply back into the same chat, and choose a local agent, model and reasoning effort to apply edits and build the PDF comparison.
+- Use Papilot in VS Code 1.96.4 or later with native LaTeX editors, a separate conversation sidebar, PDF and review tabs, compilation diagnostics, and Git staging. Open conversation attachments and page thumbnails in editor tabs. The extension discovers multiple papers in workspace repositories and bundles the shared Papilot runtime and Node.js. Install it from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=PapilotAI.papilot), or see [the extension guide](vscode/README.md).
 - Choose **Ultrafast** in the Codex model picker when your account and model offer it. Papilot remembers the selected speed per model and marks Fast with one lightning bolt and Ultrafast with two.
 - Choose **ZCode** for manuscript tasks. Papilot uses your local ZCode CLI and its default model, streams replies and tool activity, and resumes the same conversation on follow-up turns. ([#338](https://github.com/PapilotAI/papilot/issues/338))
 - Use a third-party OpenAI-compatible Chat Completions API with **Settings → Runtime → Agents → Papilot Writer → Custom API**. Save the provider's base URL, model ID and API key, then choose that model for a task. ([#338](https://github.com/PapilotAI/papilot/issues/338))
@@ -33,11 +35,16 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Fixed
 
+- Keep changed PDF text and highlights readable in the VS Code extension's dark theme.
+- Keep VS Code review navigation in its tab, resolve task source paths after preparation, protect unsaved files opened through symlinks, and translate native commands and prompts.
+- Use VS Code's display language in review tabs and protect unsaved task source when applying reviewed changes.
+- In VS Code, wait for the current manuscript PDF when jumping from LaTeX source, and open the task's own PDF when jumping from a task worktree.
 - Identify the `.tex` file the manuscript source editor could not open, with guidance for invalid UTF-8 and null bytes. ([#352](https://github.com/PapilotAI/papilot/issues/352))
 - Fix LaTeX compilation and PDF reviews on Windows when TeX Live or MiKTeX passes LaTeX code through the Perl bundled with Git for Windows. ([#340](https://github.com/PapilotAI/papilot/pull/340), [#346](https://github.com/PapilotAI/papilot/issues/346))
 - On Windows, the toolbar divider extends beneath the window buttons to the right edge.
 - The PDF zoom menu keeps one width across percentages, so the toolbar no longer shifts between 90% and 100%.
 - The `papilot` command uses the Codex it downloads on the same launch, even when an older copy is on `PATH`.
+- Fix TeX Live builds on Windows that fail in non-ASCII directories or miss BibTeX databases when Git for Windows' Perl is on `PATH`.
 
 ## [0.14.1] - 2026-11-23
 

@@ -1,0 +1,163 @@
+{
+  "name": "papilot",
+  "displayName": "Papilot",
+  "description": "Revise and review LaTeX papers alongside your code.",
+  "version": "0.1.0",
+  "publisher": "PapilotAI",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "homepage": "https://papilot.ai/",
+  "bugs": {
+    "url": "https://github.com/PapilotAI/papilot/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PapilotAI/papilot.git"
+  },
+  "engines": {
+    "vscode": "^1.96.4"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.cjs",
+  "extensionKind": [
+    "workspace"
+  ],
+  "extensionDependencies": [
+    "vscode.git"
+  ],
+  "activationEvents": [
+    "workspaceContains:**/*.tex"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "papilot.refresh",
+        "title": "%papilot.refresh.title%",
+        "icon": "$(refresh)",
+        "category": "Papilot"
+      },
+      {
+        "command": "papilot.open",
+        "title": "%papilot.open.title%",
+        "category": "Papilot"
+      },
+      {
+        "command": "papilot.build",
+        "title": "%papilot.build.title%",
+        "category": "Papilot"
+      },
+      {
+        "command": "papilot.forwardSearch",
+        "title": "%papilot.forwardSearch.title%",
+        "category": "Papilot"
+      },
+      {
+        "command": "papilot.newTask",
+        "title": "%papilot.newTask.title%",
+        "icon": "$(add)",
+        "category": "Papilot"
+      },
+      {
+        "command": "papilot.openTask",
+        "title": "%papilot.openTask.title%",
+        "category": "Papilot"
+      },
+      {
+        "command": "papilot.review",
+        "title": "%papilot.review.title%",
+        "category": "Papilot"
+      },
+      {
+        "command": "papilot.changes",
+        "title": "%papilot.changes.title%",
+        "category": "Papilot"
+      },
+      {
+        "command": "papilot.apply",
+        "title": "%papilot.apply.title%",
+        "category": "Papilot"
+      },
+      {
+        "command": "papilot.git",
+        "title": "%papilot.git.title%",
+        "icon": "$(source-control)",
+        "category": "Papilot"
+      },
+      {
+        "command": "papilot.log",
+        "title": "%papilot.log.title%",
+        "category": "Papilot"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "papilot",
+          "title": "Papilot",
+          "icon": "media/papilot.svg"
+        }
+      ]
+    },
+    "views": {
+      "papilot": [
+        {
+          "id": "papilot.papers",
+          "name": "%papilot.papers.name%"
+        },
+        {
+          "id": "papilot.chat",
+          "name": "%papilot.chat.name%",
+          "type": "webview"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "papilot.refresh",
+          "when": "view == papilot.papers",
+          "group": "navigation"
+        },
+        {
+          "command": "papilot.newTask",
+          "when": "view == papilot.papers",
+          "group": "navigation"
+        },
+        {
+          "command": "papilot.git",
+          "when": "view == papilot.papers",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "papilot.forwardSearch",
+          "when": "resourceExtname == .tex"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "node scripts/build.mjs",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:web": "node scripts/test-web.mjs && node scripts/test-review.mjs",
+    "package": "node scripts/package.mjs",
+    "test:host": "node scripts/test-host.mjs"
+  },
+  "devDependencies": {
+    "@types/vscode": "1.96.0",
+    "@vscode/vsce": "3.7.1",
+    "esbuild": "0.25.12"
+  },
+  "type": "module",
+  "l10n": "./dist/l10n"
+}

@@ -7,12 +7,12 @@ on:
         type: string
         required: true
     secrets:
-      CLOUDSMITH_API_KEY:
+      PACKAGES_DISPATCH_TOKEN:
         required: false
   workflow_dispatch:
     inputs:
       tag:
-        description: Published stable tag to retry
+        description: Published stable tag to verify or dispatch
         type: string
         required: true
 
@@ -31,68 +31,40 @@ jobs:
         shell: bash
     env:
       RELEASE_TAG: ${{ inputs.tag }}
-      CLOUDSMITH_WORKSPACE: ${{ vars.CLOUDSMITH_WORKSPACE }}
-      CLOUDSMITH_REPOSITORY: ${{ vars.CLOUDSMITH_REPOSITORY }}
-      CLOUDSMITH_KEY_FINGERPRINT: ${{ vars.CLOUDSMITH_KEY_FINGERPRINT }}
+      APT_GPG_FINGERPRINT: ${{ vars.APT_GPG_FINGERPRINT }}
     steps:
-      - id: configured
-        env:
-          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      - name: Validate release tag and APT configuration
         run: |
-          if [[ -z "$CLOUDSMITH_API_KEY" ]]; then
-            echo 'APT publication needs a Cloudsmith repository and credential.' >> "$GITHUB_STEP_SUMMARY"
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$APT_GPG_FINGERPRINT" =~ ^[A-F0-9]{40}$ ]]
+      - name: Dispatch PapilotAI/apt sync immediately when configured
+        env:
+          PACKAGES_DISPATCH_TOKEN: ${{ secrets.PACKAGES_DISPATCH_TOKEN }}
+        run: |
+          if [[ -n "$PACKAGES_DISPATCH_TOKEN" ]]; then
+            curl -fsS -X POST \
+              -H "Authorization: Bearer $PACKAGES_DISPATCH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              https://api.github.com/repos/PapilotAI/apt/dispatches \
+              -d "{\"event_type\":\"papilot-release\",\"client_payload\":{\"tag\":\"$RELEASE_TAG\"}}"
+            echo "Dispatched immediate APT sync for $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"
           else
-            [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-            [[ "$CLOUDSMITH_WORKSPACE" =~ ^[a-z0-9][a-z0-9_-]*$ ]]
-            [[ "$CLOUDSMITH_REPOSITORY" =~ ^[a-z0-9][a-z0-9_-]*$ ]]
-            [[ "$CLOUDSMITH_KEY_FINGERPRINT" =~ ^[A-F0-9]{40}$ ]]
-            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+            echo "No PACKAGES_DISPATCH_TOKEN configured; PapilotAI/apt will pick up $RELEASE_TAG automatically on its scheduled sync (every 30 minutes)." >> "$GITHUB_STEP_SUMMARY"
           fi
-      - uses: actions/checkout@v7
-        if: steps.configured.outputs.enabled == 'true'
-      - uses: actions/setup-node@v7
-        if: steps.configured.outputs.enabled == 'true'
-        with:
-          node-version: 24
-      - name: Download the tested installer and release manifest
-        if: steps.configured.outputs.enabled == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Verify live signed APT repository at https://papilot.ai/apt
         run: |
-          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-            --json tagName,isDraft,isPrerelease,publishedAt,assets > "$RUNNER_TEMP/apt-release.json"
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-            --pattern desktop.json --pattern "Papilot-${RELEASE_TAG#v}-linux-amd64.deb" --dir "$RUNNER_TEMP"
-      - name: Upload the verified installer
-        if: steps.configured.outputs.enabled == 'true'
-        env:
-          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
-        run: |
-          python3 -m venv "$RUNNER_TEMP/cloudsmith"
-          "$RUNNER_TEMP/cloudsmith/bin/pip" install cloudsmith-cli==1.31.3
-          PATH="$RUNNER_TEMP/cloudsmith/bin:$PATH" node scripts/publish-apt.mts "$RELEASE_TAG" \
-            "$RUNNER_TEMP/apt-release.json" "$RUNNER_TEMP/desktop.json" \
-            "$RUNNER_TEMP/Papilot-${RELEASE_TAG#v}-linux-amd64.deb" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Verify signed metadata and the install candidate
-        if: steps.configured.outputs.enabled == 'true'
-        run: |
-          base="https://dl.cloudsmith.io/public/$CLOUDSMITH_WORKSPACE/$CLOUDSMITH_REPOSITORY"
-          curl -fsS --retry 3 "$base/gpg.key" -o "$RUNNER_TEMP/papilot.key"
-          fingerprint="$(gpg --batch --with-colons --show-keys "$RUNNER_TEMP/papilot.key" | awk -F: '$1 == "fpr" { print $10; exit }')"
-          test "$fingerprint" = "$CLOUDSMITH_KEY_FINGERPRINT"
-          gpg --batch --dearmor --output "$RUNNER_TEMP/papilot.gpg" "$RUNNER_TEMP/papilot.key"
-          echo "deb [arch=amd64 signed-by=$RUNNER_TEMP/papilot.gpg,$CLOUDSMITH_KEY_FINGERPRINT] $base/deb/ubuntu jammy main" > "$RUNNER_TEMP/papilot.list"
-          apt_source=(-o "Dir::Etc::sourcelist=$RUNNER_TEMP/papilot.list" -o 'Dir::Etc::sourceparts=-')
-          for attempt in {1..6}; do
-            if sudo apt-get "${apt_source[@]}" -o APT::Update::Error-Mode=any update; then
-              candidate="$(apt-cache "${apt_source[@]}" policy papilot-desktop | awk '$1 == "Candidate:" { print $2 }')"
-              if dpkg --compare-versions "$candidate" ge "${RELEASE_TAG#v}"; then
-                cd "$RUNNER_TEMP"
-                apt-get "${apt_source[@]}" download "papilot-desktop=$candidate"
-                echo "Verified signed APT metadata and downloaded candidate $candidate." >> "$GITHUB_STEP_SUMMARY"
-                exit 0
-              fi
-            fi
-            sleep 10
-          done
-          exit 1
+          base="https://papilot.ai/apt"
+          curl -fsS --retry 3 "$base/gpg.key" -o /tmp/papilot-apt.key
+          fingerprint="$(gpg --batch --with-colons --show-keys /tmp/papilot-apt.key | awk -F: '$1 == "fpr" { print $10; exit }')"
+          test "$fingerprint" = "$APT_GPG_FINGERPRINT"
+          gpg --batch --yes --dearmor --output /tmp/papilot-apt.gpg /tmp/papilot-apt.key
+          chmod 644 /tmp/papilot-apt.gpg
+          echo "deb [arch=amd64 signed-by=/tmp/papilot-apt.gpg] $base stable main" > /tmp/papilot-apt.list
+          apt_source=(-o "Dir::Etc::sourcelist=/tmp/papilot-apt.list" -o 'Dir::Etc::sourceparts=-')
+          sudo apt-get "${apt_source[@]}" -o APT::Update::Error-Mode=any update
+          candidate="$(apt-cache "${apt_source[@]}" policy papilot-desktop | awk '$1 == "Candidate:" { print $2 }')"
+          test -n "$candidate"
+          cd "$RUNNER_TEMP"
+          apt-get "${apt_source[@]}" download "papilot-desktop=$candidate"
+          echo "Verified live signed APT repository at $base (candidate $candidate)." >> "$GITHUB_STEP_SUMMARY"

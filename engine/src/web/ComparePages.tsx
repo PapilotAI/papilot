@@ -22,8 +22,8 @@ type Side = "before" | "after";
 // A change's crops on one page, in PDF points.
 interface Placed { index: number; strip: Strip; page: number }
 
-async function open(url: string, tasks: ReturnType<typeof pdfjs.getDocument>[]): Promise<Doc> {
-  const task = pdfjs.getDocument({ url, enableXfa: false, BinaryDataFactory: CMapData });
+async function open(url: string, tasks: ReturnType<typeof pdfjs.getDocument>[], resource?: (url: string) => Promise<string>): Promise<Doc> {
+  const task = pdfjs.getDocument({ url: resource ? await resource(url) : url, enableXfa: false, BinaryDataFactory: CMapData });
   tasks.push(task);
   const pdf = await task.promise, first = (await pdf.getPage(1)).getViewport({ scale: 1 });
   // Each page's words, to pair the two versions' pages by what they say.
@@ -48,12 +48,14 @@ function place(doc: Doc, changes: PlacedChange[], side: Side): Placed[] {
   return placed;
 }
 
-export function ComparePages({ active, before, after, files, changes, current, states, controls, onSelect, scrollRoot, readingPlace, onReady, onUnavailable }: {
+export function ComparePages({ active, before, after, resource, files, changes, current, states, controls, onSelect, scrollRoot, readingPlace, onReady, onUnavailable }: {
   /** False while the full paper is shown: both PDFs stay loaded, their pages
    *  are not rendered. */
   active: boolean;
   before: string;
   after: string;
+  /** A host's own way to load the PDFs, as for the full paper. */
+  resource?: (url: string) => Promise<string>;
   /** Where the changes' comparison crops are. */
   files: string;
   changes: PlacedChange[];
@@ -102,12 +104,12 @@ export function ComparePages({ active, before, after, files, changes, current, s
     let live = true;
     const tasks: ReturnType<typeof pdfjs.getDocument>[] = [];
     setDocs(null); setError("");
-    Promise.all([open(before, tasks), open(after, tasks)]).then(
+    Promise.all([open(before, tasks, resource), open(after, tasks, resource)]).then(
       ([old, next]) => { if (live) setDocs({ before: old, after: next }); },
       (failure: Error) => { if (!live) return; setError(failure.message); unavailable.current(); },
     );
     return () => { live = false; tasks.forEach((task) => void task.destroy()); };
-  }, [before, after]);
+  }, [before, after, resource]);
   useEffect(() => { if (docs && active) return paint(box.current!, docs, scrollRoot.current); }, [docs, scrollRoot, active]);
   useLayoutEffect(() => { if (active) return holdReader(window); }, [active]);
   // The workspace's page, outline, zoom and find controls read the new

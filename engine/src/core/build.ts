@@ -9,11 +9,21 @@ import { cleanPath, Repo } from "./git.ts";
 import { acquireLock, readJson, writeJsonAsync, withLock, now } from "./files.ts";
 import { stripComments } from "./outline.ts";
 import { signature, type Project } from "./config.ts";
-import { Cancelled, ProcessError, capture, commandVersion, runAsync } from "./process.ts";
+import { Cancelled, ProcessError, capture, commandVersion, runAsync, which } from "./process.ts";
 import { Lease } from "./pool.ts";
 import { progressReader, writtenPages } from "./progress.ts";
 import { unwrapLog } from "./tex-log.ts";
 import type { BuildInfo, BuildProgress } from "../types.ts";
+
+function latexmkPerlEnv(): NodeJS.ProcessEnv | undefined {
+  if (process.platform !== "win32") return;
+  const perl = which("perl.exe");
+  if (!perl || !fs.existsSync(path.join(path.dirname(perl), "msys-2.0.dll"))) return;
+  // MSYS Perl misinterprets native Windows paths when latexmk opens auxiliary
+  // files or starts BibTeX. Use TeX Live's bundled Perl for latexmk only.
+  return { TEXLIVE_WINDOWS_TRY_EXTERNAL_PERL_latexmk: "0" };
+}
+
 export class BuildError extends Error {
   constructor(
     message: string,
@@ -516,7 +526,11 @@ export class Builder {
       // for both sides, including a previously cached chapter baseline.
       fixedDate = process.env.SOURCE_DATE_EPOCH ? buildDate() : null,
       dated = Boolean(options.date || partial || fixedDate),
-      context = hash(JSON.stringify([signature(p), version, ...(fixedDate ? [fixedDate] : [])])),
+      perlEnv = p.compiler === "latexmk" ? latexmkPerlEnv() : undefined,
+      // Full review seeds can survive app upgrades. Rebuild them when they
+      // were compiled with the old Perl selection and could miss citations.
+      perlContext = perlEnv ? [perlEnv] : [],
+      context = hash(JSON.stringify([signature(p), version, ...(fixedDate ? [fixedDate] : []), ...perlContext])),
       cacheKey = hash(
         JSON.stringify([
           tree,
@@ -526,11 +540,12 @@ export class Builder {
           version,
           dated ? date : null,
           SELF,
+          ...perlContext,
           // Existing keys stay valid: only a build past errors adds this.
           ...(options.pastErrors ? ["past errors"] : []),
         ]),
       ).slice(0, 32);
-    return { partial, tree, date, dated, context, cacheKey };
+    return { partial, tree, date, dated, context, cacheKey, perlEnv };
   }
   /** The completed build of `rev`, if there is one, without compiling. */
   async cached(rev: string, targets: string[], seed: BuildInfo | null, options: { date?: ReturnType<typeof buildDate>; pastErrors?: boolean } = {}) {
@@ -566,7 +581,8 @@ export class Builder {
   ): Promise<BuildInfo> {
     const p = this.project,
       priority = options.priority ?? "normal",
-      { partial, tree, date, dated, context, cacheKey } = await this.resolve(rev, targets, seed, options),
+      { partial, tree, date, dated, context, cacheKey, perlEnv } = await this.resolve(rev, targets, seed, options),
+      compileOptions = { ...options, perlEnv },
       // Manual recompilation gets a fresh output directory. Other previews
       // and review rounds may still be reading the previous cached PDF.
       key = options.force ? hash(JSON.stringify([cacheKey, randomUUID()])).slice(0, 32) : cacheKey,
@@ -631,13 +647,13 @@ export class Builder {
               if (recovered) return recovered;
               const recovery = hash(JSON.stringify([cacheKey, randomUUID()])).slice(0, 32);
               return withLock(path.join(this.cache, recovery + ".lock"), () =>
-                this.compileOnce(rev, tree, recovery, cacheKey, context, targets, seed, date, dated, partial, { ...options, force: true }, key, stop.signal));
+                this.compileOnce(rev, tree, recovery, cacheKey, context, targets, seed, date, dated, partial, { ...compileOptions, force: true }, key, stop.signal));
             });
           }
         }
         return (await this.finished(folder)) ??
           withLock(path.join(this.cache, key + ".lock"), async () =>
-            (await this.finished(folder)) ?? this.compileOnce(rev, tree, key, cacheKey, context, targets, seed, date, dated, partial, options, key, stop.signal),
+            (await this.finished(folder)) ?? this.compileOnce(rev, tree, key, cacheKey, context, targets, seed, date, dated, partial, compileOptions, key, stop.signal),
           );
       })();
       building.set(key, attempt);
@@ -664,7 +680,7 @@ export class Builder {
     date: ReturnType<typeof buildDate>,
     dated: boolean,
     partial: boolean,
-    options: { force?: boolean; progress?: (progress: BuildProgress) => void; pastErrors?: boolean },
+    options: { force?: boolean; progress?: (progress: BuildProgress) => void; pastErrors?: boolean; perlEnv?: NodeJS.ProcessEnv },
     requestKey = key,
     signal?: AbortSignal,
   ) {
@@ -697,7 +713,7 @@ export class Builder {
     try {
       for (;;) {
         try {
-          result = await this.compile(rev, tree, key, targets, seed, date, dated, continuation, tikzDirectories, progress, run, signal, pastErrors);
+          result = await this.compile(rev, tree, key, targets, seed, date, dated, continuation, tikzDirectories, progress, run, signal, pastErrors, options.perlEnv);
           break;
         } catch (error) {
           if (error instanceof Cancelled || signal?.aborted) throw error;
@@ -735,8 +751,7 @@ export class Builder {
     return path.join(this.cache, key + ".preferred.json");
   }
   private preferred(key: string): string | null {
-    const value = readJson<{ key?: string } | null>(this.preferredFile(key), null);
-    return typeof value?.key === "string" && /^[0-9a-f]{32}$/.test(value.key) ? value.key : null;
+    return preferredBuild(this.cache, key);
   }
   /** Reuse an immutable published build while its cached PDF is available. */
   async completed(key: string) {
@@ -826,6 +841,7 @@ export class Builder {
     scheduled?: Active,
     signal?: AbortSignal,
     pastErrors = false,
+    perlEnv?: NodeJS.ProcessEnv,
   ): Promise<BuildInfo> {
     const p = this.project,
       haltOnError = p.halt_on_error && !pastErrors,
@@ -1039,6 +1055,7 @@ export class Builder {
         cwd,
         env: {
           ...process.env,
+          ...perlEnv,
           ...date,
           ...(keeping ? { PAPILOT_PASS_DIR: passes.replaceAll("\\", "/"), PAPILOT_PASS_FILES: ["xdv", "pdf", "synctex.gz"].map((ext) => `build/${job}.${ext}`).join("\n") } : {}),
         },
@@ -1346,35 +1363,45 @@ export class Builder {
   // Removes builds unused for `maxAge` seconds, except those in `keep` and the
   // two newest of each set of targets, which the next build continues from.
   async prune(keep: Set<string>, maxAge = 3 * 86400) {
+    return pruneBuildCache(this.cache, keep, maxAge);
+  }
+}
+
+/** Cache cleanup is shared across documents and needs no compilation settings. */
+export async function pruneBuildCache(cache: string, keep: Set<string>, maxAge = 3 * 86400) {
     let entries: fs.Dirent[];
-    try { entries = await fs.promises.readdir(this.cache, { withFileTypes: true }); }
+    try { entries = await fs.promises.readdir(cache, { withFileTypes: true }); }
     catch { return; }
     const kept = new Set(keep);
     for (const entry of entries)
       if (entry.isFile() && /^(?:recent|latest)(?:-[0-9a-f]+)?\.json$/.test(entry.name)) {
-        const value = readJson<unknown>(path.join(this.cache, entry.name), null),
+        const value = readJson<unknown>(path.join(cache, entry.name), null),
           list = Array.isArray(value) ? value : [value];
         for (const item of list.slice(0, 2)) if (typeof (item as Recent)?.key === "string") kept.add((item as Recent).key);
       }
     for (const entry of entries) {
-      const folder = path.join(this.cache, entry.name);
+      const folder = path.join(cache, entry.name);
       if (!entry.isDirectory() || entry.name.endsWith(".lock") || kept.has(entry.name)) continue;
       const stat = await fs.promises.stat(folder).catch(() => null);
       if (!stat || now() - stat.mtimeMs / 1000 <= maxAge) continue;
-      await withLock(path.join(this.cache, entry.name + ".lock"), () => fs.promises.rm(folder, { recursive: true, force: true }));
-      await fs.promises.rm(path.join(this.cache, entry.name + ".lock"), { force: true });
+      await withLock(path.join(cache, entry.name + ".lock"), () => fs.promises.rm(folder, { recursive: true, force: true }));
+      await fs.promises.rm(path.join(cache, entry.name + ".lock"), { force: true });
     }
     // Keep a missing refresh's pointer while its superseded output exists:
     // readers must rebuild, not silently fall back to that older PDF.
     for (const entry of entries) {
       const key = /^([0-9a-f]{32})\.preferred\.json$/.exec(entry.name)?.[1];
       if (!key) continue;
-      const file = this.preferredFile(key);
+      const file = path.join(cache, key + ".preferred.json");
       await withLock(file, async () => {
-        const preferred = this.preferred(key);
-        if (!fs.existsSync(path.join(this.cache, key)) && (!preferred || !fs.existsSync(path.join(this.cache, preferred))))
+        const preferred = preferredBuild(cache, key);
+        if (!fs.existsSync(path.join(cache, key)) && (!preferred || !fs.existsSync(path.join(cache, preferred))))
           await fs.promises.rm(file, { force: true });
       });
     }
   }
+
+function preferredBuild(cache: string, key: string): string | null {
+    const value = readJson<{ key?: string } | null>(path.join(cache, key + ".preferred.json"), null);
+    return typeof value?.key === "string" && /^[0-9a-f]{32}$/.test(value.key) ? value.key : null;
 }

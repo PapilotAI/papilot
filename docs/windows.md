@@ -1,6 +1,17 @@
 # Windows setup
 
-Windows support is available from Papilot 0.9.1. Download the Windows x64 installer (`Papilot-VERSION-win-x64.exe`) or portable app (`Papilot-VERSION-win-x64-portable.exe`) from [GitHub Releases](https://github.com/PapilotAI/papilot/releases/latest). The installer lets you choose an installation folder and adds Start menu and desktop shortcuts; the portable app runs without installation. Both include Node.js and npm; install Codex yourself. Windows installers are unsigned. The desktop workflow builds and tests Windows x64 alongside macOS and Linux.
+Windows support is available from Papilot 0.9.1. Install the desktop app with **Scoop**, **WinGet**, or a direct download from [GitHub Releases](https://github.com/PapilotAI/papilot/releases/latest):
+
+```powershell
+# Scoop (official Papilot bucket)
+scoop bucket add papilot https://github.com/PapilotAI/scoop-bucket
+scoop install papilot/papilot
+
+# WinGet
+winget install PapilotAI.Papilot
+```
+
+You can also download the Windows x64 installer (`Papilot-VERSION-win-x64.exe`) or portable app (`Papilot-VERSION-win-x64-portable.exe`) directly. The installer lets you choose an installation folder and adds Start menu and desktop shortcuts; the portable app runs without installation. Both include Node.js and npm; install Codex yourself. Windows installers are unsigned. The desktop workflow builds and tests Windows x64 alongside macOS and Linux.
 
 ## Choose an environment
 
@@ -20,6 +31,8 @@ WSL localhost forwarding must be enabled so the Windows window can reach the Lin
 ## Build and run
 
 Install an official Node.js distribution (22.22 or newer) and Git for Windows, then open a new PowerShell window. Install TeX Live for Windows to compile papers. Make sure `latexmk`, your LaTeX engine (`pdflatex`, `xelatex` or `lualatex`) and `synctex` are available. TeX Live includes the Perl runtime used by latexmk. With MiKTeX, install the latexmk package and make a Perl runtime available on `PATH`. MiKTeX can use the Perl bundled with Git for Windows when its `perl.exe` is on `PATH`. The desktop example PDF can be read without TeX.
+
+If the first `perl.exe` on `PATH` is from Git for Windows or MSYS2, Papilot uses TeX Live's bundled Perl for `latexmk` so projects in non-ASCII paths compile and BibTeX can find their databases. The setting applies only to TeX Live's `latexmk` during a Papilot build.
 
 ```powershell
 node --version

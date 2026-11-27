@@ -25,6 +25,7 @@ function fixture(root = '/unused') {
   store.saveProject({ id: task.projectId, name: 'Paper', path: root, createdAt: 1 }); store.saveTask(task);
   let key = snapshot.key, document = 'main.tex', live = true, sending = false;
   const manuscripts = {
+    existingSession: (id: string) => id,
     state: async () => ({ build: { current: true, key } }), documentOf: () => document,
     pdf: () => '/unused.pdf', snapshotPdf: async () => snapshot,
     locate: async () => ({ source: null }),

@@ -4,6 +4,11 @@
     "textHash": "6c4ab6383f85aa325948445d5217c1010164679afea0ebb4d4c444fb6af515c4",
     "model": "gemini-4-argon-medium"
   },
+  "A connected local agent applies ChatGPT Pro’s suggestions to your manuscript.": {
+    "revision": "40f01af57ac3ee57228024a4256c5a309c25083cb54bbdc827b27ce98aa2250b",
+    "textHash": "daa3b12b3d05b2630ae2661f038f173871695ffb8004059554b617e0921ed949",
+    "model": "gemini-4-argon-medium"
+  },
   "Add PDF": {
     "revision": "0b88621b365ba6268b1f9bd9f9ff813056d629c4872475c8960c30fa9bfcbf0b",
     "textHash": "5b62b44860a6ee5cbd2c075724b6965e4a844ee41b33d289538b4e28e4826a94",
@@ -69,6 +74,16 @@
     "textHash": "34a917cd44b00b9d23b7377e0bffead29a1e75762a0eac51569e59fce678f166",
     "model": "gemini-4-argon-medium"
   },
+  "Applies ChatGPT Pro’s reply to the manuscript and prepares the PDF comparison. Automatic uses your first connected local agent.": {
+    "revision": "ba062b2f071df44ce5cbfde40048cecd5b14bfe970f3bba9449d928f97e3cc10",
+    "textHash": "12dcbb6333af224f980d3e7ccd4633aca1737fbc6c3b6b769bbbe2cf0cfc003d",
+    "model": "gemini-4-argon-medium"
+  },
+  "Apply reviewed changes": {
+    "revision": "c21be7edbdbcc22bfb9f5b4085b5ccc3070f5cc4fbb92a4d2ab3dab570af2a86",
+    "textHash": "91d9575fd62c27bee4578c192d9e593f8446d8cd6ecc98a69b9ad0fe3e147fda",
+    "model": "codex"
+  },
   "Archive all": {
     "revision": "96f1107c9ab67e0e1c675157dd05ff42ce1b54458fb5541a510cd56f5446a3d9",
     "textHash": "cb7aa46a18d279ea378f81cedf3e2ee7ae2cd6636a8b701e1efcd589287ff4b9",
@@ -87,6 +102,11 @@
   "Archiving…": {
     "revision": "e944fbe2cd5483acf48060ae9143b069c15819a3161200b84ae5e5eb5f08b873",
     "textHash": "8ccb60e4e93ec51c474b3ee9351ca2ca3afcfecd9cf010dd453dbc2d53029776",
+    "model": "codex"
+  },
+  "Ask a question or request changes": {
+    "revision": "75215c86de627369880076a42f05c0ef5abf61281d7606e67b520083f19f8f84",
+    "textHash": "96a9744727db69b104c665efb57a41cd1afd680dbd327429518d07dc19c664fc",
     "model": "codex"
   },
   "Ask an agent to cite it": {
@@ -110,7 +130,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Automatic": {
-    "revision": "81897b5efb0424fc670ca3246bbb70b36eacc165ef2f6ab63b64b0b1a765e039",
+    "revision": "3a95e9133722a02163c3079bae330166886e669dfcaf19a6ce5f5e7b8e967ffa",
     "textHash": "7eb336e42cb5076b0eac0305418ecd8ff2833ad84645aedbe0d315ac017c798b",
     "model": "gemini-4-argon-medium"
   },
@@ -162,6 +182,16 @@
   "Change project…": {
     "revision": "25e1c8688c6b9a5814567640a8efe036c59a06347ba986510a1ca63b54c21f8c",
     "textHash": "b9ff74e3c537340655cf5fe881386f0dc8b17e84409e82ef4b85e2df1ebdcc0e",
+    "model": "gemini-4-argon-medium"
+  },
+  "ChatGPT Pro (web)": {
+    "revision": "3c05c7bcc4d5f652be68dcbb387fb286a8c9f6aaeb6cb0584a78fd5b3fa46547",
+    "textHash": "fd717b8f3584567b563cf2de9f904f02bed1155f3345ec2978464ae0fcb9ddc0",
+    "model": "gemini-4-argon-medium"
+  },
+  "ChatGPT Pro (web) runs manually through chat.": {
+    "revision": "1caf535a68a5b60b8f942eb6047888603a3a66326e231e991cf0b2d29e192a23",
+    "textHash": "52558c5d64c4fa56d9bbce94c8b9151e9ffe500ea039bbf14e2b58a2a3c73ebe",
     "model": "gemini-4-argon-medium"
   },
   "Check": {
@@ -229,10 +259,20 @@
     "textHash": "bb2b62e421f7dd434ae9c73533ed4a9f8bc9c50deaca5bdb170cecfbd9eb7a51",
     "model": "gemini-4-argon-medium"
   },
+  "Choose a paper": {
+    "revision": "17f13c733b7b92313353d845c82e7694ce87db48de7050143e70ba4008d2723d",
+    "textHash": "7d57fb098c32c4bdc5e74e341266a4bcbbb29a2a82c73e65275094fd0587f114",
+    "model": "codex"
+  },
   "Choose a work to see its PDF and the sentences that cite it.": {
     "revision": "18548b7f8efeca1f455bbc3c2190c14d7c3eeee37a644e0696e7fde3623a3144",
     "textHash": "239a39fd91960a895d1294f067c0e4c12333dd36e7ac3510aaa4dee8bde64175",
     "model": "gemini-4-argon-medium"
+  },
+  "Choose an agent": {
+    "revision": "99e246af8666c3ed2794f0a366a641b2522a4a0c37b92772087ac90ac29eefa4",
+    "textHash": "b81826c3ba1f03b281f568973a7c806b8bca63178f99babc55d737a39cb1772f",
+    "model": "codex"
   },
   "Choose folder…": {
     "revision": "d96811d0241489431d68719fe7b893bd4198c575d701950a6f4b852f7fe5346e",
@@ -269,6 +309,16 @@
     "textHash": "c2cad342cda99ca274103f00d6dd68b0b5daf2e0a5868ea53caeaca08ce8c330",
     "model": "manual"
   },
+  "Compile this paper first.": {
+    "revision": "f36675dbde15406115859be7529ed810bf60bb433fd8ceb502655bcadf02b574",
+    "textHash": "cbe29b08820fad569e173beaf23d43f2180d8769568cb4cb55626c167e748e0e",
+    "model": "codex"
+  },
+  "Connect a local agent in Settings → Agents to apply replies.": {
+    "revision": "40277b256b96993e6acbc63d89a5d7477ac9d7cb7fcc490a38f9d86622152004",
+    "textHash": "b9401fcb242f0428305c309b0e2bd38e19b216f399551fc90fbf2f1a3cce5064",
+    "model": "gemini-4-argon-medium"
+  },
   "Connect account": {
     "revision": "31803de129a2806e4d84be9eb3c3c17f7b650c046376f0806a9b81d899d66d76",
     "textHash": "9d9348850984d0aa4d597205cede620a618632c456ab998d7b896ccac765c789",
@@ -279,15 +329,50 @@
     "textHash": "79f5d558eaad20e6d3a3ed42984e9a49aea046b52bee62e976d09bb9edc82257",
     "model": "gemini-4-argon-medium"
   },
+  "Conversation": {
+    "revision": "d2f3fbddb29a427340b7a82ac913e741d7ee4bfb8d6d57440bf369e883ab1820",
+    "textHash": "6bf6d3f3d6261b7505285078ddb2f7f1b5fa98c2777ccd67bafb222ea05d8e9a",
+    "model": "codex"
+  },
+  "Copy prompt": {
+    "revision": "5daa5e3543085abb48a76ce2cceb7f1e958f7b877c72c4f2b5c0d5aa2730a13e",
+    "textHash": "3ed2c259da3251fa5061167bb8c2da98e4e539a00142b249cfa488b11789b8f2",
+    "model": "gemini-4-argon-medium"
+  },
+  "Copy the prompt from the field below.": {
+    "revision": "91a9355ed5e3fafb73eb82e25f6033ed68b25ef09072799048f1f16dbbbeaa80",
+    "textHash": "ffbc3a55aa2ef37819f48dbb49b7a5d2def31e3d87914dcc66ac19df58aaf3d3",
+    "model": "gemini-4-argon-medium"
+  },
+  "Copy the prompt in the chat, then paste ChatGPT Pro’s reply there to apply edits.": {
+    "revision": "ff7941f5bec4ea001e3122b381d478ff5c0f87ee5a2a25dec8b5ef4c91f9c0ca",
+    "textHash": "0f27f1a701b93111fe9bd4b60313406ff5b74d688ed175133c196606bfa78277",
+    "model": "gemini-4-argon-medium"
+  },
   "Copy the value of {cookie} and paste it here.": {
     "revision": "3a208dfa748687ae3bbbf18504ab3105e04bcaaeae770cf6b6c1c97623748f64",
     "textHash": "200029b60a5ebe5de15d32998cdb36d0ddf7abe3de1547f36be5443827b8af0c",
+    "model": "gemini-4-argon-medium"
+  },
+  "Copy this prompt into your ChatGPT Pro conversation, then paste its reply below.": {
+    "revision": "bd1f2fb228f3d93f29ad93f3f0b8faa8538470a3a4d8a611719f785c8c34327c",
+    "textHash": "3789155638ce2067dd6d622ceb8e2da08942e2e7c8d483034f99a0de3dadf2f2",
     "model": "gemini-4-argon-medium"
   },
   "Could cite": {
     "revision": "8c340247cdd6953fb9a7c3c86b9c88e00d164e1c008a3a80849018b7052c3f52",
     "textHash": "d5d773253358df5804d09a3b8ade66ca9bf1eec9c9a08e1111593f85bc4a4468",
     "model": "gemini-4-argon-medium"
+  },
+  "Could not load Papilot asset ({status}).": {
+    "revision": "2ce8c14ff1f00cdfe33366e3872a9cc0455f8fcd46cc2a44658255ee6fb14825",
+    "textHash": "0aa0f8e8d2604bb18ccd1d8dee2390b998700792486537ebcf8976d38816e997",
+    "model": "codex"
+  },
+  "Could not load review image ({status}).": {
+    "revision": "d2949be9a705c8ddc9854c800117ad6e3817a6a4a97e4572114e2c9d76bf5e5c",
+    "textHash": "f1a1119488e74a9dd459d2eca3a9fa68e174fdf98a90a09e0b2622c6e3c53f9c",
+    "model": "codex"
   },
   "Could not look for Zotero. Try again.": {
     "revision": "7a5aeb10f02fd886fb9d2dd11156b1dbc740f987de656333bf53ebb0c784837b",
@@ -384,6 +469,21 @@
     "textHash": "5cb189913469a3e697084d72e202eb77976b208c4bda4689834a76e1d0f009c6",
     "model": "manual"
   },
+  "Enable ChatGPT Pro (web)": {
+    "revision": "697cf818a56e48a7f34d026f9d49d00d8402aaaab679d9be37f73a73cdfdd46c",
+    "textHash": "abdfb8f2ac44708f20fad71c6d969ab9b09380aaff6c74441b29ce693f4627a5",
+    "model": "gemini-4-argon-medium"
+  },
+  "Enable ChatGPT Pro (web) in Settings → Experiments.": {
+    "revision": "325f3ae56567a2504e5b3c10ae94a60a0727d166936608dfebbbb7af5bfd3481",
+    "textHash": "34400d453cea9d6e612031bfb33025818780c447bc5bb714b0f1944fdae8123f",
+    "model": "gemini-4-argon-medium"
+  },
+  "Enable VS Code Git support to use Papilot.": {
+    "revision": "36d28851761dbd8b4bda6b8d181ecd1d70e8204116a2e7191570732c80bd63da",
+    "textHash": "24a5a79560ae3b38d703ed21540ed53eba0032aeae5ee8943d03e2697ad1eaa8",
+    "model": "codex"
+  },
   "Enable collaboration mode": {
     "revision": "99460596a91bf2f9b3a84c15f85b2a8d08fc2c952be4a922e6c520fa24d0a816",
     "textHash": "ae4c7e5d55b129fc7f30677ee24dddbbd925ed9c4bddbd0839c1e30dcca8a0e9",
@@ -454,6 +554,16 @@
     "textHash": "e276396179c43e002a34a07d475ca2c11344dd11883572e7bb734762e6909801",
     "model": "gemini-4-argon-medium"
   },
+  "GitHub context ready": {
+    "revision": "358b8854c6a3861134c64a733a53a626dcccac487b7b7033ccaf70b91970794d",
+    "textHash": "1de92008beab15c288737c8a84776d14c05a036f147f31556f8132ed13fa0167",
+    "model": "gemini-4-argon-medium"
+  },
+  "Hide prompt": {
+    "revision": "ff0072276e25fa69d19ba09898333fb5ffd19a3e7569c78a44c70b72667e69eb",
+    "textHash": "07e7ecb8963f4ba64207ccfbcccc941c3d9567c95fafe464ec32bafda7ba7949",
+    "model": "gemini-4-argon-medium"
+  },
   "Import": {
     "revision": "2be523bbcb8c954f3c3090ca2e37228c510564bc99cd5e83c46e15d7db37c883",
     "textHash": "576d81bb0631b16569bcdc0dc7345292763e2bc5045d2f8b85599f830fdc45c2",
@@ -497,6 +607,11 @@
   "Install Typeless first.": {
     "revision": "c517f634f0dd9d088dcf57260f99300c3afd9b5b6f5d9423a8a193a321d11596",
     "textHash": "ce3a51da37b69ea7784f9fe11ffc4315acff59fc7b0d07f5f5745707cef959a5",
+    "model": "codex"
+  },
+  "Instructions for {document}": {
+    "revision": "aba2a890ff19893dd61e736c9db97dbe9809e2183605b32f58f72bfd8724cc12",
+    "textHash": "7a6847ce16755eefa1f23a97e801ab24c7f4ee4a34189f863bf6645db5ca140e",
     "model": "codex"
   },
   "Items": {
@@ -557,6 +672,11 @@
   "Loading projects…": {
     "revision": "b209ae56cc27b92393b7b8ea4dc6e3f721b1dc1289bafa3dc3672e227c9b4eb9",
     "textHash": "70f35eb00ee85bfeab2acabbde9dbb4789aeae673f94fa29316b46a416c20d63",
+    "model": "gemini-4-argon-medium"
+  },
+  "Local agent for edits": {
+    "revision": "ab4d9b065f7c3037d0a3acd9ad3d8d1ac9332a60addb5d610e3be44dcd85fb61",
+    "textHash": "89646d5ca6ab40b09b53707f31e354c66c03ed9e7b1935657cbd2992c171ce96",
     "model": "gemini-4-argon-medium"
   },
   "Look for PDFs again": {
@@ -624,10 +744,20 @@
     "textHash": "85fb05f8e911ba3a9ac1233a72afb5dd3ca746bb5f1c1c031344c2af825bfdf7",
     "model": "gemini-4-argon-medium"
   },
+  "No LaTeX source was found at this position.": {
+    "revision": "9784b05ef46b6f6ae1fc21d4a01c259af2ce11e72c38649ae11332babe111546",
+    "textHash": "ebe8ff7e95d30b758b6e5ff188376ed413bc346f56f3942c8f67f6bbe2755acd",
+    "model": "codex"
+  },
   "No PDF": {
     "revision": "51f8c179f86da74e460899558329348c5a7dd3489a190fde6e4a651acf5adee7",
     "textHash": "cc6e17af4e2a633135a5a4dfc37c3494bccb06cf5b7abf97d97f14a11b3f74a9",
     "model": "gemini-4-argon-medium"
+  },
+  "No PDF position was found for these lines.": {
+    "revision": "17411fe250b41aaf8ef81ce9c19124133d410241b03939fb78c74e63d0a6effd",
+    "textHash": "b8743ffdc2383c51b84fd0ac96147ead24534ab123753bc07e056f6884d3f0ee",
+    "model": "codex"
   },
   "No WorkBuddy ACP launcher is configured.": {
     "revision": "190d1e8ef7e29f0cdf736601beb5677c3046d88e5639331e6f1970e6f5516a02",
@@ -668,6 +798,11 @@
     "revision": "f996091f93eed70161033c2f09a2126dea8238357c270b6f4a8f131faa765ab3",
     "textHash": "46ba3eccafa79552498c7d4c46a6c1837ed67a4a79effe0f00b9acb729ce69ef",
     "model": "gemini-4-argon-medium"
+  },
+  "No signed-in agent is available. Sign in to your agent CLI, then reload Papilot.": {
+    "revision": "4893bcea44bdb9fb37866eca35a3fd1b8a611d29d7c76242139c1ffe610e2b0b",
+    "textHash": "643c50989ee14fcc884c5fcdce5455c3cbc1c29be999db6ebdc86ba432d3b4b8",
+    "model": "codex"
   },
   "No uncited sentence matches a work in the library.": {
     "revision": "36115ac27f6490f0dd367f25e4a674beff2f2df998d29bed03c6184ed79be27b",
@@ -749,6 +884,11 @@
     "textHash": "c771248e511fbf9328abdf31f3f2472d14940144c3ef819c3ec3bd8c2631738e",
     "model": "gemini-4-argon-medium"
   },
+  "Open Source Control": {
+    "revision": "fd48f99c7e15af5838f6acc1158718f6d74e0790b07c07bff6007df7d36bbc89",
+    "textHash": "b7c4458edc67f081884683d961b63c128a3b82ff9fb9670d4c265066241ce916",
+    "model": "codex"
+  },
   "Open Typeless first.": {
     "revision": "ca69ae9006c130bb9d65b3f7dc40ed67b5b4df0e96f48e9aa514681271694e4b",
     "textHash": "b6a331ef0f88b352259183ae8aedc1252ed025e59ebc30104d09e15670cdd96f",
@@ -758,6 +898,11 @@
     "revision": "6dbf9980ddf5343353ac5afc23c0b9c0d3843bfbe0ba0058f8c3f306ba696053",
     "textHash": "dc84e8b4fd12df6857e5f4757fbdb2da31c02c3c3f7efcf403be4f37bdc5a4e9",
     "model": "gemini-4-argon-medium"
+  },
+  "Open conversation": {
+    "revision": "601af996b3256a05d83adef2607dadac751b096067617e4a89cda101ca96b9f9",
+    "textHash": "4de0b7f136b6601a52e47b528006a81b6e0367968809070e3d2b9b698b7e4cff",
+    "model": "codex"
   },
   "Open existing folder": {
     "revision": "3f10be315520353d8817d003904d27806b52843614d17107e11d6e9286ed11bb",
@@ -824,6 +969,11 @@
     "textHash": "644450e367a7505c67c5101c17e7b0d58fb91f42b9420fdb2b877852b95b0ade",
     "model": "gemini-4-argon-medium"
   },
+  "PDF notes to include (optional)": {
+    "revision": "afc6ddc9af359fdfe697a7009d2ef93392dc64f02e90789ab6a68cad550f0cd5",
+    "textHash": "ced7965ba62b89315cb671c9ad53ac2fad68b977a65201ac3b8aa12d6729a15a",
+    "model": "codex"
+  },
   "PDF of {key}": {
     "revision": "0dbc713d7eb028dd07a909a924e3bd5a67f249aff73c69095641d276c81ad98d",
     "textHash": "93dd1c0aafe21ec9202cbea7077a8827b46f23d2cdf6fa340e6c055e2f2eb2a2",
@@ -849,6 +999,16 @@
     "textHash": "488a68e8fb0ae75a6d7150e8534c6c7f9120ecdf4e60fa055218979c2663ba5d",
     "model": "manual-review"
   },
+  "Papers": {
+    "revision": "72e9edc59a94d6bd029b18f0e4cfd57501f726085ba2cbeacb1bfea416612f3a",
+    "textHash": "916a0b17530c915bab5c3199070f5d91a711c76d290b51d0c5ffe2ad7b8d1e39",
+    "model": "codex"
+  },
+  "Papilot request failed ({status}).": {
+    "revision": "586c272ce17f232965c30b587c76000971859953e83e662d8cf845cdfa7e5832",
+    "textHash": "8552def03289c912e9f8ecebd703c96cd130b2a0d438bb47d0e29637e7a7fd6d",
+    "model": "codex"
+  },
   "Parent folder": {
     "revision": "dfb3c3fa5c73de42f6eff7c8049c2fc3c736b563ed49a00e2d118559a35231e7",
     "textHash": "a1a5895f719a8733a29910356a3c41b99931e92d49cdfb834b1a4d298dc7e8b6",
@@ -857,6 +1017,16 @@
   "Partly supported": {
     "revision": "7096d97cb3ccbaf0123056475616bcadf1f0c26a0f7e90687774ca04d38ee325",
     "textHash": "20d1668fca39f52875c17923c5ffba3ce89dec7926e18cf0e998df4d729aaf89",
+    "model": "gemini-4-argon-medium"
+  },
+  "Paste ChatGPT Pro’s reply": {
+    "revision": "f4560245a3b4bf2d451f5cb3656def607cb902e7cf0762948255b85d3eb1307f",
+    "textHash": "54450df239b9a0b51ce46a2667d395813b16f5a4fa9d19032ffd404c9f3a62c1",
+    "model": "gemini-4-argon-medium"
+  },
+  "Paste ChatGPT Pro’s reply here…": {
+    "revision": "405e451561200af7e95d6f0c529a943fac1c84b8d9ab67335d0b01095649d2e2",
+    "textHash": "d37b816f35e18bd3e6abfd178b1f0f592894c51fa227ff7b6a66659f2f4be52a",
     "model": "gemini-4-argon-medium"
   },
   "Paste a link…": {
@@ -889,6 +1059,11 @@
     "textHash": "c6a7960d55d21226e94ca0555edad8cb59d44e9df51a4011c82e4e98736735f1",
     "model": "manual"
   },
+  "Preparing prompt…": {
+    "revision": "b6a4d9f9f9f9afa50ff44a51fccf95822dac08f72b7019a5cfb6e44ea425b7da",
+    "textHash": "fb98559264af56cebf3b81ec524d723b415ac0f481a9ccd14c7177dcbfdceb72",
+    "model": "gemini-4-argon-medium"
+  },
   "Preview unavailable": {
     "revision": "a0e937b25017392df1ac0b8a8c13aa0f974354c8589ddeb911b2174878722935",
     "textHash": "a1c3ce8944f8bb275cd6352ae065c7bb8b9f0c3f4d9666018d5d9d3f10a2ccda",
@@ -907,6 +1082,11 @@
   "Progress": {
     "revision": "e0e8c6bdedf41eac54b8133ad93a12a1ad34c0b52275bfc6afbace9e15f3cb42",
     "textHash": "f81ff55de14e3f455a87f7fe1c23e7ba1f138bd9a112d7d18488d027b2f7dea7",
+    "model": "gemini-4-argon-medium"
+  },
+  "Prompt for ChatGPT Pro": {
+    "revision": "158c93799ab7ed2710e9eb7fe6607d3d5d9d392096cca70a53dd0d6261fb66cc",
+    "textHash": "97752591f4f3cf2e4430531f9b8eb6dee48a749148540bc79dacaac3965ee318",
     "model": "gemini-4-argon-medium"
   },
   "Publisher page": {
@@ -929,6 +1109,11 @@
     "textHash": "86b6d0d63062ba81715ba82376104aa54f47edb20d8b5e8ddf399e04a57a7468",
     "model": "gemini-4-argon-medium"
   },
+  "Refresh papers": {
+    "revision": "fe854d433015b79ff621db8a54fd219e387a3c1867590875ac495dd5f51cb3fe",
+    "textHash": "f3d526b9fecd4fc56583e44bb9f5f6feda70a7b0734baa03fba58dc51eb60e9d",
+    "model": "codex"
+  },
   "Release modifier keys and retry.": {
     "revision": "596106ba29e8898f52f925d501d4571f21ee9f0ce543c11a9bb6ca12b5e2e39b",
     "textHash": "e10c4dd00956eca338687d45b8df71d2befb0f27463f602d7da71afe85b2987a",
@@ -949,10 +1134,30 @@
     "textHash": "cb5d682bac3d1a2d0012ad9d472f38630b60b4f2849d99b2ae3b4d109a962d87",
     "model": "gemini-4-argon-medium"
   },
+  "Review PDF notes": {
+    "revision": "d43a6b650fd7f81b6e28b41fb72f56cf352196c1045518fca2ff08a4b7efbca3",
+    "textHash": "4fcb59248b119e45666bc09f9de62e4b358e36f554639825febff9e7073c8e68",
+    "model": "codex"
+  },
+  "Review task": {
+    "revision": "919d34005f4a66e26a64e528fc1ff0cbe348ca4cedbbd5f9e8e2f5809b63411a",
+    "textHash": "a909bab5d9e8b4853e27c113d3c903fad277af5f6a8d4858a5d7fe2b2cd17826",
+    "model": "codex"
+  },
+  "Review working changes": {
+    "revision": "4e98839f46619c0813b1a09dfdf7d3389408f4079516a9656d7c5d99f9f29d3b",
+    "textHash": "c3f6278a0e2ee1de23a4a04b78485ece14834ccf3b80ef49d279ba0d41e2143c",
+    "model": "codex"
+  },
   "Right margin": {
     "revision": "4d238615ff09f6de5a7688c079c498ed9142289596b1b6f4c7523d9b53c34d40",
     "textHash": "994450ecaf84e7e4213367e8a11f82a1f09461fe8a805b3b37987d4f22fa3f00",
     "model": "codex"
+  },
+  "Runs manually through your ChatGPT Pro conversation, with a local agent applying edits.": {
+    "revision": "632af4665f470488da295ca94b096da6cab35b168656c6ed9a87276648be9fb0",
+    "textHash": "634ccc783f68abc6e502faf43b5250c16a1f185727c2a2597ae0aad3bb09780d",
+    "model": "gemini-4-argon-medium"
   },
   "Save a place to return to later.": {
     "revision": "a98c7016187cd24fe1bad8e640d7fe98ea085d88c0ca7032311b08edaae775f8",
@@ -963,6 +1168,16 @@
     "revision": "d27fc66c45fd2a3ab34fd5116595e4c13f209dae02eb2f37bb5440c068d7423a",
     "textHash": "1bdea4298583e5d5a48099931992fccd0cc38295b7e307d2a1e8f173e59ea1e5",
     "model": "manual"
+  },
+  "Save this file before locating it in the compiled PDF.": {
+    "revision": "0493021e1439738d70f23e657a8685420954600511a6c53896465e7489800dc7",
+    "textHash": "461191f28f6532ac55dbd220d5f706d23ce87c442a8c7333d48cb423b1783f6d",
+    "model": "codex"
+  },
+  "Save your edited files before applying or rejecting changes.": {
+    "revision": "748b9163b1b968f9f02fb9bd2125e87a2914695e0e03ab8dc9fe8666c44d3ea2",
+    "textHash": "6c24649204f67976cba66a4ab7ff6aaef48d57d6497ecfb29444e27a7b4e81c7",
+    "model": "codex"
   },
   "Saved anchors": {
     "revision": "9694cd305d52072d60a891c6ff275c7767f793f5cf6b4339f50332e26595d86c",
@@ -989,9 +1204,24 @@
     "textHash": "214903d3df07f0fc166c18fd8c3f7be82dc5cc83cf9d616da4a02f4b33efbb7a",
     "model": "gemini-4-argon-medium"
   },
+  "Select a task in Papers, or start a new conversation.": {
+    "revision": "cceb0157118eb5f772f275a79b26970d97d2fab000f353221ea1b1e045a43749",
+    "textHash": "15325ffb06ae3f62630576a0fea5f51a71ab6eed907ef3b045e930ea11f2e922",
+    "model": "manual"
+  },
   "Selected work": {
     "revision": "e73fb7a892838e9ad96bf2051a51b459196bb9e8abcf474412b829f27290d740",
     "textHash": "82f82ef102193a4c39614c23679edcc03ff545b604d47c16d8a097e6d0b5971f",
+    "model": "gemini-4-argon-medium"
+  },
+  "Send reply to local agent": {
+    "revision": "b71cb4551f03c7a707389844715ea65f22198deccc19a705653088d0c0863fca",
+    "textHash": "afedbd19219ff5b0704f5cd6ded31501ec8fa9c6adc980c311479b076dc91930",
+    "model": "gemini-4-argon-medium"
+  },
+  "Sending asks {agent} to apply the edits in this task.": {
+    "revision": "85e5318c6530f0b277de14b8cfdca0e298340dcb9528c65bb96c1e0126d28c59",
+    "textHash": "8c6a17fbe0b890b68769e1b28b3af0afcdce73eac01ea51e8ccca9cd57dab9fe",
     "model": "gemini-4-argon-medium"
   },
   "Sending {n} files…": {
@@ -1024,6 +1254,11 @@
     "textHash": "fdd244d8f878ef40211f7d2ebb0ecfe0acfc27a7798ac2f37034469972924b91",
     "model": "codex"
   },
+  "Show LaTeX source in PDF": {
+    "revision": "6b7217a2a7c876ab202d54b96d4970525364c55b502a3977a251ee158db5777b",
+    "textHash": "0afcf13ddbe6e0f0eda81f34539db20a8d30da97ea3caf79ecf47764db85000c",
+    "model": "codex"
+  },
   "Show in paper": {
     "revision": "65958842224c4347157c742b407ec0eee4550cfa26790539866eb14997420be8",
     "textHash": "1535628fb46460d9add827d5ae60545b51bad268df1bc393748433a587f1f489",
@@ -1037,6 +1272,11 @@
   "Show more": {
     "revision": "c08cf00e85b99b606850a9176caf9e4748248fb0419b72d056fe22649f20fb81",
     "textHash": "331af79f34e7a551441d0aa5c2a4eebaccea5f2a3db89f87bad09d66080fc384",
+    "model": "gemini-4-argon-medium"
+  },
+  "Show prompt": {
+    "revision": "391629f5c2fc193a9b3be04b1a0e8e02113b938925684304bf879f4103bbed9a",
+    "textHash": "7d80b5c74f074a8aef62e0f9e12e56801cec32fbda97dd6461b55635fdb1772b",
     "model": "gemini-4-argon-medium"
   },
   "Sign in to {server}": {
@@ -1094,6 +1334,16 @@
     "textHash": "3328125f8a4d64705c1badcd66f146ff56bcba9e47af59695e745c1dd0fd41b1",
     "model": "gemini-4-argon-medium"
   },
+  "Sync snapshot to GitHub automatically": {
+    "revision": "02a565e3072fec43e934d88a8ef6d019aa5a302ddd796fc13c8b4d8cb7025f1a",
+    "textHash": "713b21ef19fc22f80aed992aeb1e5d87629229406d79c604408e3781cd162aea",
+    "model": "gemini-4-argon-medium"
+  },
+  "Sync to GitHub": {
+    "revision": "dd81112b39a3dc6b853c52c181578dd0a052ecda38b971dca31916958ae38745",
+    "textHash": "d78b753dedfec292ed3438ab92067702ec8d39c2546fa8f545c8fb2447ced8ae",
+    "model": "gemini-4-argon-medium"
+  },
   "Sync with Overleaf": {
     "revision": "5d36041ec454c8bda18af50c771fd11e8048cab973dc97322ab5254f3aa43c22",
     "textHash": "d2f732a328e2e883d225ef2aedd405f99ffe8bc4d39cef6ef6bd72e104cc383e",
@@ -1107,6 +1357,11 @@
   "Syncing now": {
     "revision": "6a93c8863963393aa1fa4bb8a05fad544666565ba0ec41d00ea32aa268b8489d",
     "textHash": "01679253dade46b3c642bd7b9c5278668637a012c60e1eb8f0269da2c83e06a5",
+    "model": "gemini-4-argon-medium"
+  },
+  "Syncing snapshot to GitHub…": {
+    "revision": "3074d76dd42947819ad11010914606e3a5f262a9c047c9465d7f30845bbf2d24",
+    "textHash": "f61fb69bda49604a36856de442a37dbecc755d6ab8965b0bfe1f91db2f29826e",
     "model": "gemini-4-argon-medium"
   },
   "Task list actions": {
@@ -1139,6 +1394,41 @@
     "textHash": "949a70261f18e7937d2eb83fc1fa69477d40a11d1b6bfebd73bbab584bd3ef6c",
     "model": "codex"
   },
+  "The task needs conflict resolution before it can be applied. See the conversation.": {
+    "revision": "571b6d59071f40d5c68b540490e287bec6748cf23b4df09cda4c50df9ca7a8d3",
+    "textHash": "f92e019041263d8feb1f0078956c943a33d1eca8b705264231563b9dea0827ca",
+    "model": "codex"
+  },
+  "The task source is not available yet.": {
+    "revision": "12e98fc7efa5c1904d5f3aff5fa195884b2965d51df05d8be597d23253a93229",
+    "textHash": "3f803cf58b878b89623b4ee0d94562d6103497839e47b47ac24d5cd79096427f",
+    "model": "codex"
+  },
+  "This PDF is not available in this review.": {
+    "revision": "a63e1c00e7368d1aeb9067ceb35db4ab6720ca0650bf50d351ccc7161836f379",
+    "textHash": "a90eac155ca9d851f62587fe5e480d2929487b179fdee95b65e9d0408a7b6d17",
+    "model": "codex"
+  },
+  "This action is not available in this view or the selected conversation changed.": {
+    "revision": "91fd59bb787c67a65376e48292821b5b22a5bfbd51d8d73b56c6f0b2f538276f",
+    "textHash": "d30d5b47c2edd0532383346c5388d9e1e59ba928d392251bfb259076aeaa36b6",
+    "model": "codex"
+  },
+  "This prompt points ChatGPT Pro to your synced GitHub repo for full-manuscript context. Copy it into ChatGPT Pro, then paste its reply below.": {
+    "revision": "252eca20d6ccbfcb9cc11cfee8c617e4b9ebc87fa4f056c48d1755a11c194318",
+    "textHash": "7a66f5cb8b4511d46da178a4b4f5121ab4bc305e28dea4b9f308aaadff001cfc",
+    "model": "gemini-4-argon-medium"
+  },
+  "This request is not available in this view.": {
+    "revision": "7a9e43828f9ce8c2d103ff0cd66a727be01b3b8db79176fa2f779c234c206c80",
+    "textHash": "5721a64de3b312e888b42c552212f5fef8ff026dd6d42293575ed47bcfa3f76e",
+    "model": "codex"
+  },
+  "This resource is not available in this conversation.": {
+    "revision": "f6733d6082ef605b95b8e6fd40943126fda8ffc3ff07a7b26fb0ad25f7b60d43",
+    "textHash": "0bf96b210493b180d0185d7704773c9418c1cac9718bd3dae8fbd38da79ebf4d",
+    "model": "codex"
+  },
   "To do": {
     "revision": "51dac5b20a823231df6bfd6405eeb26c777318577031c2e72a158253fc1893d9",
     "textHash": "5e415ae2bb8630c10e05c6a0b83b1f6d40698a456b38d2fd9dc744501826ed3e",
@@ -1164,14 +1454,34 @@
     "textHash": "0f08c831eabc55cfe1b2b710857c961567941076dbca03f3a7c19531ae874ad2",
     "model": "gemini-4-argon-medium"
   },
+  "Try again": {
+    "revision": "ae5111111a26988f7151e4edf4037feb21273e54a2b0f3c0389219cc67a1ea73",
+    "textHash": "b8784c8dd5636ff231b121892144e4a3977d5b874f21934c53f850cde7bac0ea",
+    "model": "gemini-4-argon-medium"
+  },
+  "Turn on ChatGPT Pro (web) in Settings → Experiments to copy prompts and paste replies inside normal tasks.": {
+    "revision": "6bcf8f606adfae7d237f66d838f3321e5367bd7458daefa8deb0d7a4c746ea50",
+    "textHash": "cd511055ba2e8d9313e771a73c50d67d1dea65ca62d834639c013ad1c1800d65",
+    "model": "gemini-4-argon-medium"
+  },
   "Typeless voice notes": {
     "revision": "9a27d25f562e148860cb4288a657de90388a21b24134750f84c722a39e4d72a5",
     "textHash": "37528ee62e2ba5a8e9f2ff22edde676f3c84a72d4cf2487557d5158848f9046a",
     "model": "codex"
   },
+  "Unknown Papilot action.": {
+    "revision": "1ca2b2efadab74bdb5bc154c27734a747549b450159aba1300104eee977f4916",
+    "textHash": "f23ece57020c853206dfccf7f49886d1ad28e89e5d1184f77535efda25cf64fe",
+    "model": "codex"
+  },
   "Use": {
     "revision": "c48e8e4898e3c0d0fbcc4c90fc9e4f27ccb1bec0b6dc6a64f142e9236bf3cf7f",
     "textHash": "cdfd0b34e4918648910bd74bb862cf6076871cdf7fb6c6571a8a5bda78e9b942",
+    "model": "gemini-4-argon-medium"
+  },
+  "Use ChatGPT Pro manually inside normal tasks: copy the prompt, paste its reply, and let a local agent apply the edits.": {
+    "revision": "49cc772b1e58dfb1a17242ffc182557ec815dc2ba3bdd93eaef8cb9e72ef3671",
+    "textHash": "49a0d78863fe3da07ab6916a248f44b12b20f240cbbd92f4fc934f6b107553ed",
     "model": "gemini-4-argon-medium"
   },
   "Use PDFs from Zotero": {
@@ -1239,9 +1549,19 @@
     "textHash": "39395c1df20e0d428c609732bac274d4a0259ad0a944a90e912fc7279e0b29dc",
     "model": "gemini-4-argon-medium"
   },
+  "Waiting for ChatGPT Pro": {
+    "revision": "042188513c372586c9b311d2916c46796ae1bf07aa78fda65008ed44d0230b9f",
+    "textHash": "ff97259818b32bb25c3da89cc98f2e27fcdff76dd39564f1b1875417b52bda65",
+    "model": "gemini-4-argon-medium"
+  },
   "Waiting for the model… {n} s": {
     "revision": "0021726287c42e3af548e4d2b10e304534f6d76849a75c171a45f39ff93f0cd6",
     "textHash": "ea3c9ad1bb1865f91aa001b3162fc2d6f0db02a83eb44d8da880a2e9f65e73f2",
+    "model": "gemini-4-argon-medium"
+  },
+  "When a paper has a GitHub remote, push the task’s current files to a branch so ChatGPT Pro can read the full repository.": {
+    "revision": "53f4fc22a6d5b18df2c70ae94b41d71976385636f28ae8339c5c74acb4816e84",
+    "textHash": "a5384e38107b1709ac003f8c81da65ba12eba5021f56204d62cf0974b69e9f26",
     "model": "gemini-4-argon-medium"
   },
   "Where files differ": {
@@ -1308,6 +1628,11 @@
     "revision": "6097535752f2b1e0c5349ec5f0366fa62d136f3497b2f034b8755c511652d284",
     "textHash": "c60d3ea388a7e8b1dba02b8e171a215e053e9697ee6bf3f2ce249b1f3bb8a53a",
     "model": "gemini-4-argon-medium"
+  },
+  "{document} · Changes": {
+    "revision": "a37a42a9b86deb6b4d998e1a83ecdfbd003a24fe8acb76e50c57add7cf2f75e6",
+    "textHash": "cb340c6e6a64840ee7f55615baeea8d25a139c922e732a77b72a16e280235e9d",
+    "model": "codex"
   },
   "{done} of {total}": {
     "revision": "55e32285317ee2c937c79076314189b53857d7d09ece1b36a04e2bb58cd96bc9",
@@ -1492,6 +1817,11 @@
   "{shortcut} sent": {
     "revision": "6d90f17e209802f9242bc7e7597a3d3482be3592e2c18f057146147518dbf619",
     "textHash": "4494b932d54ab75bbf69f4b3ba079d7631af4cce97b49257929122b26b44591c",
+    "model": "codex"
+  },
+  "{title} · Review": {
+    "revision": "8f225cd7fb5321a8fdcd091a43c6ffb24172a3479cbbaab13e2f11bbdda51862",
+    "textHash": "84fc6fd53738322f2acc40079fd6bae5d6f4d5f5c683ca6958e7cfdf9a05ffa8",
     "model": "codex"
   }
 }
