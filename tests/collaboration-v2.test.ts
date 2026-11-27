@@ -134,7 +134,7 @@ test('default Auto team gives all 4 built-in lanes 1 model each (Direct) and sup
         { agent: 'antigravity', model: 'gemini-4-neon', effort: 'xhigh' },
         { agent: 'codex', model: 'gpt-6.2-sol', effort: 'xhigh', serviceTier: 'fast' },
       ] },
-      { id: 'tikz', name: 'TikZ diagrams', description: 'TikZ figures and commutative diagrams', models: [
+      { id: 'tikz', name: 'TikZ diagrams', description: 'TikZ figures and commutative diagrams', icon: 'diagram', models: [
         { agent: 'codex', model: 'gpt-6.2-sol', effort: 'xhigh' },
       ], custom: true },
     ],
@@ -142,6 +142,7 @@ test('default Auto team gives all 4 built-in lanes 1 model each (Direct) and sup
   assert.equal(withCustom.lanes.length, 5);
   assert.equal(withCustom.lanes.find(l => l.id === 'polish')?.models.length, 2);
   assert.equal(withCustom.lanes.find(l => l.id === 'tikz')?.custom, true);
+  assert.equal(withCustom.lanes.find(l => l.id === 'tikz')?.icon, 'diagram');
   const f = makePaper();
   try {
     const notes = currentTurnNotes([

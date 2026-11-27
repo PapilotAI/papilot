@@ -135,10 +135,13 @@ try {
     await inspector.getByRole('slider').focus(); await page.keyboard.press('End');
     await expect.poll(() => config.router).toEqual({ agent: 'opencode', model: 'provider/flash-test', effort: 'max' });
 
-    // Add a custom lane, rename it, set its Router rule, capture inspector with Delete + Save buttons, and save.
+    // Add a custom lane, pick its icon via IconPicker, rename it, set its Router rule, and save.
     await disclosure.locator('.collab-add-lane-btn').click();
     await expect(disclosure.locator('.collab-lane')).toHaveCount(5);
     await expect(inspector).toHaveAttribute('data-inspecting', 'lane:custom-1');
+    await inspector.locator('.skill-icon-trigger').click();
+    await page.locator('.skill-icon-popover .skill-icon-grid button[role="radio"]').nth(15).click();
+    await expect.poll(() => Boolean(config.lanes.find(l => l.id === 'custom-1')?.icon)).toBe(true);
     await inspector.locator('input[type="text"]').fill('TikZ diagrams');
     await inspector.locator('textarea').fill('TikZ figures and commutative diagrams');
     await page.screenshot({ path: `test-results/collaboration-lane-form-${width}-${language}.png`, animations: 'disabled' });

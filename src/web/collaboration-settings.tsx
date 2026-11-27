@@ -17,11 +17,14 @@ import {
   type CollaborationWorkerAgent,
   type RuntimeStatus,
 } from '../shared.ts';
+import type { SkillIcon } from '../skill-icons.ts';
 import { BrandIcon } from './brand-icon.tsx';
 import { ChipSelect, type SelectOption } from './chip-select.tsx';
 import { EffortSlider } from './effort-slider.tsx';
 import { Icon } from './icons.tsx';
 import { errorText, t } from './i18n.ts';
+import { SkillIconPicker } from './skill-icon-picker.tsx';
+import './skill-library.css';
 
 export type CollaborationPatch = {
   enabled?: boolean;
@@ -71,7 +74,7 @@ function laneVisual(lane: CollaborationLane) {
     };
   }
   return {
-    icon: 'tag',
+    icon: lane.icon || 'tag',
     tone: 'custom',
     name: lane.name,
     description: lane.description,
@@ -330,6 +333,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
       id: newId,
       name: t('Custom lane {n}', { n }),
       description: '',
+      icon: 'tag',
       models: starter ? [starter] : [],
       custom: true,
     };
@@ -418,13 +422,26 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
       return <div ref={inspectorRef} id={inspectorId} className="collab-inspector" data-inspecting={`lane:${lane.id}`} role="region" aria-labelledby={`${inspectorId}-title`}
         onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setSelected(null); } }}>
         <div className="collab-inspector-head">
-          <span className="collab-role-badge" data-tone={vis.tone} aria-hidden="true"><Icon name={vis.icon} size={14}/></span>
+          {isCustomLane ? (
+            <div className="collab-lane-icon-picker">
+              <SkillIconPicker
+                value={(lane.icon || 'tag') as SkillIcon}
+                onChange={icon => saveLaneUpdate(lane.id, cur => ({ ...cur, icon }))}
+                disabled={!online || saving}
+                name={vis.name}
+              />
+            </div>
+          ) : (
+            <span className="collab-role-badge" data-tone={vis.tone} aria-hidden="true"><Icon name={vis.icon} size={14}/></span>
+          )}
           <div className="collab-inspector-copy">
             <span className="settings-name" id={`${inspectorId}-title`}>{vis.name}</span>
             <p>{t('Router reads this description to send matching annotations into this lane.')}</p>
           </div>
           <div className="collab-inspector-actions">
-            <button type="button" className="icon-button collab-inspector-close" aria-label={t('Close')} title={t('Close')} onClick={() => setSelected(null)}><Icon name="close" size={14}/></button>
+            {isCustomizedBuiltin && <button type="button" className="collab-icon-btn" aria-label={t('Auto')} title={t('Auto')} disabled={!online || saving} onClick={() => resetBuiltinLane(lane.id)}><Icon name="restore" size={15}/></button>}
+            {isCustomLane && <button type="button" className="collab-icon-btn collab-icon-danger" aria-label={t('Delete')} title={t('Delete')} disabled={!online || saving} onClick={() => deleteCustomLane(lane.id)}><Icon name="trash" size={15}/></button>}
+            <button type="button" className="collab-icon-btn" aria-label={t('Close')} title={t('Close')} onClick={() => setSelected(null)}><Icon name="close" size={15}/></button>
           </div>
         </div>
         <form className="collab-lane-form" onSubmit={event => { event.preventDefault(); commitMeta(); }}>
@@ -443,11 +460,7 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
               onBlur={commitMeta}/>
           </div>
           <div className="collab-lane-form-foot">
-            <div className="collab-lane-form-foot-start">
-              {isCustomizedBuiltin && <button type="button" className="button secondary compact" disabled={!online || saving} onClick={() => resetBuiltinLane(lane.id)}><Icon name="restore" size={13}/>{t('Auto')}</button>}
-              {isCustomLane && <button type="button" className="button secondary compact collab-action-danger" disabled={!online || saving} onClick={() => deleteCustomLane(lane.id)}><Icon name="trash" size={13}/>{t('Delete')}</button>}
-            </div>
-            <button type="submit" className="button primary compact" disabled={!online || saving || (isCustomLane && !draftName.trim())}><Icon name="check" size={13}/>{t('Save')}</button>
+            <button type="submit" className="collab-icon-btn collab-icon-save" aria-label={t('Save')} title={t('Save')} disabled={!online || saving || (isCustomLane && !draftName.trim())}><Icon name="check" size={15}/></button>
           </div>
         </form>
       </div>;
@@ -531,9 +544,9 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
           <p>{detail}</p>
         </div>
         <div className="collab-inspector-actions">
-          {allowAuto && route && <button type="button" className="button secondary compact" disabled={!online || saving} onClick={() => onUpdate(null)}><Icon name="restore" size={13}/>{t('Auto')}</button>}
-          {onRemove && <button type="button" className="button secondary compact collab-action-danger" disabled={!online || saving} onClick={onRemove}><Icon name="trash" size={13}/>{t('Remove')}</button>}
-          <button type="button" className="icon-button collab-inspector-close" aria-label={t('Close')} title={t('Close')} onClick={() => setSelected(null)}><Icon name="close" size={14}/></button>
+          {allowAuto && route && <button type="button" className="collab-icon-btn" aria-label={t('Auto')} title={t('Auto')} disabled={!online || saving} onClick={() => onUpdate(null)}><Icon name="restore" size={15}/></button>}
+          {onRemove && <button type="button" className="collab-icon-btn collab-icon-danger" aria-label={t('Remove')} title={t('Remove')} disabled={!online || saving} onClick={onRemove}><Icon name="trash" size={15}/></button>}
+          <button type="button" className="collab-icon-btn" aria-label={t('Close')} title={t('Close')} onClick={() => setSelected(null)}><Icon name="close" size={15}/></button>
         </div>
       </div>
 
@@ -620,8 +633,8 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
         <div className="collab-stage collab-stage-lanes" data-role="lanes">
           <div className="collab-stage-head">
             <span className="collab-stage-label">{t('Task lanes')}</span>
-            <button type="button" className="collab-add-lane-btn" disabled={!online || saving || lanes.length >= MAX_COLLABORATION_LANES || !offered.length}
-              onClick={addCustomLane}><Icon name="plus" size={11}/>{t('Add lane')}</button>
+            <button type="button" className="collab-icon-btn collab-add-lane-btn" aria-label={t('Add lane')} title={t('Add lane')} disabled={!online || saving || lanes.length >= MAX_COLLABORATION_LANES || !offered.length}
+              onClick={addCustomLane}><Icon name="plus" size={15}/></button>
           </div>
           <div className="collab-lanes-list">
             {lanes.map(lane => {
@@ -639,11 +652,11 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
                   </button>
                   <div className="collab-stage-controls">
                     {!lane.custom && savedLaneById.has(lane.id) && (
-                      <button type="button" className="collab-stage-reset" disabled={!online || saving} onClick={() => resetBuiltinLane(lane.id)}>{t('Auto')}</button>
+                      <button type="button" className="collab-icon-btn" aria-label={t('Auto')} title={t('Auto')} disabled={!online || saving} onClick={() => resetBuiltinLane(lane.id)}><Icon name="restore" size={13}/></button>
                     )}
-                    <button type="button" className="collab-step-btn collab-add-btn" aria-label={t('Add model to {lane}', { lane: vis.name })} title={t('Add model')}
+                    <button type="button" className="collab-icon-btn collab-add-btn" aria-label={t('Add model to {lane}', { lane: vis.name })} title={t('Add model')}
                       disabled={!online || saving || lane.models.length >= MAX_COLLABORATION_RACERS || !offered.length}
-                      onClick={() => addModelToLane(lane.id)}><Icon name="plus" size={11}/></button>
+                      onClick={() => addModelToLane(lane.id)}><Icon name="plus" size={14}/></button>
                   </div>
                 </div>
                 <div className="collab-lane-models">
@@ -656,8 +669,8 @@ export function CollaborationSettings({ enabled, online, runtimes, load, save }:
                           disabled={!online} onClick={() => toggleNode({ kind: 'laneModel', laneId: lane.id, index: idx })} title={formatRoute(racer, runtimes)}>
                           <NodePillContent route={racer} runtimes={runtimes} custom={customized}/>
                         </button>
-                        {lane.models.length > 1 && <button type="button" className="collab-step-btn collab-remove-btn" aria-label={t('Remove model {n} from {lane}', { n: idx + 1, lane: vis.name })} title={t('Remove')}
-                          disabled={!online || saving} onClick={() => removeModelFromLane(lane.id, idx)}><Icon name="minus" size={11}/></button>}
+                        {lane.models.length > 1 && <button type="button" className="collab-icon-btn collab-remove-btn" aria-label={t('Remove model {n} from {lane}', { n: idx + 1, lane: vis.name })} title={t('Remove')}
+                          disabled={!online || saving} onClick={() => removeModelFromLane(lane.id, idx)}><Icon name="minus" size={14}/></button>}
                       </div>
                     </div>;
                   }) : <span className="collab-stage-empty">{t('Not configured')}</span>}

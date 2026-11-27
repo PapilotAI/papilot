@@ -60,7 +60,7 @@ function inferLaneId(laneName: string): string {
   return lower === 'answer' ? 'answer' : 'custom';
 }
 
-function laneVisual(laneId: string, laneName: string) {
+function laneVisual(laneId: string, laneName: string, laneIcon?: string) {
   if (laneId === 'answer') return { icon: 'chat', tone: 'answer', label: t('Answer') };
   if ((BUILTIN_COLLABORATION_LANES as string[]).includes(laneId)) {
     const id = laneId as BuiltinCollaborationLaneId;
@@ -73,7 +73,7 @@ function laneVisual(laneId: string, laneName: string) {
     const useLocalized = !laneName || laneName === def.name || laneName === id;
     return { icon, tone: id, label: useLocalized ? localized : laneName };
   }
-  return { icon: 'tag', tone: 'custom', label: laneName || t('Custom lane') };
+  return { icon: laneIcon || 'tag', tone: 'custom', label: laneName || t('Custom lane') };
 }
 
 function noteNumsKey(notes: number[]) {
@@ -316,7 +316,7 @@ export function CollaborationDispatchCard({
       ) : (
         <ul className="collab-dispatch-list">
           {dispatch.entries.map(entry => {
-            const lane = laneVisual(entry.laneId, entry.laneName);
+            const lane = laneVisual(entry.laneId, entry.laneName, entry.laneIcon);
             const raceItem = entry.mode === 'race' ? byId.get(entry.itemId) : undefined;
             const raceResult = raceItem?.meta?.raceResult;
             const fallbackWinnerLabel = !raceResult && raceItem?.status === 'completed'

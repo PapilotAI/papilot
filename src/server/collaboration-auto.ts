@@ -317,6 +317,7 @@ export function resolveCollaborationConfig(
       name: saved.name,
       description: saved.description,
       models,
+      ...(saved.icon ? { icon: saved.icon } : {}),
       custom: true,
     });
   }

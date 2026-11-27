@@ -1,5 +1,5 @@
 import type { GroupInstructions, NoteGroup } from './note-groups.ts';
-import type { SkillIcon } from './skill-icons.ts';
+import { isSkillIcon, type SkillIcon } from './skill-icons.ts';
 export type TaskStatus = 'preparing' | 'idle' | 'queued' | 'running' | 'waiting_input' | 'building' | 'reviewing' | 'interrupted' | 'failed' | 'uncertain' | 'deleting';
 export interface Project { id: string; name: string; path: string; createdAt: number }
 export const MAX_ATTACHMENTS = 10;
@@ -177,6 +177,7 @@ export interface CollaborationDispatchEntry {
   file: string;
   laneId: string;
   laneName: string;
+  laneIcon?: SkillIcon;
   mode: 'assign' | 'race' | 'answer';
   itemId: string;
   workers: CollaborationDispatchWorker[];
@@ -228,6 +229,7 @@ export interface CollaborationLane {
   name: string;
   description: string;
   models: CollaborationRoute[];
+  icon?: SkillIcon;
   custom?: boolean;
 }
 export const DEFAULT_COLLABORATION_LANE_DEFS: Record<BuiltinCollaborationLaneId, { name: string; description: string }> = {
@@ -311,6 +313,7 @@ export function validLanes(value: unknown): value is CollaborationLane[] {
     ids.add(lane.id);
     if (typeof lane.name !== 'string' || !lane.name.trim() || lane.name.length > 60 || lane.name.includes('\0')) return false;
     if (typeof lane.description !== 'string' || lane.description.length > 260 || lane.description.includes('\0')) return false;
+    if (lane.icon !== undefined && !isSkillIcon(lane.icon)) return false;
     if (!validRacers(lane.models)) return false;
   }
   return true;
@@ -330,7 +333,8 @@ export function normalizeLanes(value: unknown): CollaborationLane[] {
     const name = typeof lane.name === 'string' && lane.name.trim() ? lane.name.trim().slice(0, 60) : (def?.name || rawId);
     const description = typeof lane.description === 'string' ? lane.description.trim().slice(0, 260) : (def?.description || '');
     const models = Array.isArray(lane.models) ? dedupeRoutes(lane.models) : [];
-    out.push({ id: rawId, name, description, models, ...(!builtin ? { custom: true } : {}) });
+    const icon = !builtin && isSkillIcon(lane.icon) ? lane.icon : undefined;
+    out.push({ id: rawId, name, description, models, ...(icon ? { icon } : {}), ...(!builtin ? { custom: true } : {}) });
     if (out.length >= MAX_COLLABORATION_LANES) break;
   }
   return out;

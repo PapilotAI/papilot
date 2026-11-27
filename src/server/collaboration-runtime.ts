@@ -311,7 +311,7 @@ export class CollaborationRuntime extends Adapter {
         const racers = laneRacers(u.lane);
         const raceItemId = `${taskId}:${turn.id}:race:${cluster.id}`;
         return {
-          clusterId: cluster.id, notes, file: cluster.file, laneId, laneName, mode: 'race',
+          clusterId: cluster.id, notes, file: cluster.file, laneId, laneName, ...(lane?.icon ? { laneIcon: lane.icon } : {}), mode: 'race',
           itemId: raceItemId,
           workers: racers.map((racer, idx) => ({ itemId: `${raceItemId}:r${idx}`, agent: racer.agent, model: shortModel(racer) })),
           ...(readOnlyAgents[judgeWorker.agent] !== false ? { judge: { itemId: `${raceItemId}:judge`, agent: judgeWorker.agent, model: shortModel(judgeWorker) } } : {}),
@@ -320,7 +320,7 @@ export class CollaborationRuntime extends Adapter {
       const worker = lane?.models[0] || roleRoute(u.role);
       const itemId = `${taskId}:${turn.id}:assign:${cluster.id}`;
       return {
-        clusterId: cluster.id, notes, file: cluster.file, laneId, laneName, mode: 'assign',
+        clusterId: cluster.id, notes, file: cluster.file, laneId, laneName, ...(lane?.icon ? { laneIcon: lane.icon } : {}), mode: 'assign',
         itemId, workers: [{ itemId, agent: worker.agent, model: shortModel(worker) }],
       };
     });
