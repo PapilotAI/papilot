@@ -19,7 +19,7 @@ WSL localhost forwarding must be enabled so the Windows window can reach the Lin
 
 ## Build and run
 
-Install an official Node.js distribution (22.22 or newer) and Git for Windows, then open a new PowerShell window. Install TeX Live for Windows to compile papers; `latexmk`, `pdflatex`/`xelatex`/`lualatex` and `synctex` need to be available. TeX Live includes the Perl runtime needed by latexmk. A MiKTeX installation must also provide latexmk and its required Perl runtime. The desktop example PDF can be read without TeX.
+Install an official Node.js distribution (22.22 or newer) and Git for Windows, then open a new PowerShell window. Install TeX Live for Windows to compile papers. Make sure `latexmk`, your LaTeX engine (`pdflatex`, `xelatex` or `lualatex`) and `synctex` are available. TeX Live includes the Perl runtime used by latexmk. With MiKTeX, install the latexmk package and make a Perl runtime available on `PATH`. MiKTeX can use the Perl bundled with Git for Windows when its `perl.exe` is on `PATH`. The desktop example PDF can be read without TeX.
 
 ```powershell
 node --version
