@@ -80,7 +80,7 @@ export function CitationCheckView({ task, load, agents, lead, onOpen, onCite, re
           <input type="checkbox" role="switch" className="switch" checked={check.show} disabled={busy} onChange={event => void act('show', { show: event.target.checked })}/>
           <span>{t('Show in the paper')}</span>
         </label>
-        {choice && <AgentPicker label={t('Model')} agents={agents} agent={choice.agent} model={choice.model ?? ''} effort={choice.effort ?? ''} fast={false} disabled={running}
+        {choice && <AgentPicker label={t('Model')} agents={agents} agent={choice.agent} model={choice.model ?? ''} effort={choice.effort ?? ''} disabled={running}
           reconnecting={reconnecting} onReconnect={() => { if (!reconnect) return; setReconnecting(true); void reconnect().finally(() => setReconnecting(false)); }}
           onSelect={(agent, selected) => setChoice({ agent, model: selected || null, effort: null })} onChange={change => { if (change.effort !== undefined) setChoice(current => current && ({ ...current, effort: change.effort || null })); }}/>}
         {running

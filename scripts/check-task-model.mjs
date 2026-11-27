@@ -18,7 +18,7 @@ page.on('pageerror', error => errors.push(error.message));
 const task = { id: 'fixture-task', projectId: 'paper', agent: 'codex', name: 'p-task', title: 'Revise the introduction', instructions: 'Keep the meaning.', worktree: '/tmp/paper', threadId: 'thread', turnId: 'turn', model: null, effort: null, status: 'running', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: null };
 const runtime = { connected: true, authenticated: true, account: null, error: null, models: [
   { id: 'fast-model', name: 'Fast model', isDefault: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
-  { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', fastMode: { serviceTier: 'priority', description: 'Faster responses' } },
+  { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', serviceTiers: ['priority', 'ultrafast'] },
 ] };
 const snapshot = { version: 'test', csrf: 'test', projects: [{ id: 'paper', name: 'Paper', path: '/tmp/paper', createdAt: 1 }], tasks: [task], requests: [], runtime, runtimes: { codex: runtime, claude: { ...runtime, models: [{ id: 'opus', name: 'Opus', isDefault: true, efforts: ['low', 'high'], defaultEffort: 'high' }] } } };
 const modelChanges = [], messages = [];
@@ -72,8 +72,15 @@ try {
   await taskEffort.press('End');
   await expect.poll(() => task.effort).toBe('xhigh');
   await expect(taskSettings).toContainText('Xhigh');
-  await taskModelMenu.getByRole('switch', { name: 'Fast mode' }).check();
+  const taskSpeed = taskModelMenu.getByRole('group', { name: 'Speed', exact: true });
+  await expect(taskSpeed.locator('label', { hasText: 'Standard' }).locator('svg')).toHaveCount(0);
+  await taskSpeed.getByRole('radio', { name: 'Fast', exact: true }).check();
   await expect.poll(() => task.serviceTier).toBe('priority');
+  await expect(taskSettings.locator('.agent-speed-bolts svg')).toHaveCount(1);
+  await taskSpeed.getByRole('radio', { name: 'Fast', exact: true }).press('ArrowRight');
+  await expect.poll(() => task.serviceTier).toBe('ultrafast');
+  await expect(taskSpeed.getByRole('radio', { name: 'Ultrafast', exact: true })).toBeFocused();
+  await expect(taskSettings.locator('.agent-speed-bolts svg')).toHaveCount(2);
   await taskModelMenu.getByRole('button', { name: 'Model default', exact: true }).click();
   await expect.poll(() => task.effort).toBe(null);
   await expect(taskSettings).toContainText('High');
@@ -82,6 +89,7 @@ try {
   await taskModelMenu.getByRole('option', { name: 'Fast model · Codex', exact: true }).last().click();
   await expect.poll(() => task.model).toBe('fast-model');
   await expect(taskSettings).toContainText('Medium');
+  await expect(taskSpeed).toHaveCount(0);
   assert.equal(task.effort, null, 'incompatible Xhigh resets to model default');
   assert.equal(task.serviceTier, 'default');
   await taskModelMenu.getByRole('combobox').press('Escape');
@@ -92,7 +100,7 @@ try {
   await taskModelMenu.getByRole('option', { name: 'Deep model · Codex', exact: true }).last().click();
   await expect.poll(() => task.model).toBe('deep-model');
   await expect(taskEffort, 'returning to a model restores its effort after reload').toHaveAttribute('aria-valuetext', 'Xhigh');
-  assert.equal(task.serviceTier, 'priority', 'Fast mode is remembered with its model');
+  assert.equal(task.serviceTier, 'ultrafast', 'Ultrafast is remembered with its model');
   await taskModelMenu.getByRole('option', { name: 'Fast model · Codex', exact: true }).last().click();
   await expect.poll(() => task.model).toBe('fast-model');
   runtime.models[0].isDefault = false;
@@ -133,21 +141,22 @@ try {
   await expect(taskEffort).toHaveAttribute('aria-valuetext', 'High');
   assert.equal(task.effort, 'high', 'rapid model switches restore the preceding queued effort save');
   const pickTaskModel = name => taskModelMenu.getByRole('option', { name: `${name} · Codex`, exact: true }).last().click();
-  const fastSwitch = taskModelMenu.getByRole('switch', { name: 'Fast mode' });
+  const standardSpeed = taskSpeed.getByRole('radio', { name: 'Standard', exact: true });
+  const ultrafastSpeed = taskSpeed.getByRole('radio', { name: 'Ultrafast', exact: true });
   await pickTaskModel('Deep model');
   await expect.poll(() => task.model).toBe('deep-model');
-  await taskEffort.press('Home'); await fastSwitch.uncheck();
+  await taskEffort.press('Home'); await standardSpeed.check();
   await expect(taskModelMenu.getByText('Saving…', { exact: true })).toHaveCount(0);
   holdModel = new Promise(resolve => { releaseModel = resolve; });
   await taskEffort.press('End');
   await pickTaskModel('Fast model'); await pickTaskModel('Deep model');
-  await fastSwitch.check();
+  await ultrafastSpeed.check();
   releaseModel(); holdModel = null;
   await expect(taskModelMenu.getByText('Saving…', { exact: true })).toHaveCount(0);
-  assert.equal(task.effort, 'xhigh', 'a queued Fast toggle keeps the restored effort');
-  assert.equal(task.serviceTier, 'priority');
+  assert.equal(task.effort, 'xhigh', 'a queued speed change keeps the restored effort');
+  assert.equal(task.serviceTier, 'ultrafast');
   holdModel = new Promise(resolve => { releaseModel = resolve; });
-  await fastSwitch.uncheck();
+  await standardSpeed.check();
   await pickTaskModel('Fast model'); await pickTaskModel('Deep model');
   await taskEffort.press('Home');
   releaseModel(); holdModel = null;
@@ -329,7 +338,8 @@ try {
   };
   await pick('Deep model · Codex');
   await slider.press('End');
-  await picker.getByRole('switch', { name: 'Fast mode' }).check();
+  const ultrafast = picker.getByRole('radio', { name: 'Ultrafast', exact: true });
+  await ultrafast.check();
   await picker.getByRole('radio', { name: 'Full access', exact: true }).check();
   await pick('Fast model · Codex');
   await slider.press('Home');
@@ -338,7 +348,7 @@ try {
   await slider.press('Home');
   await pick('Deep model · Codex');
   await expect(slider).toHaveAttribute('aria-valuetext', 'Xhigh');
-  await expect(picker.getByRole('switch', { name: 'Fast mode' })).toBeChecked();
+  await expect(ultrafast).toBeChecked();
   await expect(picker.getByRole('radio', { name: 'Full access', exact: true })).toBeChecked();
   await composer.keyboard.press('Escape');
   await composer.reload();
@@ -349,7 +359,7 @@ try {
   await composer.keyboard.press('Escape');
   await composer.getByRole('textbox', { name: 'Describe the revision' }).fill('Use the remembered settings.');
   await submit('deep-model');
-  assert.equal(creates.at(-1).effort, 'xhigh'); assert.equal(creates.at(-1).permissions, 'full'); assert.equal(creates.at(-1).serviceTier, 'priority');
+  assert.equal(creates.at(-1).effort, 'xhigh'); assert.equal(creates.at(-1).permissions, 'full'); assert.equal(creates.at(-1).serviceTier, 'ultrafast');
   await pick('Fast model · Codex');
   await expect(slider).toHaveAttribute('aria-valuetext', 'Low');
   await pick('Opus · Claude');
@@ -379,6 +389,7 @@ try {
   await newSettings.click();
   await expect(picker.getByRole('radio', { name: 'Full access', exact: true })).toBeChecked();
   await expect(slider).toHaveAttribute('aria-valuetext', 'Xhigh');
+  await expect(ultrafast).toBeChecked();
   await composer.screenshot({ path: 'test-results/model-preferences-mobile-dark.png', animations: 'disabled' });
   assert.deepEqual(errors, []);
   await fresh.close();

@@ -1,7 +1,7 @@
 import '../../engine/src/web/legacy-storage.ts';
 import { TaskDocument } from './task-document.tsx';
 import { requestApi, requestState } from './api.ts';
-import { agentLabel, agentsSettled, canReviewWith, chosenAgent, defaultOfferedModel, noAgent, offeredAgents } from './agent-choice.ts';
+import { agentLabel, agentsSettled, canReviewWith, chosenAgent, defaultOfferedModel, noAgent, offeredAgents, shownModels } from './agent-choice.ts';
 import { isPlayground, pdfAsset, wordAsset, requestPlaygroundDownload } from './playground-mode.ts';
 import { annotationGroupState, canonicalGroup, groupsWithoutInstructions, noteGroups, type NoteGroup } from '../note-groups.ts';
 import { NOTE_SORT_MODES, groupNoteEntries, isNoteSortMode, sortNoteEntries, type NoteSortMode } from '../note-sort.ts';
@@ -18,7 +18,7 @@ import { createPortal, flushSync } from 'react-dom';
 import { readNotesInstructions, type NoteSummary } from '../notes.ts';
 import { aiReviewSummary, isFeedbackPrompt } from '../conversation.ts';
 import { ignorePattern } from '../commit.ts';
-import { AGENT_IDS, isAgentId, isTaskReviewNote, taskFinished } from '../shared.ts';
+import { effectiveServiceTier, modelServiceTier, AGENT_IDS, isAgentId, isTaskReviewNote, taskFinished } from '../shared.ts';
 import type { TaskCommitReview, CompilerChoice, LatexInstallation, ZoteroStatus, AgentId, Annotation, AnnotationGroupEdit, AnnotationGroupState, AnnotationBatch, AnnotationBatchResult, NoteSection, PageReadingLayout, BuildRepairResult, MarkKind, Author, FeedbackSummary, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, PendingRequest, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
 import { SkillChip, SkillMenu, SkillPicker, matchSkills, skillName, skillQuery } from './skills.tsx';
 import { reviewDraft, useReviewDraft, reviewNoteSummary, reviewSubmission } from './review-draft.ts';
@@ -1768,8 +1768,8 @@ function App() {
     const runtime = runtimes[id], models = runtime?.models || [], preferred = agentModels[id];
     const chosen = models.length && !models.some(model => model.id === preferred) ? '' : preferred;
     const model = models.find(model => model.id === chosen) || defaultOfferedModel(runtime);
-    const pref = readModelPreferences(id, chosen, model) || { effort: isPlayground && id === 'codex' ? 'xhigh' : null, fast: false };
-    const serviceTier = id === 'codex' ? (pref.fast ? model?.fastMode?.serviceTier || 'default' : 'default') : undefined;
+    const pref = readModelPreferences(id, chosen, model) || { effort: isPlayground && id === 'codex' ? 'xhigh' : null, serviceTier: 'default' };
+    const serviceTier = id === 'codex' ? modelServiceTier(model, pref.serviceTier) : undefined;
     return { chosen, pref, agent: { agent: id, model: model?.id || chosen, effort: taskEffort(pref.effort, model), serviceTier } };
   }
   const defaultSelection = modelSelection(defaultAgent);
@@ -1782,15 +1782,23 @@ function App() {
     const ready = readOnlyAgents.find(id => runtimes[id]?.connected && runtimes[id]?.authenticated);
     if (ready) return { agent: ready, model: '', effort: '' };
   }
-  const conversationHelper: CommitMessageChoice = commitContext ? {
+  function effectiveGitChoice(choice: CommitMessageChoice): CommitMessageChoice {
+    if (choice.agent !== 'codex' || !choice.serviceTier) return choice;
+    const runtime = runtimes.codex;
+    const model = choice.model ? runtime?.models.find(model => model.id === choice.model)
+      : defaultOfferedModel(runtime) ?? shownModels(runtime)[0];
+    const serviceTier = effectiveServiceTier(model, choice.serviceTier);
+    return serviceTier === choice.serviceTier ? choice : { ...choice, serviceTier };
+  }
+  const conversationHelper = commitContext ? effectiveGitChoice({
     agent: commitContext.agent || 'codex', model: commitContext.model || '', effort: commitContext.effort || '',
     ...(commitContext.serviceTier ? { serviceTier: commitContext.serviceTier } : {}),
-  } : defaultSelection.agent;
+  }) : defaultSelection.agent;
   const commitWriter = commitPreference === 'conversation' ? readOnlyChoice(conversationHelper)
-    : runtimes[commitPreference.agent]?.supportsReadOnlyTasks === false ? undefined : commitPreference;
+    : runtimes[commitPreference.agent]?.supportsReadOnlyTasks === false ? undefined : effectiveGitChoice(commitPreference);
   const diagnosisAgent = readOnlyChoice(defaultSelection.agent);
-  const conflictWriter = conflictPreference === 'conversation' ? conversationHelper : conflictPreference;
-  const remember = (change: Partial<{ effort: string; fast: boolean }>) => {
+  const conflictWriter = conflictPreference === 'conversation' ? conversationHelper : effectiveGitChoice(conflictPreference);
+  const remember = (change: Partial<{ effort: string; serviceTier: string }>) => {
     saveModelPreferences(agentChoice, agent.model, { ...pref, ...change });
   };
   // One choice in the picker sets both the agent and its model.
@@ -1798,7 +1806,7 @@ function App() {
     setAgentChoice(id); browserStorage.setItem('papilot:agent', id);
     setAgentModels(current => ({ ...current, [id]: model })); browserStorage.setItem(`papilot:model:${id}`, model);
   };
-  const agentOptions = (disabled: boolean) => <AgentPicker refreshUsage={refreshUsage} disabled={disabled} noAgent={missingAgent} agent={agentChoice} model={agent.model} effort={agent.effort} fast={pref.fast}
+  const agentOptions = (disabled: boolean) => <AgentPicker refreshUsage={refreshUsage} disabled={disabled} noAgent={missingAgent} agent={agentChoice} model={agent.model} effort={agent.effort} serviceTier={agent.serviceTier}
     agents={offered.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] }))}
     permissionMode={newSkill?.output !== 'annotations' ? effectivePermissions : undefined}
     permissions={newSkill?.output !== 'annotations' && <PermissionOptions runtime={runtimes[agentChoice]} value={effectivePermissions} disabled={disabled} onChange={value => savePermissionPreference(agentChoice, value)}/>}
@@ -2456,7 +2464,7 @@ function App() {
   }
   const saveTask = async (mode: 'workspace' | 'commit', message?: string, confirmation?: string) => {
     if (!task) return;
-    // An overlap with the manuscript is merged by the chosen conflict-resolution agent.
+    // A queued merge suggestion resolves the saved choice when its agent starts.
     const result = await api<{ git?: GitStatus; commitReview?: TaskCommitReview }>(`/tasks/${task.id}/apply`, { mode, message, confirmation, keepCurrent: mergeWaiting && merging?.ready,
       ...(conflictPreference === 'conversation' ? {} : { conflictAgent: conflictPreference }) });
     if (result.git) updateGit(task.projectId, result.git);

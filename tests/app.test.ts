@@ -2395,6 +2395,24 @@ test('quota refresh validates the agent and CSRF and never reconnects conversati
   } finally { await f.close(); }
 });
 
+test('task commit-message routes identify inherited speeds for catalog validation', async () => {
+  const f = await fixture();
+  try {
+    const taskId = 'thesis-task';
+    f.store.updateTask(taskId, { agent: 'codex', model: 'full', serviceTier: 'ultrafast' });
+    const speeds: [string | undefined, boolean | undefined][] = [];
+    f.workspace.commitMessage = async (_project, _paths, choice) => { speeds.push([choice?.serviceTier, choice?.inheritedSpeed]); return { message: 'Clarify the introduction', agent: 'codex' }; };
+    const send = (payload: Record<string, unknown>) => f.local.inject({ method: 'POST', url: '/api/tasks/' + taskId + '/commit-message', headers: f.as, payload });
+
+    assert.equal((await send({})).statusCode, 200);
+    assert.equal((await send({ serviceTier: 'ultrafast' })).statusCode, 200);
+    assert.equal((await send({ agent: 'codex' })).statusCode, 200);
+    f.store.updateTask(taskId, { serviceTier: undefined });
+    assert.equal((await send({})).statusCode, 200);
+    assert.deepEqual(speeds, [['ultrafast', true], ['ultrafast', undefined], [undefined, undefined], [undefined, undefined]]);
+  } finally { await f.close(); }
+});
+
 test('commit-message routes honor explicit agents and default task requests to the conversation', async () => {
   const f = await fixture();
   try {

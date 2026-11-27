@@ -1,6 +1,6 @@
 import { agentLabel, agentOff, canReviewWith } from './agent-choice.ts';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { AGENT_IDS, type AgentId, type RuntimeStatus, type Task } from '../shared.ts';
+import { AGENT_IDS, effectiveServiceTier, modelServiceTier, type AgentId, type RuntimeStatus, type Task } from '../shared.ts';
 import { AgentPicker } from './agent-picker.tsx';
 import { t } from './i18n.ts';
 import type { RefreshUsage } from './usage.tsx';
@@ -32,7 +32,7 @@ export function TaskModelPicker({ task, runtime, runtimes, disabled, reconnectin
   const agent = task.agent || 'codex';
   function remember(settings: Settings) {
     const model = settings.model || runtime?.models.find(model => model.isDefault)?.id || '';
-    saveModelPreferences(agent, model, { effort: settings.effort || '', fast: Boolean(settings.serviceTier && settings.serviceTier !== 'default') });
+    saveModelPreferences(agent, model, { effort: settings.effort || '', serviceTier: settings.serviceTier || 'default' });
   }
   function modelSettings(id: string | null, previous: Settings): Settings {
     if (previous.model === id) return previous;
@@ -40,7 +40,7 @@ export function TaskModelPicker({ task, runtime, runtimes, disabled, reconnectin
     const preference = readModelPreferences(agent, id || '', model);
     const effort = preference ? taskEffort(preference.effort, model) : previous.effort;
     return { model: id, effort: model?.efforts.includes(effort || '') ? effort : null,
-      serviceTier: (preference ? preference.fast : previous.serviceTier === model?.fastMode?.serviceTier) && model?.fastMode ? model.fastMode.serviceTier : 'default' };
+      serviceTier: modelServiceTier(model, preference?.serviceTier ?? previous.serviceTier) };
   }
   function change(update: (previous: Settings) => Settings) {
     if (disabled || switchPending.current) return;
@@ -51,7 +51,9 @@ export function TaskModelPicker({ task, runtime, runtimes, disabled, reconnectin
       try {
         // Resolve model switches after preceding saves, including rapid A/B/A.
         const next = update(saved.current);
-        const result = await save({ model: next.model || '', effort: next.effort || '', ...(agent === 'codex' ? { serviceTier: next.serviceTier || 'default' } : {}) });
+        const model = runtime?.models.find(model => next.model ? model.id === next.model : model.isDefault);
+        const serviceTier = effectiveServiceTier(model, next.serviceTier) || 'default';
+        const result = await save({ model: next.model || '', effort: next.effort || '', ...(agent === 'codex' ? { serviceTier } : {}) });
         remember(saved.current); saved.current = settingsOf(result); remember(saved.current);
       }
       catch (error) { reportError(error); }
@@ -77,7 +79,7 @@ export function TaskModelPicker({ task, runtime, runtimes, disabled, reconnectin
         const runtime = runtimes[nextAgent], model = runtime?.models.find(model => id ? model.id === id : model.isDefault);
         const preference = readModelPreferences(nextAgent, id, model);
         await switchAgent({ agent: nextAgent, model: id, effort: preference ? taskEffort(preference.effort, model) : '',
-          ...(nextAgent === 'codex' ? { serviceTier: preference?.fast && model?.fastMode ? model.fastMode.serviceTier : 'default' } : {}),
+          ...(nextAgent === 'codex' ? { serviceTier: modelServiceTier(model, preference?.serviceTier) } : {}),
           permissions: task.mode === 'review' ? 'workspace' : readPermissionPreference(nextAgent, runtime), stop: true });
       }
       catch (error) { reportError(error); }
@@ -96,11 +98,11 @@ export function TaskModelPicker({ task, runtime, runtimes, disabled, reconnectin
   return <><AgentPicker refreshUsage={refreshUsage} agents={options} agent={agent}
     permissions={permissions}
     permissionMode={task.mode !== 'review' ? task.permissions || 'workspace' : undefined}
-    model={choice.model || ''} effort={choice.effort || ''} fast={Boolean(choice.serviceTier && choice.serviceTier !== 'default')}
+    model={choice.model || ''} effort={choice.effort || ''} serviceTier={agent === 'codex' ? choice.serviceTier || 'default' : undefined}
     disabled={disabled || switching} reconnecting={reconnecting} onReconnect={onReconnect} description={pending.current ? t('Saving…') : t('Next turn')}
     onSelect={select}
     onChange={patch => {
-      const id = current.current.model, model = runtime?.models.find(model => id ? model.id === id : model.isDefault);
-      change(previous => ({ ...modelSettings(id, previous), ...(patch.effort !== undefined ? { effort: patch.effort || null } : {}), ...(patch.fast !== undefined ? { serviceTier: patch.fast ? model?.fastMode?.serviceTier : 'default' } : {}) }));
+      const id = current.current.model;
+      change(previous => ({ ...modelSettings(id, previous), ...(patch.effort !== undefined ? { effort: patch.effort || null } : {}), ...(patch.serviceTier !== undefined ? { serviceTier: patch.serviceTier } : {}) }));
     }}/>{switching && <span className="spinner" role="status" aria-label={t('Saving…')} title={t('Saving…')}/>}</>;
 }
