@@ -177,6 +177,7 @@ export function ReviewApp({
   transport,
   resource,
   live = !transport,
+  onNavigate,
 }: {
   task: string;
   pinned: number | null;
@@ -186,6 +187,8 @@ export function ReviewApp({
   resource?: (url: string) => Promise<string>;
   /** Hosts with a live backend retain previews, decision recovery and build priorities. */
   live?: boolean;
+  /** Hosts can select a round without navigating the page; null resumes the current review. */
+  onNavigate?: (round: number | null) => void;
 }) {
   const [state, setState] = useState<PageState | null>(null),
     [publishedDetail, setDetail] = useState<RoundDetail | null>(null),
@@ -2613,7 +2616,8 @@ export function ReviewApp({
               aria-label={t("Review history")}
               value={detail.round}
               onChange={(e) => {
-                location.href = withLanguage(
+                if (onNavigate) onNavigate(Number(e.target.value));
+                else location.href = withLanguage(
                   `?task=${encodeURIComponent(task)}&round=${e.target.value}&history=1`,
                 );
               }}
@@ -2659,11 +2663,12 @@ export function ReviewApp({
           <button
             className="ghost"
             onClick={() => {
-              if (pinned)
-                location.href = withLanguage(
+              if (pinned) {
+                if (onNavigate) onNavigate(null);
+                else location.href = withLanguage(
                   `?task=${encodeURIComponent(task)}`,
                 );
-              else {
+              } else {
                 setHistory(false);
                 setCurrent(nextPending(stops, decisions, -1, focused));
               }
@@ -2791,7 +2796,9 @@ export function ReviewApp({
           {!changes && detail && state?.latest && detail.round !== state.latest && (
             <div className="banner">
               {t("Viewing earlier changes.")}{" "}
-              <a href={withLanguage(`?task=${encodeURIComponent(task)}`)}>
+              <a href={withLanguage(`?task=${encodeURIComponent(task)}`)} onClick={event => {
+                if (onNavigate) { event.preventDefault(); onNavigate(null); }
+              }}>
                 {t("Back to current changes →")}
               </a>
             </div>

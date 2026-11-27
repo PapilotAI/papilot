@@ -444,7 +444,7 @@ jobs:
       - run: npm --prefix extensions/vscode run typecheck
       - run: npm --prefix extensions/vscode test
       - run: npm --prefix extensions/vscode run package
-      - name: Conversation sidebar
+      - name: Conversation and review webviews
         run: |
           engine/node_modules/.bin/playwright install chromium
           npm --prefix extensions/vscode run test:web
@@ -470,6 +470,7 @@ jobs:
             extensions/vscode/*.vsix
             /tmp/papilot-vscode-host-*/native-*.png
             /tmp/papilot-vscode-chat-*/chat-*.png
+            /tmp/papilot-vscode-history-*/history-*.png
           if-no-files-found: ignore
           retention-days: 7
 

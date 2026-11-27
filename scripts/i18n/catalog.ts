@@ -81,11 +81,15 @@ export function collectCatalog(root: string) {
     if (!entry.occurrences.some(item => JSON.stringify(item) === JSON.stringify(occurrence))) entry.occurrences.push(occurrence);
     all.set(source, entry);
   };
-  const directories = ['src/web', 'extensions/vscode/web'].map(directory => path.join(root, directory)).filter(directory => fs.existsSync(directory));
+  const directories = ['src/web', 'extensions/vscode/web', 'extensions/vscode/src'].map(directory => path.join(root, directory)).filter(directory => fs.existsSync(directory));
   for (const file of directories.flatMap(sourceFiles)) {
     const extracted = extractSource(fs.readFileSync(file, 'utf8'), path.relative(root, file).split(path.sep).join('/'));
     for (const message of extracted.messages) for (const occurrence of message.occurrences) add(message.source, occurrence);
     dynamic.push(...extracted.dynamic);
+  }
+  const nativeLabels = path.join(root, 'extensions/vscode/package.nls.json');
+  if (fs.existsSync(nativeLabels)) for (const source of Object.values(JSON.parse(fs.readFileSync(nativeLabels, 'utf8'))) as string[]) {
+    add(source, { file: 'extensions/vscode/package.nls.json', line: 1, context: 'VS Code command or view label' });
   }
   for (const name of Object.values(GROUP_NAMES)) add(name, { file: 'src/note-groups.ts', line: 1, context: 'Built-in PDF annotation group name' });
   for (const icon of SKILL_ICONS) add(icon.label, { file: 'src/skill-icons.ts', line: 1, context: 'Skill icon label' });

@@ -35,50 +35,61 @@
     "commands": [
       {
         "command": "papilot.refresh",
-        "title": "Papilot: Refresh Papers",
-        "icon": "$(refresh)"
+        "title": "%papilot.refresh.title%",
+        "icon": "$(refresh)",
+        "category": "Papilot"
       },
       {
         "command": "papilot.open",
-        "title": "Papilot: Open PDF"
+        "title": "%papilot.open.title%",
+        "category": "Papilot"
       },
       {
         "command": "papilot.build",
-        "title": "Papilot: Compile Paper"
+        "title": "%papilot.build.title%",
+        "category": "Papilot"
       },
       {
         "command": "papilot.forwardSearch",
-        "title": "Papilot: Show LaTeX Source in PDF"
+        "title": "%papilot.forwardSearch.title%",
+        "category": "Papilot"
       },
       {
         "command": "papilot.newTask",
-        "title": "Papilot: New Task",
-        "icon": "$(add)"
+        "title": "%papilot.newTask.title%",
+        "icon": "$(add)",
+        "category": "Papilot"
       },
       {
         "command": "papilot.openTask",
-        "title": "Papilot: Open Conversation"
+        "title": "%papilot.openTask.title%",
+        "category": "Papilot"
       },
       {
         "command": "papilot.review",
-        "title": "Papilot: Review Task"
+        "title": "%papilot.review.title%",
+        "category": "Papilot"
       },
       {
         "command": "papilot.changes",
-        "title": "Papilot: Review Working Changes"
+        "title": "%papilot.changes.title%",
+        "category": "Papilot"
       },
       {
         "command": "papilot.apply",
-        "title": "Papilot: Apply Reviewed Task"
+        "title": "%papilot.apply.title%",
+        "category": "Papilot"
       },
       {
         "command": "papilot.git",
-        "title": "Papilot: Open Source Control",
-        "icon": "$(source-control)"
+        "title": "%papilot.git.title%",
+        "icon": "$(source-control)",
+        "category": "Papilot"
       },
       {
         "command": "papilot.log",
-        "title": "Papilot: Show Compilation Log"
+        "title": "%papilot.log.title%",
+        "category": "Papilot"
       }
     ],
     "viewsContainers": {
@@ -94,11 +105,11 @@
       "papilot": [
         {
           "id": "papilot.papers",
-          "name": "Papers"
+          "name": "%papilot.papers.name%"
         },
         {
           "id": "papilot.chat",
-          "name": "Conversation",
+          "name": "%papilot.chat.name%",
           "type": "webview"
         }
       ]
@@ -133,7 +144,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "node scripts/build.mjs",
     "test": "node --import tsx --test tests/*.test.ts",
-    "test:web": "node scripts/test-web.mjs",
+    "test:web": "node scripts/test-web.mjs && node scripts/test-review.mjs",
     "package": "node scripts/package.mjs",
     "test:host": "node scripts/test-host.mjs"
   },
@@ -142,5 +153,6 @@
     "@vscode/vsce": "3.7.1",
     "esbuild": "0.25.12"
   },
-  "type": "module"
+  "type": "module",
+  "l10n": "./dist/l10n"
 }

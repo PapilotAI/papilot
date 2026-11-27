@@ -2,7 +2,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build as bundle } from 'esbuild';
 import { build } from '../../../node_modules/vite/dist/node/index.js';
+import { buildLocales } from './locales.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+await buildLocales(root);
 await bundle({ entryPoints: [path.join(root, 'src/extension.ts')], outfile: path.join(root, 'dist/extension.cjs'), bundle: true, platform: 'node', format: 'cjs', external: ['vscode'], sourcemap: true });
 for (const view of ['chat', 'paper', 'review']) await build({
   configFile: false, root, base: './', define: { 'process.env.NODE_ENV': JSON.stringify('production') }, resolve: { dedupe: ['react', 'react-dom'], alias: [

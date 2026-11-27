@@ -1,16 +1,17 @@
 import * as vscode from 'vscode';
+import { t } from './i18n.ts';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { createHash, randomBytes } from 'node:crypto';
 import { Backend } from './backend.ts';
 import { reviewAssets } from './assets.ts';
 import { allowedCommand } from './commands.ts';
-import { inside, routePath, sourcePath } from './paths.ts';
+import { inside, insideReal, routePath, sourcePath } from './paths.ts';
 import type { GitExtension, Repository } from './git.ts';
 import type { Manuscript, ManuscriptProblems, Project, Snapshot, Task } from '../../../src/shared.ts';
 
 type Paper = { project: Project; document: string; key: string };
-type View = { kind: 'paper'; paper: Paper } | { kind: 'review'; project: Project; task?: Task; document?: string } | { kind: 'chat' };
+type View = { kind: 'paper'; paper: Paper } | { kind: 'review'; project: Project; task?: Pick<Task, 'id' | 'name'>; document?: string } | { kind: 'chat' };
 type Node = Paper | Task;
 const isPaper = (node: Node): node is Paper => 'document' in node && 'project' in node;
 const paperRoute = (paper: Paper, suffix = '') => `/api/projects/${paper.project.id}/manuscript${suffix}?document=${encodeURIComponent(paper.document)}`;
@@ -25,12 +26,12 @@ class Papers implements vscode.TreeDataProvider<Node> {
     if (isPaper(node)) {
       const item = new vscode.TreeItem(node.document, vscode.TreeItemCollapsibleState.Expanded);
       item.id = node.key; item.description = node.project.name; item.resourceUri = vscode.Uri.file(path.join(node.project.path, node.document));
-      item.command = { command: 'papilot.open', title: 'Open PDF', arguments: [node] };
+      item.command = { command: 'papilot.open', title: t('Open PDF'), arguments: [node] };
       return item;
     }
     const item = new vscode.TreeItem(node.title);
     item.id = node.id; item.description = node.status; item.iconPath = new vscode.ThemeIcon('comment-discussion');
-    item.command = { command: 'papilot.openTask', title: 'Open conversation', arguments: [node] };
+    item.command = { command: 'papilot.openTask', title: t('Open conversation'), arguments: [node] };
     return item;
   }
   getChildren(node?: Node): Node[] {
@@ -42,7 +43,7 @@ class Papers implements vscode.TreeDataProvider<Node> {
 export async function activate(context: vscode.ExtensionContext) {
   if (!vscode.workspace.isTrusted) return;
   const gitExtension = vscode.extensions.getExtension<GitExtension>('vscode.git');
-  if (!gitExtension) throw new Error('Enable VS Code Git support to use Papilot.');
+  if (!gitExtension) throw new Error(t('Enable VS Code Git support to use Papilot.'));
   const git = (await gitExtension.activate()).getAPI(1);
   if (git.state === 'uninitialized') await new Promise<void>(resolve => { const listener = git.onDidChangeState(state => { if (state === 'initialized') { listener.dispose(); resolve(); } }); context.subscriptions.push(listener); });
   const output = vscode.window.createOutputChannel('Papilot');
@@ -70,7 +71,7 @@ export async function activate(context: vscode.ExtensionContext) {
     if (exact) return exact;
     if (selectedPaper && papers.papers.includes(selectedPaper)) return selectedPaper;
     if (papers.papers.length === 1) return papers.papers[0];
-    return (await vscode.window.showQuickPick(papers.papers.map(paper => ({ label: paper.document, description: paper.project.name, paper })), { placeHolder: 'Choose a paper' }))?.paper;
+    return (await vscode.window.showQuickPick(papers.papers.map(paper => ({ label: paper.document, description: paper.project.name, paper })), { placeHolder: t('Choose a paper') }))?.paper;
   }
   async function refresh() {
     return refreshing ??= (async () => {
@@ -112,7 +113,7 @@ export async function activate(context: vscode.ExtensionContext) {
     if (!pending) {
       pending = (async () => {
         const response = await backend.request(route);
-        if (response.status >= 400) throw new Error(`Could not load Papilot asset (${response.status}).`);
+        if (response.status >= 400) throw new Error(t('Could not load Papilot asset ({status}).', { status: response.status }));
         const extension = response.headers['content-type']?.includes('pdf') ? '.pdf' : response.headers['content-type']?.includes('png') ? '.png' : '.bin';
         const file = path.join(assetRoot, createHash('sha256').update(route).digest('hex') + extension);
         await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, Buffer.from(response.body, 'base64'));
@@ -136,7 +137,7 @@ export async function activate(context: vscode.ExtensionContext) {
             const target = path.join(folder, name);
             try { await fs.access(target); return; } catch { /* Fetch each immutable image once. */ }
             const response = await backend.request(scoped(item + name));
-            if (response.status >= 400) throw new Error(`Could not load review image (${response.status}).`);
+            if (response.status >= 400) throw new Error(t('Could not load review image ({status}).', { status: response.status }));
             await fs.writeFile(target, Buffer.from(response.body, 'base64'));
           }));
           result[key] = webview.asWebviewUri(vscode.Uri.file(folder)).toString() + '/';
@@ -157,9 +158,19 @@ export async function activate(context: vscode.ExtensionContext) {
     const column = vscode.window.tabGroups.all.find(group => group.tabs.some(tab => tab.input instanceof vscode.TabInputText))?.viewColumn || vscode.ViewColumn.Beside;
     await vscode.window.showTextDocument(document, { viewColumn: column, selection: new vscode.Range(start, 0, finish, 0) });
   }
-  function requireSaved(root: string) {
-    const dirty = vscode.workspace.textDocuments.filter(doc => doc.isDirty && inside(root, doc.uri.fsPath));
-    if (dirty.length) throw new Error('Save your edited files before applying or rejecting changes.');
+  async function requireSaved(root: string) {
+    for (const doc of vscode.workspace.textDocuments) {
+      if (!doc.isDirty || doc.uri.scheme !== 'file') continue;
+      const file = doc.uri.fsPath;
+      // Protect both an entry Git can replace and a target opened via an alias.
+      if (inside(root, file) || await insideReal(root, path.dirname(file)) || await insideReal(root, file)) throw new Error(t('Save your edited files before applying or rejecting changes.'));
+    }
+  }
+  function reviewRoot(view: Extract<View, { kind: 'review' }>) {
+    if (!view.task) return view.project.path;
+    const task = snapshot?.tasks.find(task => task.id === view.task!.id && task.projectId === view.project.id);
+    if (!task?.worktree) throw new Error(t('The task source is not available yet.'));
+    return task.worktree;
   }
   function allowed(view: View, route: string, write: boolean) {
     const pathname = routePath(route);
@@ -182,7 +193,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (pathname === '/api/reconnect' || /^\/api\/runtime\/[a-z-]+\/usage$/.test(pathname)) return;
     }
     if (!write && ['/api/quick-notes', '/api/settings/effects', '/api/settings/note-alternatives'].includes(pathname)) return;
-    throw new Error('This request is not available in this view.');
+    throw new Error(t('This request is not available in this view.'));
   }
   async function wire(webview: vscode.Webview, view: View) {
     webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.file(assetRoot)] };
@@ -197,11 +208,11 @@ export async function activate(context: vscode.ExtensionContext) {
         } else if (message.type === 'resource' && view.kind === 'chat') {
           const task = snapshot?.tasks.find(task => task.id === message.taskId && task.id === selectedTask);
           const route = routePath(message.route);
-          if (!task || !(route.startsWith(`/api/projects/${task.projectId}/attachments/`) || route.startsWith(`/api/tasks/${task.id}/pages/`))) throw new Error('This resource is not available in this conversation.');
+          if (!task || !(route.startsWith(`/api/projects/${task.projectId}/attachments/`) || route.startsWith(`/api/tasks/${task.id}/pages/`))) throw new Error(t('This resource is not available in this conversation.'));
           value = await asset(webview, message.route);
         } else if (message.type === 'resource' && view.kind === 'review') {
           const route = routePath(message.route), prefix = view.task ? `/review/${view.project.id}/pdf/${encode(view.task.name)}/` : `/review/${view.project.id}/changes/pdf/`;
-          if (!route.startsWith(prefix) || !/^\d+$/.test(route.slice(prefix.length))) throw new Error('This PDF is not available in this review.');
+          if (!route.startsWith(prefix) || !/^\d+$/.test(route.slice(prefix.length))) throw new Error(t('This PDF is not available in this review.'));
           value = await asset(webview, view.document ? message.route + (message.route.includes('?') ? '&' : '?') + 'document=' + encode(view.document) : message.route);
         } else if (message.type === 'publish' && view.kind === 'review' && view.task) {
           await backend.api(`/api/tasks/${view.task.id}/publish`, {});
@@ -209,24 +220,24 @@ export async function activate(context: vscode.ExtensionContext) {
           allowed(view, message.route, message.body !== undefined || Boolean(message.file));
           if (view.kind === 'chat' && message.body !== undefined && routePath(message.route).endsWith('/reconcile')) {
             const task = snapshot?.tasks.find(task => task.id === selectedTask);
-            if (task?.worktree) requireSaved(task.worktree);
+            if (task?.worktree) await requireSaved(task.worktree);
           }
-          if (view.kind === 'review' && message.body !== undefined && /\/(?:decide|undo)$/.test(routePath(message.route))) requireSaved(view.task?.worktree || view.project.path);
+          if (view.kind === 'review' && message.body !== undefined && /\/(?:decide|undo)$/.test(routePath(message.route))) await requireSaved(reviewRoot(view));
           const scopedRoute = view.kind === 'review' && view.document ? message.route + (message.route.includes('?') ? '&' : '?') + 'document=' + encode(view.document) : message.route;
           const response = await backend.request(scopedRoute, message.body, message.file);
           const data = JSON.parse(Buffer.from(response.body, 'base64').toString());
-          if (response.status >= 400) throw new Error(data.error || `Papilot request failed (${response.status}).`);
+          if (response.status >= 400) throw new Error(data.error || t('Papilot request failed ({status}).', { status: response.status }));
           value = await mapAssets(webview, data, view);
         } else if (message.type === 'source' && view.kind === 'paper') {
           const located = await backend.api(`/api/projects/${view.paper.project.id}/manuscript/source/locate`, message.target);
-          if (!located.source) throw new Error('No LaTeX source was found at this position.');
+          if (!located.source) throw new Error(t('No LaTeX source was found at this position.'));
           await showSource(view.paper.project.path, located.source.file, located.source.focus[0] + 1, located.source.focus[1]);
         } else if (message.type === 'source' && view.kind === 'review') {
-          await showSource(view.task?.worktree || view.project.path, message.file, (message.lines?.[0] || 0) + 1, message.lines?.[1]);
+          await showSource(reviewRoot(view), message.file, (message.lines?.[0] || 0) + 1, message.lines?.[1]);
         } else if (message.type === 'command') {
-          if (!allowedCommand(view.kind, message.command, message.taskId, selectedTask)) throw new Error('This action is not available in this view or the selected conversation changed.');
+          if (!allowedCommand(view.kind, message.command, message.taskId, selectedTask)) throw new Error(t('This action is not available in this view or the selected conversation changed.'));
           value = await vscode.commands.executeCommand(message.command, view.kind === 'paper' ? view.paper : undefined, message.notes);
-        } else throw new Error('Unknown Papilot action.');
+        } else throw new Error(t('Unknown Papilot action.'));
         await webview.postMessage({ id: message.id, value });
       } catch (error) { await webview.postMessage({ id: message.id, error: error instanceof Error ? error.message : String(error) }); }
     }, undefined, context.subscriptions);
@@ -287,22 +298,22 @@ export async function activate(context: vscode.ExtensionContext) {
   }
   register('papilot.refresh', refresh);
   register('papilot.open', async (node?: Paper) => { const paper = await choosePaper(node); if (paper) { selectedPaper = paper; await panel(paper.key, paper.document + ' · PDF', { kind: 'paper', paper }); } });
-  register('papilot.build', async (node?: Paper) => { const paper = await choosePaper(node); if (!paper) return; requireSaved(paper.project.path); await backend.api(paperRoute(paper), {}); await vscode.commands.executeCommand('papilot.open', paper); });
+  register('papilot.build', async (node?: Paper) => { const paper = await choosePaper(node); if (!paper) return; await requireSaved(paper.project.path); await backend.api(paperRoute(paper), {}); await vscode.commands.executeCommand('papilot.open', paper); });
   register('papilot.log', async (node?: Paper) => { const paper = await choosePaper(node); if (!paper) return; const response = await backend.request(paperRoute(paper, '/log')); output.appendLine(Buffer.from(response.body, 'base64').toString()); output.show(); });
   register('papilot.git', () => vscode.commands.executeCommand('workbench.view.scm'));
   register('papilot.newTask', async (node?: Paper, noteIds?: string[]) => {
     const paper = await choosePaper(node); if (!paper) return;
     const manuscript = await backend.api<Manuscript>(paperRoute(paper));
     const notes = noteIds ? manuscript.annotations.filter(note => noteIds.includes(note.id)) : manuscript.annotations;
-    const picked = notes.length ? await vscode.window.showQuickPick(notes.map(note => ({ label: note.comment || note.quote, description: `Page ${note.page + 1}`, note, picked: Boolean(noteIds) })), { canPickMany: true, placeHolder: 'PDF notes to include (optional)' }) : [];
+    const picked = notes.length ? await vscode.window.showQuickPick(notes.map(note => ({ label: note.comment || note.quote, description: t('Page {page}', { page: note.page + 1 }), note, picked: Boolean(noteIds) })), { canPickMany: true, placeHolder: t('PDF notes to include (optional)') }) : [];
     if (!picked) return;
-    const instructions = await vscode.window.showInputBox({ prompt: `Instructions for ${paper.document}`, placeHolder: 'Ask a question or request changes' });
+    const instructions = await vscode.window.showInputBox({ prompt: t('Instructions for {document}', { document: paper.document }), placeHolder: t('Ask a question or request changes') });
     if (instructions === undefined || (!instructions.trim() && !picked.length)) return;
     await poll();
     const runtimes = Object.entries(snapshot?.runtimes || { codex: snapshot?.runtime }).filter(([, runtime]) => runtime?.connected && runtime.authenticated && !runtime.hidden);
-    const choice = await vscode.window.showQuickPick(runtimes.map(([agent]) => ({ label: agent })), { placeHolder: 'Choose an agent' });
-    if (!choice) { if (!runtimes.length) throw new Error('No signed-in agent is available. Sign in to your agent CLI, then reload Papilot.'); return; }
-    const task = await backend.api<Task>('/api/tasks', { id: randomBytes(16).toString('hex'), projectId: paper.project.id, document: paper.document, title: (instructions.trim() || picked[0]?.note.comment || 'Review PDF notes').slice(0, 120), instructions, annotations: picked.map(item => item.note.id), agent: choice.label });
+    const choice = await vscode.window.showQuickPick(runtimes.map(([agent]) => ({ label: agent })), { placeHolder: t('Choose an agent') });
+    if (!choice) { if (!runtimes.length) throw new Error(t('No signed-in agent is available. Sign in to your agent CLI, then reload Papilot.')); return; }
+    const task = await backend.api<Task>('/api/tasks', { id: randomBytes(16).toString('hex'), projectId: paper.project.id, document: paper.document, title: (instructions.trim() || picked[0]?.note.comment || t('Review PDF notes')).slice(0, 120), instructions, annotations: picked.map(item => item.note.id), agent: choice.label });
     await vscode.commands.executeCommand('papilot.openTask', task);
   });
   register('papilot.openTask', async (task: Task) => {
@@ -311,25 +322,25 @@ export async function activate(context: vscode.ExtensionContext) {
     if (paper) { selectedPaper = paper; await backend.api(paperRoute(paper)).catch(error => output.appendLine(String(error))); }
     await poll(); await vscode.commands.executeCommand('papilot.chat.focus'); if (chat) await push(chat.webview, { kind: 'chat' });
   });
-  register('papilot.review', async () => { const task = snapshot?.tasks.find(task => task.id === selectedTask); if (!task) return; const project = papers.papers.find(paper => paper.project.id === task.projectId)?.project; if (project) await panel(task.id, task.title + ' · Review', { kind: 'review', task, project }); });
-  register('papilot.changes', async (node?: Paper) => { const paper = await choosePaper(node); if (paper) await panel(paper.key + ':changes', paper.document + ' · Changes', { kind: 'review', project: paper.project, document: paper.document }); });
+  register('papilot.review', async () => { const task = snapshot?.tasks.find(task => task.id === selectedTask); if (!task) return; const project = papers.papers.find(paper => paper.project.id === task.projectId)?.project; if (project) await panel(task.id, t('{title} · Review', { title: task.title }), { kind: 'review', task, project }); });
+  register('papilot.changes', async (node?: Paper) => { const paper = await choosePaper(node); if (paper) await panel(paper.key + ':changes', t('{document} · Changes', { document: paper.document }), { kind: 'review', project: paper.project, document: paper.document }); });
   register('papilot.apply', async () => {
     const task = snapshot?.tasks.find(task => task.id === selectedTask), project = papers.papers.find(paper => paper.project.id === task?.projectId)?.project;
     if (!task || !project) return;
-    requireSaved(project.path);
+    await requireSaved(project.path);
     const result = await backend.api<Task>(`/api/tasks/${task.id}/apply`, { mode: 'workspace' });
-    if (result.delivery?.pending) throw new Error('The task needs conflict resolution before it can be applied. See the conversation.');
+    if (result.delivery?.pending) throw new Error(t('The task needs conflict resolution before it can be applied. See the conversation.'));
     await git.getRepository(vscode.Uri.file(project.path))?.status(); await poll();
   });
   register('papilot.forwardSearch', async () => {
     const editor = vscode.window.activeTextEditor, paper = await choosePaper();
     if (!editor || !paper) return;
-    if (editor.document.isDirty) throw new Error('Save this file before locating it in the compiled PDF.');
+    if (editor.document.isDirty) throw new Error(t('Save this file before locating it in the compiled PDF.'));
     const state = await backend.api<Manuscript>(paperRoute(paper));
-    if (!state.build.key) throw new Error('Compile this paper first.');
+    if (!state.build.key) throw new Error(t('Compile this paper first.'));
     const query = new URLSearchParams({ key: state.build.key, file: path.relative(paper.project.path, editor.document.uri.fsPath), start: String(editor.selection.start.line), end: String(editor.selection.end.line + 1) });
     const { place } = await backend.api(`/api/projects/${paper.project.id}/manuscript/source/place?${query}`);
-    if (!place) throw new Error('No PDF position was found for these lines.');
+    if (!place) throw new Error(t('No PDF position was found for these lines.'));
     places.set(paper.key, { place, at: Date.now() });
     const pdf = await panel(paper.key, paper.document + ' · PDF', { kind: 'paper', paper });
     await push(pdf.webview, { kind: 'paper', paper });
@@ -341,7 +352,12 @@ export async function activate(context: vscode.ExtensionContext) {
   const watcher = vscode.workspace.createFileSystemWatcher('**/*.tex');
   let discovery: ReturnType<typeof setTimeout> | undefined;
   function scheduleDiscovery() { clearTimeout(discovery); discovery = setTimeout(() => void refresh().catch(errors), 500); }
-  context.subscriptions.push(watcher, watcher.onDidCreate(scheduleDiscovery), watcher.onDidDelete(scheduleDiscovery), watcher.onDidChange(scheduleDiscovery), vscode.workspace.onDidSaveTextDocument(document => { for (const task of papers.tasks) if (task.worktree && inside(task.worktree, document.uri.fsPath)) savedTasks.add(task.id); void poll(); }), vscode.workspace.onDidChangeWorkspaceFolders(() => void refresh().catch(errors)));
+  context.subscriptions.push(watcher, watcher.onDidCreate(scheduleDiscovery), watcher.onDidDelete(scheduleDiscovery), watcher.onDidChange(scheduleDiscovery), vscode.workspace.onDidSaveTextDocument(document => {
+    void (async () => {
+      if (document.uri.scheme === 'file') for (const task of papers.tasks) if (task.worktree && await insideReal(task.worktree, document.uri.fsPath)) savedTasks.add(task.id);
+      await poll();
+    })().catch(errors);
+  }), vscode.workspace.onDidChangeWorkspaceFolders(() => void refresh().catch(errors)));
   const timer = setInterval(() => void poll(), 2000);
   context.subscriptions.push({ dispose() { closed = true; clearInterval(timer); clearTimeout(discovery); for (const disposable of repositories.values()) disposable.dispose(); for (const { panel } of panels.values()) panel.dispose(); void fs.rm(assetRoot, { recursive: true, force: true }); } });
   await refresh().catch(errors);

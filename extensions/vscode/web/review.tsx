@@ -11,6 +11,7 @@ const resource = (route: string) => call<string>('resource', { route });
 function Review() {
   const data = useHost<{ view: { project: { id: string }; task?: { id: string; name: string } }; error?: string }>();
   const [error, setError] = useState('');
+  const [round, setRound] = useState<number | null>(null);
   const project = data?.view.project.id, task = data?.view.task;
   const transport = useMemo(() => <T,>(route: string, body?: unknown) => call<T>('api', { route: `/review/${project}/api/${task ? `tasks/${encodeURIComponent(task.name)}` : 'changes'}${route}`, body }), [project, task?.name]);
   useEffect(() => {
@@ -23,7 +24,7 @@ function Review() {
   }, []);
   if (!data) return <p className="empty">{t('Loading PDF review…')}</p>;
   if (data.error) return <p className="host-error" role="alert">{data.error}</p>;
-  return <>{error && <p className="host-error" role="alert">{error}</p>}<ReviewApp task={task?.name || ''} pinned={null} changes={!task} transport={transport} resource={resource} live/></>;
+  return <>{error && <p className="host-error" role="alert">{error}</p>}<ReviewApp key={round ?? 'current'} task={task?.name || ''} pinned={round} onNavigate={setRound} changes={!task} transport={transport} resource={resource} live/></>;
 }
 createRoot(document.getElementById('root')!).render(<Review/>);
 void ready();

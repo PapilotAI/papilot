@@ -1,0 +1,15 @@
+{
+  "papilot.refresh.title": "Refresh papers",
+  "papilot.open.title": "Open PDF",
+  "papilot.build.title": "Compile this document",
+  "papilot.forwardSearch.title": "Show LaTeX source in PDF",
+  "papilot.newTask.title": "New task",
+  "papilot.openTask.title": "Open conversation",
+  "papilot.review.title": "Review task",
+  "papilot.changes.title": "Review working changes",
+  "papilot.apply.title": "Apply reviewed changes",
+  "papilot.git.title": "Open Source Control",
+  "papilot.log.title": "Compilation log",
+  "papilot.papers.name": "Papers",
+  "papilot.chat.name": "Conversation"
+}

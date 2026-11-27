@@ -1,3 +1,4 @@
 runtime/
 *.vsix
 LICENSE
+/package.nls.*.json
