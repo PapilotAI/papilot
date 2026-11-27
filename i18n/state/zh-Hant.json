@@ -1405,7 +1405,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Compiling the PDF…": {
-    "revision": "1eb221f20d1af493e3643c35a1a840598a509c6c8571a518e7c79bf084154251",
+    "revision": "2572319116e00644e91deedb19b8622fcfb5881d832573599ae7ee69a011a1bf",
     "textHash": "3db50918343c521e875b17d5baba13fdbc15da5cf625b7523a8a388a946e693e",
     "model": "gemini-4-argon-medium"
   },
@@ -7030,7 +7030,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Wait for the PDF to compile.": {
-    "revision": "134c9f3dd44e24a33155784b871b8f9888b1da03f5624cee88f7185364d9f648",
+    "revision": "da382a9ba3c18cd7d98d1c36d799a6070599356dc877faa15fb9b32df33395e5",
     "textHash": "a8f782681b96c25e2099bc91af225520fdeac3208a4a5c5e7e17b29bcc6aca71",
     "model": "gemini-4-argon-medium"
   },

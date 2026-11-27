@@ -21,7 +21,7 @@ import type { Store } from './store.ts';
 import type { TaskNoteContext, Workspace } from './workspace.ts';
 import { WriterAgent } from './writer/agent.ts';
 import { AGENT_TURN, reviewClient, retryReviewRead, allowedReviewRoute, rewriteReviewHtml, rewriteReviewJson, confirmedReviewResponse, annotateReviewState, taskRoute } from './review.ts';
-import { fullPaperPdf, nextPaperPass, paperBuildPdf, paperPassPdf, retainedPaperBuild, retainedPaperPdf } from './pdf.ts';
+import { fullPaperPdf, fullPaperSource, nextPaperPass, paperBuildPdf, paperPassPdf, retainedPaperBuild, retainedPaperPdf } from './pdf.ts';
 import { withNotePages } from './note-pages.ts';
 import { type ChangeAction, Changes } from './changes.ts';
 import { citationChecks, citationSuggestions, citations, currentSuggestions, confirmEntry, forgetFinding, library, libraryInputs, libraryReport, recordFinding, stopLibrary } from './references.ts';
@@ -32,7 +32,7 @@ import type { Library } from './library.ts';
 import { plain } from '../../engine/src/core/verify.ts';
 import { type Manuscripts, gitAbortMerge, gitCommit, gitDiff, gitDiscard, gitFinishMerge, gitIgnore, gitRemote, gitStage, gitStatus, gitSync } from './manuscript.ts';
 import { gitHistory, gitVersion, gitVersionDiff, gitRestoreVersion } from './git-history.ts';
-import { locateSource, placeSource, readFile, saveSource } from './manuscript-source.ts';
+import { locateSource, placeCompiledSource, placeSource, readFile, saveSource } from './manuscript-source.ts';
 import { captureAnchor, resolveAnchors, isSourceAnchor } from './manuscript-anchors.ts';
 import { gitOverview } from './git-overview.ts';
 import { findSkill, listedSkill, loadSkills } from './skills.ts';
@@ -845,6 +845,14 @@ export async function buildApp(options: AppOptions) {
   app.post<{ Params: { id: string } }>('/api/tasks/:id/predict', task, request => {
     predict(store.task(request.params.id).id);
     return { ok: true };
+  });
+  app.get<{ Params: { id: string }; Querystring: { file?: string; start?: string; end?: string } }>('/api/tasks/:id/source/place', task, async request => {
+    const current = store.task(request.params.id), project = store.project(current.projectId), round = current.review?.round;
+    if (!round || !current.worktree) return { place: null };
+    const { file, start, end } = request.query;
+    const build = await fullPaperSource(connectReview, project.path, current.name, round);
+    const found = await placeCompiledSource(build, file, start, end, undefined, undefined, current.worktree);
+    return found.place ? { place: found.place, key: build.key, url: `/api/tasks/${encodeURIComponent(current.id)}/pdf?round=${round}&build=${build.key}` } : found;
   });
   app.get<{ Params: { id: string }; Querystring: { round?: string; version?: string; download?: string; retained?: string; metadata?: string; build?: string } }>('/api/tasks/:id/pdf', task, async (request, reply) => {
     const task = store.task(request.params.id), project = store.project(task.projectId);

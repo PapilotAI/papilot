@@ -11,7 +11,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const artifacts = await fs.mkdtemp(path.join(os.tmpdir(), 'papilot-vscode-chat-'));
 const app = Fastify();
 await app.register(staticFiles, { root: path.join(root, 'dist/web/chat') });
+await app.register(staticFiles, { root: path.join(root, 'dist/web/paper'), prefix: '/paper/', decorateReply: false });
 app.get('/', async (_, reply) => reply.type('text/html').send('<!doctype html><html><head><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="/view.css"></head><body class="vscode-dark"><div id="root"></div><script type="module" src="/view.js"></script></body></html>'));
+app.get('/task-pdf', async (_, reply) => reply.type('text/html').send('<!doctype html><html lang="en"><head><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="/paper/view.css"></head><body class="vscode-dark"><div id="root"></div><script type="module" src="/paper/view.js"></script></body></html>'));
+app.get('/fixture.pdf', async (_, reply) => reply.type('application/pdf').send(await fs.readFile(path.join(root, '../../tests/fixtures/outline.pdf'))));
+app.get('/replacement.pdf', async (_, reply) => reply.type('application/pdf').send(await fs.readFile(path.join(root, '../../examples/papilot-paper/preview/main.pdf'))));
 await app.listen({ host: '127.0.0.1', port: 0 });
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 360, height: 850 } });
@@ -21,10 +25,13 @@ const task = { id: 'first', projectId: 'project', document: 'paper/main.tex', na
 const second = { ...task, id: 'second', name: 'second', title: 'Revise the slides', document: 'slides/main.tex' };
 const runtime = { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'test-model', name: 'Test model', isDefault: true, efforts: ['low', 'medium'], defaultEffort: 'medium' }] };
 const snapshot = { version: 'test', projects: [{ id: 'project', name: 'Project', path: '/tmp/test', createdAt: 1 }], tasks: [task, second], requests: [], runtime, runtimes: { codex: runtime } };
-let selected = task, failItems = false;
+let selected = task, failItems = false, taskPdf = false;
 const state = () => ({ type: 'state', view: { kind: 'chat' }, task: selected, snapshot, skills: [] });
 await page.exposeFunction('hostRequest', message => {
   requests.push(message);
+  if (taskPdf && message.type === 'ready') return {
+    value: {}, state: { type: 'state', view: { kind: 'taskPdf', id: task.id }, pdf: '/fixture.pdf', place: { key: 'task-build', at: 1, place: { page: 1, rect: [0.2, 0.2, 0.5, 0.25] } } },
+  };
   if (message.type === 'ready') return { state: state(), value: {} };
   if (message.type === 'command') return { value: null };
   if (message.type !== 'api') throw new Error('Unexpected bridge request: ' + message.type);
@@ -90,6 +97,30 @@ try {
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await page.setViewportSize({ width: 700, height: 850 });
   await page.screenshot({ path: path.join(artifacts, 'chat-light.png') });
+  taskPdf = true;
+  await page.setViewportSize({ width: 1000, height: 850 });
+  await page.goto(`http://127.0.0.1:${app.server.address().port}/task-pdf`);
+  await page.evaluate(colors => { for (const [key, value] of Object.entries(colors)) document.documentElement.style.setProperty('--vscode-' + key, value); }, colors);
+  const sourceMark = page.locator('[data-page-number="2"] .problem-flash');
+  await expect(sourceMark).toHaveCSS('position', 'absolute');
+  await expect(sourceMark).toBeInViewport();
+  await expect(page.getByRole('button', { name: 'New task', exact: true })).toHaveCount(0);
+  await page.screenshot({ path: path.join(artifacts, 'task-source-in-pdf.png') });
+  const sendPdf = (pdf, place) => page.evaluate(data => window.dispatchEvent(new MessageEvent('message', { data })), {
+    type: 'state', view: { kind: 'taskPdf', id: task.id }, pdf, place,
+  });
+  let releaseSlow;
+  const slow = new Promise(resolve => { releaseSlow = resolve; });
+  await page.route('**/fixture.pdf?slow=1', async route => { await slow; await route.abort().catch(() => {}); });
+  try {
+    const requested = page.waitForRequest('**/fixture.pdf?slow=1');
+    await sendPdf('/fixture.pdf?slow=1', { key: 'slow-build', at: 2, place: { page: 1, rect: [0.2, 0.2, 0.5, 0.25] } });
+    await requested;
+    await sendPdf('/replacement.pdf');
+    await expect(page.locator('.pdfViewer .page')).toHaveCount(26);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await expect(page.locator('.problem-flash')).toHaveCount(0);
+  } finally { releaseSlow(); }
   assert.deepEqual(errors, []);
-  console.log('Conversation passed: shared composer, independent document drafts, task-bound review, send, loading recovery and live themes. Screenshots: ' + artifacts);
+  console.log('Conversation and task PDF passed: independent drafts, task-bound review, send, recovery, themes and source placement. Screenshots: ' + artifacts);
 } finally { await browser.close(); await app.close(); }

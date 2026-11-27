@@ -3,7 +3,7 @@
 Keep LaTeX papers and project code in the same editor. Papilot discovers papers in the workspace's Git repositories and opens each PDF in its own tab. The conversation lives in a separate sidebar, so switching between source, PDFs and reviews keeps it open.
 
 - Edit LaTeX with VS Code's normal text editors, undo and save controls.
-- Jump from PDF passages to LaTeX source, or use **Papilot: Show LaTeX Source in PDF** from an editor.
+- Jump from PDF passages to LaTeX source, or use **Papilot: Show LaTeX Source in PDF** from an editor. Papilot waits for the saved manuscript to compile. From a task source tab, it opens the task's PDF once the saved lines are included in a published review.
 - Compile several papers in the same repository without changing Papilot's default document.
 - Read compilation diagnostics in Problems and the TeX log in Papilot's Output channel. Recoverable errors can accompany a PDF.
 - Add PDF notes, include them in tasks, and review the resulting changes with Papilot's existing viewer.

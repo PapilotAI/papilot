@@ -196,12 +196,25 @@ export async function saveSource(projectId: string, root: string, input: unknown
 /** Where lines [start, end) of a file were printed in the PDF named `key`:
  *  the page nearest `near` that shows them, and the box around them there. */
 export async function placeSource(manuscripts: Manuscripts, projectId: string, key: string, file: unknown, start: unknown, end: unknown, near: unknown, anchorQuote?: string): Promise<{ place: SourcePlace | null }> {
+  return placeCompiledSource(manuscripts.compiled(projectId, key), file, start, end, near, anchorQuote);
+}
+
+/** Use the same mapping for manuscript previews and task review builds. An
+ *  editor can require that its on-disk source still matches the build. */
+export async function placeCompiledSource(build: ReturnType<Manuscripts['compiled']>, file: unknown, start: unknown, end: unknown, near: unknown, anchorQuote?: string, worktree?: string): Promise<{ place: SourcePlace | null; stale?: true }> {
   const name = fileName(file), from = lineNumber(start), to = Math.max(from + 1, lineNumber(end));
-  const build = manuscripts.compiled(projectId, key), input = path.join(build.root, path.posix.relative(build.sourceDir || '.', name));
+  const relative = path.posix.relative(build.sourceDir || '.', name);
+  if (!relative || relative === '..' || relative.startsWith('../')) return { place: null };
+  const input = path.join(build.root, relative);
   if (!fs.existsSync(input)) return { place: null };
+  const { PdfDocument, safePath } = await engine();
+  if (worktree) {
+    const [saved, compiled] = await Promise.all([fs.promises.readFile(safePath(worktree, name)), fs.promises.readFile(safePath(build.root, relative))]);
+    if (!saved.equals(compiled)) return { place: null, stale: true };
+  }
   // SyncTeX reads its whole file per question; a long passage asks about a sample of its lines.
   const count = to - from, asked = Math.min(count, 6), lines = [...new Set(Array.from({ length: asked }, (_, index) => from + 1 + Math.round(index * (count - 1) / Math.max(1, asked - 1))))];
-  const { PdfDocument } = await engine(), document = new PdfDocument(build.pdf);
+  const document = new PdfDocument(build.pdf);
   try {
     const place = await placeLines(build.pdf, input, lines, Number.isInteger(Number(near)) ? Number(near) : 0, page => {
       if (!Number.isInteger(page) || page < 0 || page >= document.length) return null;

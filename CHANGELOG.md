@@ -36,6 +36,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 - Keep changed PDF text and highlights readable in the VS Code extension's dark theme.
 - Keep VS Code review navigation in its tab, resolve task source paths after preparation, protect unsaved files opened through symlinks, and translate native commands and prompts.
 - Use VS Code's display language in review tabs and protect unsaved task source when applying reviewed changes.
+- In VS Code, wait for the current manuscript PDF when jumping from LaTeX source, and open the task's own PDF when jumping from a task worktree.
 - Identify the `.tex` file the manuscript source editor could not open, with guidance for invalid UTF-8 and null bytes. ([#352](https://github.com/PapilotAI/papilot/issues/352))
 - Fix LaTeX compilation and PDF reviews on Windows when TeX Live or MiKTeX passes LaTeX code through the Perl bundled with Git for Windows. ([#340](https://github.com/PapilotAI/papilot/pull/340), [#346](https://github.com/PapilotAI/papilot/issues/346))
 - On Windows, the toolbar divider extends beneath the window buttons to the right edge.

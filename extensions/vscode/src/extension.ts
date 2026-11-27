@@ -9,10 +9,12 @@ import { allowedCommand } from './commands.ts';
 import { inside, insideReal, routePath, sourcePath } from './paths.ts';
 import { supportedLanguage } from '../../../engine/src/locales.ts';
 import type { GitExtension, Repository } from './git.ts';
-import type { Manuscript, ManuscriptProblems, Project, Snapshot, Task } from '../../../src/shared.ts';
+import type { Manuscript, ManuscriptProblems, Project, Snapshot, SourcePlace, Task } from '../../../src/shared.ts';
 
 type Paper = { project: Project; document: string; key: string };
-type View = { kind: 'paper'; paper: Paper } | { kind: 'review'; project: Project; task?: Pick<Task, 'id' | 'name'>; document?: string } | { kind: 'chat' };
+type View = { kind: 'paper'; paper: Paper } | { kind: 'review'; project: Project; task?: Pick<Task, 'id' | 'name'>; document?: string } | { kind: 'chat' } | { kind: 'taskPdf'; id: string };
+type PdfPosition = { place: SourcePlace; key: string; at: number };
+type TaskPosition = { place: null; stale?: true } | { place: SourcePlace; key: string; url: string };
 type Node = Paper | Task;
 const isPaper = (node: Node): node is Paper => 'document' in node && 'project' in node;
 const paperRoute = (paper: Paper, suffix = '') => `/api/projects/${paper.project.id}/manuscript${suffix}?document=${encodeURIComponent(paper.document)}`;
@@ -56,7 +58,9 @@ export async function activate(context: vscode.ExtensionContext) {
   const diagnostics = vscode.languages.createDiagnosticCollection('Papilot');
   const diagnosticsByPaper = new Map<string, Map<string, vscode.Diagnostic[]>>();
   const panels = new Map<string, { panel: vscode.WebviewPanel; view: View }>();
-  const places = new Map<string, { place: unknown; at: number }>();
+  const places = new Map<string, PdfPosition>();
+  const taskPdfs = new Map<string, PdfPosition & { url: string }>();
+  let nextPlace = 0;
   const repositories = new Map<string, vscode.Disposable>();
   let snapshot: Snapshot | undefined, chat: vscode.WebviewView | undefined, selectedTask: string | undefined, selectedPaper: Paper | undefined;
   const savedTasks = new Set<string>();
@@ -243,7 +247,8 @@ export async function activate(context: vscode.ExtensionContext) {
       } catch (error) { await webview.postMessage({ id: message.id, error: error instanceof Error ? error.message : String(error) }); }
     }, undefined, context.subscriptions);
     const nonce = randomBytes(24).toString('base64');
-    const uri = (name: string) => webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, `dist/web/${view.kind}`, name));
+    const bundle = view.kind === 'taskPdf' ? 'paper' : view.kind;
+    const uri = (name: string) => webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, `dist/web/${bundle}`, name));
     const language = view.kind === 'review' ? ` lang="${supportedLanguage(vscode.env.language) || 'en'}"` : '';
     webview.html = `<!doctype html><html${language}><head><meta charset="UTF-8"><meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}' ${webview.cspSource} 'wasm-unsafe-eval'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource} data:; connect-src ${webview.cspSource} blob:; worker-src ${webview.cspSource} blob:; object-src 'none'; base-uri 'none';"><link rel="stylesheet" href="${uri('view.css')}"></head><body><div id="root"></div><script type="module" nonce="${nonce}" src="${uri('view.js')}"></script></body></html>`;
   }
@@ -254,6 +259,9 @@ export async function activate(context: vscode.ExtensionContext) {
       updateDiagnostics(view.paper, problems);
       const pdf = manuscript.build.key ? await asset(webview, `/api/projects/${view.paper.project.id}/manuscript.pdf?key=${encode(manuscript.build.key)}`) : undefined;
       await webview.postMessage({ type: 'state', view, manuscript, pdf, place: places.get(view.paper.key) });
+    } else if (view.kind === 'taskPdf') {
+      const target = taskPdfs.get(view.id);
+      if (target) await webview.postMessage({ type: 'state', view, pdf: await asset(webview, target.url), place: target });
     } else if (view.kind === 'chat') {
       const task = snapshot?.tasks.find(task => task.id === selectedTask);
       const skills = task ? await backend.api(`/api/projects/${task.projectId}/skills`) : { skills: [] };
@@ -293,7 +301,10 @@ export async function activate(context: vscode.ExtensionContext) {
     const column = [...panels.values()].find(({ panel }) => panel.visible)?.panel.viewColumn || [...panels.values()][0]?.panel.viewColumn || vscode.ViewColumn.Two;
     const panel = vscode.window.createWebviewPanel('papilot.document', title, column, { enableScripts: true, retainContextWhenHidden: true });
     panels.set(key, { panel, view });
-    panel.onDidDispose(() => panels.delete(key));
+    panel.onDidDispose(() => {
+      panels.delete(key);
+      if (view.kind === 'taskPdf') taskPdfs.delete(view.id);
+    });
     panel.onDidChangeViewState(() => { if (panel.active && view.kind === 'paper') selectedPaper = view.paper; });
     await wire(panel.webview, view);
     return panel;
@@ -337,15 +348,56 @@ export async function activate(context: vscode.ExtensionContext) {
     await git.getRepository(vscode.Uri.file(project.path))?.status(); await poll();
   });
   register('papilot.forwardSearch', async () => {
-    const editor = vscode.window.activeTextEditor, paper = await choosePaper();
-    if (!editor || !paper) return;
-    if (editor.document.isDirty) throw new Error(t('Save this file before locating it in the compiled PDF.'));
-    const state = await backend.api<Manuscript>(paperRoute(paper));
-    if (!state.build.key) throw new Error(t('Compile this paper first.'));
-    const query = new URLSearchParams({ key: state.build.key, file: path.relative(paper.project.path, editor.document.uri.fsPath), start: String(editor.selection.start.line), end: String(editor.selection.end.line + 1) });
-    const { place } = await backend.api(`/api/projects/${paper.project.id}/manuscript/source/place?${query}`);
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.document.uri.scheme !== 'file') return;
+    const { document, selection } = editor, version = document.version, at = ++nextPlace;
+    if (document.isDirty) throw new Error(t('Save this file before locating it in the compiled PDF.'));
+    const query = new URLSearchParams({ start: String(selection.start.line), end: String(selection.end.line + 1) });
+    const unchanged = () => at === nextPlace && !document.isDirty && document.version === version && !closed;
+    const file = await fs.realpath(document.uri.fsPath);
+    // A task source tab can stay open while the user selects another task.
+    // Resolve its worktree from the file, independently of that selection.
+    for (const task of snapshot?.tasks ?? []) {
+      if (!task.worktree) continue;
+      const root = await fs.realpath(task.worktree).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+      if (!root || !inside(root, file)) continue;
+      if (!unchanged()) return;
+      if (!task.review?.round) throw new Error(t('Compile this paper first.'));
+      query.set('file', path.relative(root, file).split(path.sep).join('/'));
+      const result = await backend.api<TaskPosition>(`/api/tasks/${encode(task.id)}/source/place?${query}`);
+      if (!unchanged()) return;
+      if (!result.place) throw new Error(result.stale ? t('Wait for the PDF to compile.') : t('No PDF position was found for these lines.'));
+      const view = { kind: 'taskPdf', id: task.id } as const;
+      taskPdfs.set(task.id, { ...result, at });
+      const pdf = await panel(`task-pdf:${task.id}`, task.title + ' · PDF', view);
+      await push(pdf.webview, view);
+      return;
+    }
+    const paper = await choosePaper();
+    if (!paper || !unchanged()) return;
+    const root = await fs.realpath(paper.project.path);
+    if (!inside(root, file)) throw new Error(t('No PDF position was found for these lines.'));
+    const route = paperRoute(paper);
+    let { build } = await backend.api<Manuscript>(route);
+    if (!build.current && build.status === 'building') {
+      const current = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t('Compiling the PDF…'), cancellable: true }, async (_, token) => {
+        while (!token.isCancellationRequested && unchanged() && build.status === 'building') {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          if (token.isCancellationRequested || !unchanged()) return false;
+          ({ build } = await backend.api<Manuscript>(route));
+        }
+        return !token.isCancellationRequested && unchanged();
+      });
+      if (!current) return;
+    }
+    if (!unchanged()) return;
+    if (!build.current || !build.key) throw new Error(t('Compile this paper first.'));
+    query.set('key', build.key);
+    query.set('file', path.relative(root, file).split(path.sep).join('/'));
+    const { place } = await backend.api<{ place: SourcePlace | null }>(`/api/projects/${paper.project.id}/manuscript/source/place?${query}`);
+    if (!unchanged()) return;
     if (!place) throw new Error(t('No PDF position was found for these lines.'));
-    places.set(paper.key, { place, at: Date.now() });
+    places.set(paper.key, { place, key: build.key, at });
     const pdf = await panel(paper.key, paper.document + ' · PDF', { kind: 'paper', paper });
     await push(pdf.webview, { kind: 'paper', paper });
   });

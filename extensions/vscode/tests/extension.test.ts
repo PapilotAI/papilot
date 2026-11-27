@@ -21,13 +21,26 @@ test('review actions use the current task and protect aliased unsaved buffers', 
   await fs.symlink(worktree, alias, 'dir');
   const project = { id: 'project', path: manuscript, name: 'Paper' };
   const paper = { project, document: 'main.tex', key: 'project:main.tex' };
-  const preparing = { id: 'task', projectId: project.id, name: 'task', title: 'Revise', document: paper.document, worktree: '', status: 'preparing' };
+  const preparing = { id: 'task', projectId: project.id, name: 'task', title: 'Revise', document: paper.document, worktree: '', status: 'preparing', review: { round: 1 } };
   let snapshot = { projects: [project], tasks: [preparing] }, receive: (message: any) => Promise<void>;
   const textDocuments: any[] = [];
+  let manuscriptReads = 0, staleTaskPdf = false;
+  const position = { page: 0, rect: [0.1, 0.2, 0.3, 0.4] };
+  const taskPdf = '/api/tasks/task/pdf?round=1&build=task-build';
   const backend = {
     dispose() {},
-    async api(route: string) { apiCalls.push(route); return route === '/api/state' ? snapshot : {}; },
-    async request(route: string) { requests.push(route); return { status: 200, body: Buffer.from('{}').toString('base64') }; },
+    async api(route: string) {
+      apiCalls.push(route);
+      if (route === '/api/state') return snapshot;
+      if (route.startsWith('/api/tasks/task/source/place?')) return staleTaskPdf ? { place: null, stale: true } : { place: position, key: 'task-build', url: taskPdf };
+      if (route.startsWith('/api/projects/project/manuscript/source/place?')) return { place: position };
+      if (route.startsWith('/api/projects/project/manuscript/problems?')) return { problems: [] };
+      if (route.startsWith('/api/projects/project/manuscript?')) {
+        return { build: ++manuscriptReads === 1 ? { key: 'old', status: 'building', current: false } : { key: 'new', status: 'ready', current: true } };
+      }
+      return {};
+    },
+    async request(route: string) { requests.push(route); return { status: 200, headers: {}, body: Buffer.from('{}').toString('base64') }; },
   };
   const git = { state: 'initialized', git: { path: 'git' }, repositories: [], getRepository: () => undefined, onDidOpenRepository: disposable, onDidCloseRepository: disposable };
   const vscode = {
@@ -35,10 +48,10 @@ test('review actions use the current task and protect aliased unsaved buffers', 
     l10n: { t: (source: string, args: Record<string, string> = {}) => source.replace(/\{(\w+)\}/g, (_, key) => args[key]) },
     Uri: { file: uri, joinPath: (base: any, ...parts: string[]) => uri(path.join(base.fsPath, ...parts)) },
     EventEmitter: class { event = disposable; fire() {} dispose() {} },
-    TabInputText: class {}, Range: class {}, ViewColumn: { Beside: -2, Two: 2 },
+    TabInputText: class {}, Range: class {}, ViewColumn: { Beside: -2, Two: 2 }, ProgressLocation: { Notification: 15 },
     TreeItem: class {}, TreeItemCollapsibleState: { Expanded: 2 }, ThemeIcon: class {}, Diagnostic: class {}, DiagnosticSeverity: {},
     extensions: { getExtension: () => ({ activate: async () => ({ getAPI: () => git }) }) },
-    languages: { createDiagnosticCollection: disposable },
+    languages: { createDiagnosticCollection: () => ({ ...disposable(), clear() {}, set() {} }) },
     commands: { registerCommand(name: string, fn: any) { commands.set(name, fn); return disposable(); }, async executeCommand(name: string, ...args: any[]) { return commands.get(name)?.(...args); } },
     workspace: {
       isTrusted: true, textDocuments, findFiles: async () => [],
@@ -49,12 +62,14 @@ test('review actions use the current task and protect aliased unsaved buffers', 
     window: {
       createOutputChannel: () => ({ ...disposable(), append() {}, appendLine() {} }),
       registerTreeDataProvider: disposable, registerWebviewViewProvider: disposable,
+      activeTextEditor: undefined as any,
+      withProgress: (_: unknown, run: (...args: any[]) => unknown) => run({}, { isCancellationRequested: false }),
       showErrorMessage: (message: string) => errors.push(message), tabGroups: { all: [] },
       showTextDocument: (document: any) => opened.push(document.uri.fsPath),
       createWebviewPanel: () => { let handler: (message: any) => Promise<void>; return ({
         ...disposable(), visible: false, onDidDispose: disposable, onDidChangeViewState: disposable,
         reveal() { receive = handler; },
-        webview: { set html(value: string) { assert.match(value, /<html lang="zh-Hant">/); }, asWebviewUri: (uri: any) => uri, onDidReceiveMessage: (listener: any) => { handler = receive = listener; return disposable(); }, postMessage: async (message: any) => responses.push(message) },
+        webview: { set html(value: string) { if (value.includes('/web/review/')) assert.match(value, /<html lang="zh-Hant">/); }, asWebviewUri: (uri: any) => uri, onDidReceiveMessage: (listener: any) => { handler = receive = listener; return disposable(); }, postMessage: async (message: any) => responses.push(message) },
       }); },
     },
   };
@@ -127,7 +142,32 @@ test('review actions use the current task and protect aliased unsaved buffers', 
     assert.deepEqual(apiCalls.filter(route => route === applyRoute), [applyRoute]);
     assert.deepEqual(errors, []);
 
+    const forwardSearch = commands.get('papilot.forwardSearch')!;
+    const selectSource = (file: string) => { vscode.window.activeTextEditor = { document: { uri: uri(file), isDirty: false, version: 1 }, selection: { start: { line: 2 }, end: { line: 3 } } }; };
+    await fs.writeFile(path.join(worktree, 'main.tex'), 'revision');
+    selectSource(path.join(alias, 'main.tex'));
+    await commands.get('papilot.openTask')!({ ...preparing, id: 'different-task' });
+    await forwardSearch();
+    const taskRoute = apiCalls.find(route => route.startsWith('/api/tasks/task/source/place?'));
+    assert.ok(taskRoute);
+    assert.equal(new URL(taskRoute, 'http://test').searchParams.get('file'), 'main.tex');
+    assert.equal(requests.at(-1), taskPdf);
+    assert.deepEqual(responses.at(-1)?.place?.place, position);
+    staleTaskPdf = true;
+    await forwardSearch();
+    assert.deepEqual(errors.splice(0), ['Wait for the PDF to compile.']);
+
+    selectSource(path.join(manuscript, 'main.tex'));
+    manuscriptReads = 0;
+    await forwardSearch();
+    const places = apiCalls.filter(route => route.startsWith('/api/projects/project/manuscript/source/place?'));
+    assert.equal(places.length, 1);
+    assert.equal(new URL(places[0], 'http://test').searchParams.get('key'), 'new');
+    assert.deepEqual(responses.at(-1)?.place?.place, position);
+    assert.deepEqual(errors, []);
+
     // The old task panel must not fall back to the manuscript after deletion.
+    await commands.get('papilot.openTask')!(preparing);
     await commands.get('papilot.review')!();
     snapshot = { ...snapshot, tasks: [] };
     await extension.refresh();
