@@ -9,7 +9,8 @@ import { build } from 'esbuild';
 // Run the actual extension commands and message handlers with disposable files
 // and a fake VS Code API. No agent, server, or user's editor state is involved.
 test('review actions use the current task and protect aliased unsaved buffers', async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'papilot-host-bridge-'));
+  // The project registration endpoint returns a canonical repository path.
+  const directory = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'papilot-host-bridge-'));
   const subscriptions: { dispose(): void }[] = [], commands = new Map<string, (...args: any[]) => any>();
   const responses: any[] = [], errors: string[] = [], opened: string[] = [], requests: string[] = [], apiCalls: string[] = [];
   const openedResources: string[] = [];

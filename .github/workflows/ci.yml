@@ -427,9 +427,19 @@ jobs:
           retention-days: 7
 
   vscode:
-    name: VS Code extension
-    runs-on: ubuntu-latest
+    name: VS Code extension (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: ubuntu-latest
+          - target: darwin-arm64
+            runner: macos-15
+          - target: darwin-x64
+            runner: macos-15-intel
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -444,17 +454,27 @@ jobs:
       - run: npm run setup:review
       - run: npm --prefix vscode ci
       - name: Install TeX
+        if: runner.os == 'Linux'
         uses: ./.github/actions/setup-tex
       - run: npm --prefix vscode run typecheck
       - run: npm --prefix vscode test
       - run: npm --prefix vscode run package
+      - name: Keep the extension package
+        uses: actions/upload-artifact@v7
+        with:
+          name: vscode-extension-${{ matrix.target }}
+          path: vscode/papilot-${{ matrix.target }}.vsix
+          if-no-files-found: error
+          retention-days: 7
       - name: Conversation and review webviews
+        if: runner.os == 'Linux'
         run: |
           engine/node_modules/.bin/playwright install chromium
           npm --prefix vscode run test:web
         env:
           PAPILOT_BROWSER_CHANNEL: chromium
       - name: Exercise the packaged extension in VS Code
+        if: runner.os == 'Linux'
         run: |
           for version in 1.96.4 1.119.0; do
             echo "::group::VS Code $version"
@@ -468,13 +488,12 @@ jobs:
         env:
           PAPILOT_TEST_VSIX: vscode/papilot-linux-x64.vsix
           PAPILOT_HOST_INSPECT: '1'
-      - name: Keep extension and screenshots
-        if: ${{ !cancelled() }}
+      - name: Keep extension screenshots
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         uses: actions/upload-artifact@v7
         with:
-          name: vscode-extension
+          name: vscode-extension-screenshots
           path: |
-            vscode/*.vsix
             /tmp/papilot-vscode-host-*/native-*.png
             /tmp/papilot-vscode-chat-*/chat-*.png
             /tmp/papilot-vscode-history-*/history-*.png
@@ -514,6 +533,13 @@ jobs:
           Copy-Item $node, (Join-Path $installation 'LICENSE') $runtime
           $env:Path = "$runtime;$env:Path"
           & (Join-Path $runtime 'node.exe') $npm --prefix vscode run package
+      - name: Keep the Windows extension package
+        uses: actions/upload-artifact@v7
+        with:
+          name: vscode-extension-win32-x64
+          path: vscode/papilot-win32-x64.vsix
+          if-no-files-found: error
+          retention-days: 7
 
   # Which desktop check a pull request or a push to main needs, from the files
   # it changes. Release calls CI for a tag and builds every installer itself.
