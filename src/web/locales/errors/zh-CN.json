@@ -105,6 +105,7 @@
   "Could not reach the source website. Check the internet connection and try again.": "无法连接源码网站。请检查网络连接后重试。",
   "Could not reach zotero.org. Try again.": "无法连接到 zotero.org。请重试。",
   "Could not read the LaTeX installation.": "无法读取 LaTeX 安装信息。",
+  "Could not read “{file}” as UTF-8. Check its encoding in a text editor, then save a UTF-8 copy.": "无法按 UTF-8 读取“{file}”。请用文本编辑器确认文件编码，再另存一份 UTF-8 副本。",
   "Could not restart the background service.": "无法重启后台服务。",
   "Custom API setup is unavailable.": "自定义 API 设置不可用。",
   "Delegated edits must stay within the selected source files.": "委派修改必须限定在所选源文件内。",
@@ -515,5 +516,6 @@
   "Zotero does not accept this key. Check it and try again.": "Zotero 不接受此密钥。请检查后重试。",
   "npm is unavailable to Papilot.": "Papilot 无法使用 npm。",
   "too large": "过大",
-  "unsupported index": "不支持的索引"
+  "unsupported index": "不支持的索引",
+  "“{file}” contains null bytes. Check its encoding and contents in a text editor.": "“{file}”含有空字节。请用文本编辑器检查文件的编码和内容。"
 }

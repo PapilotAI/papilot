@@ -28,7 +28,7 @@
 
 .source-panel-message{display:flex;align-items:center;justify-content:center;gap:8px;margin:0;padding:24px 16px;color:var(--text-3);font-size:12px;line-height:1.45;text-align:center}
 .source-panel-note{margin:0;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--bg);color:var(--amber-text);font-size:12px;line-height:1.45}
-.source-panel-error{margin:0;padding:8px 16px;border-top:1px solid var(--line);color:var(--danger);font-size:12px;line-height:1.45;white-space:pre-wrap}
+.source-panel-error{margin:0;padding:8px 16px;border-top:1px solid var(--line);color:var(--danger);font-size:12px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
 .source-panel-error .note-link{color:var(--text)}
 
 /* The editor fills the tab, edge to edge, like an editor's pane. */

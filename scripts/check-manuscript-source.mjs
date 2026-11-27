@@ -20,6 +20,7 @@ const [{ App, createServer }, { Store }, { Workspace }, { Manuscripts }, { build
 ]);
 class InertAgent extends EventEmitter { ready = false; close() {} }
 const root = path.join(temp, 'paper'), intro = path.join(root, 'sections/intro.tex');
+const longName = 'chapter-' + 'x'.repeat(80) + '.tex';
 const git = (...args) => execFileSync('git', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
 // Filler between the passages keeps their changes apart in the Changes view.
 const FILLER = Array.from({ length: 10 }, (_, index) => `Filler sentence ${index + 1} keeps the changes apart.`).join('\n');
@@ -27,6 +28,7 @@ const ORIGINAL = `\\section{Introduction}\nAn opening paragraph that sets the sc
 fs.mkdirSync(path.join(root, 'sections'), { recursive: true });
 fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\n\\begin{document}\n\\input{sections/intro}\n\\end{document}\n');
 fs.writeFileSync(intro, ORIGINAL);
+fs.writeFileSync(path.join(root, longName), '% stray null byte\0\n');
 git('init', '-q'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@localhost');
 git('add', '.'); git('commit', '-qm', 'Paper');
 
@@ -95,6 +97,39 @@ try {
       .observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
   });
   const flashed = () => page.evaluate(() => (window.flashedLines || []).join('\n'));
+
+  // A non-UTF-8 comment can compile successfully but prevents opening the source.
+  fs.writeFileSync(intro, Buffer.concat([Buffer.from('% café\n', 'latin1'), Buffer.from(ORIGINAL)]));
+  const encodingError = 'Could not read “sections/intro.tex” as UTF-8. Check its encoding in a text editor, then save a UTF-8 copy.';
+  const sourceAlert = panel.getByRole('alert');
+  await rail.getByRole('button', { name: 'Edit source', exact: true }).click();
+  await word('pelicans').click();
+  await expect(sourceAlert).toHaveText(encodingError);
+  await shot('encoding-error');
+  await close.click();
+
+  const fileMenu = page.locator('.manuscript-row').getByRole('button', { name: /^Files/ });
+  await fileMenu.click();
+  const files = page.getByRole('list', { name: 'Repository files' });
+  const sections = files.getByRole('button', { name: 'sections', exact: true });
+  await sections.click();
+  await files.getByRole('button', { name: 'intro.tex', exact: true }).click();
+  await expect(sourceAlert).toHaveText(encodingError);
+  await close.click();
+  fs.writeFileSync(intro, ORIGINAL);
+
+  await fileMenu.click();
+  await files.getByRole('button', { name: longName, exact: true }).click();
+  await expect(sourceAlert).toHaveText(`“${longName}” contains null bytes. Check its encoding and contents in a text editor.`);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect(page.locator('#task-sidebar')).toBeHidden();
+  await expect(sourceAlert).toBeVisible();
+  await expect.poll(() => sourceAlert.evaluate(el => el.scrollWidth === el.clientWidth)).toBe(true);
+  await shot('encoding-error-narrow');
+  await page.setViewportSize(viewport);
+  await page.emulateMedia({ colorScheme: 'light' });
+  await close.click();
 
   // Saved anchors bind to selected TeX, then update after actual recompilation.
   const anchors = page.getByRole('dialog', { name: 'Anchors', exact: true });
@@ -345,7 +380,7 @@ try {
   await shot('dark');
 
   assert.deepEqual(errors, []);
-  console.log('PASS: the source tool opens the clicked passage in an editor that marks its changes since the last commit, saves without an agent, flashes the saved lines in the new PDF and the editor, reports compile errors, refuses stale saves, keeps drafts, and follows the Changes view both ways');
+  console.log('PASS: the source tool opens the clicked passage in an editor that marks its changes since the last commit, saves without an agent, flashes the saved lines in the new PDF and the editor, reports encoding and compile errors, refuses stale saves, keeps drafts, and follows the Changes view both ways');
 } catch (error) {
   if (errors.length) console.error('Page errors:', errors);
   await shot('failure').catch(() => {});
