@@ -7,9 +7,9 @@ import { Backend } from './backend.ts';
 import { reviewAssets } from './assets.ts';
 import { allowedCommand } from './commands.ts';
 import { inside, insideReal, routePath, sourcePath } from './paths.ts';
-import { supportedLanguage } from '../../../engine/src/locales.ts';
+import { supportedLanguage } from '../../engine/src/locales.ts';
 import type { GitExtension, Repository } from './git.ts';
-import type { Manuscript, ManuscriptProblems, Project, Snapshot, SourcePlace, Task } from '../../../src/shared.ts';
+import type { Manuscript, ManuscriptProblems, Project, Snapshot, SourcePlace, Task } from '../../src/shared.ts';
 
 type Paper = { project: Project; document: string; key: string };
 type View = { kind: 'paper'; paper: Paper } | { kind: 'review'; project: Project; task?: Pick<Task, 'id' | 'name'>; document?: string } | { kind: 'chat' } | { kind: 'taskPdf'; id: string };

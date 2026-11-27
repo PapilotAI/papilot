@@ -1,13 +1,13 @@
 import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useState } from 'react';
-import { PdfView, type PdfHandle, type OutlineItem } from '../../../src/web/pdf-view.tsx';
-import { connectStamps } from '../../../src/web/stamps.ts';
-import { t } from '../../../src/web/i18n.ts';
-import type { Manuscript, SourcePlace } from '../../../src/shared.ts';
+import { PdfView, type PdfHandle, type OutlineItem } from '../../src/web/pdf-view.tsx';
+import { connectStamps } from '../../src/web/stamps.ts';
+import { t } from '../../src/web/i18n.ts';
+import type { Manuscript, SourcePlace } from '../../src/shared.ts';
 import { api, call, command, ready, useHost } from './bridge.ts';
-import '../../../src/web/style.css';
-import '../../../src/web/build-problems.css';
-import '../../../src/web/note-controls.css';
+import '../../src/web/style.css';
+import '../../src/web/build-problems.css';
+import '../../src/web/note-controls.css';
 import './style.css';
 connectStamps(api);
 function Paper() {

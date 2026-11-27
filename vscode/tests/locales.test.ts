@@ -8,13 +8,13 @@ import { buildLocales } from '../scripts/locales.mjs';
 
 test('native prompts and manifest labels are packaged from the shared locale catalog', async () => {
   const project = await fs.mkdtemp(path.join(os.tmpdir(), 'papilot-l10n-'));
-  const root = path.join(project, 'extensions/vscode');
+  const root = path.join(project, 'vscode');
   const write = async (file: string, text: string) => { const target = path.join(project, file); await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(target, text); };
   try {
     await fs.mkdir(path.join(project, 'skills'));
     await write('src/web/zh-CN.ts', 'export const zhCN = {};');
-    await write('extensions/vscode/src/extension.ts', "import { t } from './i18n.ts'; t('Instructions for {document}', { document: 'main.tex' });");
-    await write('extensions/vscode/package.nls.json', JSON.stringify({ 'papilot.open.title': 'Open PDF' }));
+    await write('vscode/src/extension.ts', "import { t } from './i18n.ts'; t('Instructions for {document}', { document: 'main.tex' });");
+    await write('vscode/package.nls.json', JSON.stringify({ 'papilot.open.title': 'Open PDF' }));
     const dictionaries = {
       de: ['Anweisungen für {document}', 'PDF öffnen'],
       'zh-CN': ['给 {document} 的指令', '打开 PDF'],

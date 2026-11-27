@@ -23,13 +23,13 @@ From the repository root:
 ```sh
 npm ci
 npm run setup:review
-npm --prefix extensions/vscode ci
-npm --prefix extensions/vscode run typecheck
-npm --prefix extensions/vscode test
-npm --prefix extensions/vscode run build
-npm --prefix extensions/vscode run test:web
-npm --prefix extensions/vscode run test:host
-npm --prefix extensions/vscode run package
+npm --prefix vscode ci
+npm --prefix vscode run typecheck
+npm --prefix vscode test
+npm --prefix vscode run build
+npm --prefix vscode run test:web
+npm --prefix vscode run test:host
+npm --prefix vscode run package
 ```
 
 `test:host` launches an isolated VS Code window with disposable papers. Set `PAPILOT_CODE` to a VS Code executable if it is not on PATH. On headless Linux, run it under `xvfb-run -a`.

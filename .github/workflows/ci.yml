@@ -436,19 +436,19 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             engine/package-lock.json
-            extensions/vscode/package-lock.json
+            vscode/package-lock.json
       - run: npm ci
       - run: npm run setup:review
-      - run: npm --prefix extensions/vscode ci
+      - run: npm --prefix vscode ci
       - name: Install TeX
         uses: ./.github/actions/setup-tex
-      - run: npm --prefix extensions/vscode run typecheck
-      - run: npm --prefix extensions/vscode test
-      - run: npm --prefix extensions/vscode run package
+      - run: npm --prefix vscode run typecheck
+      - run: npm --prefix vscode test
+      - run: npm --prefix vscode run package
       - name: Conversation and review webviews
         run: |
           engine/node_modules/.bin/playwright install chromium
-          npm --prefix extensions/vscode run test:web
+          npm --prefix vscode run test:web
         env:
           PAPILOT_BROWSER_CHANNEL: chromium
       - name: Install VS Code
@@ -458,9 +458,9 @@ jobs:
           tar -xzf "$RUNNER_TEMP/vscode.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/vscode"
           echo "PAPILOT_CODE=$RUNNER_TEMP/vscode/bin/code" >> "$GITHUB_ENV"
       - name: Exercise the packaged extension in VS Code
-        run: xvfb-run -a npm --prefix extensions/vscode run test:host
+        run: xvfb-run -a npm --prefix vscode run test:host
         env:
-          PAPILOT_TEST_VSIX: extensions/vscode/papilot-linux-x64.vsix
+          PAPILOT_TEST_VSIX: vscode/papilot-linux-x64.vsix
           PAPILOT_HOST_INSPECT: '1'
       - name: Keep extension and screenshots
         if: ${{ !cancelled() }}
@@ -468,7 +468,7 @@ jobs:
         with:
           name: vscode-extension
           path: |
-            extensions/vscode/*.vsix
+            vscode/*.vsix
             /tmp/papilot-vscode-host-*/native-*.png
             /tmp/papilot-vscode-chat-*/chat-*.png
             /tmp/papilot-vscode-history-*/history-*.png

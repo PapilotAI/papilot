@@ -1,11 +1,11 @@
 import { createRoot } from 'react-dom/client';
 import { useEffect, useMemo, useState } from 'react';
-import { ReviewApp } from '../../../engine/src/web/review.tsx';
-import { t } from '../../../engine/src/web/i18n.ts';
-import { OPEN_SOURCE_EVENT, RETRY_COMPARISON_EVENT, type OpenSource } from '../../../engine/src/web/review-events.ts';
+import { ReviewApp } from '../../engine/src/web/review.tsx';
+import { t } from '../../engine/src/web/i18n.ts';
+import { OPEN_SOURCE_EVENT, RETRY_COMPARISON_EVENT, type OpenSource } from '../../engine/src/web/review-events.ts';
 import { call, ready, useHost } from './bridge.ts';
-import '../../../engine/src/web/style.css';
-import '../../../src/web/theme.css';
+import '../../engine/src/web/style.css';
+import '../../src/web/theme.css';
 import './style.css';
 const resource = (route: string) => call<string>('resource', { route });
 function Review() {

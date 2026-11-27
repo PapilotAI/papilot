@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn, execFileSync } from 'node:child_process';
 import { build } from 'esbuild';
 import net from 'node:net';
-import { chromium, expect } from '../../../scripts/playwright.mjs';
+import { chromium, expect } from '../../scripts/playwright.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-vscode-host-'));
 const fixture = path.join(temp, 'project'); fs.mkdirSync(fixture);

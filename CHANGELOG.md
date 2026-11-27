@@ -6,7 +6,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Added
 
-- Use Papilot in VS Code with native LaTeX editors, a separate conversation sidebar, PDF and review tabs, compilation diagnostics, and Git staging. The extension discovers multiple papers in workspace repositories and bundles the shared Papilot runtime. See [the extension guide](extensions/vscode/README.md).
+- Use Papilot in VS Code with native LaTeX editors, a separate conversation sidebar, PDF and review tabs, compilation diagnostics, and Git staging. The extension discovers multiple papers in workspace repositories and bundles the shared Papilot runtime. See [the extension guide](vscode/README.md).
 - Choose **Ultrafast** in the Codex model picker when your account and model offer it. Papilot remembers the selected speed per model and marks Fast with one lightning bolt and Ultrafast with two.
 - Choose **ZCode** for manuscript tasks. Papilot uses your local ZCode CLI and its default model, streams replies and tool activity, and resumes the same conversation on follow-up turns. ([#338](https://github.com/PapilotAI/papilot/issues/338))
 - Use a third-party OpenAI-compatible Chat Completions API with **Settings → Runtime → Agents → Papilot Writer → Custom API**. Save the provider's base URL, model ID and API key, then choose that model for a task. ([#338](https://github.com/PapilotAI/papilot/issues/338))

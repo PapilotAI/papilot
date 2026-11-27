@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import staticFiles from '@fastify/static';
-import { chromium, expect } from '../../../scripts/playwright.mjs';
+import { chromium, expect } from '../../scripts/playwright.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const artifacts = await fs.mkdtemp(path.join(os.tmpdir(), 'papilot-vscode-history-'));

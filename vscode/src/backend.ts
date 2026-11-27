@@ -14,9 +14,9 @@ export class Backend {
   start() {
     return this.ready ??= new Promise<void>((resolve, reject) => {
       const packaged = path.join(this.extension, 'runtime');
-      const source = path.resolve(this.extension, '../..');
+      const source = path.resolve(this.extension, '..');
       const root = fs.existsSync(path.join(source, 'src/server/runtime.ts')) ? source : packaged;
-      const worker = path.join(root, 'extensions/vscode/src/worker.ts');
+      const worker = path.join(root, 'vscode/src/worker.ts');
       fs.mkdirSync(this.data, { recursive: true });
       const child = this.child = fork(worker, [], {
         execArgv: ['--import', pathToFileURL(path.join(root, 'node_modules/tsx/dist/loader.mjs')).href],

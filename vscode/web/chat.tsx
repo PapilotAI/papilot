@@ -1,15 +1,15 @@
-import { ResourceProvider } from '../../../src/web/resources.tsx';
+import { ResourceProvider } from '../../src/web/resources.tsx';
 import { createRoot } from 'react-dom/client';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createConversation } from '../../../src/web/conversation.tsx';
-import { ComposerDraft } from '../../../src/web/composer.ts';
-import { browserStorage } from '../../../src/web/storage.ts';
-import { mergeTimeline } from '../../../src/web/refresh.ts';
-import { t } from '../../../src/web/i18n.ts';
-import type { Snapshot, Task, TimelineItem, Skill } from '../../../src/shared.ts';
+import { createConversation } from '../../src/web/conversation.tsx';
+import { ComposerDraft } from '../../src/web/composer.ts';
+import { browserStorage } from '../../src/web/storage.ts';
+import { mergeTimeline } from '../../src/web/refresh.ts';
+import { t } from '../../src/web/i18n.ts';
+import type { Snapshot, Task, TimelineItem, Skill } from '../../src/shared.ts';
 import { api, command, ready, resource, useHost } from './bridge.ts';
-import '../../../src/web/style.css';
-import '../../../src/web/note-controls.css';
+import '../../src/web/style.css';
+import '../../src/web/note-controls.css';
 import './style.css';
 const { Activity } = createConversation(api);
 function Chat() {

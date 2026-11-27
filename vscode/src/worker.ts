@@ -1,9 +1,9 @@
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { createRuntime, resumeTasks, RUNTIME_SHUTDOWN_TIMEOUT_MS } from '../../../src/server/runtime.ts';
-import { buildApp, gitQueue } from '../../../src/server/app.ts';
-import { DATA, VERSION } from '../../../src/server/paths.ts';
-import { reviewClient } from '../../../src/server/review.ts';
+import { createRuntime, resumeTasks, RUNTIME_SHUTDOWN_TIMEOUT_MS } from '../../src/server/runtime.ts';
+import { buildApp, gitQueue } from '../../src/server/app.ts';
+import { DATA, VERSION } from '../../src/server/paths.ts';
+import { reviewClient } from '../../src/server/review.ts';
 
 process.env.PAPILOT_TEX_POOL ||= path.join(DATA, 'tex-pool');
 const connectReview = (root: string, reuse = false) => reviewClient(root, reuse, { owned: true });

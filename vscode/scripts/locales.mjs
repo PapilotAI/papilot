@@ -1,11 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { collectCatalog, readLegacyChinese } from '../../../scripts/i18n/catalog.ts';
+import { collectCatalog, readLegacyChinese } from '../../scripts/i18n/catalog.ts';
 
 /** Package the existing translations in VS Code's native localization formats. */
 export async function buildLocales(root) {
-  const project = path.resolve(root, '../..');
-  const messages = collectCatalog(project).messages.filter(message => message.occurrences.some(item => item.file.startsWith('extensions/vscode/src/')));
+  const project = path.resolve(root, '..');
+  const messages = collectCatalog(project).messages.filter(message => message.occurrences.some(item => item.file.startsWith('vscode/src/')));
   const labels = JSON.parse(await fs.readFile(path.join(root, 'package.nls.json'), 'utf8'));
   const directory = path.join(root, 'dist/l10n');
   await fs.mkdir(directory, { recursive: true });
