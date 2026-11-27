@@ -3,8 +3,13 @@
   "displayName": "Papilot",
   "description": "Revise and review LaTeX papers alongside your code.",
   "version": "0.1.0",
-  "publisher": "papilot",
+  "publisher": "PapilotAI",
   "license": "MIT",
+  "icon": "media/icon.png",
+  "homepage": "https://papilot.ai/",
+  "bugs": {
+    "url": "https://github.com/PapilotAI/papilot/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/PapilotAI/papilot.git"
