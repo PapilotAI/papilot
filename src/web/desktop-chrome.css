@@ -56,6 +56,6 @@
 /* The phone-width bar leads with the manuscript shortcut, so the whole bar
    clears left-side controls rather than only the task list toggle. */
 @media(max-width:680px){
-  [data-desktop-controls="left"] .workspace-navigation{padding-left:var(--desktop-leading-space)}
+  [data-desktop-controls="left"] .workspace-navigation{padding-left:calc(4px + var(--desktop-leading-space))}
   [data-desktop-controls="left"] .workspace-navigation>.sidebar-toggle{margin-left:0}
 }

@@ -36,7 +36,8 @@ const notifications = desktopNotifications({
 });
 const typeless = typelessControl();
 let typelessSending = false;
-// Read the desktop's window button layout while the backend starts.
+// Read the desktop's window button layout while the backend starts; the
+// first window waits for it (see launch).
 const windowButtonsLayout = process.platform === 'linux' ? detectWindowButtons() : Promise.resolve(null);
 let windowButtons: WindowButtons | null = null;
 // papilot://new?template=<id>&version=<version> starts a paper from a Universe template.
@@ -107,7 +108,6 @@ else {
     void backend.stop().finally(() => { stopped = true; app.quit(); });
   });
   void app.whenReady().then(async () => {
-    windowButtons = await windowButtonsLayout;
     const data = app.getPath('userData'), log = path.join(app.getPath('logs'), 'backend.log');
     const wslAssets = app.isPackaged ? path.join(process.resourcesPath, 'wsl') : path.resolve(fileURLToPath(new URL('../wsl', import.meta.url)));
     const openEnvironment = (error?: string) => chooseEnvironment({ parent: window || undefined, current: readEnvironment(data), assets: wslAssets, root: app.isPackaged ? path.join(process.resourcesPath, 'server') : path.resolve(fileURLToPath(new URL('../..', import.meta.url))), error,
@@ -272,6 +272,9 @@ else {
       });
       port = Number(new URL(url).port);
       fs.writeFileSync(portFile, JSON.stringify(port), { mode: 0o600 });
+      // A window opens only once the origin is known; by then the layout has
+      // long been read, so this rarely waits.
+      windowButtons = await windowButtonsLayout;
       if (url !== origin) { const moved = Boolean(origin); origin = url; if (moved) void window?.loadURL(origin); }
     };
     // Legacy npm activations (updates/active.json) are never used.

@@ -52,17 +52,27 @@ const run: Run = (command, args) => new Promise((resolve, reject) => {
   execFile(command, args, { timeout: 2000, encoding: 'utf8' }, (error, stdout) => error ? reject(error) : resolve(stdout));
 });
 
+// GNOME's schema is installed on many desktops that never set it, so it is
+// read only on desktops that use it; elsewhere the layout is unknown.
+const gnomeDesktops = ['GNOME', 'UNITY', 'BUDGIE', 'PANTHEON'];
 // Resolves to null when the desktop's layout is unknown; the page then keeps
 // its own default.
 export async function detectWindowButtons({ env = process.env, exec = run, read = (file: string) => readFile(file, 'utf8') }: { env?: NodeJS.ProcessEnv; exec?: Run; read?: (file: string) => Promise<string> } = {}): Promise<WindowButtons | null> {
   const desktops = (env.XDG_CURRENT_DESKTOP || '').toUpperCase().split(':');
   const gsettings = (schema: string) => exec('gsettings', ['get', schema, 'button-layout']).then(gtkLayout);
   try {
-    if (desktops.includes('KDE')) return kwinLayout(await read(path.join(env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'kwinrc')).catch(() => ''));
+    if (desktops.includes('KDE')) {
+      // KDE layers the user's kwinrc over system ones (XDG_CONFIG_DIRS, most
+      // important first); later lines win in kwinLayout.
+      const directories = [...(env.XDG_CONFIG_DIRS || '/etc/xdg').split(':').filter(Boolean).reverse(), env.XDG_CONFIG_HOME || path.posix.join(os.homedir(), '.config')];
+      const files = await Promise.all(directories.map(directory => read(path.posix.join(directory, 'kwinrc')).catch(() => '')));
+      return kwinLayout(files.join('\n'));
+    }
     if (desktops.includes('XFCE')) return xfwmLayout(await exec('xfconf-query', ['-c', 'xfwm4', '-p', '/general/button_layout']).catch(() => 'O|HMC'));
     if (desktops.includes('X-CINNAMON')) return await gsettings('org.cinnamon.desktop.wm.preferences');
     if (desktops.includes('MATE')) return await gsettings('org.mate.Marco.general');
-    return await gsettings('org.gnome.desktop.wm.preferences');
+    if (desktops.some(desktop => gnomeDesktops.includes(desktop))) return await gsettings('org.gnome.desktop.wm.preferences');
+    return null;
   } catch { return null; }
 }
 // The sandboxed preload cannot import this module; it reads the layout back

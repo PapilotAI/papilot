@@ -29,9 +29,27 @@ test('detection reads the layout from the current desktop', async () => {
   await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'MATE' }, exec });
   assert.equal(calls.at(-1)?.[2], 'org.mate.Marco.general');
   assert.deepEqual(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'XFCE' }, exec }), { side: 'left', buttons: ['close', 'maximize', 'minimize'] });
-  const read = async (file: string) => { assert.equal(file, '/config/kwinrc'); return '[org.kde.kdecoration2]\nButtonsOnRight=X\n'; };
-  assert.deepEqual(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'KDE', XDG_CONFIG_HOME: '/config' }, exec, read }), { side: 'right', buttons: ['close'] });
-  assert.equal(await detectWindowButtons({ env: {}, exec: async () => { throw Error('no gsettings'); } }), null, 'Unknown layouts fall back to the page default');
+  const kwinrc: Record<string, string> = {
+    '/etc/xdg/kwinrc': '[org.kde.kdecoration2]\nButtonsOnLeft=X\nButtonsOnRight=IA\n',
+    '/vendor/kwinrc': '[org.kde.kdecoration2]\nButtonsOnLeft=XAI\n',
+    '/config/kwinrc': '[org.kde.kdecoration2]\nButtonsOnLeft=\nButtonsOnRight=IAX\n',
+  };
+  const read = async (file: string) => { if (file in kwinrc) return kwinrc[file]; throw Error('missing'); };
+  assert.deepEqual(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'KDE', XDG_CONFIG_HOME: '/config' }, exec, read }), { side: 'right', buttons: ['minimize', 'maximize', 'close'] }, "The user's kwinrc overrides the system one");
+  assert.deepEqual(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'KDE', XDG_CONFIG_HOME: '/none' }, exec, read }), { side: 'left', buttons: ['close', 'minimize', 'maximize'] }, 'A system kwinrc sets the default');
+  assert.deepEqual(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'KDE', XDG_CONFIG_HOME: '/none', XDG_CONFIG_DIRS: '/vendor:/etc/xdg' }, exec, read }), { side: 'left', buttons: ['close', 'maximize', 'minimize'] }, 'Earlier XDG_CONFIG_DIRS win');
+  // GNOME's schema is often installed but unset elsewhere; its default would
+  // leave only a close button.
+  calls.length = 0;
+  for (const desktop of [undefined, 'LXQt', 'COSMIC', 'sway', 'Hyprland']) {
+    assert.equal(await detectWindowButtons({ env: desktop ? { XDG_CURRENT_DESKTOP: desktop } : {}, exec }), null, `${desktop ?? 'No desktop'} keeps the page default`);
+  }
+  assert.deepEqual(calls, []);
+  for (const desktop of ['Unity', 'Budgie:GNOME', 'Pantheon']) {
+    await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: desktop }, exec });
+    assert.equal(calls.at(-1)?.[2], 'org.gnome.desktop.wm.preferences', desktop);
+  }
+  assert.equal(await detectWindowButtons({ env: { XDG_CURRENT_DESKTOP: 'GNOME' }, exec: async () => { throw Error('no gsettings'); } }), null, 'Unreadable layouts fall back to the page default');
 });
 
 test('the layout reaches the preload as one JSON argument', () => {

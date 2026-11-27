@@ -254,6 +254,8 @@ try {
     ['linux-right', 'linux', { side: 'right', buttons: ['minimize', 'maximize', 'close'] }, 'right', ['Minimize window', 'Maximize or restore window', 'Close window']],
     ['linux-left', 'linux', { side: 'left', buttons: ['close', 'maximize'] }, 'left', ['Close window', 'Maximize or restore window']],
     ['windows', 'win32', undefined, 'right', ['Minimize window', 'Maximize or restore window', 'Close window']],
+    // macOS draws its own traffic lights in the leading space.
+    ['macos', 'darwin', undefined, 'left', []],
   ];
   for (const [name, platform, windowButtons, side, labels] of layouts) {
     const chrome = await browser.newContext({ locale: 'en-US', colorScheme: 'light', viewport: { width: 1440, height: 960 } });
@@ -272,7 +274,8 @@ try {
     assert.deepEqual(await buttons.evaluateAll(list => list.map(button => button.getAttribute('aria-label'))), labels, `${name}: buttons and order`);
     const clear = async state => {
       const result = await window.evaluate(() => {
-        const controls = document.querySelector('.desktop-window-buttons').getBoundingClientRect();
+        const buttons = document.querySelector('.desktop-window-buttons');
+        const controls = buttons ? buttons.getBoundingClientRect() : { left: 0, top: 0, right: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--desktop-leading-space')), bottom: 28 };
         const overlaps = [...document.querySelectorAll('button,a,input,select,[role="combobox"]')].filter(element => !element.closest('.desktop-window-buttons')).filter(element => {
           const box = element.getBoundingClientRect();
           return box.width > 0 && box.height > 0 && box.top < controls.bottom && box.bottom > controls.top && box.right > controls.left && box.left < controls.right;
