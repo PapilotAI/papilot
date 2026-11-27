@@ -23,7 +23,7 @@ page.on('requestfailed', request => {
 });
 const project = { id: 'git-paper', name: 'Example paper', path: '/tmp/git-paper', createdAt: 1 };
 const task = { id: 'git-task', projectId: project.id, title: 'Clarify the introduction', name: 'git-task', instructions: '', agent: 'claude', model: 'model', effort: 'high', status: 'idle', createdAt: 1, updatedAt: 1, review: null };
-const runtime = { connected: true, authenticated: true, models: [{ id: 'model', name: 'Model', isDefault: true, efforts: ['low', 'high'], defaultEffort: 'low', fastMode: { serviceTier: 'priority', description: '' } }, { id: 'other-model', name: 'Other model', isDefault: false, efforts: ['low', 'high'], defaultEffort: 'high' }] };
+const runtime = { connected: true, authenticated: true, models: [{ id: 'model', name: 'Model', isDefault: true, efforts: ['low', 'high'], defaultEffort: 'low', serviceTiers: ['priority'] }, { id: 'other-model', name: 'Other model', isDefault: false, efforts: ['low', 'high'], defaultEffort: 'high' }] };
 const snapshot = { version: 'test', csrf: 'fixture', projects: [project], tasks: [task], requests: [], runtime, runtimes: { codex: runtime, claude: { ...runtime } }, gitAvailable: true };
 const initialFiles = [{ path: 'main.tex', status: 'M', staged: false, unstaged: true, lines: [2, 4] }, { path: 'references.bib', status: '?', staged: false, unstaged: true }];
 const git = { branch: 'main', remote: true, upstream: 'origin/main', ahead: 1, behind: 0, head: { hash: 'abc1234', subject: 'Clarify the introduction', date: 1 }, files: structuredClone(initialFiles) };

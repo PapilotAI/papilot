@@ -3,6 +3,7 @@ import { AgentPicker, type AgentOption } from './agent-picker.tsx';
 import { agentLabel } from './agent-choice.ts';
 import { saveCommitMessageAgent, useCommitMessageAgent, saveConflictAgent, useConflictAgent, type CommitMessageAgent, type CommitMessageChoice } from './commit-agent-preferences.ts';
 import { t } from './i18n.ts';
+import { modelServiceTier } from '../shared.ts';
 import type { RefreshUsage } from './usage.tsx';
 
 type AgentSettingsProps = { current: CommitMessageChoice; agents: AgentOption[]; reconnect?: () => Promise<void>; refreshUsage?: RefreshUsage };
@@ -26,8 +27,6 @@ function HelperAgentSettings({ current, agents, reconnect, refreshUsage, prefere
   const [reconnecting, setReconnecting] = useState(false), [error, setError] = useState('');
   const following = preference === 'conversation';
   const options = agents.some(item => item.value === current.agent) ? agents : [...agents, { value: current.agent, label: agentLabel(current.agent), runtime: { connected: false, authenticated: false, installed: false, account: null, error: null, models: [] } }];
-  const models = options.find(item => item.value === current.agent)?.runtime?.models || [];
-  const model = models.find(item => current.model ? item.id === current.model : item.isDefault);
   return <>
     <div className="settings-row settings-toggle">
       <div className="settings-text">
@@ -38,13 +37,13 @@ function HelperAgentSettings({ current, agents, reconnect, refreshUsage, prefere
     </div>
     <div className="settings-row settings-choice">
       <div className="settings-text"><span className="settings-name">{label}</span>{error && <p role="alert">{error}</p>}</div>
-      <AgentPicker label={pickerLabel} refreshUsage={refreshUsage} agents={options} agent={current.agent} model={current.model} effort={current.effort} fast={Boolean(current.serviceTier && current.serviceTier !== 'default')}
+      <AgentPicker label={pickerLabel} refreshUsage={refreshUsage} agents={options} agent={current.agent} model={current.model} effort={current.effort} serviceTier={current.agent === 'codex' ? current.serviceTier || 'default' : undefined}
         reconnecting={reconnecting} onReconnect={() => { if (!reconnect) return; setReconnecting(true); setError(''); void reconnect().catch(error => setError(error instanceof Error ? error.message : String(error))).finally(() => setReconnecting(false)); }}
         onSelect={(agent, selected) => {
           const next = options.find(item => item.value === agent)?.runtime?.models.find(item => selected ? item.id === selected : item.isDefault);
-          save({ agent, model: selected, effort: next?.efforts.includes(current.effort) ? current.effort : '', ...(agent === 'codex' ? { serviceTier: current.agent === agent && next?.fastMode?.serviceTier === current.serviceTier ? current.serviceTier : 'default' } : {}) });
+          save({ agent, model: selected, effort: next?.efforts.includes(current.effort) ? current.effort : '', ...(agent === 'codex' ? { serviceTier: modelServiceTier(next, current.agent === agent ? current.serviceTier : undefined) } : {}) });
         }}
-        onChange={change => save({ ...current, ...(change.effort !== undefined ? { effort: change.effort } : {}), ...(change.fast !== undefined ? { serviceTier: change.fast ? model?.fastMode?.serviceTier : 'default' } : {}) })}/>
+        onChange={change => save({ ...current, ...change })}/>
     </div>
   </>;
 }

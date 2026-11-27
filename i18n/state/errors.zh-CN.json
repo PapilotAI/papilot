@@ -524,11 +524,6 @@
     "textHash": "fe1518dd151b1c163ec5939c188e5ca41e6de9e42e64f64bbab6aace57a9e6b1",
     "model": "codex"
   },
-  "Fast mode is not available for this model.": {
-    "revision": "aae9b762cf78c2c3a3461f9b2f5817c1d5e0117e63e98448a39fbfc107e05d40",
-    "textHash": "1e6fa2b0c73cff75f8de6f78590a0edebf6f32b3c3180bfcc4444357aec53cf7",
-    "model": "gemini-4-argon-medium"
-  },
   "Files must be 25 MB or smaller.": {
     "revision": "2a8ae8b1d3d16b3f28a1a70f93c04e54e3d87e1f356a9f9998f2c7cb9e9116b0",
     "textHash": "0a32f2992256923b664f00f9a7397afa98326558a47731daa8a1bafd6a9df400",

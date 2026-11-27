@@ -6,6 +6,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Added
 
+- Choose **Ultrafast** in the Codex model picker when your account and model offer it. Papilot remembers the selected speed per model.
 - Choose **ZCode** for manuscript tasks. Papilot uses your local ZCode CLI and its default model, streams replies and tool activity, and resumes the same conversation on follow-up turns. ([#338](https://github.com/PapilotAI/papilot/issues/338))
 - Use a third-party OpenAI-compatible Chat Completions API with **Settings → Runtime → Agents → Papilot Writer → Custom API**. Save the provider's base URL, model ID and API key, then choose that model for a task. ([#338](https://github.com/PapilotAI/papilot/issues/338))
 - Set the LaTeX source editor's font size on its own with **Editor font size** in **Settings → Appearance** (10–24 px). The PDF and the rest of the interface keep their size, and the choice is remembered in this browser. ([#345](https://github.com/PapilotAI/papilot/issues/345))

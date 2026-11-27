@@ -12,7 +12,7 @@ const catalog: Partial<Record<AgentId, AgentModel[]>> = {
     model('gpt-6.1-sol', 'GPT-6.1 Sol', codexEfforts, 'high'),
     model('gpt-6.1-terra', 'GPT-6.1 Terra', codexEfforts, 'high'),
     model('gpt-6-luna', 'GPT-6 Luna', ['low', 'medium', 'high', 'xhigh', 'max'], 'medium'),
-  ].map(model => ({ ...model, fastMode: { serviceTier: 'priority', description: '' } })),
+  ].map(model => ({ ...model, serviceTiers: ['priority'] })),
   claude: [
     model('fable', 'Fable', claudeEfforts, 'high', true),
     model('opus', 'Opus', claudeEfforts, 'high'),

@@ -19,7 +19,7 @@ page.on('pageerror', error => errors.push(error.message));
 const task = { id: 'fixture-task', projectId: 'paper', agent: 'codex', name: 'p-task', title: 'Revise the introduction', instructions: 'Keep the meaning.', worktree: '/tmp/paper', threadId: 'thread', turnId: 'turn', model: null, effort: null, status: 'running', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: null };
 const runtime = { connected: true, authenticated: true, account: null, error: null, models: [
   { id: 'fast-model', name: 'Fast model', isDefault: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
-  { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', fastMode: { serviceTier: 'priority', description: 'Faster responses' } },
+  { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', serviceTiers: ['priority'] },
 ] };
 runtime.permissionOptions = [{ value: 'workspace', label: 'Workspace access', detail: 'Native approvals' }, { value: 'full', label: 'Full access', detail: 'Approve all tools' }];
 const zcode = { ...runtime, models: [], authenticationUnchecked: true, supportsReadOnlyTasks: false };

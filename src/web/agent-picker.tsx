@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import type { AgentId, RuntimeStatus, TaskPermissions } from '../shared.ts';
+import { modelServiceTier, type AgentId, type RuntimeStatus, type TaskPermissions } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { BrandIcon } from './brand-icon.tsx';
 import { errorText, t } from './i18n.ts';
@@ -77,6 +77,11 @@ function bySource(items: Choice[]) {
 }
 interface Choice { key: string; agent: AgentOption; model: string; name: string; source?: string; isDefault: boolean; recent: boolean }
 
+function speedName(tier: string) {
+  if (tier === 'default') return t('Standard');
+  return tier === 'ultrafast' ? t('Ultrafast') : t('Fast');
+}
+
 // An agent's state when it cannot be used yet, shown beside its name.
 function agentState(runtime?: RuntimeStatus) {
   if (runtime?.installed === false) return t('Not found');
@@ -87,13 +92,13 @@ function agentState(runtime?: RuntimeStatus) {
 
 // One compact trigger opens a searchable list of every agent's models,
 // grouped by agent with recent choices first, so one choice sets both. The
-// selected model's reasoning effort, fast mode and permissions sit below the list. Native
+// selected model's reasoning effort, speed and permissions sit below the list. Native
 // popovers keep the menu above the PDF and scrolling panels, with
 // outside-click and Escape dismissal.
-export function AgentPicker({ label, agents, agent, model, effort, fast, reconnecting, onReconnect, onSelect, onChange, disabled, description, permissions, permissionMode, allowUnknownDefault = true, noAgent = false, refreshUsage }: {
-  label?: string; agents: AgentOption[]; agent: AgentId; model: string; effort: string; fast: boolean;
+export function AgentPicker({ label, agents, agent, model, effort, serviceTier, reconnecting, onReconnect, onSelect, onChange, disabled, description, permissions, permissionMode, allowUnknownDefault = true, noAgent = false, refreshUsage }: {
+  label?: string; agents: AgentOption[]; agent: AgentId; model: string; effort: string; serviceTier?: string;
   reconnecting: boolean; onReconnect: () => void;
-  onSelect: (agent: AgentId, model: string) => void; onChange: (change: Partial<{ effort: string; fast: boolean }>) => void; disabled?: boolean; description?: string; allowUnknownDefault?: boolean;
+  onSelect: (agent: AgentId, model: string) => void; onChange: (change: Partial<{ effort: string; serviceTier: string }>) => void; disabled?: boolean; description?: string; allowUnknownDefault?: boolean;
   permissions?: ReactNode; permissionMode?: TaskPermissions; noAgent?: boolean;
   refreshUsage?: RefreshUsage;
 }) {
@@ -105,10 +110,12 @@ export function AgentPicker({ label, agents, agent, model, effort, fast, reconne
   const agentName = current?.label || agent;
   const modelName = selected?.name || model || t('Default model');
   const currentEffort = effort || selected?.defaultEffort;
-  const fastMode = agent === 'codex' ? selected?.fastMode : undefined;
+  const tiers = agent === 'codex' && serviceTier !== undefined ? selected?.serviceTiers : undefined;
+  const speed = modelServiceTier(selected, serviceTier);
+  const accelerated = Boolean(tiers?.includes(speed));
   const permission = runtime?.permissionOptions?.find(option => option.value === permissionMode);
   const disconnected = runtime && (!runtime.connected || !runtime.authenticated);
-  const summary = noAgent ? t('No agent') : [agentName, modelName, currentEffort ? effortName(currentEffort) : '', fastMode && fast ? t('Fast') : '', permission ? permissionText(permission.label) : ''].filter((part, index, all) => part && all.indexOf(part) === index).join(' · ');
+  const summary = noAgent ? t('No agent') : [agentName, modelName, currentEffort ? effortName(currentEffort) : '', accelerated ? speedName(speed) : '', permission ? permissionText(permission.label) : ''].filter((part, index, all) => part && all.indexOf(part) === index).join(' · ');
   // Every model of every agent that the author did not hide; an agent without a model list offers its default.
   const choices = (option: AgentOption): Choice[] => {
     const list = option.runtime?.models || [];
@@ -192,7 +199,7 @@ export function AgentPicker({ label, agents, agent, model, effort, fast, reconne
       onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); show(); } }}>
       {noAgent ? <span className="agent-picker-selection">{t('No agent')}</span> : <><BrandIcon name={agent} size={15}/>{!permission && modelName !== agentName && <span className="agent-picker-agent">{agentName}</span>}
       <span className="agent-picker-selection">
-        <ModelLabel model={modelName} effort={permission ? undefined : currentEffort} fast={Boolean(fastMode && fast)}/>
+        <ModelLabel model={modelName} effort={permission ? undefined : currentEffort} fast={accelerated}/>
         {permission && <small className="agent-permission-label" data-mode={permission.value}>{permissionText(permission.label)}</small>}
       </span>
       <Icon name="chevronDown" size={13}/>{disconnected && <span className="agent-status-mark"><Icon name="alert" size={13}/></span>}</>}
@@ -224,7 +231,19 @@ export function AgentPicker({ label, agents, agent, model, effort, fast, reconne
       {open && runtime?.connected && runtime.authenticated && (agent === 'antigravity' || runtime.usage) && <PickerUsage key={agent} agent={agent} name={agentName} runtime={runtime} refresh={agent === 'antigravity' ? refreshUsage : undefined}/>}
       {description && <p className="effort-description">{description}</p>}
       {selected?.efforts.length ? <EffortSlider efforts={selected.efforts} value={effort} fallback={selected.defaultEffort} onChange={value => onChange({ effort: value })}/> : null}
-      {fastMode && <label className="agent-fast"><span><strong><Icon name="bolt" size={14}/>{t('Fast mode')}</strong><small>{t('Faster, higher usage')}</small></span><input type="checkbox" role="switch" aria-label={t('Fast mode')} checked={fast} onChange={event => onChange({ fast: event.target.checked })}/></label>}
+      {tiers?.includes('ultrafast') ? <fieldset className="agent-speed" aria-describedby={`${id}-speed-detail`}>
+        <legend>{t('Speed')}</legend>
+        <small id={`${id}-speed-detail`}>{t('Faster, higher usage')}</small>
+        <div className="agent-speed-options">
+          {['default', ...tiers].map(tier => <label key={tier} htmlFor={`${id}-speed-${tier}`}>
+            <input type="radio" id={`${id}-speed-${tier}`} name={`${id}-speed`} value={tier} checked={speed === tier} onChange={() => onChange({ serviceTier: tier })}/>
+            {speedName(tier)}
+          </label>)}
+        </div>
+      </fieldset> : tiers?.length ? <label className="agent-fast">
+        <span><strong><Icon name="bolt" size={14}/>{t('Fast mode')}</strong><small>{t('Faster, higher usage')}</small></span>
+        <input type="checkbox" role="switch" aria-label={t('Fast mode')} checked={accelerated} onChange={event => onChange({ serviceTier: event.target.checked ? tiers[0] : 'default' })}/>
+      </label> : null}
       {permissions}
     </div>
   </span>;

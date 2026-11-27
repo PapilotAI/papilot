@@ -47,7 +47,7 @@ import { canonicalGroup, groupsWithoutInstructions, parseGroupInstructions, type
 import { commitChanges, conflictMarkers, gitCommit, gitRemote, gitStatus, mergeConflicts, mergeInProgress, recentCommitSubjects } from './manuscript.ts';
 import { Memory, memoryDigest, memoryUpdate } from './memory.ts';
 import { MEMORY_EVIDENCE, MEMORY_LANGUAGE, MEMORY_LEARNING, MEMORY_SINCE, acceptedSuggestions, dismissedKey, evidenceHash, hasEvidence, learningPrompt, memoryLearningInstructions, taskEvidence, type EvidenceRecord, type MemoryEvidence } from './memory-learning.ts';
-import { AGENT_IDS, isAgentId, usesCodex, isTaskReviewNote, collaborationRoutes, type CollaborationRole, type CollaborationRoutes, type CollaborationSettings } from '../shared.ts';
+import { AGENT_IDS, isAgentId, usesCodex, modelServiceTier, isTaskReviewNote, collaborationRoutes, type CollaborationRole, type CollaborationRoutes, type CollaborationSettings } from '../shared.ts';
 import type { HelperChoice, Task, TaskPermissions, Run, TimelineItem, PendingRequest, RuntimeStatus, Snapshot, PendingReview, PendingBuild, AgentModel, Usage, AgentId, MessageMeta, FeedbackSummary, BuildFailure, Annotation, NoteSummary, TaskReconciliation, TaskCommitReview, PageView, ToolPlace } from '../shared.ts';
 
 const execute = promisify(execFile);
@@ -58,15 +58,20 @@ const startsBuild = (route: string, value: unknown) => /\/source(?:\/file)?$/.te
 const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 // A Codex model/list entry with the reasoning efforts it supports.
 export const agentModel = (m: any): AgentModel => {
-  // New catalogs name the wire tier explicitly; older ones advertise only "fast".
-  const fast = Array.isArray(m.serviceTiers)
-    ? m.serviceTiers.find((tier: any) => typeof tier?.id === 'string' && (tier.name === 'Fast' || tier.id === 'fast' || tier.id === 'priority'))
-    : m.additionalSpeedTiers?.includes('fast') ? { id: 'priority' } : undefined;
+  // Use explicit wire IDs when the catalog provides them.
+  const catalog: { id: string; name: string }[] = m.serviceTiers;
+  const legacyTiers = Array.isArray(m.additionalSpeedTiers) ? m.additionalSpeedTiers : [];
+  const serviceTiers = Array.isArray(catalog)
+    ? [
+      catalog.find(tier => typeof tier?.id === 'string' && tier.id !== 'ultrafast' && (tier.name === 'Fast' || tier.id === 'fast' || tier.id === 'priority'))?.id,
+      catalog.find(tier => tier?.id === 'ultrafast')?.id,
+    ].filter((id): id is string => Boolean(id))
+    : [legacyTiers.includes('fast') ? 'priority' : '', legacyTiers.includes('ultrafast') ? 'ultrafast' : ''].filter(Boolean);
   return {
     id: m.model || m.id, name: m.displayName || m.model || m.id, ...(typeof m.source === 'string' && m.source ? { source: m.source } : {}), isDefault: Boolean(m.isDefault),
     efforts: (m.supportedReasoningEfforts || []).map((e: any) => e?.reasoningEffort).filter((e: unknown) => typeof e === 'string'),
     defaultEffort: typeof m.defaultReasoningEffort === 'string' ? m.defaultReasoningEffort : null,
-    ...(fast ? { fastMode: { serviceTier: fast.id, description: typeof fast.description === 'string' ? fast.description : '' } } : {}),
+    ...(serviceTiers.length ? { serviceTiers } : {}),
   };
 };
 // An account/rateLimits/read response as the usage Papilot shows; null when
@@ -714,7 +719,7 @@ export class Workspace extends EventEmitter {
       if (input.agent && input.agent !== 'codex') throw new Error('Service tiers are only available for Codex.');
       const models = this.runtimes.codex.models;
       const model = input.model ? models.find(model => model.id === input.model) : models.find(model => model.isDefault);
-      if (input.serviceTier !== 'default' && input.serviceTier !== model?.fastMode?.serviceTier) throw new Error('Fast mode is not available for this model.');
+      if (input.serviceTier !== modelServiceTier(model, input.serviceTier)) throw new Error('This speed is not available for this model.');
     }
       const project = this.store.project(input.projectId), skill = input.skill ? findSkill(project.path, input.skill) : undefined;
       if (skill?.output === 'annotations' && !input.prepareReview) throw new Error('Start a new task to run the AI review skill on the current PDF.');
@@ -783,7 +788,7 @@ export class Workspace extends EventEmitter {
       const model = runtime.models.find(model => input.model ? model.id === input.model : model.isDefault);
       if (!model && (input.model || runtime.models.length)) throw new Error('Choose an available model for the destination agent.');
       if (input.effort && !model?.efforts.includes(input.effort)) throw new Error('This model does not support that reasoning effort.');
-      if (input.serviceTier && input.serviceTier !== 'default' && (input.agent !== 'codex' || input.serviceTier !== model?.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
+      if (input.serviceTier && input.serviceTier !== 'default' && (input.agent !== 'codex' || input.serviceTier !== modelServiceTier(model, input.serviceTier))) throw new Error('This speed is not available for this model.');
       this.validateTaskPermissions(permissions, input.agent, task.mode === 'review');
       return model;
     };
@@ -1228,10 +1233,14 @@ ${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for ma
     const models = this.runtimes[this.agentOf(task)].models;
     const model = task.model ? models.find(model => model.id === task.model) : models.find(model => model.isDefault);
     // Explicit defaults replace a previous turn's reasoning override.
-    const effort = task.effort || (usesCodex(this.agentOf(task)) ? model?.defaultEffort : undefined);
+    const codex = usesCodex(this.agentOf(task));
+    const effort = task.effort || (codex ? model?.defaultEffort : undefined);
+    // A catalog refresh can remove an accelerated speed from an existing task.
+    // Keep the saved choice and preserve host inheritance for tasks without one.
+    const serviceTier = task.serviceTier && model ? modelServiceTier(model, task.serviceTier) : task.serviceTier;
     // Apply the native policy (including configured roots and tmp exclusions)
     // and the current worktree reviewer even on already-loaded threads.
-    try { result = await agent.request('turn/start', { threadId: task.threadId, input, cwd: task.worktree, ...permissions?.turn, ...reviewer, clientUserMessageId: run.id, ...(task.model ? { model: task.model } : {}), ...(effort ? { effort } : {}), ...(usesCodex(this.agentOf(task)) && task.serviceTier ? { serviceTier: task.serviceTier } : {}) }); }
+    try { result = await agent.request('turn/start', { threadId: task.threadId, input, cwd: task.worktree, ...permissions?.turn, ...reviewer, clientUserMessageId: run.id, ...(task.model ? { model: task.model } : {}), ...(effort ? { effort } : {}), ...(codex && serviceTier ? { serviceTier } : {}) }); }
     catch (error) {
       if (this.active.get(task.id)?.id !== run.id) return;
       if (error instanceof RpcResponseError) throw error;
@@ -2468,7 +2477,7 @@ ${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for ma
     const project = this.store.project(projectId), { id, model } = this.helper(choice, 'write a commit message', { readOnly: true, strict: 'commit-message' });
     if (choice.model && model?.id !== choice.model) throw new Error('Choose an available model for this agent.');
     if (choice.effort && model && !model.efforts.includes(choice.effort)) throw new Error('This model does not support that reasoning effort.');
-    if (choice.serviceTier && choice.serviceTier !== 'default' && (id !== 'codex' || choice.serviceTier !== model?.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
+    if (choice.serviceTier && choice.serviceTier !== 'default' && (id !== 'codex' || choice.serviceTier !== modelServiceTier(model, choice.serviceTier))) throw new Error('This speed is not available for this model.');
     const effort = choice.effort || model?.defaultEffort, serviceTier = id === 'codex' ? choice.serviceTier : undefined;
     const task = choice.taskId ? this.store.task(choice.taskId) : undefined;
     if (task && task.projectId !== projectId) throw new Error('Invalid task ID.');
@@ -2588,7 +2597,7 @@ ${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for ma
     const project = this.store.project(projectId), { id, model } = this.helper(choice, 'resolve conflicts', { strict: 'conflict-resolution' });
     if (choice.model && model?.id !== choice.model) throw new Error('Choose an available model for this agent.');
     if (choice.effort && !model?.efforts.includes(choice.effort)) throw new Error('This model does not support that reasoning effort.');
-    if (choice.serviceTier && choice.serviceTier !== 'default' && (id !== 'codex' || choice.serviceTier !== model?.fastMode?.serviceTier)) throw new Error('Fast mode is not available for this model.');
+    if (choice.serviceTier && choice.serviceTier !== 'default' && (id !== 'codex' || choice.serviceTier !== modelServiceTier(model, choice.serviceTier))) throw new Error('This speed is not available for this model.');
     const effort = choice.effort || model?.defaultEffort, serviceTier = id === 'codex' ? choice.serviceTier : undefined;
     const { files, branch, upstream, ours, theirs } = await mergeConflicts(project.path);
     if (!files.length) throw new Error('No file has conflict markers left. Commit the merge.');
@@ -2643,9 +2652,9 @@ ${['antigravity', 'zcode'].includes(this.agentOf(task)) ? 'Use file tools for ma
     if (change.model && change.model !== task.model && !model) throw new Error('Choose an available model for this agent.');
     const effort = change.effort ?? (change.model !== undefined && model && !model.efforts.includes(task.effort || '') ? '' : task.effort);
     if (change.effort && model && !model.efforts.includes(change.effort)) throw new Error('This model does not support that reasoning effort.');
-    const serviceTier = change.serviceTier ?? (change.model !== undefined && task.serviceTier !== model?.fastMode?.serviceTier ? 'default' : task.serviceTier);
+    const serviceTier = change.serviceTier ?? (task.serviceTier && (model || change.model !== undefined) ? modelServiceTier(model, task.serviceTier) : task.serviceTier);
     if (change.serviceTier !== undefined && agent !== 'codex') throw new Error('Service tiers are only available for Codex.');
-    if (serviceTier && serviceTier !== 'default' && serviceTier !== model?.fastMode?.serviceTier) throw new Error('Fast mode is not available for this model.');
+    if (change.serviceTier && change.serviceTier !== modelServiceTier(model, change.serviceTier)) throw new Error('This speed is not available for this model.');
     return this.store.updateTask(taskId, { model: id || null, effort: effort || null, ...(serviceTier ? { serviceTier } : {}) });
   }
   renameTask(taskId: string, title: string) {
