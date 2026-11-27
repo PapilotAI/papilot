@@ -713,7 +713,7 @@ export class Builder {
     try {
       for (;;) {
         try {
-          result = await this.compile(rev, tree, key, targets, seed, date, dated, continuation, tikzDirectories, options.perlEnv, progress, run, signal, pastErrors);
+          result = await this.compile(rev, tree, key, targets, seed, date, dated, continuation, tikzDirectories, progress, run, signal, pastErrors, options.perlEnv);
           break;
         } catch (error) {
           if (error instanceof Cancelled || signal?.aborted) throw error;
@@ -838,11 +838,11 @@ export class Builder {
     dated: boolean,
     start: { info: BuildInfo; date: unknown } | "author" | null,
     tikzDirectories: Set<string>,
-    perlEnv: NodeJS.ProcessEnv | undefined,
     progress?: (progress: BuildProgress) => void,
     scheduled?: Active,
     signal?: AbortSignal,
     pastErrors = false,
+    perlEnv?: NodeJS.ProcessEnv,
   ): Promise<BuildInfo> {
     const p = this.project,
       haltOnError = p.halt_on_error && !pastErrors,
