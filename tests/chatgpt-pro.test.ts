@@ -258,8 +258,9 @@ test('explicit local executor choice, pause, switch agent, and delete work clean
       () => f.workspace.submitManualReply(created.id, 'Reply', 'bad-exec', { agent: 'chatgpt' }),
       /Choose a local agent/,
     );
-    const overridden = f.workspace.submitManualReply(created.id, 'Apply this edit with Codex.', 'override-1', { agent: 'codex', model: 'gpt-5.4' });
+    const overridden = f.workspace.submitManualReply(created.id, 'Apply this edit with Codex.', 'override-1', { agent: 'codex', model: 'gpt-5.4', effort: 'high' });
     assert.equal(overridden.manualTurn?.executor?.agent, 'codex');
+    assert.equal(overridden.manualTurn?.executor?.effort, null, 'Unsupported effort is stripped for models with efforts: []');
     assert.equal(overridden.manualExecutor?.agent, 'codex');
     await tick();
     await tick();
@@ -272,6 +273,19 @@ test('explicit local executor choice, pause, switch agent, and delete work clean
     await f.workspace.enqueue(created.id, 'Tighten the conclusion too.', 'followup-0', false);
     for (let i = 0; i < 20 && f.store.task(created.id).status !== 'waiting_input'; i++) await new Promise(resolve => setTimeout(resolve, 10));
     assert.equal((await f.workspace.manualPrompt(created.id)).executor?.agent, 'codex');
+
+    // Switching local executor on a follow-up turn (Codex -> Claude) resets threadId and marks handoff.
+    const switchedExec = f.workspace.submitManualReply(created.id, 'Now apply conclusion with Claude.', 'override-2', { agent: 'claude', model: 'claude-sonnet' });
+    assert.equal(switchedExec.manualTurn?.executor?.agent, 'claude');
+    assert.equal(switchedExec.handoff, true);
+    assert.equal(switchedExec.threadId, null);
+    await tick();
+    await tick();
+    const claudeRunning = f.store.task(created.id);
+    f.claude.emit('notification', { method: 'turn/completed', params: { threadId: claudeRunning.threadId, turnId: claudeRunning.turnId, turn: { id: claudeRunning.turnId, status: 'completed' } } });
+    for (let i = 0; i < 20 && f.store.task(created.id).status !== 'reviewing'; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    await f.workspace.enqueue(created.id, 'One more quick pass.', 'followup-0b', false);
+    for (let i = 0; i < 20 && f.store.task(created.id).status !== 'waiting_input'; i++) await new Promise(resolve => setTimeout(resolve, 10));
 
     // Pause cancels waiting_input cleanly.
     await f.workspace.interrupt(created.id);
@@ -316,14 +330,16 @@ test('explicit local executor choice, pause, switch agent, and delete work clean
 });
 
 test('buildManualPrompt extracts bounded line windows for large files and blocks path traversal', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-manual-prompt-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-manual-prompt-'));
+  const dir = path.join(root, 'wt');
+  fs.mkdirSync(dir);
   try {
     const lines = Array.from({ length: 2200 }, (_, i) => `% Line ${i + 1}: ` + 'x'.repeat(35));
     lines[499] = 'Target theorem statement on line 500.';
     fs.writeFileSync(path.join(dir, 'big.tex'), lines.join('\n'));
-    const outside = path.join(dir, '..', `secret-${Date.now()}.txt`);
+    const outside = path.join(root, 'secret.txt');
     fs.writeFileSync(outside, 'TOP SECRET');
-    fs.symlinkSync(outside, path.join(dir, 'link.tex'));
+    try { fs.symlinkSync(outside, path.join(dir, 'link.tex')); } catch { /* Windows without symlink privileges */ }
 
     const task = { id: 't1', projectId: 'p1', name: 'p-t1', title: 'Big', instructions: '', worktree: dir, document: 'big.tex', threadId: null, turnId: null, agent: 'chatgpt', model: 'chatgpt-pro', effort: null, status: 'waiting_input', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: null } as Task;
     const run = { id: 'r1', taskId: 't1', requestKey: 'k1', prompt: 'Fix theorem 1.', status: 'running', createdAt: 2, finishedAt: null } as Run;
@@ -339,7 +355,7 @@ test('buildManualPrompt extracts bounded line windows for large files and blocks
               sources: [
                 { file: 'big.tex', lines: [500, 500] },
                 { file: 'big.tex', lines: [9999, 9000] },
-                { file: '../' + path.basename(outside), lines: [1, 1] },
+                { file: '../secret.txt', lines: [1, 1] },
                 { file: 'link.tex', lines: [1, 1] },
               ],
             },
@@ -359,10 +375,7 @@ test('buildManualPrompt extracts bounded line windows for large files and blocks
     const missingPrompt = buildManualPrompt(path.join(dir, 'does-not-exist'), task, run, items);
     assert.match(missingPrompt, /Fix theorem 1\./);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-    for (const name of fs.readdirSync(path.join(dir, '..'))) {
-      if (name.startsWith('secret-') && name.endsWith('.txt')) fs.rmSync(path.join(dir, '..', name), { force: true });
-    }
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -373,6 +386,7 @@ test('GitHub context reuses pushed remote branch, pushes snapshot commits withou
   assert.equal(parseGithubRepository('https://github.com:8443/acme/quantum-paper.git'), null);
   assert.equal(parseGithubRepository('git@github.com:acme/..'), null);
   assert.equal(manualGithubBranch('a..b.lock'), 'papilot-pro/a-b');
+  assert.equal(manualGithubBranch('foo.lock.'), 'papilot-pro/foo');
   assert.equal(manualGithubBranch('x'.repeat(47) + '.tail'), 'papilot-pro/' + 'x'.repeat(47));
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-manual-github-'));
@@ -416,11 +430,20 @@ test('GitHub context reuses pushed remote branch, pushes snapshot commits withou
 
     // Reusable remote detection succeeds when worktree is clean and matches origin/main.
     const fakeGithubRemote = { name: 'origin', repository: 'acme/quantum-paper', url: 'https://github.com/acme/quantum-paper' };
+    // Untracked files inside a .papilot-* scratch directory do not mark the worktree dirty or appear in repoFiles.
+    fs.mkdirSync(path.join(worktree, '.papilot-cache'));
+    fs.writeFileSync(path.join(worktree, '.papilot-cache/scratch.tex'), 'scratch');
     const reused = await detectReusableRemoteBranch(worktree, fakeGithubRemote);
     assert.ok(reused);
     assert.equal(reused.reusedRemote, true);
     assert.equal(reused.branch, 'main');
     assert.equal(reused.url, 'https://github.com/acme/quantum-paper/tree/main');
+    fs.rmSync(path.join(worktree, '.papilot-cache'), { recursive: true, force: true });
+
+    // Staged rename of a tracked file into .papilot-tmp still marks the worktree dirty.
+    git(worktree, ['mv', 'main.tex', '.papilot-tmp']);
+    assert.equal(await detectReusableRemoteBranch(worktree, fakeGithubRemote), null);
+    git(worktree, ['mv', '.papilot-tmp', 'main.tex']);
 
     // Local edits trigger a snapshot commit pushed to papilot-pro/<task> without altering worktree HEAD or status!
     const headBefore = git(worktree, ['rev-parse', 'HEAD']);

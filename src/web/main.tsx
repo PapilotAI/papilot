@@ -440,7 +440,11 @@ function Activity({ runtimes, manualSettingsVersion = 0, relatedTasks, onOpenTas
     if (!awaitingManual) setManualExecutor(undefined);
   }, [awaitingManual, task.id, task.manualTurn?.runId]);
   const localExecutorAgents = offeredAgents(runtimes).filter(id => !isManualAgent(id) && id !== 'collaboration');
-  const effectiveManualExecutor = manualOverride ?? (manualExecutor ? { agent: manualExecutor.agent, model: manualExecutor.model || '', effort: manualExecutor.effort || '' } : null);
+  const readyLocalExecutor = localExecutorAgents.find(id => runtimes[id]?.connected && runtimes[id]?.authenticated);
+  const fallbackManualExecutor = manualExecutor === null && readyLocalExecutor
+    ? { agent: readyLocalExecutor, model: defaultOfferedModel(runtimes[readyLocalExecutor])?.id || '', effort: '' }
+    : null;
+  const effectiveManualExecutor = manualOverride ?? (manualExecutor ? { agent: manualExecutor.agent, model: manualExecutor.model || '', effort: manualExecutor.effort || '' } : fallbackManualExecutor);
   useEffect(() => { if (shouldFollow.current && !scroller.current?.querySelector(':popover-open')) latest(); }, [items, requests, awaitingManual]);
   useEffect(() => {
     if (!scroller.current) return;
@@ -456,8 +460,9 @@ function Activity({ runtimes, manualSettingsVersion = 0, relatedTasks, onOpenTas
     if (savingPermissions || savingModel || composer.sending || ['uncertain', 'deleting'].includes(task.status) || task.preparation || (!awaitingManual && files.draft.getSnapshot().blocked)) return;
     if (isPlayground && canSend) { requestPlaygroundDownload(); return; }
     if (awaitingManual) {
-      const executorPayload = manualOverride
-        ? { agent: manualOverride.agent, ...(manualOverride.model ? { model: manualOverride.model } : {}), ...(manualOverride.effort ? { effort: manualOverride.effort } : {}) }
+      const chosenExecutor = manualOverride ?? fallbackManualExecutor;
+      const executorPayload = chosenExecutor
+        ? { agent: chosenExecutor.agent, ...(chosenExecutor.model ? { model: chosenExecutor.model } : {}), ...(chosenExecutor.effort ? { effort: chosenExecutor.effort } : {}) }
         : undefined;
       try {
         if (await composer.submit('draft', message => api('/tasks/' + task.id + '/manual-reply', { reply: message.text, requestKey: message.requestKey, ...(executorPayload ? { executor: executorPayload } : {}) }))) {
@@ -555,16 +560,15 @@ function Activity({ runtimes, manualSettingsVersion = 0, relatedTasks, onOpenTas
               agent={effectiveManualExecutor?.agent || localExecutorAgents[0] || 'codex'}
               model={effectiveManualExecutor?.model || ''}
               effort={effectiveManualExecutor?.effort || ''}
-              noAgent={!localExecutorAgents.length}
+              noAgent={!localExecutorAgents.length || (manualExecutor === null && !effectiveManualExecutor)}
               reconnecting={reconnecting}
               onReconnect={onReconnect}
               refreshUsage={refreshUsage}
-              disabled={sending || blocked}
+              disabled={sending || blocked || manualExecutor === undefined}
               onSelect={(nextAgent, nextModel) => setManualOverride({ agent: nextAgent, model: nextModel, effort: '' })}
               onChange={change => {
-                if (change.effort === undefined) return;
-                const base = effectiveManualExecutor ?? { agent: localExecutorAgents[0] || 'codex', model: '', effort: '' };
-                setManualOverride({ ...base, effort: change.effort });
+                if (change.effort === undefined || !effectiveManualExecutor) return;
+                setManualOverride({ ...effectiveManualExecutor, effort: change.effort });
               }}
             />
           ) : (
@@ -1862,7 +1866,7 @@ function App() {
   }
   const defaultSelection = modelSelection(defaultAgent);
   const { agent, pref } = agentChoice === defaultAgent ? defaultSelection : modelSelection(agentChoice);
-  const readOnlyAgents = taskAgents.filter(id => id !== 'collaboration' && runtimes[id]?.supportsReadOnlyTasks !== false);
+  const readOnlyAgents = taskAgents.filter(id => id !== 'collaboration' && id !== 'chatgpt' && runtimes[id]?.supportsReadOnlyTasks !== false);
   // A read-only helper follows the editing choice when that runtime supports
   // it. Otherwise use an available read-only agent and its own model default.
   function readOnlyChoice(choice: CommitMessageChoice): CommitMessageChoice | undefined {

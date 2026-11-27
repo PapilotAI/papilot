@@ -132,17 +132,17 @@ export function ManualTurnCard({ taskId, runId, api, refreshKey, onExecutor }: {
     syncController.current?.abort();
     const controller = new AbortController();
     syncController.current = controller;
-    const seq = ++requestSeq.current;
     setSyncing(true);
     setSyncError('');
     try {
       const updated = await api<ManualPromptResponse>(`/tasks/${encodeURIComponent(taskId)}/manual-github-sync`, { remote: remoteName }, controller.signal);
-      if (controller.signal.aborted || !mounted.current || seq !== requestSeq.current) return;
+      if (controller.signal.aborted || !mounted.current || syncController.current !== controller) return;
+      requestSeq.current += 1;
       setData(updated);
       onExecutor?.(updated.executor ?? null);
       announce(t('GitHub context ready'), false);
     } catch (failure) {
-      if (controller.signal.aborted || !mounted.current || seq !== requestSeq.current) return;
+      if (controller.signal.aborted || !mounted.current || syncController.current !== controller) return;
       setSyncError(errorText(failure instanceof Error ? failure.message : String(failure)));
     } finally {
       if (mounted.current && syncController.current === controller) {

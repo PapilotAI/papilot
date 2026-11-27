@@ -52,16 +52,22 @@ function githubTreeUrl(repoUrl: string, branch: string) {
   return `${repoUrl}/tree/${encoded}`;
 }
 
+function isPapilotScratchPath(file: string) {
+  return file.split('/').some(segment => segment.startsWith('.papilot-'));
+}
+
 export function manualGithubBranch(taskName: string): string {
-  const slug = taskName
+  let slug = taskName
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/\.{2,}/g, '-')
-    .replace(/\.lock$/i, '')
-    .slice(0, 48)
-    .replace(/\.lock$/i, '')
-    .replace(/^[.-]+|[.-]+$/g, '') || 'task';
-  return `papilot-pro/${slug}`;
+    .slice(0, 48);
+  let prev = '';
+  while (slug !== prev) {
+    prev = slug;
+    slug = slug.replace(/^[.-]+|[.-]+$/g, '').replace(/\.lock$/i, '');
+  }
+  return `papilot-pro/${slug || 'task'}`;
 }
 
 /**
@@ -107,7 +113,7 @@ export async function listRepoManuscriptFiles(worktree: string): Promise<string[
     const out = await git(worktree, ['ls-files', '--cached', '--others', '--exclude-standard', '-z']);
     return out
       .split('\0')
-      .filter(file => Boolean(file) && !path.basename(file).startsWith('.papilot-') && MANUSCRIPT_EXTENSIONS.test(file))
+      .filter(file => Boolean(file) && !isPapilotScratchPath(file) && MANUSCRIPT_EXTENSIONS.test(file))
       .sort()
       .slice(0, MAX_REPO_FILES);
   } catch {
@@ -123,10 +129,20 @@ export async function detectReusableRemoteBranch(worktree: string, remote: Manua
   if (!worktree || !fs.existsSync(worktree)) return null;
   try {
     const status = await git(worktree, ['status', '--porcelain=v1', '-z', '--untracked-files=normal']);
-    const dirty = status.split('\0').filter(Boolean).some(entry => {
+    const tokens = status.split('\0');
+    let dirty = false;
+    for (let i = 0; i < tokens.length; i++) {
+      const entry = tokens[i];
+      if (!entry) continue;
+      const xy = entry.slice(0, 2);
       const file = entry.slice(3);
-      return file && !path.basename(file).startsWith('.papilot-');
-    });
+      const renamedOrCopied = xy[0] === 'R' || xy[0] === 'C' || xy[1] === 'R' || xy[1] === 'C';
+      const orig = renamedOrCopied ? tokens[++i] || '' : '';
+      if ((file && !isPapilotScratchPath(file)) || (orig && !isPapilotScratchPath(orig))) {
+        dirty = true;
+        break;
+      }
+    }
     if (dirty) return null;
     const head = (await git(worktree, ['rev-parse', '--verify', 'HEAD'])).trim();
     if (!head) return null;

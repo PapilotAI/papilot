@@ -11,8 +11,8 @@ import { loadBlogPosts, blogLocales } from './site-blog.mjs';
 import { AGENT_IDS } from '../src/shared.ts';
 
 const languages = JSON.parse(fs.readFileSync('i18n/languages.json', 'utf8'));
-// Built-in writing and orchestration modes are not external coding agents.
-const codingAgents = AGENT_IDS.filter(id => id !== 'papilot' && id !== 'collaboration');
+// Built-in writing, orchestration, and manual web relay modes are not external coding agents.
+const codingAgents = AGENT_IDS.filter(id => id !== 'papilot' && id !== 'collaboration' && id !== 'chatgpt');
 const checkAgentRoster = async page => {
   const grid = page.getByRole('list').filter({ has: page.locator('.agent') });
   assert.deepEqual(await grid.getByRole('listitem').evaluateAll(items => items.map(item => [...item.classList].find(name => name !== 'agent'))), codingAgents, 'the homepage lists every supported coding agent');

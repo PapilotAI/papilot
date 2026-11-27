@@ -106,7 +106,7 @@ export function ChatgptProSettings({ enabled, online, runtimes, load, save }: Ch
         }}/>
       </div>
       {executor && selectedModel?.efforts.length ? <div className="settings-row settings-effort">
-        <EffortSlider efforts={selectedModel.efforts} value={executor.effort || ''} fallback={selectedModel.defaultEffort} onChange={effort => void change({ executor: { ...executor, ...(effort ? { effort } : { effort: undefined }) } })}/>
+        <EffortSlider efforts={selectedModel.efforts} value={executor.effort || ''} fallback={selectedModel.defaultEffort} disabled={!online || saving} onChange={effort => void change({ executor: { ...executor, ...(effort ? { effort } : { effort: undefined }) } })}/>
       </div> : null}
       <div className="settings-row settings-toggle">
         <div className="settings-text">

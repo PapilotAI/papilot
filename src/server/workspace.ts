@@ -1300,7 +1300,7 @@ export class Workspace extends EventEmitter {
       }
       const models = this.runtimes[choice.agent].models;
       const model = choice.model ? models.find(item => item.id === choice.model) : models.find(item => item.isDefault);
-      const effort = choice.effort && (!model?.efforts.length || model.efforts.includes(choice.effort)) ? choice.effort : null;
+      const effort = choice.effort && (!model || model.efforts.includes(choice.effort)) ? choice.effort : null;
       return { agent: choice.agent, model: choice.model || model?.id || null, effort };
     };
     if (override) {
@@ -1401,7 +1401,7 @@ export class Workspace extends EventEmitter {
     const runId = task.manualTurn.runId;
     const syncKey = `${taskId}:${runId}`;
     const existing = this.manualSyncing.get(syncKey);
-    if (existing && (!remoteName || existing.remote === remoteName)) return existing.promise;
+    if (existing && (existing.remote === undefined || !remoteName || existing.remote === remoteName)) return existing.promise;
     let job!: Promise<{ runId: string; prompt: string; executor: { agent: AgentId; name: string; model: string | null; effort: string | null } | null; github: import('../shared.ts').ManualGithubContext }>;
     job = (async () => {
       const run = this.store.runs().find(r => r.id === runId && r.taskId === taskId);
