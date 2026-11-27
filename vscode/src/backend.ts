@@ -17,12 +17,19 @@ export class Backend {
       const source = path.resolve(this.extension, '..');
       const root = fs.existsSync(path.join(source, 'src/server/runtime.ts')) ? source : packaged;
       const worker = path.join(root, 'vscode/src/worker.ts');
+      const bundled = root === packaged;
+      const node = bundled ? path.join(root, 'bin', process.platform === 'win32' ? 'node.exe' : 'node') : process.execPath;
+      const env: NodeJS.ProcessEnv = {
+        ...process.env, PAPILOT_DATA: this.data, PAPILOT_PORT: '0', PAPILOT_PUBLIC_ORIGIN: '', PAPILOT_DESKTOP: '',
+        PATH: [path.dirname(this.git), ...(bundled ? [path.dirname(node)] : []), process.env.PATH || ''].join(path.delimiter),
+      };
+      if (bundled) delete env.ELECTRON_RUN_AS_NODE;
+      else env.ELECTRON_RUN_AS_NODE = '1';
       fs.mkdirSync(this.data, { recursive: true });
       const child = this.child = fork(worker, [], {
+        execPath: node,
         execArgv: ['--import', pathToFileURL(path.join(root, 'node_modules/tsx/dist/loader.mjs')).href],
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PAPILOT_DATA: this.data,
-          PAPILOT_PORT: '0', PAPILOT_PUBLIC_ORIGIN: '', PAPILOT_DESKTOP: '',
-          PATH: path.dirname(this.git) + path.delimiter + (process.env.PATH || '') },
+        env,
         stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       });
       child.stdout?.on('data', chunk => this.log(String(chunk)));

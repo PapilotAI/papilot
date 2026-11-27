@@ -454,14 +454,17 @@ jobs:
           npm --prefix vscode run test:web
         env:
           PAPILOT_BROWSER_CHANNEL: chromium
-      - name: Install VS Code
-        run: |
-          curl --fail --location --retry 3 https://update.code.visualstudio.com/1.119.0/linux-x64/stable -o "$RUNNER_TEMP/vscode.tar.gz"
-          mkdir "$RUNNER_TEMP/vscode"
-          tar -xzf "$RUNNER_TEMP/vscode.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/vscode"
-          echo "PAPILOT_CODE=$RUNNER_TEMP/vscode/bin/code" >> "$GITHUB_ENV"
       - name: Exercise the packaged extension in VS Code
-        run: xvfb-run -a npm --prefix vscode run test:host
+        run: |
+          for version in 1.96.4 1.119.0; do
+            echo "::group::VS Code $version"
+            editor="$RUNNER_TEMP/vscode-$version"
+            mkdir "$editor"
+            curl --fail --location --retry 3 "https://update.code.visualstudio.com/$version/linux-x64/stable" -o "$RUNNER_TEMP/vscode.tar.gz"
+            tar -xzf "$RUNNER_TEMP/vscode.tar.gz" --strip-components=1 -C "$editor"
+            PAPILOT_CODE="$editor/bin/code" xvfb-run -a npm --prefix vscode run test:host
+            echo "::endgroup::"
+          done
         env:
           PAPILOT_TEST_VSIX: vscode/papilot-linux-x64.vsix
           PAPILOT_HOST_INSPECT: '1'

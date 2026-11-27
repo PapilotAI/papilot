@@ -10,7 +10,7 @@ Keep LaTeX papers and project code in the same editor. Papilot discovers papers 
 - Browse earlier review rounds and return to the current changes in the same tab. Source navigation opens the task's current worktree.
 - Apply a reviewed task to the working tree, then stage and commit in VS Code's Source Control. Save edits in both the manuscript and the task worktree before applying.
 
-Requires VS Code 1.119 or newer, Git, a local TeX distribution, and a signed-in agent CLI for agent tasks. Open a trusted workspace containing a committed Git repository. Papilot lists independently buildable TeX roots and refreshes the list when TeX files change; included files stay with their paper.
+Requires VS Code 1.96.4 or newer, Git, a local TeX distribution, and a signed-in agent CLI for agent tasks. Open a trusted workspace containing a committed Git repository. Papilot lists independently buildable TeX roots and refreshes the list when TeX files change; included files stay with their paper.
 
 The extension starts and stops its bundled runtime. There is no separate application server to install or start. Remote workspaces run Papilot and TeX on the remote host. The standalone app keeps its current interface and selected document.
 
@@ -36,6 +36,6 @@ npm --prefix vscode run package
 
 Native strings use `src/i18n.ts` and `package.nls.json`. The shared i18n commands extract them alongside the app's messages; the extension build generates VS Code localization bundles from those catalogs.
 
-Set `PAPILOT_TEST_VSIX` to a packaged VSIX to exercise its bundled runtime instead of the source checkout. The test opens two papers, edits LaTeX in the native editor, checks diagnostics and PDF navigation, renders the conversation sidebar, and stages a reviewed change in Git. It makes no live agent calls. `PAPILOT_HOST_INSPECT=1` keeps its temporary directory and screenshots.
+Set `PAPILOT_TEST_VSIX` to test the packaged extension on older editors such as VS Code 1.96.4. Running the test from the source checkout uses the editor's Node.js, which must be 22.22 or newer. The test opens two papers, edits LaTeX in the native editor, checks diagnostics and PDF navigation, renders the conversation sidebar, and stages a reviewed change in Git. It makes no live agent calls. `PAPILOT_HOST_INSPECT=1` keeps its temporary directory and screenshots.
 
-Packaging uses the repository's npm package allowlist and lockfiles. It produces a VSIX for the build machine's OS and architecture, including production dependencies. Install it with **Extensions: Install from VSIX…**. Git, TeX, and agent installations remain local tools, as in Papilot's standalone app.
+Package with an official Node.js distribution (22.22 or newer). The platform-specific VSIX includes that Node executable and Papilot's production dependencies. Install it with **Extensions: Install from VSIX…**. For Remote SSH, use a VSIX for the workspace host's OS and architecture.

@@ -4,6 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 const extension = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), root = path.resolve(extension, '..');
+const node = fs.realpathSync(process.execPath), nodeDirectory = path.dirname(node);
+const nodeLicense = [path.join(nodeDirectory, 'LICENSE'), path.resolve(nodeDirectory, '../LICENSE')].find(file => fs.existsSync(file));
+if (!nodeLicense) throw new Error('Use an official Node.js distribution with its LICENSE file to package the VS Code extension.');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-vsix-')), runtime = path.join(extension, 'runtime');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const run = (command, args, cwd) => execFileSync(command, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' });
@@ -15,6 +18,12 @@ try {
   fs.rmSync(runtime, { recursive: true, force: true }); fs.mkdirSync(runtime);
   run(process.platform === 'win32' ? 'tar.exe' : 'tar', ['-xzf', path.join(temporary, packed[0].filename), '--strip-components=1', '-C', runtime], root);
   fs.copyFileSync(path.join(root, 'package-lock.json'), path.join(runtime, 'package-lock.json'));
+  const bin = path.join(runtime, 'bin');
+  const bundledNode = path.join(bin, process.platform === 'win32' ? 'node.exe' : 'node');
+  // The npm archive already contains Papilot's CLI scripts in bin/.
+  fs.copyFileSync(node, bundledNode);
+  fs.chmodSync(bundledNode, 0o755);
+  fs.copyFileSync(nodeLicense, path.join(runtime, 'NODE-LICENSE'));
   fs.mkdirSync(path.join(runtime, 'vscode/src'), { recursive: true });
   fs.copyFileSync(path.join(extension, 'src/worker.ts'), path.join(runtime, 'vscode/src/worker.ts'));
   run(npm, ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], runtime);

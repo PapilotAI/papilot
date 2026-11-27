@@ -10,7 +10,7 @@
     "url": "https://github.com/PapilotAI/papilot.git"
   },
   "engines": {
-    "vscode": "^1.119.0"
+    "vscode": "^1.96.4"
   },
   "categories": [
     "Other"
@@ -149,7 +149,7 @@
     "test:host": "node scripts/test-host.mjs"
   },
   "devDependencies": {
-    "@types/vscode": "1.109.0",
+    "@types/vscode": "1.96.0",
     "@vscode/vsce": "3.7.1",
     "esbuild": "0.25.12"
   },
