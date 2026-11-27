@@ -285,6 +285,16 @@ try {
       assert.deepEqual(result.overlaps, [], `${name} (${state}): toolbar controls stay clear of the window buttons`);
       if (side === 'right') assert.ok(Math.abs(result.right - result.width) <= 1, `${name} (${state}): buttons reach the right edge`);
       else assert.ok(result.left < 20, `${name} (${state}): buttons start at the left edge`);
+      if (platform === 'win32') {
+        const hasOneDivider = await window.locator('.desktop-window-drag').evaluate((chrome, compact) => {
+          const rule = getComputedStyle(chrome, '::after');
+          if (compact) return rule.content === 'none';
+          const toolbar = getComputedStyle(document.querySelector('.activity-panel > .panel-heading'));
+          return rule.left === '0px' && rule.right === '0px' && rule.bottom === '0px'
+            && rule.borderBottom === toolbar.borderBottom && rule.pointerEvents === 'none';
+        }, result.width <= 680);
+        assert.ok(hasOneDivider, `${name} (${state}): the toolbar divider continues beneath the window buttons without duplication`);
+      }
     };
     await clear('sidebar open');
     await window.screenshot({ animations: 'disabled', path: `test-results/window-buttons-${name}.png` });
