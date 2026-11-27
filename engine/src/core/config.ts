@@ -200,7 +200,7 @@ function readDocuments(root: string): Record<string, unknown> {
 }
 const documentPart = (settings: Record<string, unknown>, document: boolean) =>
   Object.fromEntries(Object.entries(settings).filter(([key]) => DOCUMENT_SETTINGS.includes(key) === document));
-function currentDocument(root: string, settings: Record<string, unknown>) {
+export function currentDocument(root: string, settings: Record<string, unknown>) {
   if (typeof settings.main === "string" && settings.main) return cleanPath(settings.main);
   try { return detectMain(root); } catch { return null; }
 }

@@ -63,9 +63,10 @@ export async function repositoryFiles(root: string, current?: string): Promise<R
 
 /** Checks that `main` can be the root document the paper compiles. */
 export async function checkDocument(root: string, main: unknown): Promise<string> {
-  if (!existingTex(root, main) || !(isRootDocument(root, main) || (await compiledBefore(root)).has(main)))
+  const { currentDocument, readSettings, loadProject } = await config();
+  if (!existingTex(root, main) || !(isRootDocument(root, main) || (await compiledBefore(root)).has(main) || currentDocument(root, readSettings(root)) === main))
     throw new Error('Choose a TeX file with \\documentclass and \\begin{document}.');
-  (await config()).loadProject(root, undefined, main);
+  loadProject(root, undefined, main);
   return main;
 }
 /** Makes `main` the root document the paper compiles; false when it already is. */

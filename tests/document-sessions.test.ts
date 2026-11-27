@@ -17,7 +17,8 @@ const tex = (() => { try { for (const command of ['latexmk', 'pdflatex']) execFi
 test('explicit documents compile independently without changing the standalone selection', { skip: !tex, timeout: 120000 }, async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-document-sessions-')), root = path.join(temp, 'paper');
   fs.mkdirSync(path.join(root, 'slides'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\n\\begin{document}\nOriginal paper.\n\\end{document}\n');
+  fs.writeFileSync(path.join(root, 'main.tex'), '\\documentclass{article}\n\\input{body}\n');
+  fs.writeFileSync(path.join(root, 'body.tex'), '\\begin{document}\nOriginal paper.\n\\end{document}\n');
   fs.writeFileSync(path.join(root, 'slides/main.tex'), '\\documentclass{article}\n\\begin{document}\nSeparate slides.\\undefinedcommand\n\\end{document}\n');
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
   git('init', '-q'); git('add', '.'); git('-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-qm', 'Initial');
@@ -33,6 +34,9 @@ test('explicit documents compile independently without changing the standalone s
     const { project } = await api('/api/projects/register', { path: root });
     const base = `/api/projects/${project.id}`;
     const document = (main?: string) => base + '/manuscript' + (main ? '?document=' + encodeURIComponent(main) : '');
+    const listing = await api(base + '/files');
+    assert.equal(listing.document, 'main.tex');
+    assert.deepEqual(listing.files.filter((file: { root?: boolean }) => file.root).map((file: { path: string }) => file.path), ['main.tex', 'slides/main.tex']);
     const settle = async (main?: string) => {
       for (let attempt = 0; attempt < 800; attempt++) {
         const state = await api<Manuscript>(document(main));
@@ -44,6 +48,9 @@ test('explicit documents compile independently without changing the standalone s
     const [paper, slides] = await Promise.all([settle('main.tex'), settle('slides/main.tex')]);
     assert.equal(paper.document, 'main.tex'); assert.equal(slides.document, 'slides/main.tex');
     assert.notEqual(paper.build.key, slides.build.key);
+    const paperPdf = new PdfDocument(manuscripts.pdf(project.id, paper.build.key!));
+    try { assert.ok(paperPdf.page(0).search('Original paper.').length); }
+    finally { paperPdf.close(); }
     const pdfResponse = await app.inject({ url: base + '/manuscript.pdf?key=' + slides.build.key, headers: { host: 'localhost:7274' } });
     assert.equal(pdfResponse.statusCode, 200, pdfResponse.body.slice(0, 300));
     assert.equal(pdfResponse.rawPayload.subarray(0, 4).toString(), '%PDF');
@@ -90,8 +97,10 @@ test('explicit documents compile independently without changing the standalone s
     await Promise.all([settle('main.tex'), settle('slides/main.tex')]);
     assert.deepEqual(readSettings(root), settings);
     assert.equal(git('rev-parse', 'HEAD'), head); assert.equal(git('diff', '--cached', '--name-only'), '');
-    const invalid = await app.inject({ url: document('../outside.tex'), headers: { host: 'localhost:7274' } });
-    assert.equal(invalid.statusCode, 400);
+    for (const file of ['body.tex', '../outside.tex']) {
+      const invalid = await app.inject({ url: document(file), headers: { host: 'localhost:7274' } });
+      assert.equal(invalid.statusCode, 400, file);
+    }
     manuscripts.forgetProject(project.id);
     assert.equal(manuscripts.busyForProject(project.id), false);
   } finally { workspace.close(); await app.close(); await manuscripts.stop(); store.close(); fs.rmSync(temp, { recursive: true, force: true }); }
