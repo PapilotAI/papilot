@@ -41,6 +41,7 @@ import { UpdateNotice, versionLabel } from './update-notice.tsx';
 import { chooseDirectory, DesktopWindowChrome, nativeFolders } from './desktop-chrome.tsx';
 import { MainFileDialog } from './main-file-dialog.tsx';
 import { PaperDialog } from './paper-dialog.tsx';
+import { HostAccountMenu } from './host-account-menu.tsx';
 import { NewPaperDialog } from './new-paper-dialog.tsx';
 import { CompileButton } from './compile-button.tsx';
 import { ProblemsButton, fixRequest, type ProblemsHandle } from './build-problems.tsx';
@@ -1410,7 +1411,7 @@ function App() {
   const defaultAgent = chosenAgent(savedAgent, taskAgents, runtimes);
   const agentChoice = isReviewDraft ? chosenAgent(savedAgent, offered, runtimes) : defaultAgent;
   const missingReadOnlyAgent = isReviewDraft && settled && !offered.length;
-  const missingAgent = noAgent(runtimes) || missingReadOnlyAgent;
+  const missingAgent = noAgent(runtimes, state?.allowedAgents) || missingReadOnlyAgent;
   useEffect(() => {
     // A later disconnect must keep the chosen agent and show its notice.
     // Nothing offered is not a choice: Codex is only the empty-state fallback.
@@ -2343,13 +2344,15 @@ function App() {
       onSelect={id => void switchWorkspace(id)}/>}
     <aside ref={sidebarRef} role={narrow && sidebar ? 'dialog' : undefined} aria-modal={narrow && sidebar ? true : undefined} onKeyDown={e => { if (!narrow || !sidebar || modal || editingPaper) return; if (e.key === 'Escape') { e.preventDefault(); setSidebar(false); } else keepDialogFocus(e); }} id="task-sidebar" className={'sidebar ' + (sidebar ? 'is-open' : '')} aria-label={t('Papers and tasks')}>
       <div className="sidebar-header">
-        {state?.projects.length && project ? <ActionMenu label={t('Paper: {name}', { name: project.name })} className="project-switcher" menuClassName="paper-menu" align="start" actions={[
-          ...state.projects.map(p => ({ id: p.id, label: p.name, detail: shortPath(p.path), title: p.path, checked: p.id === project.id, select: p.id === project.id ? undefined : () => { setProjectId(p.id); setSelected(''); }, edit: { label: t('Edit {name}', { name: p.name }), select: () => setEditingPaper(p) } })),
-          { label: t('New paper…'), icon: 'plus', divider: true, select: createProject },
-          { label: t('Import or open'), icon: 'download', select: importProject },
-          ...(!isPlayground && gitAvailable ? [{ label: overleafSync ? t('Overleaf sync…') : t('Sync with Overleaf…'), icon: <BrandIcon name="overleaf" size={16}/>, divider: true, select: () => setOverleafOpen(true) }] : []),
-        ]}><span className="project-switcher-name">{project.name}</span><Icon name="chevronDown" size={13}/></ActionMenu>
-          : <button className="add-project" disabled={!state} onClick={importProject}><Icon name="download" size={16}/>{t('Import or open')}</button>}
+        {state?.host?.homeUrl && <a href={state.host.homeUrl} className="icon-button host-home-link" aria-label={t('All projects')} title={t('All projects')}><Icon name="arrowLeft" size={16}/></a>}
+        {state?.projects.length && project ? state.singlePaper ? <button type="button" className="project-switcher single-paper-title" title={project.name} aria-label={t('Edit {name}', { name: project.name })} onClick={() => setEditingPaper(project)}><span className="project-switcher-name">{project.name}</span></button>
+          : <ActionMenu label={t('Paper: {name}', { name: project.name })} className="project-switcher" menuClassName="paper-menu" align="start" actions={[
+            ...state.projects.map(p => ({ id: p.id, label: p.name, detail: shortPath(p.path), title: p.path, checked: p.id === project.id, select: p.id === project.id ? undefined : () => { setProjectId(p.id); setSelected(''); }, edit: { label: t('Edit {name}', { name: p.name }), select: () => setEditingPaper(p) } })),
+            { label: t('New paper…'), icon: 'plus', divider: true, select: createProject },
+            { label: t('Import or open'), icon: 'download', select: importProject },
+            ...(!isPlayground && gitAvailable ? [{ label: overleafSync ? t('Overleaf sync…') : t('Sync with Overleaf…'), icon: <BrandIcon name="overleaf" size={16}/>, divider: true, select: () => setOverleafOpen(true) }] : []),
+          ]}><span className="project-switcher-name">{project.name}</span><Icon name="chevronDown" size={13}/></ActionMenu>
+          : !state?.singlePaper && <button className="add-project" disabled={!state} onClick={importProject}><Icon name="download" size={16}/>{t('Import or open')}</button>}
         <button className="icon-button" aria-label={t('Hide task list')} title={t('Hide task list')} onClick={hideSidebar}><Icon name={narrow ? 'close' : 'sidebar'} size={18}/></button>
       </div>
       <div className="sidebar-actions">
@@ -2405,11 +2408,15 @@ function App() {
             <span className="host-state">{!online ? t('Reconnecting') : tn(running, '{n} active task', '{n} active tasks')}</span>
           </div>}
         </div>
-        <div className="brand">
-          <a href="/" className="brand-home" aria-label="Papilot" onClick={e => { e.preventDefault(); setSelected(''); setPage('manuscript'); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><PapilotMark size={16} className="brand-mark"/><span>Papilot</span></a>
-          {state && (!isPlayground ? <UpdateNotice api={api} version={state.version}/> : <span className="brand-version" title={t('Papilot {version}', { version: state.version })}>v{versionLabel(state.version)}</span>)}
-        </div>
-        <button type="button" className="icon-button settings-link" aria-label={t('Settings')} title={t('Settings')} aria-haspopup="dialog" onClick={openSettings}><Icon name="settings" size={18}/></button>
+        {state?.host && (state.host.user || state.host.accountUrl || state.host.billingUrl || state.host.logoutUrl)
+          ? <HostAccountMenu host={state.host} onOpenSettings={openSettings}/>
+          : <>
+            <div className="brand">
+              <a href="/" className="brand-home" aria-label="Papilot" onClick={e => { e.preventDefault(); setSelected(''); setPage('manuscript'); if (mobile) setManuscriptView('pdf'); setSidebar(false); }}><PapilotMark size={16} className="brand-mark"/><span>Papilot</span></a>
+              {state && (!isPlayground ? <UpdateNotice api={api} version={state.version}/> : <span className="brand-version" title={t('Papilot {version}', { version: state.version })}>v{versionLabel(state.version)}</span>)}
+            </div>
+            <button type="button" className="icon-button settings-link" aria-label={t('Settings')} title={t('Settings')} aria-haspopup="dialog" onClick={openSettings}><Icon name="settings" size={18}/></button>
+          </>}
       </div>
     </aside>
     {sidebar && narrow && <button tabIndex={-1} className="sidebar-scrim" aria-label={t('Close task list')} onClick={() => setSidebar(false)}/>}
@@ -2449,7 +2456,7 @@ function App() {
       : <div className="home"><div className="home-inner"><PapilotMark size={52} className="home-logo"/><h1>{t('Add your first paper')}</h1><div className="home-paper-actions"><button className="button primary" onClick={createProject}><Icon name="plus" size={16}/>{t('New paper')}</button><button className="button secondary" onClick={importProject}><Icon name="download" size={16}/>{t('Import or open')}</button></div>{overleafEntry && <div className="home-integrations">{overleafEntry}</div>}</div></div>}
     </main>
     {error && !modal && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{error}</span><button className="icon-button" aria-label={t('Dismiss error')} onClick={() => setError('')}><Icon name="close" size={14}/></button></div>}
-    {settings && <SettingsDialog refreshUsage={refreshUsage} commitWriter={commitWriter} conflictWriter={conflictWriter} activity={loadActivity} memory={!isPlayground ? { project, api } : undefined} workflow={isPlayground ? undefined : { enabled: runtimes.collaboration?.hidden === false, online, runtimes, load: () => api<CollaborationSettingsState>('/collaboration'), save: async change => { const result = await api<CollaborationSettingsState>('/collaboration', change); await refresh(true); return result; } }} chatgptPro={isPlayground ? undefined : { enabled: runtimes.chatgpt?.hidden === false, online, runtimes, load: () => api<ChatgptProSettingsState>('/chatgpt-pro'), save: async change => { const result = await api<ChatgptProSettingsState>('/chatgpt-pro', change); setManualSettingsVersion(value => value + 1); await refresh(true); return result; } }} requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: taskAgents.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] })), agent: defaultAgent, model: defaultSelection.chosen, effort: defaultSelection.agent.effort, onSelect: chooseModel, onEffort: effort => saveModelPreferences(defaultAgent, defaultSelection.agent.model, { ...defaultSelection.pref, effort }), ...(!isPlayground ? { quick: quickModelApi } : {}) }} updates={!isPlayground ? api : undefined} overleaf={!isPlayground ? { api, state: state?.overleaf } : undefined} zotero={!isPlayground ? zoteroApi : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, project, check: checkDiagnostics, latex: detectLatexInstallation, compiler: chooseCompiler, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body), agentSettings: async change => { await api('/agent-settings', change); await refresh(true); } } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
+    {settings && <SettingsDialog refreshUsage={refreshUsage} commitWriter={commitWriter} conflictWriter={conflictWriter} activity={loadActivity} memory={!isPlayground ? { project, api } : undefined} workflow={isPlayground || (state?.allowedAgents && !state.allowedAgents.includes('collaboration')) ? undefined : { enabled: runtimes.collaboration?.hidden === false, online, runtimes, load: () => api<CollaborationSettingsState>('/collaboration'), save: async change => { const result = await api<CollaborationSettingsState>('/collaboration', change); await refresh(true); return result; } }} chatgptPro={isPlayground || (state?.allowedAgents && !state.allowedAgents.includes('chatgpt')) ? undefined : { enabled: runtimes.chatgpt?.hidden === false, online, runtimes, load: () => api<ChatgptProSettingsState>('/chatgpt-pro'), save: async change => { const result = await api<ChatgptProSettingsState>('/chatgpt-pro', change); setManualSettingsVersion(value => value + 1); await refresh(true); return result; } }} requirements={isPlayground ? undefined : { state: requirements, online }} modelDefaults={{ agents: taskAgents.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] })), agent: defaultAgent, model: defaultSelection.chosen, effort: defaultSelection.agent.effort, onSelect: chooseModel, onEffort: effort => saveModelPreferences(defaultAgent, defaultSelection.agent.model, { ...defaultSelection.pref, effort }), ...(!isPlayground ? { quick: quickModelApi } : {}) }} updates={!isPlayground ? api : undefined} overleaf={!isPlayground ? { api, state: state?.overleaf } : undefined} zotero={!isPlayground ? zoteroApi : undefined} initialPage={settings} theme={theme.theme} onTheme={theme.setTheme} resolved={theme.resolved} appearance={theme.appearance} onAppearance={theme.setAppearance} onClose={() => setSettings(false)} diagnostics={!isPlayground ? { online, runtimes, allowedAgents: state?.allowedAgents, project, check: checkDiagnostics, latex: detectLatexInstallation, compiler: chooseCompiler, reconnect: async () => { await api('/reconnect', {}); await refresh(true); }, writer: (route: string, body?: unknown) => api('/writer' + route, body), agentSettings: async change => { await api('/agent-settings', change); await refresh(true); } } : undefined} skills={!isPlayground ? { project, api, onChanged: () => setSkillsRevision(value => value + 1) } : undefined}/>}
     {deleteTarget && <DeleteTaskDialog task={state?.tasks.find(t => t.id === deleteTarget.id) || deleteTarget} submit={() => api('/tasks/' + deleteTarget.id + '/delete', { confirm: true })} onClose={() => setDeleteTarget(null)} onDeleted={() => taskDeleted(deleteTarget.id)} refresh={() => void refresh(true)}/>}
     {bulkTarget && <BulkTaskDialog target={bulkTarget}
       submit={target => api('/tasks/' + target.id + '/' + bulkTarget.action, bulkTarget.action === 'archive' ? { archived: true } : { confirm: true })}
@@ -2457,7 +2464,7 @@ function App() {
     {overleafOpen && project && (overleafSync
       ? <OverleafPanel key={project.id} api={api} sync={overleafSync} overleaf={state?.overleaf} onClose={() => setOverleafOpen(false)} onOpenFile={openRepositoryFile}/>
       : <OverleafLinkDialog key={project.id} api={api} projectId={project.id} overleaf={state?.overleaf} onClose={() => setOverleafOpen(false)}/>)}
-    {editingPaper && <PaperDialog key={editingPaper.id} paper={editingPaper} onClose={() => setEditingPaper(null)} save={async form => {
+    {editingPaper && <PaperDialog key={editingPaper.id} paper={editingPaper} singlePaper={Boolean(state?.singlePaper)} onClose={() => setEditingPaper(null)} save={async form => {
       const paper = editingPaper, pathChanged = form.path !== paper.path;
       await api(`/projects/${paper.id}/${pathChanged ? 'path' : 'rename'}`, pathChanged ? form : { name: form.name });
       if (pathChanged) { ++manuscriptRequest.current; setManuscript({ projectId: '', data: null, error: '' }); setGit({ projectId: '', status: null }); }

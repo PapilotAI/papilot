@@ -49,6 +49,11 @@
     "textHash": "ff732da63b13e6c678bf232f3324a59bb07fb263be5889f354dfb858c1ce6cb3",
     "model": "gemini-4-argon-medium"
   },
+  "All projects": {
+    "revision": "ddea781917352db4c371691f81e24efe6975bf299e9b5a739d46de464006439f",
+    "textHash": "c7a4e66eb765582e060d7d5dcf02d886e13e322b7aaa9ac38e1481cc2132fb33",
+    "model": "manual"
+  },
   "All works": {
     "revision": "6e57ee7be4f2fe24dcc2839204315c5bb606f4881b759d22bb9dcb3aa7c9e296",
     "textHash": "abe4480494bf8a5a2b837a25011e5021a47ba4706ea27d7f43147364ba251290",

@@ -48,7 +48,7 @@ function agentAvailability(online: boolean, runtime?: RuntimeStatus, off = false
   return runtime.error ? 'unavailable' : 'connecting';
 }
 
-export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, checkAgain, reconnect, writer, save }: { online: boolean; runtimes: Partial<Record<AgentId, RuntimeStatus>>; report: DiagnosticReport | null; busy: boolean; checkFailed: boolean; checkAgain: () => void; reconnect: () => Promise<void>; writer?: (route: string, body?: unknown) => Promise<WriterAuth>; save?: (change: AgentSettingsChange) => Promise<void> }) {
+export function RuntimeAgents({ online, runtimes, allowedAgents, report, busy, checkFailed, checkAgain, reconnect, writer, save }: { online: boolean; runtimes: Partial<Record<AgentId, RuntimeStatus>>; allowedAgents?: AgentId[]; report: DiagnosticReport | null; busy: boolean; checkFailed: boolean; checkAgain: () => void; reconnect: () => Promise<void>; writer?: (route: string, body?: unknown) => Promise<WriterAuth>; save?: (change: AgentSettingsChange) => Promise<void> }) {
   const [selected, setSelected] = useState<AgentId | null>(null);
   const names = useId();
   // Choices being saved show at once, until the host reports them.
@@ -104,17 +104,19 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
   }
   // Ready agents first and agents that are off last.
   const rank = (availability: string) => availability === 'ready' || availability === 'limited' ? 0 : availability === 'off' ? 2 : 1;
-  const agents = AGENT_IDS.filter(id => id !== 'chatgpt' && (id !== 'collaboration' || runtimes.collaboration?.hidden === false)).map(id => {
+  const visibleIds = allowedAgents ? AGENT_IDS.filter(id => allowedAgents.includes(id)) : AGENT_IDS;
+  const agents = visibleIds.filter(id => id !== 'chatgpt' && (id !== 'collaboration' || runtimes.collaboration?.hidden === false)).map(id => {
     const availability = agentAvailability(online, runtimes[id], isOff(id));
     return { id, availability } as const;
   }).sort((a, b) => rank(a.availability) - rank(b.availability));
-  const off = AGENT_IDS.filter(isOff).length, hiddenModels = AGENT_IDS.reduce((count, id) => count + hiddenOf(id).length, 0);
+  const off = visibleIds.filter(isOff).length, hiddenModels = visibleIds.reduce((count, id) => count + hiddenOf(id).length, 0);
   const choices = [...(off ? [tn(off, '{n} agent off', '{n} agents off')] : []), ...(hiddenModels ? [tn(hiddenModels, '{n} model hidden', '{n} models hidden')] : [])];
+  const singleAllowedAgent = Boolean(allowedAgents && allowedAgents.length === 1);
   const tiles = [
     ...agents.map(({ id, availability }) => {
         // Collaboration mode is turned on and off in Settings → Experiments,
         // and an agent that is not on this host has nothing to turn off.
-        const toggle = save && id !== 'collaboration' && availability !== 'missing';
+        const toggle = save && !singleAllowedAgent && id !== 'collaboration' && availability !== 'missing';
         return <li key={id} className={'diagnostic-agent-card' + (toggle ? ' has-switch' : '')} data-agent={id} data-availability={availability}>
           <button type="button" className="diagnostic-agent-button" ref={element => { cards.current[id] = element; }} aria-label={t('{agent} details', { agent: agentLabel(id) })} aria-describedby={`${names}-${id}-availability`} aria-expanded={selected === id} aria-controls={selected === id ? 'runtime-agent-detail' : undefined} title={availability === 'missing' ? agentSetup(id).reason : t('View installation, account, and usage')} onClick={() => selected === id ? close() : setSelected(id)} onKeyDown={event => { if (event.key === 'Escape' && selected === id) { event.preventDefault(); event.stopPropagation(); close(); } }}>
             <div className="diagnostic-agent-heading"><BrandIcon name={id} size={28}/><h4 id={`${names}-${id}`}>{agentLabel(id)}{id === 'papilot' && <small className="diagnostic-agent-subtitle">{t('Based on Pi')}</small>}</h4></div>
@@ -123,7 +125,7 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
           {toggle && <input type="checkbox" role="switch" className="switch diagnostic-agent-switch" aria-labelledby={`${names}-${id}`} disabled={!online || resetting} checked={!isOff(id)} onChange={event => toggleAgent(id, event.target.checked)}/>}
         </li>;
       }),
-      <li key="contribute" className="diagnostic-agent-card runtime-agent-contribute">
+      ...(!allowedAgents ? [<li key="contribute" className="diagnostic-agent-card runtime-agent-contribute">
         <ActionMenu label={t('Support more')} className="diagnostic-agent-button" align="start" actions={[
           { label: t('Suggest an agent'), icon: 'chat', href: `${info.issues}/new?template=feature_request.yml&title=${encodeURIComponent('Agent support: ')}`, title: t('Opens in a new tab') },
           { label: t('Contribute an integration'), icon: 'code', href: `${info.repository}/compare`, title: t('Opens in a new tab') },
@@ -131,7 +133,7 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
           <div className="diagnostic-agent-heading"><Icon name="plus" size={28}/><h4>{t('Support more')}</h4></div>
           <div className="diagnostic-agent-footer"><span className="diagnostic-agent-action">{t('Contribute')}<Icon name="chevronRight" size={14}/></span></div>
         </ActionMenu>
-      </li>,
+      </li>] : []),
   ];
   const setupGuide = <a className="runtime-agent-guide" href={`${info.repository}/blob/main/docs/guide.md#agents`} target="_blank" rel="noopener noreferrer">{t('Setup guide')}<Icon name="external" size={12}/><span className="sr-only">{t('Opens in a new tab')}</span></a>;
   const modelChoices = (id: AgentId) => save && id !== 'collaboration' ? {

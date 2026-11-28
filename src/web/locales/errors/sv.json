@@ -427,6 +427,7 @@
   "This PDF has no selectable text to review.": "Den här PDF-filen har ingen markerbar text att granska.",
   "This PDF is not in the paper's library.": "Den här PDF-filen finns inte i artikelns bibliotek.",
   "This PDF is out of date. Refresh it and try again.": "Den här PDF:en är inaktuell. Uppdatera den och försök igen.",
+  "This Papilot instance manages a single paper.": "Denna Papilot-instans hanterar endast ett dokument.",
   "This Pi thread is still running.": "Den här Pi-tråden körs fortfarande.",
   "This agent does not report usage.": "Den här agenten rapporterar inte användning.",
   "This agent does not support the selected permissions.": "Den här agenten stöder inte de valda behörigheterna.",
