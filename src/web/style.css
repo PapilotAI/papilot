@@ -330,11 +330,11 @@ body.resizing iframe{pointer-events:none}
 .dock-area[data-dock=bottom]>.panel-resizer::after{inset:3px 0 auto;width:auto;height:2px}
 body.resizing.resizing-rows{cursor:row-resize}
 .dock-area[data-dock=float]{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
-.dock-area[data-dock=float]>:is(.manuscript-side,.activity-panel){position:absolute;z-index:20;left:var(--float-x);top:var(--float-y);width:var(--float-width);height:var(--float-height);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--float);overflow:hidden}
-.panel-corner{position:absolute;z-index:21;left:calc(var(--float-x) + var(--float-width) - 16px);top:calc(var(--float-y) + var(--float-height) - 16px);width:16px;height:16px;cursor:nwse-resize;touch-action:none;outline:none}
+.dock-area[data-dock=float]>:is(.manuscript-side,.activity-panel){position:fixed;z-index:20;left:var(--float-x);top:var(--float-y);width:var(--float-width);height:var(--float-height);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--float);overflow:hidden}
+.panel-corner{position:fixed;z-index:21;left:calc(var(--float-x) + var(--float-width) - 16px);top:calc(var(--float-y) + var(--float-height) - 16px);width:16px;height:16px;cursor:nwse-resize;touch-action:none;outline:none}
 .panel-corner::after{content:"";position:absolute;right:4px;bottom:4px;width:6px;height:6px;border:solid var(--line-strong);border-width:0 2px 2px 0;border-bottom-right-radius:2px}
 .panel-corner:hover::after,.panel-corner:focus-visible::after,body.resizing .panel-corner::after{border-color:var(--accent)}
-.dock-preview{position:absolute;z-index:22;pointer-events:none;border:2px solid var(--accent);border-radius:var(--r-md);background:color-mix(in srgb,var(--accent) 12%,transparent);transition:left .12s,top .12s,width .12s,height .12s}
+.dock-preview{position:fixed;z-index:22;pointer-events:none;border:2px solid var(--accent);border-radius:var(--r-md);background:color-mix(in srgb,var(--accent) 12%,transparent);transition:left .12s,top .12s,width .12s,height .12s}
 body.resizing.moving-panel{cursor:grabbing}
 .dock-area[data-dock=window]{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
 .dock-preview[data-zone=window]{display:grid;place-items:center;border-style:dashed;transition:none}

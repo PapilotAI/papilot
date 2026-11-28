@@ -11,6 +11,7 @@ test('a dragged panel docks on the edge it is dropped near, and floats elsewhere
   assert.equal(dropZone({ x: 10, y: 790 }, area), 'left', 'a corner goes to the side');
   assert.equal(dropZone({ x: 500, y: 10 }, area), 'float', 'the top edge is the toolbar, not a dock');
   assert.equal(dropZone({ x: 500, y: 400 }, area), 'float');
+  assert.equal(dropZone({ x: -120, y: 400 }, area), 'float', 'over the sidebar, beyond the area, it floats');
 });
 
 test('a floating panel starts at the right below the toolbar and always fits its area', () => {

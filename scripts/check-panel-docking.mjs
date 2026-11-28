@@ -108,6 +108,14 @@ try {
   await page.mouse.move(corner.x + 8, corner.y + 8); await page.mouse.down(); await page.mouse.move(corner.x + 68, corner.y + 48, { steps: 4 }); await page.mouse.up();
   await expect.poll(async () => { const b = await box(side); return [Math.round(b.width - movedBox.width), Math.round(b.height - movedBox.height)]; }).toEqual([60, 40]);
 
+  // It moves anywhere in the window, over the sidebar too, without docking.
+  const sidebar = await box(page.locator('#task-sidebar'));
+  const grip = await box(tabs);
+  await page.mouse.move(grip.right - 12, grip.y + grip.height / 2); await page.mouse.down();
+  await page.mouse.move(sidebar.x + 140, grip.y + grip.height / 2 + 40, { steps: 8 }); await page.mouse.up();
+  await expect(area).toHaveAttribute('data-dock', 'float');
+  assert.ok((await box(side)).x < sidebar.right, 'the panel floats over the sidebar');
+  await shot('float-over-sidebar');
   // Escape puts a dragged panel back.
   const before = await box(side), button0 = await box(button);
   await page.mouse.move(button0.x + 14, button0.y + 14); await page.mouse.down();

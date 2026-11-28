@@ -37,7 +37,8 @@ const parse = (value: string | null): Place => {
 };
 const clamp = (value: number, min: number, max: number) => Math.round(Math.max(min, Math.min(value, Math.max(min, max))));
 
-/** The floating rectangle fitted inside an area of this size. */
+/** The floating rectangle fitted inside the window, which it may cross
+ *  anywhere, over the sidebar and toolbars too. */
 export function fitFloat(rect: Rect | undefined, area: { width: number; height: number }): Rect {
   // A new floating panel starts at the right, below the page's toolbar.
   const width = clamp(rect?.width ?? 380, MIN_WIDTH, area.width - 16), height = clamp(rect?.height ?? Math.min(560, area.height - 72), MIN_HEIGHT, area.height - 16);
@@ -45,8 +46,10 @@ export function fitFloat(rect: Rect | undefined, area: { width: number; height: 
   return { x, y, width, height };
 }
 
-/** Where a panel dragged to this point of its area lands. */
+/** Where a panel dragged to this point of its area lands: near the area's
+ *  own edges it docks; anywhere else in the window it floats. */
 export function dropZone(point: { x: number; y: number }, area: { width: number; height: number }): Dock {
+  if (point.x < 0 || point.y < 0 || point.x > area.width || point.y > area.height) return 'float';
   if (point.x < EDGE) return 'left';
   if (point.x > area.width - EDGE) return 'right';
   if (point.y > area.height - EDGE) return 'bottom';
@@ -78,7 +81,14 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
   });
   const [place, setPlace] = useState(() => parse(browserStorage.getItem('papilot:dock:' + key)));
   const [area, setArea] = useState<HTMLElement | null>(null);
-  const [size, setSize] = useState({ width: 0, height: 0, panelWidth: MIN_WIDTH, panelHeight: MIN_HEIGHT });
+  const [size, setSize] = useState({ width: 0, height: 0, left: 0, top: 0, panelWidth: MIN_WIDTH, panelHeight: MIN_HEIGHT });
+  // A floating panel lives in the window's coordinates.
+  const [view, setView] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  useEffect(() => {
+    const resize = () => setView({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
   const [drag, setDrag] = useState<{ zone: Dock | 'window'; rect: Rect } | null>(null);
   const [popout, setPopout] = useState<Popout | null>(null);
   // Says where the panel went, for screen readers.
@@ -101,7 +111,7 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
     if (!enabled || !area) return;
     const measure = () => {
       const box = area.getBoundingClientRect(), panelBox = area.querySelector<HTMLElement>(panel)?.getBoundingClientRect();
-      setSize({ width: Math.round(box.width), height: Math.round(box.height), panelWidth: Math.round(panelBox?.width ?? MIN_WIDTH), panelHeight: Math.round(panelBox?.height ?? MIN_HEIGHT) });
+      setSize({ width: Math.round(box.width), height: Math.round(box.height), left: Math.round(box.left), top: Math.round(box.top), panelWidth: Math.round(panelBox?.width ?? MIN_WIDTH), panelHeight: Math.round(panelBox?.height ?? MIN_HEIGHT) });
     };
     const observer = new ResizeObserver(measure);
     let side: HTMLElement | null = null;
@@ -127,7 +137,7 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
   useEffect(() => () => document.body.classList.remove('resizing', 'resizing-rows', 'moving-panel'), []);
 
   const maxWidth = Math.max(MIN_WIDTH, size.width - MAIN_WIDTH), maxHeight = Math.max(MIN_HEIGHT, size.height - MAIN_HEIGHT);
-  const float = fitFloat(drag?.zone === 'float' && place.dock === 'float' ? drag.rect : place.float, size);
+  const float = fitFloat(drag?.zone === 'float' && place.dock === 'float' ? drag.rect : place.float, view);
   const where: Record<Position, string> = { right: t('Docked on the right'), left: t('Docked on the left'), bottom: t('Docked at the bottom'), float: t('Floating over the page'), window: t('In a separate window'), fill: t('Filling the window') };
   // The window: its content stays this page's, portaled there (popout-window.ts).
   const dockedAt = useRef(place.dock);
@@ -172,13 +182,15 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
     const box = area!.getBoundingClientRect();
     return { x: event.clientX - box.left, y: event.clientY - box.top };
   };
-  const target = (zone: Dock, point: { x: number; y: number }): Rect => {
+  // Where the panel would go, in the window's coordinates.
+  const target = (zone: Dock, pointer: { clientX: number; clientY: number }): Rect => {
     const side = { width: clamp(width || size.panelWidth, MIN_WIDTH, maxWidth), height: clamp(place.height || Math.min(size.height * 0.4, 300), MIN_HEIGHT, maxHeight) };
-    if (zone === 'left') return { x: 0, y: 0, width: side.width, height: size.height };
-    if (zone === 'right') return { x: size.width - side.width, y: 0, width: side.width, height: size.height };
-    if (zone === 'bottom') return { x: 0, y: size.height - side.height, width: size.width, height: side.height };
-    const shape = fitFloat(place.float, size);
-    return fitFloat({ ...shape, x: point.x - moving.current!.dx, y: point.y - moving.current!.dy }, size);
+    const { left, top } = size;
+    if (zone === 'left') return { x: left, y: top, width: side.width, height: size.height };
+    if (zone === 'right') return { x: left + size.width - side.width, y: top, width: side.width, height: size.height };
+    if (zone === 'bottom') return { x: left, y: top + size.height - side.height, width: size.width, height: side.height };
+    const shape = fitFloat(place.float, view);
+    return fitFloat({ ...shape, x: pointer.clientX - moving.current!.dx, y: pointer.clientY - moving.current!.dy }, view);
   };
   const cancelMove = () => {
     const move = moving.current;
@@ -212,11 +224,11 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
     }
     // Beyond the window, it is dropped into a window of its own.
     if (event.clientX < 0 || event.clientY < 0 || event.clientX >= window.innerWidth || event.clientY >= window.innerHeight) {
-      setDrag({ zone: 'window', rect: { x: 0, y: 0, width: size.width, height: size.height } });
+      setDrag({ zone: 'window', rect: { x: size.left, y: size.top, width: size.width, height: size.height } });
       return;
     }
-    const point = local(event), zone = dropZone(point, size);
-    setDrag({ zone, rect: target(zone, point) });
+    const zone = dropZone(local(event), size);
+    setDrag({ zone, rect: target(zone, event) });
   };
   live.current.end = event => {
     const move = moving.current, drop = dragged.current;
@@ -264,16 +276,16 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
     const start = resizing.current;
     if (!start) return;
     const dx = event.clientX - start.x, dy = event.clientY - start.y;
-    if (dock === 'float' && start.float) resizeTo({ float: fitFloat({ ...start.float, width: start.float.width + dx, height: start.float.height + dy }, size) });
+    if (dock === 'float' && start.float) resizeTo({ float: fitFloat({ ...start.float, width: start.float.width + dx, height: start.float.height + dy }, view) });
     else if (dock === 'bottom') resizeTo({ height: clamp(start.height - dy, MIN_HEIGHT, maxHeight) });
     else resizeTo({ width: clamp(start.width + (dock === 'left' ? dx : -dx), MIN_WIDTH, maxWidth) });
   };
   const resizeKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Enter') { event.preventDefault(); resizeTo(dock === 'float' ? { float: fitFloat(undefined, size) } : dock === 'bottom' ? { height: 0 } : { width: 0 }); return; }
+    if (event.key === 'Enter') { event.preventDefault(); resizeTo(dock === 'float' ? { float: fitFloat(undefined, view) } : dock === 'bottom' ? { height: 0 } : { width: 0 }); return; }
     if (dock === 'float') {
       const grow = { ArrowRight: [STEP, 0], ArrowLeft: [-STEP, 0], ArrowDown: [0, STEP], ArrowUp: [0, -STEP] }[event.key];
       if (!grow) return;
-      event.preventDefault(); resizeTo({ float: fitFloat({ ...float, width: float.width + grow[0], height: float.height + grow[1] }, size) });
+      event.preventDefault(); resizeTo({ float: fitFloat({ ...float, width: float.width + grow[0], height: float.height + grow[1] }, view) });
       return;
     }
     const box = current(), bottom = dock === 'bottom', now = (bottom ? box?.height : box?.width) ?? (bottom ? size.panelHeight : size.panelWidth), max = bottom ? maxHeight : maxWidth, min = bottom ? MIN_HEIGHT : MIN_WIDTH;
@@ -286,12 +298,12 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
     tabIndex: 0, onPointerDown: resizeStart, onPointerMove: resizeMove,
     onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); stopResize(); },
     onPointerCancel: stopResize, onLostPointerCapture: stopResize, onKeyDown: resizeKey,
-    onDoubleClick: () => resizeTo(dock === 'float' ? { float: fitFloat(undefined, size) } : dock === 'bottom' ? { height: 0 } : { width: 0 }),
+    onDoubleClick: () => resizeTo(dock === 'float' ? { float: fitFloat(undefined, view) } : dock === 'bottom' ? { height: 0 } : { width: 0 }),
     title: t('Drag to resize · Double-click to reset'),
   };
   const docked = dock === 'bottom' ? place.height : width;
   const resizer = !enabled || popout ? null : dock === 'float'
-    ? <div className="panel-corner" role="separator" aria-label={label} aria-valuenow={float.width} aria-valuemin={MIN_WIDTH} aria-valuemax={size.width} aria-valuetext={`${float.width} × ${float.height}`} {...resizerProps}/>
+    ? <div className="panel-corner" role="separator" aria-label={label} aria-valuenow={float.width} aria-valuemin={MIN_WIDTH} aria-valuemax={view.width} aria-valuetext={`${float.width} × ${float.height}`} {...resizerProps}/>
     : <div className="panel-resizer" role="separator" aria-orientation={dock === 'bottom' ? 'horizontal' : 'vertical'} aria-label={label}
       aria-valuenow={dock === 'bottom' ? size.panelHeight : size.panelWidth} aria-valuemin={dock === 'bottom' ? MIN_HEIGHT : MIN_WIDTH} aria-valuemax={dock === 'bottom' ? maxHeight : maxWidth} {...resizerProps}/>;
 
