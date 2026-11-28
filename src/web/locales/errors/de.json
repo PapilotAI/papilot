@@ -427,6 +427,7 @@
   "This PDF has no selectable text to review.": "Diese PDF enthält keinen auswählbaren Text zur Überprüfung.",
   "This PDF is not in the paper's library.": "Dieses PDF befindet sich nicht in der Bibliothek des Artikels.",
   "This PDF is out of date. Refresh it and try again.": "Dieses PDF ist veraltet. Aktualisieren Sie es und versuchen Sie es erneut.",
+  "This Papilot instance manages a single paper.": "Diese Papilot-Instanz verwaltet nur ein einzelnes Paper.",
   "This Pi thread is still running.": "Dieser Pi-Thread läuft noch.",
   "This agent does not report usage.": "Dieser Agent meldet keine Nutzungsdaten.",
   "This agent does not support the selected permissions.": "Dieser Agent unterstützt die gewählten Berechtigungen nicht.",

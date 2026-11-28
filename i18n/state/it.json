@@ -150,7 +150,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Account": {
-    "revision": "9245ea0794980547f4f2979148e8519e5d84712b9983105576c6fed05e71cf0c",
+    "revision": "7b5e94a2fe58d61456c2826416a82eddf632f114ab8242c054dee212ba994813",
     "textHash": "7e1b0d5641f2640ce9a953ec231eea2c27a2a7633f7d3c273e5735e2b30c10b7",
     "model": "gemini-4-argon-medium"
   },
@@ -393,6 +393,11 @@
     "revision": "b79f851b30bda74170482990bfbb5f061200a5453a77579501bcf2c656d24328",
     "textHash": "14e89269076a24f6e97766f5567e4e20049ac13c70cf2d810bc36109578460f1",
     "model": "gemini-4-argon-medium"
+  },
+  "All projects": {
+    "revision": "9cf1c0bfc3f78d1a75aeee6f9d8659631836855569ada0c1585b175b053f5645",
+    "textHash": "8102b2c0ceb4a364b117b6d80d0f44d9a2abbb6ae0980adcbe62ce7792a2b34b",
+    "model": "manual"
   },
   "All skills": {
     "revision": "235c5c39a2c4d8b2541a569d02a0a23f6b2823d8b762208c1f857f30b71e117f",
@@ -5585,7 +5590,7 @@
     "model": "manual"
   },
   "Settings": {
-    "revision": "a4c6dcf74cfe0c17bf8d97a23ce0ad6e0decd2d46c5a6965ba9426380f4e4dda",
+    "revision": "45a174629337b07ae00a9fdc1a592db335cfaaaefebde8bdafdcd80e73267b95",
     "textHash": "7b855ce7525ebc189ccc123e62029548b2fcae15429d851c9db5bd52909cb482",
     "model": "gemini-4-argon-medium"
   },
@@ -6800,7 +6805,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Usage & limits": {
-    "revision": "d8d4da1da991457f4566583287f022bf58162d0a8ef0da85afad5911f21126cc",
+    "revision": "15e103ed3d545ee3be08dcf32430b003994ad909bf7678d5d849bc5721ec41fc",
     "textHash": "0aa3fd3e37691d6a11749054672e872c603299f4b374a0fa64b0ba8fc3466da9",
     "model": "gemini-4-argon-medium"
   },

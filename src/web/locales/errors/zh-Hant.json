@@ -427,6 +427,7 @@
   "This PDF has no selectable text to review.": "此 PDF 沒有可供審閱的選取文字。",
   "This PDF is not in the paper's library.": "此 PDF 不在論文的文獻庫中。",
   "This PDF is out of date. Refresh it and try again.": "此 PDF 已過期，請重新整理後再試一次。",
+  "This Papilot instance manages a single paper.": "此 Papilot 執行個體僅管理單篇論文。",
   "This Pi thread is still running.": "此 Pi 工作階段仍在執行。",
   "This agent does not report usage.": "此智慧代理不會回報使用量。",
   "This agent does not support the selected permissions.": "此 agent 不支援所選權限。",

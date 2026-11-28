@@ -1,9 +1,10 @@
-import { createRuntime, resumeTasks, RUNTIME_SHUTDOWN_TIMEOUT_MS } from './runtime.ts';
+import { createRuntime, ensureSinglePaper, resumeTasks, RUNTIME_SHUTDOWN_TIMEOUT_MS } from './runtime.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { ROOT, DATA, PORT, PUBLIC_ORIGIN, OWNER, VERSION } from './paths.ts';
 import { buildApp, gitQueue } from './app.ts';
+import { readHostChromeConfig } from './host-chrome.ts';
 import { Updates } from './updates.ts';
 import { readJson } from '../../bin/installation.mjs';
 import { desktopDemo } from './desktop-demo.ts';
@@ -12,8 +13,11 @@ import { desktopDemo } from './desktop-demo.ts';
 // inherit the folder, so their builds and the manuscript's share two slots.
 process.env.PAPILOT_TEX_POOL ||= path.join(DATA, 'tex-pool');
 const { store, workspace, manuscripts, changes } = await createRuntime(DATA);
+const singlePaperPath = process.env.PAPILOT_SINGLE_PAPER?.trim();
+if (singlePaperPath) await ensureSinglePaper(workspace, singlePaperPath, process.env.PAPILOT_SINGLE_PAPER_NAME);
+const hostChrome = readHostChromeConfig(process.env);
 const desktop = process.env.PAPILOT_DESKTOP === '1';
-const prepareDemo = desktop ? await desktopDemo(ROOT, DATA, store, workspace, manuscripts).catch(error => console.error('Could not prepare the demo paper:', error)) : undefined;
+const prepareDemo = desktop && !singlePaperPath ? await desktopDemo(ROOT, DATA, store, workspace, manuscripts).catch(error => console.error('Could not prepare the demo paper:', error)) : undefined;
 // A packaged desktop app downloads only Papilot's own code built for its
 // installer (see desktop/runtime.ts) and asks the app to switch to it. npm
 // updates belong to the web server.
@@ -27,6 +31,8 @@ const updateInstance = typeof activation?.root === 'string' && fs.existsSync(act
 const shared = {
   prepareDemo: prepareDemo || undefined,
   desktopInstance: desktop ? process.env.PAPILOT_DESKTOP_INSTANCE : undefined,
+  singlePaper: Boolean(singlePaperPath),
+  hostChrome,
   store, workspace, manuscripts, changes, updates, updateInstance, csrf: randomBytes(32).toString('base64url'), serialGit: gitQueue(),
   dist: fs.existsSync(path.join(ROOT, 'dist/index.html')) ? path.join(ROOT, 'dist') : null, version: VERSION,
 };
