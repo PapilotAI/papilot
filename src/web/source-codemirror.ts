@@ -242,10 +242,11 @@ function changeRuler(changes: (view: EditorView) => ReturnType<typeof changedLin
       view.dom.appendChild(this.dom);
       this.draw();
     }
-    update(update: ViewUpdate) { if (update.docChanged || update.geometryChanged || update.heightChanged || barsMoved(update)) this.draw(); }
+    update(update: ViewUpdate) { if (update.docChanged || update.geometryChanged || update.heightChanged || baseMoved(update)) this.draw(); }
     draw() {
       const view = this.view;
       view.requestMeasure({
+        key: this,
         read: () => {
           const doc = view.state.doc, scroller = view.scrollDOM, height = Math.max(scroller.scrollHeight, 1), top = view.documentTop - scroller.getBoundingClientRect().top + scroller.scrollTop;
           return {
@@ -278,20 +279,23 @@ function changeRuler(changes: (view: EditorView) => ReturnType<typeof changedLin
 // base the bars compare with (setBase); the field stays, so every reader,
 // including a measure asked for before the save, finds it.
 export const setBase = StateEffect.define<Text>();
+const lines = (text: string | null) => text === null ? Text.empty : Text.of(text.split('\n'));
 const barsField = StateField.define<{ base: Text; chunks: readonly Chunk[] }>({
   create: state => ({ base: Text.empty, chunks: Chunk.build(Text.empty, state.doc) }),
   update: (value, tr) => {
-    for (const effect of tr.effects) if (effect.is(setBase)) return { base: effect.value, chunks: Chunk.build(effect.value, tr.newDoc) };
+    // Effects apply in order: the last base wins.
+    const base = tr.effects.reduce<Text | null>((last, effect) => effect.is(setBase) ? effect.value : last, null);
+    if (base) return { base, chunks: Chunk.build(base, tr.newDoc) };
     return tr.docChanged ? { base: value.base, chunks: Chunk.updateB(value.chunks, value.base, tr.newDoc, tr.changes) } : value;
   },
 });
 /** The lines that changed since the bars' base. */
 export const barChanges = (state: EditorState) => { const { base, chunks } = state.field(barsField); return changedLines(base, state.doc, chunks); };
-const barsMoved = (update: ViewUpdate) => update.startState.field(barsField) !== update.state.field(barsField);
+// The ruler redraws on edits; a base moved without one needs its own redraw.
+const baseMoved = (update: ViewUpdate) => update.startState.field(barsField).base !== update.state.field(barsField).base;
 export function changeBars(base: Text, onClick?: (line: number) => void): Extension {
   return [barsField.init(state => ({ base, chunks: Chunk.build(base, state.doc) })), changeRuler(view => barChanges(view.state)), gutter({
     class: 'cm-change-bars',
-    lineMarkerChange: barsMoved,
     markers: view => {
       const doc = view.state.doc, marks: { from: number; marker: GutterMarker }[] = [];
       for (const change of barChanges(view.state)) {
@@ -418,7 +422,6 @@ export class SourceCodeEditor {
   private editable = new Compartment();
   private font = new Compartment();
   private unsubscribeFont: () => void;
-  private base = Text.empty;
   private silent = false;
   private review: Extension;
   // The version whose review changes are shown.
@@ -426,16 +429,16 @@ export class SourceCodeEditor {
 
   constructor(private options: SourceEditorOptions) {
     this.review = [reviewField, reviewView(options)];
-    this.view = new EditorView({ parent: options.parent, state: this.state('') });
+    this.view = new EditorView({ parent: options.parent, state: this.state('', Text.empty) });
     this.unsubscribeFont = onEditorFontSize(size => this.view.dispatch({ effects: this.font.reconfigure(fontTheme(size)) }));
   }
 
-  private state(text: string) {
+  private state(text: string, base: Text) {
     const options = this.options;
     return EditorState.create({ doc: text, extensions: [
       lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), history(), bracketMatching(),
       search({ top: false }), highlightSelectionMatches(), latex, syntaxHighlighting(highlight), EditorView.lineWrapping, theme, this.font.of(fontTheme(editorFontSize())),
-      this.editable.of(EditorState.readOnly.of(false)), changeBars(this.base, options.onChangeBar), focusField, flashField, this.review, authorsField, cursorsField, cursorsView,
+      this.editable.of(EditorState.readOnly.of(false)), changeBars(base, options.onChangeBar), focusField, flashField, this.review, authorsField, cursorsField, cursorsView,
       EditorView.contentAttributes.of({ 'aria-label': options.label, spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off' }),
       keymap.of([
         { key: 'Mod-s', preventDefault: true, run: () => { options.onSave(); return true; } },
@@ -455,10 +458,8 @@ export class SourceCodeEditor {
 
   /** Shows a file, with a fresh undo history, beside its last commit. */
   load(text: string, base: string | null) {
-    this.base = Text.of((base ?? '').split('\n'));
-    if (base === null) this.base = Text.empty;
     this.silent = true;
-    try { this.view.setState(this.state(text)); } finally { this.silent = false; }
+    try { this.view.setState(this.state(text, lines(base))); } finally { this.silent = false; }
     this.reviewKey = null;
   }
 
@@ -484,9 +485,9 @@ export class SourceCodeEditor {
   /** Marks the words coauthors wrote, where they changed the file since
    *  its last commit; `text` is the file they were found in. */
   showAuthors(spans: AuthorSpan[], text: string) {
-    const doc = this.view.state.doc;
-    if (doc.toString() !== text) return;
-    const changed = Chunk.build(this.base, doc).map(chunk => [chunk.fromB, chunk.toB]);
+    if (this.view.state.doc.toString() !== text) return;
+    // Marks are clipped to the ranges the bars show.
+    const changed = this.view.state.field(barsField).chunks.map(chunk => [chunk.fromB, chunk.toB]);
     const shown = spans.flatMap(span => changed.flatMap(([from, to]) => { const start = Math.max(from, span.from), end = Math.min(to, span.to); return end > start ? [{ ...span, from: start, to: end }] : []; }));
     this.view.dispatch({ effects: setAuthors.of(shown) });
   }
@@ -497,10 +498,10 @@ export class SourceCodeEditor {
     if (JSON.stringify(now) !== JSON.stringify(cursors)) this.view.dispatch({ effects: setCursors.of(cursors) });
   }
 
-  /** The last commit changed, such as after a commit. */
+  /** The text the bars compare with changed: after a commit, or when a
+   *  task's save starts a new round. */
   setBase(base: string | null) {
-    this.base = base === null ? Text.empty : Text.of(base.split('\n'));
-    this.view.dispatch({ effects: setBase.of(this.base) });
+    this.view.dispatch({ effects: setBase.of(lines(base)) });
   }
 
   /** Replaces the whole text as one edit, which the author can undo. */

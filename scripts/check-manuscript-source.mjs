@@ -379,6 +379,14 @@ try {
   await page.waitForTimeout(600);
   await shot('dark');
 
+  // A commit moves the text the bars compare with, without changing the
+  // file: the bars and their scrollbar marks clear in place.
+  await expect(panel.locator('.cm-change-bar').first()).toBeVisible();
+  // The server may hold Git's index for a moment; commit once it lets go.
+  await expect.poll(() => { try { git('commit', '-qm', 'Herons and a closing paragraph', '--', 'sections/intro.tex'); return true; } catch (error) { if (!String(error.stderr).includes('index.lock')) throw error; return false; } }).toBe(true);
+  await expect(panel.locator('.cm-change-bar'), 'nothing differs from the new commit').toHaveCount(0, { timeout: 20000 });
+  await expect(panel.locator('.cm-change-ruler > *'), 'nor along the scrollbar').toHaveCount(0);
+
   assert.deepEqual(errors, []);
   console.log('PASS: the source tool opens the clicked passage in an editor that marks its changes since the last commit, saves without an agent, flashes the saved lines in the new PDF and the editor, reports encoding and compile errors, refuses stale saves, keeps drafts, and follows the Changes view both ways');
 } catch (error) {

@@ -15,7 +15,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Fixed
 
-- Saving a LaTeX file no longer occasionally stops the source editor with “Field is not present in this state”. The bars beside changed lines and their marks along the scrollbar now stay in place across a save and follow the saved text.
+- Saving a task's LaTeX file, or committing a file open in the source editor, no longer occasionally stops the editor with “Field is not present in this state”. The bars beside changed lines and their marks along the scrollbar now stay in place and follow the new text they compare with.
 
 ## [0.15.0] - 2026-11-28
 

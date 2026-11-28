@@ -24,3 +24,9 @@ test('a save moves the bars\' base without replacing them, so anything reading t
   const typed = after.update({ changes: { from: 0, insert: 'ONE ' } }).state;
   assert.deepEqual(barChanges(typed), [{ kind: 'modified', from: 0, to: 1 }], 'typing after a save compares with the saved text');
 });
+
+test('of several base moves in one update, the last one wins', () => {
+  const state = EditorState.create({ doc: 'a\nb', extensions: changeBars(text('a\nb')) });
+  const moved = state.update({ effects: [setBase.of(text('x\ny')), setBase.of(text('a\nc'))] }).state;
+  assert.deepEqual(barChanges(moved), [{ kind: 'modified', from: 1, to: 2 }]);
+});
