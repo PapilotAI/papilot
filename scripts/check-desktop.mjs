@@ -383,6 +383,22 @@ try {
   await expect.poll(zoomFactor).toBeCloseTo(1.25);
   assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('papilot:appearance'))).size, 1.25);
   await captureZoom('zoom');
+  // A pop-out open when the main window closes remembers where it was.
+  const openSource = async window => {
+    await window.locator('.manuscript-row').getByRole('button', { name: /^(Files|文件)/ }).click();
+    await window.getByRole('list', { name: /^(Repository files|仓库文件)$/ }).getByRole('button', { name: 'main.tex', exact: true }).click();
+    const [popup] = await Promise.all([application.waitForEvent('window'), window.getByRole('button', { name: /^(Open in a new window|在新窗口中打开)$/ }).click()]);
+    await expect(popup.locator('.popout-root').getByRole('textbox')).toContainText('\\documentclass');
+  };
+  await page.keyboard.press('Escape');
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  await openSource(page);
+  const quitPlace = { x: 160, y: 120, width: 640, height: 480 };
+  await application.evaluate(({ BrowserWindow }, place) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL() === 'about:blank').setBounds(place), quitPlace);
+  // As when the main window closes on Windows or Linux, its pop-outs go with
+  // it, destroyed without their own close event.
+  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL() !== 'about:blank').emit('closed'));
+  await expect.poll(popoutWindow).toBe(undefined);
   await page.evaluate(() => localStorage.setItem('papilot:desktop-smoke', 'keep draft'));
   await application.close(); application = null;
   await assert.rejects(fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(5000) }), 'Quitting Electron stops its backend');
@@ -391,6 +407,8 @@ try {
   await reopened.waitForURL(origin + '/');
   assert.equal(await reopened.evaluate(() => localStorage.getItem('papilot:desktop-smoke')), 'keep draft', 'Local preferences survive a desktop restart');
   await expect.poll(zoomFactor, { message: 'Interface size survives a desktop restart' }).toBeCloseTo(1.25);
+  await openSource(reopened);
+  assert.deepEqual((await popoutWindow()).bounds, quitPlace, 'a pop-out closed with the main window reopens where it was');
   await zoomMenu('zoom-reset');
   await expect.poll(zoomFactor).toBeCloseTo(1);
   await application.close(); application = null;

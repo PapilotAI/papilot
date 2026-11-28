@@ -75,8 +75,14 @@ try {
   await page.keyboard.insertText(' Herons wade.');
   await expect(tabs.locator('.side-tab-close[data-dirty]')).toBeVisible();
 
-  // Opening it in a window moves the editor there, with its draft.
   const popOut = tabs.getByRole('button', { name: 'Open in a new window', exact: true });
+  // A browser that refuses the window gets a word about it, not silence.
+  await page.evaluate(() => { window.realOpen = window.open; window.open = () => null; });
+  await popOut.click();
+  await expect(page.locator('.source-panel').getByRole('alert')).toHaveText('Allow pop-ups for Papilot to open a window.');
+  await page.evaluate(() => { window.open = window.realOpen; });
+
+  // Opening it in a window moves the editor there, with its draft.
   [popup] = await Promise.all([page.waitForEvent('popup'), popOut.click()]);
   watch(popup);
   await popup.setViewportSize({ width: 820, height: 700 });
@@ -148,6 +154,19 @@ try {
   await expect(field).toBeVisible();
   await expect(popOut).toBeHidden();
   await page.setViewportSize({ width: 1280, height: 900 });
+
+  // From the panel's own window, the tab offers no further window: the
+  // panel is already on its own.
+  const [panelWindow] = await Promise.all([page.waitForEvent('popup'), (async () => {
+    await page.locator('.manuscript-side-header').getByRole('button', { name: /^Panel position/ }).click();
+    await page.getByRole('menuitemradio', { name: 'Open in a new window', exact: true }).click();
+  })()]);
+  watch(panelWindow);
+  await expect(panelWindow.getByRole('tab', { name: 'intro.tex' })).toBeVisible();
+  await expect(panelWindow.locator('.side-tab-popout')).toHaveCount(0);
+  await panelWindow.close();
+  await expect(page.locator('.manuscript-side')).toBeVisible();
+  await expect(popOut).toBeVisible();
 
   // Closing the tab while the editor is out closes the window.
   [popup] = await Promise.all([page.waitForEvent('popup'), popOut.click()]);

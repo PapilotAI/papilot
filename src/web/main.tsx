@@ -1001,7 +1001,7 @@ function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, shows
         {!hidden && !panel.away && togglePanel}
         <div className="side-tabs" role="tablist" aria-label={t('Manuscript panels')}>
           <button ref={taskTab} role="tab" data-task-home aria-selected={side === 'task'} title={t('New task')} onClick={() => setView('task')}><Icon name="compose" size={14}/><span className="tab-label">{t('New task')}</span>{actions.selection.selected.length > 0 && <span className="count" aria-hidden="true">{actions.selection.selected.length}</span>}</button>
-          {source.tab && <SourceTab tab={source.tab} selected={side === 'source'} onSelect={() => setView('source')} onClose={source.close} onPopOut={source.popOut}/>}
+          {source.tab && <SourceTab tab={source.tab} selected={side === 'source'} onSelect={() => setView('source')} onClose={source.close} onPopOut={panel.away ? undefined : source.popOut}/>}
         </div>
         {panel.control}
       </div>
@@ -2101,18 +2101,18 @@ function App() {
     setLayout(current => current === 'review' ? 'split' : current);
     return true;
   };
+  const chatPanel = usePanelDock({ key: 'task', widthKey: 'papilot:chat-width', property: '--chat-width', panel: '.activity-panel', label: t('Resize chat panel'),
+    title: task ? `${task.title} — Papilot` : 'Papilot', enabled: Boolean(task) && !mobile && taskLayout === 'split' && task?.mode !== 'citations',
+    fill: { on: !mobile && taskLayout === 'conversation', set: on => selectLayout(on ? 'conversation' : 'split') } });
   const taskSourceSide = taskSource.tab && taskSource.panel ? {
     selected: taskSide === 'source', panel: taskSource.panel,
     tabs: <div className="side-tabs panel-tabs" role="tablist" aria-label={t('Task panels')}>
       <button role="tab" aria-selected={taskSide === 'chat'} onClick={() => setTaskSide('chat')}><Icon name="chat" size={14}/><span className="tab-label">{t('Chat')}</span></button>
-      <SourceTab tab={taskSource.tab} selected={taskSide === 'source'} onSelect={() => setTaskSide('source')} onClose={taskSource.close} onPopOut={taskSource.popOut}/>
+      <SourceTab tab={taskSource.tab} selected={taskSide === 'source'} onSelect={() => setTaskSide('source')} onClose={taskSource.close} onPopOut={chatPanel.away ? undefined : taskSource.popOut}/>
     </div>,
   } : undefined;
   const pause = () => { if (task) void action('/tasks/' + task.id + '/interrupt'); };
   // The chat docks or floats like the manuscript's panel when both panels show.
-  const chatPanel = usePanelDock({ key: 'task', widthKey: 'papilot:chat-width', property: '--chat-width', panel: '.activity-panel', label: t('Resize chat panel'),
-    title: task ? `${task.title} — Papilot` : 'Papilot', enabled: Boolean(task) && !mobile && taskLayout === 'split' && task?.mode !== 'citations',
-    fill: { on: !mobile && taskLayout === 'conversation', set: on => selectLayout(on ? 'conversation' : 'split') } });
   // The chat hides and comes back as the manuscript's panel does.
   const hideChat = !mobile && <button type="button" className="icon-button panel-toggle" data-chat-toggle aria-label={t('Hide chat')} title={t('Hide chat')} aria-expanded="true" aria-controls={chatPanel.away ? undefined : 'conversation-panel'}
     onClick={() => { chatPanel.closeWindow(); selectLayout('review'); }}><Icon name="panelCollapse" size={18}/></button>;

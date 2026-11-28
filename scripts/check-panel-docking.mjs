@@ -262,6 +262,16 @@ try {
   await expect(area).toHaveAttribute('data-dock', 'left');
   await expect(side).toBeVisible();
 
+  // Narrowed to where the panel stacks, the page closes the panel's window
+  // and shows the panel again, since nothing there could bring the window
+  // forward.
+  [popup] = await Promise.all([page.waitForEvent('popup'), choose('Open in a new window')]);
+  await page.setViewportSize({ width: 800, height: 900 });
+  await expect.poll(() => popup.isClosed()).toBe(true);
+  await expect(side).toBeVisible();
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await expect(area).toHaveAttribute('data-dock', 'left');
+
   // Reset puts it back on the right at its usual width.
   await button.click();
   await page.getByRole('menuitem', { name: 'Reset panel layout' }).click();

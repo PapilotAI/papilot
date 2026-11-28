@@ -65,7 +65,8 @@ function zoom(direction: 'in' | 'out' | 'reset') {
   window?.webContents.send('papilot:zoom', direction);
 }
 // The workspace's pop-out windows, which take its interface size.
-const popouts = new Set<BrowserWindow>();
+// Each pop-out, with how it saves its place.
+const popouts = new Map<BrowserWindow, () => void>();
 function showWindow() {
   if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); return; }
   if (!origin) return;
@@ -91,7 +92,8 @@ function showWindow() {
   window.webContents.on('did-create-window', (child, { url, frameName }) => {
     // Only the workspace itself, not a frame within it, opens a pop-out.
     if (!isPopout(url, frameName) || child.webContents.opener !== window?.webContents.mainFrame) { child.destroy(); return; }
-    popouts.add(child);
+    const remember = () => { if (!child.isDestroyed() && !child.isMinimized() && !child.isFullScreen()) places.save(frameName, child.getNormalBounds()); };
+    popouts.set(child, remember);
     child.on('closed', () => popouts.delete(child));
     // Its blank page resets the zoom as it loads.
     const size = () => { if (window) child.webContents.setZoomFactor(window.webContents.getZoomFactor()); };
@@ -99,7 +101,7 @@ function showWindow() {
     child.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: 'deny' }; });
     child.webContents.on('will-navigate', (event, url) => { event.preventDefault(); external(url); });
     child.webContents.on('will-attach-webview', event => event.preventDefault());
-    child.on('close', () => { if (!child.isMinimized() && !child.isFullScreen()) places.save(frameName, child.getNormalBounds()); });
+    child.on('close', remember);
   });
   window.webContents.on('will-navigate', (event, url) => {
     if (new URL(url).origin !== origin) { event.preventDefault(); external(url); }
@@ -109,7 +111,8 @@ function showWindow() {
   window.on('close', event => {
     if (process.platform === 'darwin' && !quitting) { event.preventDefault(); window?.hide(); }
   });
-  window.on('closed', () => { window = null; for (const child of popouts) child.destroy(); });
+  // Destroying skips a pop-out's close event, so its place is saved first.
+  window.on('closed', () => { window = null; for (const [child, remember] of popouts) { remember(); child.destroy(); } });
   window.once('ready-to-show', () => window?.show());
   void window.loadURL(origin).catch(error => { if (!quitting) dialog.showErrorBox('Could not open Papilot', String(error)); });
 }
@@ -205,7 +208,7 @@ else {
     };
     ipcMain.on('papilot:zoomed', (event, factor: unknown) => {
       if (!window || event.sender !== window.webContents || !isZoom(factor)) return;
-      for (const child of popouts) child.webContents.setZoomFactor(factor);
+      for (const child of popouts.keys()) child.webContents.setZoomFactor(factor);
     });
     ipcMain.on('papilot:window', (event, action: unknown) => {
       if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return;

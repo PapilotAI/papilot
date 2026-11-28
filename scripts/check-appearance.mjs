@@ -301,6 +301,18 @@ try {
     await window.getByRole('button', { name: 'Hide task list', exact: true }).click();
     await expect(window.getByRole('button', { name: 'Show task list', exact: true })).toBeVisible();
     await clear('sidebar hidden');
+    // Wherever the chat docks, the toolbar now touching the controls' edge
+    // keeps clear of them.
+    const position = async place => {
+      await window.locator('.activity-panel').getByRole('button', { name: /^Panel position/ }).click();
+      await window.getByRole('menuitemradio', { name: place, exact: true }).click();
+      await window.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'));
+    };
+    for (const place of ['Dock on the left', 'Dock at the bottom', 'Float over the page']) {
+      await position(place);
+      await clear(`sidebar hidden, chat: ${place}`);
+    }
+    await position('Dock on the right');
     // Narrow windows show the task list as a drawer over the workspace, so
     // check the toolbars with it closed.
     for (const width of [900, 680]) {

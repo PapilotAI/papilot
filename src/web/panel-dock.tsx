@@ -168,6 +168,9 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
   useEffect(() => () => popout?.dispose(), [popout]);
   // Filling the window brings the panel back to it.
   useEffect(() => { if (popout && fill?.on) closeWindow(); }, [fill?.on]);
+  // Where the panel no longer docks, as in a narrow window, its window closes
+  // and it comes back to the page, which has no control to bring it forward.
+  useEffect(() => { if (popout && !enabled) closeWindow(); }, [enabled]);
   // A window whose panel is no longer shown, as when the author leaves the
   // task, closes.
   const placed = useRef(false);

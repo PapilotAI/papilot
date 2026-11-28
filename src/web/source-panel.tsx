@@ -473,8 +473,12 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   // a save carry on, and closing the window brings it back to its tab.
   const [popout, setPopout] = useState<Popout | null>(null);
   const windowTitle = `${dirty ? '• ' : ''}${edit?.file?.file || name} — Papilot`;
+  // A browser may block the window; it says so rather than doing nothing.
+  const [blocked, setBlocked] = useState(false);
   function popOut() {
-    const opened = openPopout(scope.replace(/[^\w-]/g, '_'), windowTitle, () => setPopout(null));
+    // Named by kind, so the desktop app reopens it where the last one was.
+    const opened = openPopout(taskId ? 'source-task' : 'source-manuscript', windowTitle, () => setPopout(null));
+    setBlocked(!opened);
     if (opened) setPopout(opened);
   }
   useEffect(() => () => popout?.dispose(), [popout]);
@@ -487,7 +491,7 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
     moved.current = popout;
     editor.current?.focus();
   }, [popout]);
-  const body = edit && <SourcePanel edit={edit} dirty={dirty} mount={mount} onClose={popout ? () => undefined : close}
+  const body = edit && <SourcePanel edit={edit} dirty={dirty} mount={mount} blocked={blocked} onClose={popout ? () => undefined : close}
     onReload={() => void reload()} onJump={jump} onProblems={onProblems ?? (() => undefined)}/>;
   return {
     open, follow, close, editing: Boolean(edit),
@@ -542,7 +546,9 @@ export function SourceTab({ tab, selected, onSelect, onClose, onPopOut }: {
   </span>;
 }
 
-function SourcePanel({ edit, dirty, mount, onClose, onReload, onJump, onProblems }: {
+function SourcePanel({ edit, dirty, mount, blocked, onClose, onReload, onJump, onProblems }: {
+  /** The browser refused the editor's own window. */
+  blocked: boolean;
   edit: Edit; dirty: boolean;
   mount: (element: HTMLDivElement | null) => void;
   onClose: () => void; onReload: () => void;
@@ -555,6 +561,7 @@ function SourcePanel({ edit, dirty, mount, onClose, onReload, onJump, onProblems
     }}>
     {file?.drifted && <p className="source-panel-note">{t('This passage changed after the PDF was compiled. It is shown as it is now.')}</p>}
     {edit.state === 'missing' && <p className="source-panel-message" role="status">{t('No LaTeX source was found here. Click a line of text instead.')}</p>}
+    {blocked && <p className="source-panel-error" role="alert">{t('Allow pop-ups for Papilot to open a window.')}</p>}
     {edit.state === 'failed' && <p className="source-panel-error" role="alert">{edit.error}</p>}
     <div className="source-panel-editor" ref={mount} hidden={!file} data-loading={edit.state === 'loading' || undefined}/>
     {edit.state === 'loading' && !file && <p className="source-panel-message" role="status"><span className="spinner"/>{t('Finding the source…')}</p>}

@@ -9,8 +9,8 @@ import { INTERFACE_SIZES } from '../src/web/appearance.ts';
 
 test('only blank windows the workspace names as pop-outs open in the app', () => {
   assert.equal(WEB_PREFIX, POPOUT_PREFIX, 'the workspace and the app agree on the name');
-  assert.equal(isPopout('about:blank', POPOUT_PREFIX + 'source-paper'), true);
-  assert.equal(isPopout('https://example.com/', POPOUT_PREFIX + 'source-paper'), false, 'a pop-out name does not let a page in');
+  assert.equal(isPopout('about:blank', POPOUT_PREFIX + 'source-task'), true);
+  assert.equal(isPopout('https://example.com/', POPOUT_PREFIX + 'source-task'), false, 'a pop-out name does not let a page in');
   assert.equal(isPopout('about:blank', ''), false, 'other blank windows open in the browser');
   assert.equal(isPopout('about:blank', 'papilot-other'), false);
   assert.equal(isPopout('about:blank', POPOUT_PREFIX + 'x'.repeat(300)), false);
@@ -34,7 +34,7 @@ test('a pop-out reopens where it was while that place is on a display', () => {
 test('the place is kept in the app data and survives a bad file', t => {
   const data = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-popout-places-'));
   t.after(() => fs.rmSync(data, { recursive: true, force: true }));
-  const places = popoutPlaces(data), editor = POPOUT_PREFIX + 'source-paper', chat = POPOUT_PREFIX + 'dock-task';
+  const places = popoutPlaces(data), editor = POPOUT_PREFIX + 'source-task', chat = POPOUT_PREFIX + 'dock-task';
   assert.equal(places.read(editor), undefined);
   places.save(editor, { x: 10, y: 40, width: 800, height: 600 });
   places.save(chat, { x: 900, y: 40, width: 400, height: 700 });
