@@ -382,3 +382,18 @@ test('a real Unicode paper imports and compiles after an escaped percent sign', 
     assert.equal(JSON.parse(fs.readFileSync(path.join(ready.path, '.git/papilot/settings.json'), 'utf8')).engine, 'xelatex');
   } finally { t.after(f.close); }
 });
+
+test('prepareRepository preserves CRLF bytes in HEAD even when core.autocrlf=true is active', async t => {
+  const f = fixture();
+  try {
+    const crlf = source.replace(/\n/g, '\r\n');
+    fs.writeFileSync(path.join(f.root, 'main.tex'), crlf);
+    // Simulate a Windows environment where Git enables core.autocrlf=true before the first commit.
+    git(f.root, 'init', '-q');
+    git(f.root, 'config', 'core.autocrlf', 'true');
+    await prepareRepository(f.root);
+    const blob = execFileSync('git', ['-C', f.root, 'cat-file', 'blob', 'HEAD:main.tex']);
+    assert.deepEqual(blob, Buffer.from(crlf));
+    assert.equal(git(f.root, '-c', 'core.autocrlf=true', 'status', '--short'), '');
+  } finally { t.after(f.close); }
+});

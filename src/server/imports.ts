@@ -19,7 +19,9 @@ const execute = promisify(execFile);
 // Downloads and in-memory template previews remain bounded. Local uploads stream to disk.
 const MAX_BYTES = 64 * 1024 * 1024, MAX_FILES = 5000;
 const skip = (name: string) => ['.git', '__macosx', '.ds_store', 'node_modules', '.papilot'].includes(name.toLowerCase()) || name.startsWith('._');
-const git = async (root: string, ...args: string[]) => (await execute('git', ['-C', root, ...args], { timeout: 30000, maxBuffer: 8 * 1024 * 1024 })).stdout.trim();
+// Disable line-ending conversion so imported repositories commit working-tree
+// bytes as-is on Windows (`core.autocrlf=true`), matching `engine/src/core/git.ts`.
+const git = async (root: string, ...args: string[]) => (await execute('git', ['-C', root, '-c', 'core.autocrlf=false', ...args], { timeout: 30000, maxBuffer: 8 * 1024 * 1024 })).stdout.trim();
 function safeName(name: unknown): string {
   if (typeof name !== 'string' || !name || name.length > 4000 || /[\\\x00-\x1f:]/.test(name) || name.startsWith('/') || name.split('/').some(part => !part || part === '.' || part === '..')) throw new Error('Invalid file path in upload.');
   return name;

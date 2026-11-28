@@ -92,6 +92,56 @@ describe("Git snapshots", () => {
     expect(within("paper-old/a", ["paper"])).toBe(false);
     expect(cleanPath("./paper/")).toBe("paper");
   });
+  it("merges across Windows CRLF working trees and LF Git blobs while preserving ours line endings", async () => {
+    const b = (s: string) => Buffer.from(s);
+    // Clean CRLF destination vs LF base and LF accepted (Windows core.autocrlf=true).
+    expect(
+      await merge3Async(b("a\r\nb\r\nc\r\n"), b("a\nb\nc\n"), b("a\nB\nadded\nc\n")),
+    ).toEqual([b("a\r\nB\r\nadded\r\nc\r\n"), false]);
+    // Disjoint edits across CRLF destination and LF accepted.
+    expect(
+      await merge3Async(b("A\r\nb\r\nc\r\nd\r\ne\r\n"), b("a\nb\nc\nd\ne\n"), b("a\nb\nc\nd\nE\n")),
+    ).toEqual([b("A\r\nb\r\nc\r\nd\r\nE\r\n"), false]);
+    // Disjoint word edits on the same line across CRLF/LF fall back to mergeText and preserve CRLF.
+    expect(
+      await merge3Async(b("fast result\r\n"), b("slow result\n"), b("slow output\n")),
+    ).toEqual([b("fast output\r\n"), false]);
+    // LF HEAD vs CRLF base and CRLF accepted preserves LF in Git commits.
+    expect(
+      await merge3Async(b("a\nb\nc\nd\ne\n"), b("a\r\nb\r\nc\r\nd\r\nU\r\n"), b("A\r\nb\r\nc\r\nd\r\nU\r\n")),
+    ).toEqual([b("A\nb\nc\nd\ne\n"), false]);
+    // Resolving an overlap with favor="theirs" keeps ours's LF style, and favor=true keeps ours's CRLF style.
+    expect(
+      await merge3Async(b("orig\nb\nc\n"), b("user\r\nb\r\nc\r\n"), b("agent\r\nb\r\nc\r\n"), "theirs"),
+    ).toEqual([b("agent\nb\nc\n"), false]);
+    expect(
+      await merge3Async(b("user\r\nb\r\nc\r\n"), b("orig\nb\nc\n"), b("agent\nb\nC\n"), true),
+    ).toEqual([b("user\r\nb\r\nC\r\n"), false]);
+    // One-sided deletions and identical-content additions across CRLF/LF do not falsely conflict.
+    expect(await merge3Async(b("a\r\nb\r\n"), b("a\nb\n"), null)).toEqual([null, false]);
+    expect(await merge3Async(null, b("a\nb\n"), b("a\r\nb\r\n"))).toEqual([null, false]);
+    expect(await merge3Async(b("a\r\nb\r\n"), null, b("a\nb\n"))).toEqual([b("a\r\nb\r\n"), false]);
+    expect((await merge3Async(b("edited\r\nb\r\n"), b("a\nb\n"), null))[1]).toBe(true);
+    // When theirs changes no text relative to base, ours keeps its exact mixed line endings.
+    expect(
+      await merge3Async(b("a\r\nb\nc\n"), b("a\nb\nc\n"), b("a\r\nb\r\nc\r\n")),
+    ).toEqual([b("a\r\nb\nc\n"), false]);
+    // Disjoint edits in a mostly-LF file with an unrelated CRLF line do not rewrite that untouched line.
+    expect(
+      await merge3Async(b("A\nb\r\nc\nd\ne\n"), b("a\nb\nc\nd\ne\n"), b("a\nb\nc\nd\nE\n")),
+    ).toEqual([b("A\nb\r\nc\nd\nE\n"), false]);
+    // Real overlapping edits still conflict across mismatched EOLs.
+    expect((await merge3Async(b("x\r\n"), b("a\n"), b("y\n")))[1]).toBe(true);
+    // Deliberate EOL conversion when destination matches base is still honored.
+    expect(await merge3Async(b("a\nb\n"), b("a\nb\n"), b("a\r\nb\r\n"))).toEqual([b("a\r\nb\r\n"), false]);
+    // Bare CR bytes (mid-line and before CRLF) are never stripped or rewritten.
+    expect(
+      await merge3Async(b("a\rb\r\nc\r\n"), b("a\rb\nc\n"), b("a\rb\nC\n")),
+    ).toEqual([b("a\rb\r\nC\r\n"), false]);
+    expect(
+      await merge3Async(b("a\r\r\nb\r\nc\r\n"), b("a\r\nb\nc\n"), b("a\r\nb\nC\n")),
+    ).toEqual([b("a\r\r\nb\r\nC\r\n"), false]);
+  });
 });
 describe("configuration", () => {
   it("detects main and source directory", () => {
