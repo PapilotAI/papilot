@@ -46,6 +46,20 @@ export function fitFloat(rect: Rect | undefined, area: { width: number; height: 
   return { x, y, width, height };
 }
 
+export type Edge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+export const EDGES: Edge[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+/** A floating panel resized from one of its edges or corners: the opposite
+ *  side stays put, and the panel stays at least its minimum size and inside
+ *  the window. */
+export function resizeFloat(start: Rect, edge: Edge, dx: number, dy: number, area: { width: number; height: number }): Rect {
+  let { x, y, width, height } = start;
+  if (edge.includes('e')) width = clamp(start.width + dx, MIN_WIDTH, area.width - start.x);
+  if (edge.includes('w')) { const right = start.x + start.width; width = clamp(start.width - dx, MIN_WIDTH, right); x = right - width; }
+  if (edge.includes('s')) height = clamp(start.height + dy, MIN_HEIGHT, area.height - start.y);
+  if (edge.includes('n')) { const bottom = start.y + start.height; height = clamp(start.height - dy, MIN_HEIGHT, bottom); y = bottom - height; }
+  return { x, y, width, height };
+}
+
 /** Where a panel dragged to this point of its area lands: near the area's
  *  own edges it docks; anywhere else in the window it floats. */
 export function dropZone(point: { x: number; y: number }, area: { width: number; height: number }): Dock {
@@ -95,7 +109,7 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
   const [announcement, setAnnouncement] = useState('');
   useEffect(() => { if (!announcement) return; const timer = setTimeout(() => setAnnouncement(''), 1000); return () => clearTimeout(timer); }, [announcement]);
   const moving = useRef<{ pointer: number; element: Element; x: number; y: number; dx: number; dy: number; width: number; height: number; started: boolean } | null>(null);
-  const resizing = useRef<{ x: number; y: number; width: number; height: number; float?: Rect } | null>(null);
+  const resizing = useRef<{ x: number; y: number; width: number; height: number; float?: Rect; edge: Edge } | null>(null);
   const moved = useRef(false);
   const changed = useRef(onResize);
   changed.current = onResize;
@@ -227,7 +241,8 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
       setDrag({ zone: 'window', rect: { x: size.left, y: size.top, width: size.width, height: size.height } });
       return;
     }
-    const zone = dropZone(local(event), size);
+    // A floating panel only moves; a docked one can go to another edge.
+    const zone = place.dock === 'float' ? 'float' : dropZone(local(event), size);
     setDrag({ zone, rect: target(zone, event) });
   };
   live.current.end = event => {
@@ -259,8 +274,8 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
     for (const type of ['pointerup', 'pointercancel'] as const) window.addEventListener(type, event => live.current.end(event), { signal });
   };
 
-  // Resizing: the edge between a docked panel and the rest of its area, or a
-  // floating panel's corner.
+  // Resizing: the edge between a docked panel and the rest of its area, or
+  // any edge or corner of a floating panel.
   const stopResize = () => { resizing.current = null; document.body.classList.remove('resizing', 'resizing-rows'); };
   // A gesture ends when its area stops docking, as when the window narrows.
   useEffect(() => { if (!enabled) { stopResize(); if (moving.current) cancelMove(); } }, [enabled]);
@@ -268,7 +283,7 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
     if (event.button !== 0 || resizing.current) return;
     event.preventDefault(); event.stopPropagation(); event.currentTarget.focus();
     const box = current();
-    resizing.current = { x: event.clientX, y: event.clientY, width: box?.width ?? size.panelWidth, height: box?.height ?? size.panelHeight, float };
+    resizing.current = { x: event.clientX, y: event.clientY, width: box?.width ?? size.panelWidth, height: box?.height ?? size.panelHeight, float, edge: (event.currentTarget.dataset.edge as Edge | undefined) || 'se' };
     event.currentTarget.setPointerCapture(event.pointerId);
     document.body.classList.add('resizing', ...dock === 'bottom' ? ['resizing-rows'] : []);
   };
@@ -276,7 +291,7 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
     const start = resizing.current;
     if (!start) return;
     const dx = event.clientX - start.x, dy = event.clientY - start.y;
-    if (dock === 'float' && start.float) resizeTo({ float: fitFloat({ ...start.float, width: start.float.width + dx, height: start.float.height + dy }, view) });
+    if (dock === 'float' && start.float) resizeTo({ float: resizeFloat(start.float, start.edge, dx, dy, view) });
     else if (dock === 'bottom') resizeTo({ height: clamp(start.height - dy, MIN_HEIGHT, maxHeight) });
     else resizeTo({ width: clamp(start.width + (dock === 'left' ? dx : -dx), MIN_WIDTH, maxWidth) });
   };
@@ -302,8 +317,11 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
     title: t('Drag to resize · Double-click to reset'),
   };
   const docked = dock === 'bottom' ? place.height : width;
+  // The bottom-right corner is the keyboard's handle; the other edges are for the pointer.
   const resizer = !enabled || popout ? null : dock === 'float'
-    ? <div className="panel-corner" role="separator" aria-label={label} aria-valuenow={float.width} aria-valuemin={MIN_WIDTH} aria-valuemax={view.width} aria-valuetext={`${float.width} × ${float.height}`} {...resizerProps}/>
+    ? <>{EDGES.map(edge => edge === 'se'
+      ? <div key={edge} className="panel-corner" data-edge={edge} role="separator" aria-label={label} aria-valuenow={float.width} aria-valuemin={MIN_WIDTH} aria-valuemax={view.width} aria-valuetext={`${float.width} × ${float.height}`} {...resizerProps}/>
+      : <div key={edge} className="panel-edge" data-edge={edge} aria-hidden="true" {...resizerProps} tabIndex={-1} onKeyDown={undefined} title={undefined}/>)}</>
     : <div className="panel-resizer" role="separator" aria-orientation={dock === 'bottom' ? 'horizontal' : 'vertical'} aria-label={label}
       aria-valuenow={dock === 'bottom' ? size.panelHeight : size.panelWidth} aria-valuemin={dock === 'bottom' ? MIN_HEIGHT : MIN_WIDTH} aria-valuemax={dock === 'bottom' ? maxHeight : maxWidth} {...resizerProps}/>;
 

@@ -395,6 +395,17 @@ body.resizing iframe{pointer-events:none}
 body.resizing.resizing-rows{cursor:row-resize}
 .dock-area[data-dock=float]{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
 .dock-area[data-dock=float]>:is(.manuscript-side,.activity-panel){position:fixed;z-index:20;left:var(--float-x);top:var(--float-y);width:var(--float-width);height:var(--float-height);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--float);overflow:hidden}
+.panel-edge{position:fixed;z-index:21;touch-action:none}
+.panel-edge:is([data-edge=n],[data-edge=s]){left:calc(var(--float-x) + 10px);width:calc(var(--float-width) - 20px);height:8px;cursor:ns-resize}
+.panel-edge[data-edge=n]{top:calc(var(--float-y) - 4px)}
+.panel-edge[data-edge=s]{top:calc(var(--float-y) + var(--float-height) - 4px)}
+.panel-edge:is([data-edge=e],[data-edge=w]){top:calc(var(--float-y) + 10px);height:calc(var(--float-height) - 20px);width:8px;cursor:ew-resize}
+.panel-edge[data-edge=w]{left:calc(var(--float-x) - 4px)}
+.panel-edge[data-edge=e]{left:calc(var(--float-x) + var(--float-width) - 4px)}
+.panel-edge:is([data-edge=nw],[data-edge=ne],[data-edge=sw]){width:14px;height:14px}
+.panel-edge[data-edge=nw]{left:calc(var(--float-x) - 4px);top:calc(var(--float-y) - 4px);cursor:nwse-resize}
+.panel-edge[data-edge=ne]{left:calc(var(--float-x) + var(--float-width) - 10px);top:calc(var(--float-y) - 4px);cursor:nesw-resize}
+.panel-edge[data-edge=sw]{left:calc(var(--float-x) - 4px);top:calc(var(--float-y) + var(--float-height) - 10px);cursor:nesw-resize}
 .panel-corner{position:fixed;z-index:21;left:calc(var(--float-x) + var(--float-width) - 16px);top:calc(var(--float-y) + var(--float-height) - 16px);width:16px;height:16px;cursor:nwse-resize;touch-action:none;outline:none}
 .panel-corner::after{content:"";position:absolute;right:4px;bottom:4px;width:6px;height:6px;border:solid var(--line-strong);border-width:0 2px 2px 0;border-bottom-right-radius:2px}
 .panel-corner:hover::after,.panel-corner:focus-visible::after,body.resizing .panel-corner::after{border-color:var(--accent)}

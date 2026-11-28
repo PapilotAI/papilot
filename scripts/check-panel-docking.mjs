@@ -116,8 +116,26 @@ try {
   await expect(area).toHaveAttribute('data-dock', 'float');
   assert.ok((await box(side)).x < sidebar.right, 'the panel floats over the sidebar');
   await shot('float-over-sidebar');
-  // Escape puts a dragged panel back.
-  const before = await box(side), button0 = await box(button);
+  // A floating panel only moves: dropped by an edge, it stays afloat there.
+  let button0 = await box(button);
+  await page.mouse.move(button0.x + 14, button0.y + 14); await page.mouse.down();
+  await page.mouse.move(a.x + 20, a.y + 300, { steps: 6 });
+  await expect(page.locator('.dock-preview'), 'a floating panel shows no dock').toHaveCount(0);
+  await page.mouse.up();
+  await expect(area).toHaveAttribute('data-dock', 'float');
+  await expect(page.getByRole('menu', { name: 'Panel position' }), 'a drag does not open the menu').toBeHidden();
+  // Every edge resizes it, keeping the opposite side in place.
+  const edged = await box(side), west = await box(area.locator('> .panel-edge[data-edge="w"]'));
+  await page.mouse.move(west.x + 4, west.y + 40); await page.mouse.down(); await page.mouse.move(west.x + 64, west.y + 40, { steps: 4 }); await page.mouse.up();
+  await expect.poll(async () => { const b = await box(side); return [Math.round(b.x - edged.x), Math.round(b.right - edged.right)]; }).toEqual([60, 0]);
+  const north = await box(area.locator('> .panel-edge[data-edge="n"]'));
+  await page.mouse.move(north.x + 40, north.y + 4); await page.mouse.down(); await page.mouse.move(north.x + 40, north.y + 34, { steps: 4 }); await page.mouse.up();
+  await expect.poll(async () => { const b = await box(side); return [Math.round(b.y - edged.y), Math.round(b.bottom - edged.bottom)]; }).toEqual([30, 0]);
+
+  // Docked, it can go to another edge; Escape puts a dragged panel back.
+  await choose('Dock on the right');
+  await settled();
+  const before = await box(side); button0 = await box(button);
   await page.mouse.move(button0.x + 14, button0.y + 14); await page.mouse.down();
   await page.mouse.move(a.x + 20, a.y + 300, { steps: 6 });
   await expect(page.locator('.dock-preview'), 'an edge shows where the panel would dock').toBeVisible();
@@ -125,7 +143,7 @@ try {
   await page.keyboard.press('Escape');
   await expect(page.locator('.dock-preview')).toHaveCount(0);
   await page.mouse.up();
-  await expect(area).toHaveAttribute('data-dock', 'float');
+  await expect(area).toHaveAttribute('data-dock', 'right');
   assert.deepEqual(await box(side), before);
   await expect(page.getByRole('menu', { name: 'Panel position' }), 'a drag does not open the menu').toBeHidden();
 

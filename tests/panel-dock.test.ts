@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dropZone, fitFloat } from '../src/web/panel-dock.tsx';
+import { dropZone, fitFloat, resizeFloat } from '../src/web/panel-dock.tsx';
 
 const area = { width: 1000, height: 800 };
 
@@ -20,4 +20,15 @@ test('a floating panel starts at the right below the toolbar and always fits its
   assert.deepEqual(fitFloat({ x: -50, y: -20, width: 100, height: 50 }, area), { x: 0, y: 0, width: 300, height: 200 }, 'never smaller than usable');
   assert.deepEqual(fitFloat({ x: 0, y: 0, width: 4000, height: 4000 }, area), { x: 0, y: 0, width: 984, height: 784 }, 'never larger than its area');
   assert.deepEqual(fitFloat({ x: 10, y: 10, width: 500, height: 500 }, { width: 200, height: 150 }), { x: 0, y: 0, width: 300, height: 200 }, 'a tiny area keeps the minimum');
+});
+
+test('a floating panel resizes from any edge or corner, keeping the opposite side', () => {
+  const start = { x: 200, y: 100, width: 400, height: 500 };
+  assert.deepEqual(resizeFloat(start, 'e', 50, 0, area), { x: 200, y: 100, width: 450, height: 500 });
+  assert.deepEqual(resizeFloat(start, 'w', -50, 0, area), { x: 150, y: 100, width: 450, height: 500 });
+  assert.deepEqual(resizeFloat(start, 'n', 0, -40, area), { x: 200, y: 60, width: 400, height: 540 });
+  assert.deepEqual(resizeFloat(start, 'se', 30, 20, area), { x: 200, y: 100, width: 430, height: 520 });
+  assert.deepEqual(resizeFloat(start, 'nw', 300, 400, area), { x: 300, y: 400, width: 300, height: 200 }, 'not below the minimum size');
+  assert.deepEqual(resizeFloat(start, 'w', -500, 0, area), { x: 0, y: 100, width: 600, height: 500 }, 'not past the window');
+  assert.deepEqual(resizeFloat(start, 's', 0, 500, area), { x: 200, y: 100, width: 400, height: 700 }, 'not past the window');
 });
