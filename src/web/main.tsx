@@ -1306,7 +1306,7 @@ function App() {
         await refresh();
         if (cycle !== generation) return;
         const busy = snapshotRef.current?.tasks.some(t => ['preparing', 'running', 'waiting_input', 'queued', 'building'].includes(t.status));
-        timer = setTimeout(() => void poll(), events?.readyState === EventSource.OPEN ? 10000 : document.hidden ? 5000 : busy ? 1000 : 2500);
+        timer = setTimeout(() => void poll(), events?.readyState === EventSource.OPEN ? 10000 : document.hidden && !popoutVisible() ? 5000 : busy ? 1000 : 2500);
       }
       void poll();
     }
@@ -1524,7 +1524,8 @@ function App() {
       return;
     }
     const input = newTaskInput.current, submittedNotes = new Set(attached.map(note => note.id));
-    const restoreFocus = input?.closest('form')?.contains(document.activeElement);
+    // The composer may be in a panel's own window, with focus in its document.
+    const restoreFocus = input?.closest('form')?.contains(input.ownerDocument.activeElement);
     setCreating(true); setCreateError('');
     try {
       // The ID is kept until creation succeeds, so a retried request cannot create a second task.
@@ -1559,7 +1560,7 @@ function App() {
         .map(entry => reviewing ? entry : entry.kind === 'clear' ? { ...entry, selected: [] }
           : 'note' in entry && entry.note.projectId === target ? { ...entry, selected: false } : entry);
       historyChanged();
-      if (restoreFocus && input?.isConnected && (document.activeElement === document.body || input.closest('form')?.contains(document.activeElement))) input.focus({ preventScroll: true });
+      if (restoreFocus && input?.isConnected && (input.ownerDocument.activeElement === input.ownerDocument.body || input.closest('form')?.contains(input.ownerDocument.activeElement))) input.focus({ preventScroll: true });
       // Reload pending notes from the server: a retry may have returned an
       // earlier successful task, while newer notes still belong to the draft.
       if (notes.length) void loadManuscript(target);

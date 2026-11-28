@@ -331,8 +331,13 @@ try {
     return popup && { bounds: popup.getBounds(), zoom: popup.webContents.getZoomFactor(), mainZoom: main.webContents.getZoomFactor(), sandbox: popup.webContents.getLastWebPreferences().sandbox };
   });
   await page.evaluate(() => window.papilotDesktop.setZoom(1.25));
-  await openPopout();
+  const zoomed = await openPopout();
   assert.deepEqual(await popoutWindow().then(({ zoom, mainZoom, sandbox }) => ({ zoom, mainZoom, sandbox })), { zoom: 1.25, mainZoom: 1.25, sandbox: true });
+  // Sized in the page's pixels, at the interface size: it shows what it asked for.
+  const shown = await zoomed.evaluate(() => ({ width: innerWidth, asked: Math.min(900, screen.availWidth) }));
+  assert.ok(Math.abs(shown.width - shown.asked) <= 24, `the window shows its asked width at the interface size: ${JSON.stringify(shown)}`);
+  const throttled = () => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL() !== 'about:blank').webContents.getBackgroundThrottling());
+  assert.equal(await throttled(), false, 'the page keeps its pace while a pop-out shows it');
   await page.evaluate(() => window.papilotDesktop.setZoom(1));
   await expect.poll(() => popoutWindow().then(window => window.zoom)).toBe(1);
   const place = { x: 120, y: 140, width: 700, height: 520 };
@@ -342,6 +347,7 @@ try {
   }, place);
   await expect(page.locator('.source-panel-away')).toHaveCount(0);
   await expect(sourceField).toContainText('Local paper.');
+  await expect.poll(throttled, { message: 'and is throttled again when hidden without one' }).toBe(true);
   await openPopout();
   assert.deepEqual((await popoutWindow()).bounds, place);
   await page.getByRole('button', { name: /^(Move back here|移回此处)$/ }).click();

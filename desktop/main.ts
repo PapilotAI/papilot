@@ -84,9 +84,14 @@ function showWindow() {
   const places = popoutPlaces(app.getPath('userData'));
   window.webContents.setWindowOpenHandler(({ url, frameName, features }) => {
     if (!isPopout(url, frameName)) { external(url); return { action: 'deny' }; }
-    // A panel dropped outside the window opens where it was dropped.
-    const dropped = /(^|,)left=/.test(features) && /(^|,)top=/.test(features);
-    const place = dropped ? undefined : placeOnDisplays(places.read(frameName), screen.getAllDisplays().map(display => display.workArea));
+    // The page asks in its own pixels, which the interface size scales; the
+    // window is sized and placed in the screen's. A panel dropped outside the
+    // window opens where it was dropped.
+    const zoom = window?.webContents.getZoomFactor() ?? 1;
+    const asked = (name: string) => { const value = new RegExp(`(?:^|,)${name}=(-?\\d+)`).exec(features); return value ? Math.round(Number(value[1]) * zoom) : undefined; };
+    const [x, y, width, height] = ['left', 'top', 'width', 'height'].map(asked);
+    const size = width !== undefined && height !== undefined ? { width, height } : {};
+    const place = x !== undefined && y !== undefined ? { ...size, x, y } : placeOnDisplays(places.read(frameName), screen.getAllDisplays().map(display => display.workArea)) ?? size;
     return { action: 'allow', overrideBrowserWindowOptions: { ...place, minWidth: 360, minHeight: 300, titleBarStyle: 'default', autoHideMenuBar: process.platform !== 'darwin' } };
   });
   window.webContents.on('did-create-window', (child, { url, frameName }) => {
@@ -94,7 +99,10 @@ function showWindow() {
     if (!isPopout(url, frameName) || child.webContents.opener !== window?.webContents.mainFrame) { child.destroy(); return; }
     const remember = () => { if (!child.isDestroyed() && !child.isMinimized() && !child.isFullScreen()) places.save(frameName, child.getNormalBounds()); };
     popouts.set(child, remember);
-    child.on('closed', () => popouts.delete(child));
+    // While a pop-out shows the workspace, the page behind it keeps its pace
+    // even when its own window is hidden.
+    window?.webContents.setBackgroundThrottling(false);
+    child.on('closed', () => { popouts.delete(child); if (!popouts.size) window?.webContents.setBackgroundThrottling(true); });
     // Its blank page resets the zoom as it loads.
     const size = () => { if (window) child.webContents.setZoomFactor(window.webContents.getZoomFactor()); };
     size(); child.webContents.on('did-finish-load', size);

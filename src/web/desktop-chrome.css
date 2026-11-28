@@ -24,7 +24,7 @@
 /* A side panel that docks and floats (panel-dock.tsx) moves by its header,
    so the header is no longer the window's title bar; floating, the panel also
    takes the presses over a toolbar it covers. */
-[data-desktop] .dock-area[data-dock]>:is(.manuscript-side,.activity-panel)>:is(.panel-heading,.manuscript-side-header),[data-desktop] .dock-area[data-dock=float]>:is(.manuscript-side,.activity-panel){-webkit-app-region:no-drag}
+[data-desktop] .dock-area[data-dock]>:is(.manuscript-side,.activity-panel)>:is(.panel-heading,.manuscript-side-header),[data-desktop] .dock-area[data-dock=float]>:is(.manuscript-side,.activity-panel,.panel-edge,.panel-corner){-webkit-app-region:no-drag}
 /* app-region inherits, so a popover or dialog opened from a toolbar would be a
    drag handle too. On macOS that stops every click reaching the window. */
 [data-desktop] :is([popover],dialog){-webkit-app-region:no-drag}

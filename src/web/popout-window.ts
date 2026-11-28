@@ -59,9 +59,10 @@ export function openPopout(name: string, title: string, onClosed: () => void, pl
     if (!(node instanceof HTMLStyleElement || (node instanceof HTMLLinkElement && node.rel === 'stylesheet'))) return;
     const clone = doc.importNode(node, true);
     if (node instanceof HTMLLinkElement) (clone as HTMLLinkElement).href = node.href;
-    clones.get(node)?.remove();
+    // A sheet that changes keeps its place, so rules apply in the page's order.
+    const old = clones.get(node);
     clones.set(node, clone);
-    doc.head.append(clone);
+    if (old) old.replaceWith(clone); else doc.head.append(clone);
   };
   const mirror = (from: Element, to: Element) => {
     for (const attribute of [...to.attributes]) if (!from.hasAttribute(attribute.name)) to.removeAttribute(attribute.name);
