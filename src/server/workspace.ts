@@ -535,7 +535,7 @@ export class Workspace extends EventEmitter {
     const waitingForUser = tasks.some(task => task.status === 'waiting_input' || task.status === 'uncertain');
     const activeComputing = [...this.active.keys()].some(id => tasksById.get(id)?.status !== 'waiting_input');
     const computing = Boolean(this.importsBusy() || this.projectChanges.size || this.switching.size || activeComputing
-      || this.workflowWorkers.size || this.manualSyncing.size || this.optionPreparations.size || this.learning.size
+      || this.workflowWorkers.size || this.manualSyncing.size || this.learning.size
       || this.preparing.size || this.publishing.size || this.reviewWrites.size || this.commentWrites.size || this.committing.size || this.deletions.size || this.helperStops.size || this.titles.size
       || tasks.some(task => ['preparing', 'queued', 'running', 'building', 'deleting'].includes(task.status) || task.pendingReview));
     return { computing, waitingForUser };
