@@ -102,16 +102,16 @@ function agentState(runtime?: RuntimeStatus) {
 // selected model's reasoning effort, speed and permissions sit below the list. Native
 // popovers keep the menu above the PDF and scrolling panels, with
 // outside-click and Escape dismissal.
-export function AgentPicker({ label, agents, agent, model, effort, serviceTier, reconnecting, onReconnect, onSelect, onChange, disabled, description, permissions, permissionMode, allowUnknownDefault = true, noAgent = false, refreshUsage }: {
+export function AgentPicker({ label, agents, agent, model, effort, serviceTier, reconnecting, onReconnect, onSelect, onChange, disabled, description, permissions, permissionMode, allowUnknownDefault = true, noAgent = false, singleAgent = false, refreshUsage }: {
   label?: string; agents: AgentOption[]; agent: AgentId; model: string; effort: string; serviceTier?: string;
   reconnecting: boolean; onReconnect: () => void;
   onSelect: (agent: AgentId, model: string) => void; onChange: (change: Partial<{ effort: string; serviceTier: string }>) => void; disabled?: boolean; description?: string; allowUnknownDefault?: boolean;
-  permissions?: ReactNode; permissionMode?: TaskPermissions; noAgent?: boolean;
+  permissions?: ReactNode; permissionMode?: TaskPermissions; noAgent?: boolean; singleAgent?: boolean;
   refreshUsage?: RefreshUsage;
 }) {
   const id = useId(), trigger = useRef<HTMLButtonElement>(null), panel = useRef<HTMLDivElement>(null), search = useRef<HTMLInputElement>(null), list = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false), [query, setQuery] = useState(''), [active, setActive] = useState(''), [recent, setRecent] = useState(readRecent);
-  const single = agents.length === 1;
+  const single = singleAgent && agents.length === 1;
   const current = agents.find(item => item.value === agent) || agents[0];
   const runtime = current?.runtime, models = runtime?.models || [];
   const selected = model ? models.find(item => item.id === model) : models.find(item => item.isDefault);

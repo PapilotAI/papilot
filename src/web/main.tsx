@@ -1478,7 +1478,7 @@ function App() {
     setAgentChoice(id); browserStorage.setItem('papilot:agent', id);
     setAgentModels(current => ({ ...current, [id]: model })); browserStorage.setItem(`papilot:model:${id}`, model);
   };
-  const agentOptions = (disabled: boolean) => <AgentPicker refreshUsage={refreshUsage} disabled={disabled} noAgent={missingAgent} agent={agentChoice} model={agent.model} effort={agent.effort} serviceTier={agent.serviceTier}
+  const agentOptions = (disabled: boolean) => <AgentPicker refreshUsage={refreshUsage} disabled={disabled} noAgent={missingAgent} singleAgent={Boolean(state?.allowedAgents?.length === 1)} agent={agentChoice} model={agent.model} effort={agent.effort} serviceTier={agent.serviceTier}
     agents={offered.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] }))}
     permissionMode={newSkill?.output !== 'annotations' ? effectivePermissions : undefined}
     permissions={newSkill?.output !== 'annotations' && <PermissionOptions runtime={runtimes[agentChoice]} value={effectivePermissions} disabled={disabled} onChange={value => savePermissionPreference(agentChoice, value)}/>}
