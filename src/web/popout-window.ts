@@ -23,6 +23,11 @@ export interface Popout {
 // is not away.
 const open = new Set<Window>();
 export const popoutFocused = () => [...open].some(win => { try { return !win.closed && win.document.hasFocus(); } catch { return false; } });
+/** The document the author is working in: a pop-out's while it has focus. */
+export const focusedDocument = (): Document => {
+  for (const win of open) { try { if (!win.closed && win.document.hasFocus()) return win.document; } catch { /* closing */ } }
+  return document;
+};
 /** A pop-out shows the workspace even while this window is hidden. */
 export const popoutVisible = () => [...open].some(win => { try { return !win.closed && !win.document.hidden; } catch { return false; } });
 // Told on this document whenever popoutVisible may have changed.

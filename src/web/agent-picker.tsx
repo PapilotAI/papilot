@@ -8,7 +8,7 @@ import { EffortSlider, effortName } from './effort-slider.tsx';
 import { permissionText } from './task-permissions.tsx';
 import { PickerUsage, type RefreshUsage } from './usage.tsx';
 import { shownModels } from './agent-choice.ts';
-import { viewOf } from './owner-window.ts';
+import { viewOf, isNode } from './owner-window.ts';
 
 function SpeedBolts({ tier, size }: { tier: string; size: number }) {
   return <span className="agent-speed-bolts" aria-hidden="true">
@@ -154,7 +154,7 @@ export function AgentPicker({ label, agents, agent, model, effort, serviceTier, 
   useEffect(() => {
     if (!open) return;
     const dismiss = () => panel.current?.hidePopover();
-    const scroll = (event: Event) => { if (event.target instanceof Node && event.target.contains(trigger.current) && !panel.current?.contains(event.target)) dismiss(); };
+    const scroll = (event: Event) => { if (isNode(event.target) && event.target.contains(trigger.current) && !panel.current?.contains(event.target)) dismiss(); };
     const observer = new (viewOf(trigger.current) as typeof window).ResizeObserver(() => { if (panel.current?.matches(':popover-open')) position(); });
     if (panel.current) observer.observe(panel.current);
     const view = viewOf(trigger.current); view.addEventListener('resize', dismiss); view.document.addEventListener('scroll', scroll, true);

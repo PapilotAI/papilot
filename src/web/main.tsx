@@ -89,7 +89,7 @@ import { UsageSummary, type RefreshUsage } from './usage.tsx';
 import { useNoteUndo } from './use-note-undo.ts';
 import { NOTE_RETURN_HISTORY, NoteResultsProvider } from './note-results.tsx';
 import { usePanelDock } from './panel-dock.tsx';
-import { POPOUT_VISIBILITY, popoutFocused, popoutVisible } from './popout-window.ts';
+import { POPOUT_VISIBILITY, focusedDocument, popoutFocused, popoutVisible } from './popout-window.ts';
 import { RepositoryFilesMenu } from './repository-files.tsx';
 import { OverleafLinkDialog, OverleafPanel, OverleafRow } from './overleaf.tsx';
 import { setPresence } from './overleaf-presence.ts';
@@ -571,7 +571,8 @@ function useNoteCards(notes: Annotation[] | undefined, actions: NoteActions, onE
     const row = editingRow.current;
     if (!row || drafts[row.id]) return;
     editingRow.current = null;
-    if (document.activeElement === document.body) row.panel.querySelector<HTMLButtonElement>(`[data-note="${CSS.escape(row.id)}"] .group-note-edit`)?.focus({ preventScroll: true });
+    const doc = row.panel.ownerDocument;
+    if (doc.activeElement === doc.body) row.panel.querySelector<HTMLButtonElement>(`[data-note="${CSS.escape(row.id)}"] .group-note-edit`)?.focus({ preventScroll: true });
   }, [drafts]);
   function editGrouped(note: Annotation, button: HTMLButtonElement) {
     const panel = button.closest('.notes-panel, .task-notes-panel');
@@ -621,18 +622,19 @@ function useNoteCards(notes: Annotation[] | undefined, actions: NoteActions, onE
   const undo = (disabled: boolean) => dismissed && <div className="note-dismissed" role="status">{dismissed.aiReview ? t('Suggestion ignored.') : t('Note deleted.')} <button type="button" disabled={disabled} onClick={() => void change(dismissed, async () => { await actions.restore(dismissed); setDismissed(null); })}>{t('Undo')}</button></div>;
   // The same card in both lists; `onToggle` adds the note to the task or takes it out.
   async function regroup(note: Annotation, group: NoteGroup | null) {
-    const panel = document.activeElement?.closest('.notes-panel, .task-notes-panel');
+    // The panel may be in a window of its own, with focus in its document.
+    const panel = focusedDocument().activeElement?.closest('.notes-panel, .task-notes-panel');
     await change(note, () => actions.regroup(note, group));
     // Moving to another group can replace the row that held keyboard focus.
     if (panel) requestAnimationFrame(() => {
-      if (document.activeElement === document.body) panel.querySelector<HTMLButtonElement>(`[data-note="${CSS.escape(note.id)}"] .group-select`)?.focus({ preventScroll: true });
+      if (panel.ownerDocument.activeElement === panel.ownerDocument.body) panel.querySelector<HTMLButtonElement>(`[data-note="${CSS.escape(note.id)}"] .group-select`)?.focus({ preventScroll: true });
     });
   }
   async function regroupMany(members: Annotation[], group: NoteGroup | null) {
-    const panel = document.activeElement?.closest('.notes-panel, .task-notes-panel');
+    const panel = focusedDocument().activeElement?.closest('.notes-panel, .task-notes-panel');
     await change(members[0], () => actions.regroupMany(members, group));
     if (panel) requestAnimationFrame(() => {
-      if (document.activeElement !== document.body) return;
+      if (panel.ownerDocument.activeElement !== panel.ownerDocument.body) return;
       const row = panel.querySelector(`[data-note="${CSS.escape(members[0].id)}"]`);
       (row?.closest('.annotation-group')?.querySelector<HTMLButtonElement>('.group-header .group-select') ||
         row?.querySelector<HTMLButtonElement>('.group-select'))?.focus({ preventScroll: true });
@@ -1167,6 +1169,9 @@ function App() {
   // Appearance, language and notifications live in Settings; a new language re-renders everything.
   const theme = useTheme(); const { language: uiLanguage } = useLanguage();
   const [settings, setSettings] = useState<false | SettingsInitialPage>(false);
+  // These dialogs show in this window; opened from a panel in a window of its
+  // own, this one comes forward with them (as the desktop app allows).
+  useEffect(() => { if ((settings || deleteTarget || modal) && popoutFocused()) window.focus(); }, [settings, deleteTarget, modal]);
   const [gitResolutions, setGitResolutions] = useState<Record<string, GitResolution>>({});
   const openSettings = useCallback(() => {
     const dialog = document.querySelector('.settings-dialog')?.closest('dialog');

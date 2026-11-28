@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './icons.tsx';
-import { viewOf } from './owner-window.ts';
+import { viewOf, isNode } from './owner-window.ts';
 
 // An href opens in a new tab; with download, it saves the file instead.
 export interface MenuAction { id?: string; label: string; title?: string; detail?: string; hint?: string; indent?: number; select?: () => void; href?: string; download?: boolean; disabled?: boolean; danger?: boolean; checked?: boolean; toggled?: boolean; icon?: ReactNode; divider?: boolean; edit?: { label: string; select: () => void } }
@@ -20,7 +20,7 @@ export function ActionMenu({ label, actions, children, className = 'icon-button 
     const dismiss = () => menu.current?.hidePopover();
     // Close when a scrolling ancestor moves the trigger, but leave independent
     // panes (including a PDF finishing its load) and the menu itself alone.
-    const scroll = (event: Event) => { if (event.target instanceof Node && event.target.contains(trigger.current) && !menu.current?.contains(event.target)) dismiss(); };
+    const scroll = (event: Event) => { if (isNode(event.target) && event.target.contains(trigger.current) && !menu.current?.contains(event.target)) dismiss(); };
     const view = viewOf(trigger.current);
     view.addEventListener('resize', dismiss);
     // The phone menu is a fixed bottom sheet. Scrolling the content behind

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Icon } from './icons.tsx';
-import { viewOf } from './owner-window.ts';
+import { viewOf, isNode } from './owner-window.ts';
 
 // A swatch is any CSS background: a color, or a gradient for a two-tone theme.
 export interface SelectOption { value: string; label: string; detail?: string; swatch?: string; group?: string; disabled?: boolean }
@@ -27,7 +27,7 @@ export function ChipSelect({ label, value, options, onChange, disabled, icon, cl
     // A scroll event may arrive after the chip already opened at its new position.
     const scroll = (event: Event) => {
       const chip = trigger.current, anchor = anchorPosition.current;
-      if (!chip || !anchor || !(event.target instanceof Node) || !event.target.contains(chip)) return;
+      if (!chip || !anchor || !isNode(event.target) || !event.target.contains(chip)) return;
       const { left, top } = chip.getBoundingClientRect();
       if (left !== anchor.left || top !== anchor.top) dismiss();
     };

@@ -222,6 +222,17 @@ try {
   // toolbar can bring the window forward, and the panel keeps its header, whose
   // menu docks it again.
   await choose('Dock on the right');
+  // A refused window says so on screen.
+  await page.evaluate(() => { window.realOpen = window.open; window.open = () => null; });
+  await choose('Open in a new window');
+  const refused = page.locator('.toast[role=alert]');
+  await expect(refused).toContainText('Allow pop-ups for Papilot to open a window.');
+  await refused.getByRole('button', { name: 'Dismiss error' }).click();
+  await page.evaluate(() => { window.open = window.realOpen; });
+  // A note in the task, for its menus in the panel's window.
+  await page.getByRole('button', { name: /^My notes/ }).click();
+  await page.getByRole('complementary', { name: 'PDF note library' }).getByRole('button', { name: /^Include note 1/ }).click();
+  await page.getByRole('button', { name: 'Close notes' }).click();
   let [popup] = await Promise.all([page.waitForEvent('popup'), choose('Open in a new window')]);
   await popup.setViewportSize({ width: 420, height: 760 });
   await expect(area).toHaveAttribute('data-dock', 'window');
@@ -232,6 +243,12 @@ try {
   await expect(outSide.getByRole('tab', { name: 'New task' })).toBeVisible();
   await expect(outSide.locator('.manuscript-side-header'), 'a narrow window keeps the header').toBeVisible();
   await popup.screenshot({ path: 'test-results/panel-docking-window.png' });
+  // There, as on the page, a menu closes when what holds it scrolls.
+  const picker = outSide.locator('.task-notes-panel .group-select').first();
+  await picker.click();
+  await expect(picker).toHaveAttribute('aria-expanded', 'true');
+  await outSide.locator('.task-notes-panel').evaluate(element => element.dispatchEvent(new Event('scroll')));
+  await expect(picker).toHaveAttribute('aria-expanded', 'false');
   await outSide.getByRole('button', { name: /^Panel position/ }).click();
   await popup.getByRole('menuitemradio', { name: 'Dock on the left' }).click();
   await expect.poll(() => popup.isClosed()).toBe(true);
@@ -278,6 +295,16 @@ try {
   await expect(area).toHaveAttribute('data-dock', 'right');
   assert.equal(await page.evaluate(() => [localStorage.getItem('papilot:dock:manuscript'), localStorage.getItem('papilot:manuscript-width')].join()), ',');
   assert.equal(Math.round((await box(side)).width), 340);
+
+  // Touch browsers open a window as a tab over the workspace: the menu
+  // offers none there.
+  const tablet = await browser.newPage({ locale: 'en-US', viewport: { width: 1180, height: 820 }, isMobile: true, hasTouch: true });
+  await tablet.addInitScript(() => { localStorage.setItem('papilot:project', 'paper'); localStorage.setItem('papilot:language', 'en'); });
+  await tablet.goto(`http://127.0.0.1:${listener.port}`);
+  await tablet.locator('.manuscript-side-header').getByRole('button', { name: /^Panel position/ }).click();
+  await expect(tablet.getByRole('menuitemradio', { name: 'Dock on the left' })).toBeVisible();
+  await expect(tablet.getByRole('menuitemradio', { name: 'Open in a new window' })).toHaveCount(0);
+  await tablet.close();
 
   assert.deepEqual(errors, []);
   console.log('PASS: the manuscript panel docks right, left and at the bottom, floats, opens in a window of its own from its menu or when dragged out of the window and docks again when that window closes, moves and resizes by dragging, docks when dropped on an edge, cancels with Escape, keeps its place across reloads and narrow windows, and resets');

@@ -3,7 +3,7 @@ import { canonicalGroup, GROUP_COLORS, GROUP_NAMES, NOTE_GROUPS, type NoteGroup 
 import { Icon } from './icons.tsx';
 import { t, tn } from './i18n.ts';
 import './note-groups.css';
-import { viewOf } from './owner-window.ts';
+import { viewOf, isNode } from './owner-window.ts';
 
 export const groupName = (group: NoteGroup) => t(GROUP_NAMES[group]);
 export const groupStyle = (group?: NoteGroup): CSSProperties => group ? { '--note-color': GROUP_COLORS[group], '--note-ink': canonicalGroup(group) === 'yellow' ? '#422f00' : '#fff' } as CSSProperties : {};
@@ -23,7 +23,7 @@ export function GroupPicker({ value, onChange, disabled, tool, forNote, wholeGro
   useEffect(() => {
     if (!open) return;
     const dismiss = () => menu.current?.hidePopover();
-    const scroll = (event: Event) => { if (event.target instanceof Node && event.target.contains(trigger.current)) dismiss(); };
+    const scroll = (event: Event) => { if (isNode(event.target) && event.target.contains(trigger.current)) dismiss(); };
     const view = viewOf(trigger.current); view.addEventListener('resize', dismiss); view.document.addEventListener('scroll', scroll, true);
     return () => { view.removeEventListener('resize', dismiss); view.document.removeEventListener('scroll', scroll, true); };
   }, [open]);

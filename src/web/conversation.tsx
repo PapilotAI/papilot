@@ -34,7 +34,7 @@ import { TaskModelPicker } from './task-model-picker.tsx';
 import { TaskPermissionOptions } from './task-permissions.tsx';
 import { toolIcon, toolNote, toolSentence, toolSummary, workflowKind } from './tool-calls.ts';
 import { type RefreshUsage } from './usage.tsx';
-import { viewOf } from './owner-window.ts';
+import { viewOf, copyText } from './owner-window.ts';
 export const agentName = (task: Task) => agentLabel(task.agent || 'codex') || 'Codex';
 export const workingAgentName = (task: Task) => task.manualTurn?.executor?.agent ? agentLabel(task.manualTurn.executor.agent) : agentName(task);
 export const ACTIVE = ['running', 'waiting_input', 'queued'];
@@ -108,19 +108,11 @@ export function createConversation(api: ConversationApi) {
     </div>;
   }
 
-  // Clipboard access needs a secure context; Tailscale HTTP falls back to a hidden selection.
   function CopyButton({ text }: { text: string }) {
     const [copied, setCopied] = useState(false);
     useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(false), 1600); return () => clearTimeout(timer); }, [copied]);
-    async function copy() {
-      try { await navigator.clipboard.writeText(text); }
-      catch {
-        const area = document.createElement('textarea'); area.value = text; area.readOnly = true; area.style.position = 'fixed'; area.style.opacity = '0';
-        document.body.append(area); area.select(); document.execCommand('copy'); area.remove();
-      }
-      setCopied(true);
-    }
-    return <button type="button" className="message-action" aria-label={copied ? t('Copied') : t('Copy message')} onClick={() => void copy()}><Icon name={copied ? 'check' : 'copy'} size={14}/><span>{copied ? t('Copied') : t('Copy')}</span></button>;
+    async function copy(button: HTMLElement) { setCopied(await copyText(text, button)); }
+    return <button type="button" className="message-action" aria-label={copied ? t('Copied') : t('Copy message')} onClick={event => void copy(event.currentTarget)}><Icon name={copied ? 'check' : 'copy'} size={14}/><span>{copied ? t('Copied') : t('Copy')}</span></button>;
   }
 
   // Commands arrive wrapped in the login shell that ran them, and files with

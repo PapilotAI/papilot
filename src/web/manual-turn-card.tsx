@@ -3,6 +3,7 @@ import type { AgentId, ManualGithubContext } from '../shared.ts';
 import { BrandIcon } from './brand-icon.tsx';
 import { Icon } from './icons.tsx';
 import { errorText, t } from './i18n.ts';
+import { copyText } from './owner-window.ts';
 
 type Api = <T>(route: string, body?: unknown, signal?: AbortSignal) => Promise<T>;
 export interface ManualExecutorPreview {
@@ -16,18 +17,6 @@ export interface ManualPromptResponse {
   prompt: string;
   executor: ManualExecutorPreview | null;
   github?: ManualGithubContext;
-}
-
-function legacyCopy(text: string) {
-  const field = document.createElement('textarea');
-  field.value = text;
-  field.setAttribute('readonly', '');
-  field.style.cssText = 'position:fixed;inset-block-start:0;opacity:0';
-  document.body.append(field);
-  field.select();
-  try { return document.execCommand('copy'); }
-  catch { return false; }
-  finally { field.remove(); }
 }
 
 export function ManualTurnCard({ taskId, runId, api, refreshKey, onExecutor }: {
@@ -109,15 +98,9 @@ export function ManualTurnCard({ taskId, runId, api, refreshKey, onExecutor }: {
     timer.current = setTimeout(() => { setCopied(false); setStatus(''); }, 2200);
   }
 
-  async function copyPrompt() {
+  async function copyPrompt(button: HTMLElement) {
     if (!data?.prompt) return;
-    let ok = false;
-    try {
-      await navigator.clipboard.writeText(data.prompt);
-      ok = true;
-    } catch {
-      ok = legacyCopy(data.prompt);
-    }
+    const ok = await copyText(data.prompt, button);
     if (ok) {
       announce(t('Copied'), true);
       return;
@@ -189,7 +172,7 @@ export function ManualTurnCard({ taskId, runId, api, refreshKey, onExecutor }: {
       </div>}
       {syncError && <p className="inline-error manual-github-error" role="alert">{syncError}</p>}
       <div className="manual-turn-actions">
-        <button type="button" className="button primary compact" data-copied={copied ? '' : undefined} disabled={isSyncing} onClick={() => void copyPrompt()}>
+        <button type="button" className="button primary compact" data-copied={copied ? '' : undefined} disabled={isSyncing} onClick={event => void copyPrompt(event.currentTarget)}>
           <Icon name={copied ? 'check' : 'copy'} size={14}/>{t('Copy prompt')}
         </button>
         <button type="button" className="button secondary compact" aria-expanded={show} aria-controls={fieldId} onClick={() => setShow(value => !value)}>
