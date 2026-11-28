@@ -230,7 +230,7 @@ try {
   await choose('Open in a new window');
   const refused = page.locator('.toast[role=alert]');
   await expect(refused).toContainText('Allow pop-ups for Papilot to open a window.');
-  await refused.getByRole('button', { name: 'Dismiss error' }).click();
+  await expect(refused, 'the notice goes by itself').toHaveCount(0, { timeout: 10000 });
   await page.evaluate(() => { window.open = window.realOpen; });
   // A note in the task, for its menus in the panel's window.
   await page.getByRole('button', { name: /^My notes/ }).click();

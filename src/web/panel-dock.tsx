@@ -154,8 +154,9 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
   const float = fitFloat(drag?.zone === 'float' && place.dock === 'float' ? drag.rect : place.float, view);
   const where: Record<Position, string> = { right: t('Docked on the right'), left: t('Docked on the left'), bottom: t('Docked at the bottom'), float: t('Floating over the page'), window: t('In a separate window'), fill: t('Filling the window') };
   // The window: its content stays this page's, portaled there (popout-window.ts).
-  // A refused window says so where the author is looking, until dismissed.
+  // A refused window says so where the author is looking, for a moment.
   const [blocked, setBlocked] = useState(false);
+  useEffect(() => { if (!blocked) return; const timer = setTimeout(() => setBlocked(false), 6000); return () => clearTimeout(timer); }, [blocked]);
   const dockedAt = useRef(place.dock);
   dockedAt.current = place.dock;
   // From the menu it opens at the panel's size; dropped, where it was dropped.
@@ -357,7 +358,7 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
         {drag.zone === 'window' && <span>{t('Release to open in a new window')}</span>}
       </div>}
       <div className="sr-only" aria-live="polite">{announcement}</div>
-      {blocked && <div role="alert" className="toast"><Icon name="alert" size={16}/><span>{t('Allow pop-ups for Papilot to open a window.')}</span><button type="button" className="icon-button" aria-label={t('Dismiss error')} onClick={() => setBlocked(false)}><Icon name="close" size={14}/></button></div>}
+      {blocked && <div role="alert" className="toast toast-status"><Icon name="alert" size={16}/><span>{t('Allow pop-ups for Papilot to open a window.')}</span></div>}
     </>,
     /** The panel, in place or in its own window. */
     place: (node: ReactNode) => { placed.current = true; return popout ? createPortal(<div className="popout-panel">{node}</div>, popout.root) : node; },

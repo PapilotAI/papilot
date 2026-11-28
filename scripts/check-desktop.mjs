@@ -334,7 +334,9 @@ try {
   const zoomed = await openPopout();
   assert.deepEqual(await popoutWindow().then(({ zoom, mainZoom, sandbox }) => ({ zoom, mainZoom, sandbox })), { zoom: 1.25, mainZoom: 1.25, sandbox: true });
   // Sized in the page's pixels, at the interface size: it shows what it asked for.
-  const shown = await zoomed.evaluate(() => ({ width: innerWidth, asked: Math.min(900, screen.availWidth) }));
+  // The screen is in its own pixels, which the interface size does not scale; a
+  // window wider than the screen is narrowed to fit it.
+  const shown = await zoomed.evaluate(() => ({ width: innerWidth, asked: Math.min(900, Math.floor(screen.availWidth / 1.25)) }));
   assert.ok(Math.abs(shown.width - shown.asked) <= 24, `the window shows its asked width at the interface size: ${JSON.stringify(shown)}`);
   const throttled = () => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL() !== 'about:blank').webContents.getBackgroundThrottling());
   assert.equal(await throttled(), false, 'the page keeps its pace while a pop-out shows it');
