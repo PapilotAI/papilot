@@ -19,7 +19,7 @@ export interface ZoteroApi {
 // found by itself and read, never changed, with nothing to sign in to. A
 // computer without Zotero uses the author's Zotero account instead, through
 // an API key that stays on the server Papilot runs on.
-export function ZoteroSettings({ api }: { api: ZoteroApi }) {
+export function ZoteroSettings({ api, hosted = false }: { api: ZoteroApi; hosted?: boolean }) {
   const [status, setStatus] = useState<ZoteroStatus | null>(null), [failed, setFailed] = useState(false), [attempt, setAttempt] = useState(0);
   const [switching, setSwitching] = useState(false), [useError, setUseError] = useState('');
   const [key, setKey] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -75,7 +75,7 @@ export function ZoteroSettings({ api }: { api: ZoteroApi }) {
   const sum = (field: 'items' | 'withPdf' | 'citationKeys') => count(account?.libraries.reduce((total, library) => total + library[field], 0) ?? 0);
   const names = account ? new Intl.ListFormat(locale(), { type: 'conjunction' }).format(account.libraries.map(library => library.name ?? t('My Library'))) : '';
   return <div className="settings-page">
-    <section className="settings-card settings-card-body" aria-label={t('Zotero on this computer')}>
+    {!hosted && <section className="settings-card settings-card-body" aria-label={t('Zotero on this computer')}>
       <header className="settings-tool-header">
         <h3>{t('Zotero on this computer')}</h3>
         <button type="button" className="icon-button" aria-label={t('Detect again')} title={t('Detect again')} disabled={!status && !failed} onClick={() => setAttempt(value => value + 1)}><Icon name="refresh" size={16}/></button>
@@ -108,12 +108,15 @@ export function ZoteroSettings({ api }: { api: ZoteroApi }) {
           {placeError && <p role="alert" className="settings-warning">{placeError}</p>}
           <p id={placeHelp} className="settings-intro">{t('The folder with zotero.sqlite and storage. Zotero shows it in Settings, under Advanced, Files and Folders.')}</p>
         </form>)}
-    </section>
-    {status && <section className="settings-card settings-card-body" aria-labelledby={accountTitle}>
+    </section>}
+    {(status || hosted) && <section className="settings-card settings-card-body" aria-labelledby={accountTitle}>
       <header className="settings-tool-header">
         <h3 id={accountTitle}>{t('Zotero account')}</h3>
+        {hosted && <button type="button" className="icon-button" aria-label={t('Refresh')} title={t('Refresh')} disabled={!status && !failed} onClick={() => setAttempt(value => value + 1)}><Icon name="refresh" size={16}/></button>}
       </header>
-      {account ? <>
+      {!status ? (failed ? <p role="alert" className="settings-intro">{t('Could not look for Zotero. Try again.')}</p>
+        : <p role="status" className="settings-intro">{t('Looking for Zotero…')}</p>)
+      : account ? <>
         <dl className="settings-facts">
           <div><dt>{t('Account')}</dt><dd>{account.username}</dd></div>
           {account.libraries.length > 0 && <>
@@ -135,7 +138,7 @@ export function ZoteroSettings({ api }: { api: ZoteroApi }) {
           <button type="submit" className="button primary compact" disabled={busy}>{busy && <span className="spinner light"/>}{t('Connect account')}</button>
         </div>
         {error && <p id={keyError} role="alert" className="settings-warning">{error}</p>}
-        <p id={keyHelp} className="settings-intro">{t('For a computer without Zotero: PDFs are downloaded from Zotero\'s online storage.')} <a href="https://www.zotero.org/settings/keys/new" target="_blank" rel="noopener noreferrer">{t('Create a key with library access')}</a></p>
+        <p id={keyHelp} className="settings-intro">{!hosted && <>{t('For a computer without Zotero: PDFs are downloaded from Zotero\'s online storage.')} </>}<a href="https://www.zotero.org/settings/keys/new" target="_blank" rel="noopener noreferrer">{t('Create a key with library access')}</a></p>
       </form>}
     </section>}
     <section className="settings-card">

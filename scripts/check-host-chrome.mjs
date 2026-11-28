@@ -81,6 +81,8 @@ try {
       if (pathname === '/api/note-alternatives') return route.fulfill({ json: { noteAlternatives: false, noteAlternativeRange: 'few' } });
       if (pathname === '/api/indirect-changes') return route.fulfill({ json: { indirectChanges: false } });
       if (pathname === '/api/quick-model') return route.fulfill({ json: { choice: null } });
+      if (pathname === '/api/library/zotero') return route.fulfill({ json: { local: { state: 'missing' }, account: null, use: true } });
+      if (pathname === '/api/memory') return route.fulfill({ json: { learning: true, language: 'auto', shareable: true, files: [{ scope: 'paper', path: '/data/papers/paper/.papilot/memory.md', rules: ['Keep abstracts concise.'], revision: '1' }, { scope: 'shared', path: '/data/papers/paper/PAPILOT.md', rules: [], revision: '1' }, { scope: 'personal', path: '/data/papilot/memory.md', rules: [], revision: '1' }] } });
       if (pathname.startsWith('/api/updates')) return route.fulfill({ json: { currentVersion: '0.15.0', phase: 'idle', canUpdate: false, packageManager: 'managed' } });
       if (pathname.endsWith('/manuscript')) return route.fulfill({ json: { git: { files: [] }, annotations: [], build: { status: 'building', current: false } } });
       if (pathname.endsWith('/files')) return route.fulfill({ json: { document: 'main.tex', files: [{ path: 'main.tex', root: true }] } });
@@ -157,22 +159,74 @@ try {
     await expect(popover).toHaveCount(0);
     assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('host-account-trigger')), true);
 
-    // 3. Settings opened from the host account menu shows only allowed agent (Papilot Writer) and no Support more.
+    // 3. Settings opened from the host account menu shows managed web chrome:
+    //    Account & Usage card in General, clean single-agent model labels, and no desktop-only pages.
     await trigger.click();
     await page.locator('.host-account-popover:popover-open button', { hasText: 'Settings' }).click();
     const settingsDialog = page.locator('dialog[open] .settings-dialog');
     await expect(settingsDialog).toBeVisible();
+    if (width < 600) {
+      await settingsDialog.locator('[data-settings-page="general"]').click();
+    }
+    const accountCard = settingsDialog.locator('.settings-account-card');
+    await expect(accountCard).toBeVisible();
+    await expect(accountCard).toContainText('Ada Lovelace');
+    await expect(accountCard).toContainText('ada@example.com');
+    await expect(accountCard).toContainText('Pro');
+    await expect(accountCard).toContainText('42%');
+    await expect(accountCard.locator('a[href="https://host.example/usage"]')).toBeVisible();
+    await expect(accountCard.locator('a[href="https://host.example/account"]')).toBeVisible();
+    // Single-agent default model hides redundant "Papilot Writer · " prefix.
+    const defaultModelButton = settingsDialog.locator('.settings-model-select').first();
+    await expect(defaultModelButton).toContainText('Writer Pro');
+    assert.equal((await defaultModelButton.textContent()).includes('Papilot Writer'), false);
+
+    // Desktop-only pages and sidebar footer are hidden in managed web mode.
+    for (const hiddenPage of ['latex', 'agents', 'updates', 'experiments', 'statistics']) {
+      await expect(settingsDialog.locator(`[data-settings-page="${hiddenPage}"]`)).toHaveCount(0);
+    }
+    await expect(settingsDialog.locator('.settings-footer')).toHaveCount(0);
+
+    await page.screenshot({ path: `test-results/host-chrome-settings-general-${label}.png` });
+
     if (width >= 600) {
-      await settingsDialog.locator('[data-settings-page="agents"]').click();
-      await expect(settingsDialog.locator('[data-agent]')).toHaveCount(1);
-      await expect(settingsDialog.locator('[data-agent="papilot"]')).toBeVisible();
-      await expect(settingsDialog.locator('.runtime-agent-contribute')).toHaveCount(0);
-      await expect(settingsDialog.locator('.diagnostic-agent-switch')).toHaveCount(0);
+      // Zotero hides "Zotero on this computer" and folder browser, showing only Zotero account.
+      await settingsDialog.locator('[data-settings-page="zotero"]').click();
+      await expect(settingsDialog.getByRole('heading', { name: 'Zotero account' })).toBeVisible();
+      await expect(settingsDialog.getByLabel('API key')).toBeVisible();
+      await expect(settingsDialog.getByText('Zotero on this computer')).toHaveCount(0);
+      await expect(settingsDialog.getByText('For a computer without Zotero')).toHaveCount(0);
       if (label === 'desktop-light') {
-        await page.screenshot({ path: `test-results/host-chrome-agents-${label}.png` });
+        await page.screenshot({ path: `test-results/host-chrome-settings-zotero-${label}.png` });
       }
+
+      // Git hides local tool detection and multi-agent selectors in single-agent managed mode.
+      await settingsDialog.locator('[data-settings-page="git"]').click();
+      await expect(settingsDialog.locator('#git-conflict-agent')).toHaveCount(0);
+      await expect(settingsDialog.getByText('Commit message language')).toBeVisible();
+      await expect(settingsDialog.getByText('Show advanced Git features')).toBeVisible();
+
+      // Memory hides "Only on this computer" and raw container filesystem paths.
+      await settingsDialog.locator('[data-settings-page="memory"]').click();
+      await expect(settingsDialog.getByText('Keep abstracts concise.')).toBeVisible();
+      await expect(settingsDialog.getByText('Only on this computer')).toHaveCount(0);
+      await expect(settingsDialog.getByText('/data/papers/paper')).toHaveCount(0);
     }
     await page.keyboard.press('Escape');
+
+    // 4. Composer model picker hides redundant single-agent prefix and group header.
+    if (width >= 600) {
+      const picker = page.locator('.new-task-panel .agent-picker-trigger');
+      await expect(picker).toBeVisible();
+      await expect(picker.locator('.agent-picker-agent')).toHaveCount(0);
+      await expect(picker).toContainText('Writer Pro');
+      await picker.click();
+      const pickerPanel = page.locator('.agent-picker-panel:popover-open');
+      await expect(pickerPanel).toBeVisible();
+      await expect(pickerPanel.locator('.model-group-head')).toHaveCount(0);
+      await expect(pickerPanel.getByRole('option', { name: 'Writer Fast', exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
     await context.close();
   }
   assert.deepEqual(errors, []);

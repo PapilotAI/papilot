@@ -40,8 +40,10 @@ const localListener = { kind: 'local' as const, port: PORT, publicOrigin: PUBLIC
 const app = await buildApp({ ...shared, listener: localListener });
 
 // Agent SDKs and the PDF engine load before the first request, not in the
-// middle of one.
-if (!process.env.PAPILOT_UPDATE_PROBE) await Promise.race([Promise.all([workspace.preload(), manuscripts.warm()]), new Promise(resolve => setTimeout(resolve, 5000).unref())]);
+// middle of one. Managed web hosts and single-paper sessions bind immediately
+// and warm in the background so cold container startup stays fast.
+const fastStart = Boolean(hostChrome || singlePaperPath || process.env.PAPILOT_FAST_START === '1');
+if (!process.env.PAPILOT_UPDATE_PROBE && !fastStart) await Promise.race([Promise.all([workspace.preload(), manuscripts.warm()]), new Promise(resolve => setTimeout(resolve, 5000).unref())]);
 const localUrl = await app.listen({ host: '127.0.0.1', port: PORT }).catch(error => {
   if (!desktop || error.code !== 'EADDRINUSE') throw error;
   return app.listen({ host: '127.0.0.1', port: 0 });
@@ -51,7 +53,11 @@ localListener.port = Number(new URL(localUrl).port);
 
 store.recover();
 console.log(`Papilot is running at ${localUrl}${PUBLIC_ORIGIN ? `\nRemote: ${PUBLIC_ORIGIN}` : ''}`);
-if (!process.env.PAPILOT_UPDATE_PROBE) { void workspace.connect(); updates.start(); }
+if (!process.env.PAPILOT_UPDATE_PROBE) {
+  if (fastStart) void manuscripts.warm().catch(() => undefined);
+  void workspace.connect();
+  updates.start();
+}
 resumeTasks(store, workspace);
 let shuttingDown = false;
 function shutdown() {
