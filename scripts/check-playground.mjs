@@ -164,13 +164,16 @@ try {
     currentLocale = locale;
     const remove = page.getByRole('button', { name: translated(locale, 'Remove all from task'), exact: true });
     await expect(remove).toHaveText(translated(locale, 'Remove all from task'));
-    const header = page.locator('.manuscript-side-header');
-    await expect.poll(() => header.evaluate(element => {
+    // The header holds the tabs and the panel's controls; the list's action
+    // sits with the list.
+    const side = page.locator('.manuscript-side');
+    await expect.poll(() => side.evaluate(element => {
+      const header = element.querySelector('.manuscript-side-header').getBoundingClientRect();
       const tabs = element.querySelector('.side-tabs').getBoundingClientRect();
       const tab = element.querySelector('[data-task-home]').getBoundingClientRect();
-      const button = element.querySelector('.note-select-all').getBoundingClientRect();
+      const button = element.querySelector('.task-notes-panel .note-select-all').getBoundingClientRect();
       const box = element.getBoundingClientRect();
-      return box.width >= 298 && box.width <= 300 && tab.left >= tabs.left && tab.right <= tabs.right + 1 && button.top >= box.top && button.bottom <= box.bottom && button.right <= box.right;
+      return box.width >= 298 && box.width <= 300 && tab.left >= tabs.left && tab.right <= tabs.right + 1 && tabs.right <= header.right && button.top >= header.bottom && button.left >= box.left && button.right <= box.right;
     }), { message: `${locale}: the current tab, badge and full action label fit a 300px side panel` }).toBe(true);
     await page.screenshot({ path: `test-results/task-note-action-${locale}.png` });
   }

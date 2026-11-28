@@ -753,7 +753,7 @@ function NotesPanel({ notes, sections = [], pageLayouts, currentKey, active, act
 // The composer receives only attachments the author explicitly chose in the PDF.
 // Each one is the same card as in My notes: click the text or ✏️ to edit it,
 // 🗑 deletes it (⌘Z brings it back), and × takes it out of the task.
-function TaskNotes({ notes, currentKey, actions, onShow, controller, cards, headerSlot }: { notes: Annotation[]; currentKey?: string; actions: NoteActions; onShow: (note: Annotation) => void; controller: React.Ref<NotesHandle>; cards: ReturnType<typeof useNoteCards>; headerSlot?: HTMLElement | null }) {
+function TaskNotes({ notes, currentKey, actions, onShow, controller, cards }: { notes: Annotation[]; currentKey?: string; actions: NoteActions; onShow: (note: Annotation) => void; controller: React.Ref<NotesHandle>; cards: ReturnType<typeof useNoteCards> }) {
   const panel = useRef<HTMLElement>(null);
   const chosen = notes.filter(note => actions.selection.has(note.id));
   // Saving can outlive this view; drafts, failures and busy state live in App.
@@ -779,10 +779,8 @@ function TaskNotes({ notes, currentKey, actions, onShow, controller, cards, head
     {note.key !== currentKey && <NotePlacementWarning/>}
   </li>;
   return <section ref={panel} className="task-notes-panel" aria-label={t('Notes in this task')}>
-    {/* Beside the panel's tabs, whose count already says how many notes the task has; phones hide that header. */}
-    {chosen.length > 0 && (headerSlot
-      ? createPortal(<button type="button" className="note-select-all" disabled={selectionLocked} onClick={() => putBack(chosen)}>{t('Remove all from task')}</button>, headerSlot)
-      : <div className="note-selection-head"><span>{t('Added to task: {n}', { n: chosen.length })}</span><button type="button" className="note-select-all" disabled={selectionLocked} onClick={() => putBack(chosen)}>{t('Remove all from task')}</button></div>)}
+    {/* With the list, not in the panel's header, which holds the panel's own controls. */}
+    {chosen.length > 0 && <div className="note-selection-head"><span>{t('Added to task: {n}', { n: chosen.length })}</span><button type="button" className="note-select-all" disabled={selectionLocked} onClick={() => putBack(chosen)}>{t('Remove all from task')}</button></div>}
     {noteGroups(notes).map(({ group, entries }) => {
       const selected = entries.filter(({ note }) => actions.selection.has(note.id));
       const selectedNotes = selected.map(({ note }) => note);
@@ -907,7 +905,6 @@ function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, shows
     requestAnimationFrame(() => panelToggle.current?.focus());
   }}><Icon name={hidden ? 'panelExpand' : 'panelCollapse'} size={18}/></button>;
   // Sharing exports the paper, so it sits with the page's own tools.
-  const [taskActions, setTaskActions] = useState<HTMLDivElement | null>(null), sideHeader = useMedia('(min-width: 681px)');
   const pageTools = <>{tools}{share}{hidden && togglePanel}{showWindow}</>;
   // PDF or Changes stays as the author left it when they come back to the paper.
   const [mode, showMode] = useState<PdfMode>(() => !isPlayground && readPlace('mode:' + project.id) === 'changes' ? 'changes' : 'pdf'), [committing, setCommitting] = useState(false);
@@ -995,10 +992,9 @@ function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, shows
           <button ref={taskTab} role="tab" data-task-home aria-selected={side === 'task'} title={t('New task')} onClick={() => setView('task')}><Icon name="compose" size={14}/><span className="tab-label">{t('New task')}</span>{actions.selection.selected.length > 0 && <span className="count" aria-hidden="true">{actions.selection.selected.length}</span>}</button>
           {source.tab && <SourceTab tab={source.tab} selected={side === 'source'} onSelect={() => setView('source')} onClose={source.close} onPopOut={source.popOut}/>}
         </div>
-        <div ref={setTaskActions} className="side-header-actions" hidden={side !== 'task'}/>
         {panel.control}
       </div>
-      <div className="side-pane" hidden={side !== 'task'}>{newTask(<TaskNotes headerSlot={sideHeader ? taskActions : null} cards={taskCards} controller={taskNotes} notes={notes} currentKey={build?.key} actions={actions} onShow={show}/>)}</div>
+      <div className="side-pane" hidden={side !== 'task'}>{newTask(<TaskNotes cards={taskCards} controller={taskNotes} notes={notes} currentKey={build?.key} actions={actions} onShow={show}/>)}</div>
       {source.panel && <div className="side-pane" hidden={side !== 'source'}>{source.panel}</div>}
     </aside>)}
     {panel.preview}

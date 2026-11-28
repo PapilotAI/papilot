@@ -939,10 +939,6 @@ button.collab-note-pill.is-linked:focus-visible{outline:2px solid var(--accent);
 .note-selection-head{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%}
 .note-select-all{padding:4px 0;color:var(--text-2);font:inherit;white-space:nowrap}
 .note-select-all:hover:not(:disabled){color:var(--text)}
-.side-header-actions>.note-select-all{min-height:28px;padding:4px 8px;border-radius:var(--r);line-height:1.2;white-space:normal}
-.side-header-actions>.note-select-all:hover:not(:disabled){background:var(--bg-hover)}
-.side-header-actions{display:flex;align-items:center;flex:0 1 auto;min-width:0;max-width:46%}
-.side-header-actions[hidden]{display:none}
 .notes-panel>.note-section:first-of-type{margin-top:0}
 .notes-panel .note-card{position:relative;isolation:isolate;transition:background-color .15s,border-color .15s}
 .notes-panel .note-card[data-selected=true]{background:color-mix(in srgb,var(--note-color,var(--accent)) 11%,var(--bg));border-color:color-mix(in srgb,var(--note-color,var(--accent)) 55%,var(--line))}

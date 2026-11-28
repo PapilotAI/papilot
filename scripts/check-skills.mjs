@@ -192,7 +192,7 @@ try {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await selectOption(page.getByRole('dialog', { name: 'Settings' }).getByRole('combobox', { name: 'Language' }), 'zh-Hans');
   await page.keyboard.press('Escape');
-  await expect(page.locator('.manuscript-side-header').getByRole('button', { name: '全部移出', exact: true })).toBeVisible();
+  await expect(page.locator('.task-notes-panel').getByRole('button', { name: '全部移出', exact: true })).toBeVisible();
   await expect(page.locator('.side-tabs .count')).toHaveText('2');
   await page.screenshot({ path: 'test-results/merged-task-notes.png' });
   await page.setViewportSize({ width: 390, height: 844 });
