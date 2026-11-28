@@ -15,7 +15,7 @@ import { markText, NoteQuote } from './note-content.tsx';
 import { NoteAttachButton, NoteEditButton, PdfNoteCard, TaskRemoveButton } from './pdf-suggestion.tsx';
 import { StrictMode, Suspense, lazy, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createPortal, flushSync } from 'react-dom';
+import { flushSync } from 'react-dom';
 import { ignorePattern } from '../commit.ts';
 import { effectiveServiceTier, modelServiceTier, AGENT_IDS, isAgentId, isManualAgent, isTaskReviewNote, taskFinished } from '../shared.ts';
 import type { ChatgptProSettings as ChatgptProSettingsState, TaskCommitReview, CompilerChoice, LatexInstallation, ZoteroStatus, AgentId, Annotation, AnnotationGroupEdit, AnnotationGroupState, AnnotationBatch, AnnotationBatchResult, NoteSection, PageReadingLayout, BuildRepairResult, MarkKind, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
@@ -88,7 +88,8 @@ import { returnNotes } from './note-flight.ts';
 import { UsageSummary, type RefreshUsage } from './usage.tsx';
 import { useNoteUndo } from './use-note-undo.ts';
 import { NOTE_RETURN_HISTORY, NoteResultsProvider } from './note-results.tsx';
-import { usePanelWidth } from './panel-width.tsx';
+import { usePanelDock } from './panel-dock.tsx';
+import { POPOUT_VISIBILITY, focusedDocument, popoutFocused, popoutVisible } from './popout-window.ts';
 import { RepositoryFilesMenu } from './repository-files.tsx';
 import { OverleafLinkDialog, OverleafPanel, OverleafRow } from './overleaf.tsx';
 import { setPresence } from './overleaf-presence.ts';
@@ -570,7 +571,8 @@ function useNoteCards(notes: Annotation[] | undefined, actions: NoteActions, onE
     const row = editingRow.current;
     if (!row || drafts[row.id]) return;
     editingRow.current = null;
-    if (document.activeElement === document.body) row.panel.querySelector<HTMLButtonElement>(`[data-note="${CSS.escape(row.id)}"] .group-note-edit`)?.focus({ preventScroll: true });
+    const doc = row.panel.ownerDocument;
+    if (doc.activeElement === doc.body) row.panel.querySelector<HTMLButtonElement>(`[data-note="${CSS.escape(row.id)}"] .group-note-edit`)?.focus({ preventScroll: true });
   }, [drafts]);
   function editGrouped(note: Annotation, button: HTMLButtonElement) {
     const panel = button.closest('.notes-panel, .task-notes-panel');
@@ -620,18 +622,19 @@ function useNoteCards(notes: Annotation[] | undefined, actions: NoteActions, onE
   const undo = (disabled: boolean) => dismissed && <div className="note-dismissed" role="status">{dismissed.aiReview ? t('Suggestion ignored.') : t('Note deleted.')} <button type="button" disabled={disabled} onClick={() => void change(dismissed, async () => { await actions.restore(dismissed); setDismissed(null); })}>{t('Undo')}</button></div>;
   // The same card in both lists; `onToggle` adds the note to the task or takes it out.
   async function regroup(note: Annotation, group: NoteGroup | null) {
-    const panel = document.activeElement?.closest('.notes-panel, .task-notes-panel');
+    // The panel may be in a window of its own, with focus in its document.
+    const panel = focusedDocument().activeElement?.closest('.notes-panel, .task-notes-panel');
     await change(note, () => actions.regroup(note, group));
     // Moving to another group can replace the row that held keyboard focus.
     if (panel) requestAnimationFrame(() => {
-      if (document.activeElement === document.body) panel.querySelector<HTMLButtonElement>(`[data-note="${CSS.escape(note.id)}"] .group-select`)?.focus({ preventScroll: true });
+      if (panel.ownerDocument.activeElement === panel.ownerDocument.body) panel.querySelector<HTMLButtonElement>(`[data-note="${CSS.escape(note.id)}"] .group-select`)?.focus({ preventScroll: true });
     });
   }
   async function regroupMany(members: Annotation[], group: NoteGroup | null) {
-    const panel = document.activeElement?.closest('.notes-panel, .task-notes-panel');
+    const panel = focusedDocument().activeElement?.closest('.notes-panel, .task-notes-panel');
     await change(members[0], () => actions.regroupMany(members, group));
     if (panel) requestAnimationFrame(() => {
-      if (document.activeElement !== document.body) return;
+      if (panel.ownerDocument.activeElement !== panel.ownerDocument.body) return;
       const row = panel.querySelector(`[data-note="${CSS.escape(members[0].id)}"]`);
       (row?.closest('.annotation-group')?.querySelector<HTMLButtonElement>('.group-header .group-select') ||
         row?.querySelector<HTMLButtonElement>('.group-select'))?.focus({ preventScroll: true });
@@ -752,7 +755,7 @@ function NotesPanel({ notes, sections = [], pageLayouts, currentKey, active, act
 // The composer receives only attachments the author explicitly chose in the PDF.
 // Each one is the same card as in My notes: click the text or ✏️ to edit it,
 // 🗑 deletes it (⌘Z brings it back), and × takes it out of the task.
-function TaskNotes({ notes, currentKey, actions, onShow, controller, cards, headerSlot }: { notes: Annotation[]; currentKey?: string; actions: NoteActions; onShow: (note: Annotation) => void; controller: React.Ref<NotesHandle>; cards: ReturnType<typeof useNoteCards>; headerSlot?: HTMLElement | null }) {
+function TaskNotes({ notes, currentKey, actions, onShow, controller, cards }: { notes: Annotation[]; currentKey?: string; actions: NoteActions; onShow: (note: Annotation) => void; controller: React.Ref<NotesHandle>; cards: ReturnType<typeof useNoteCards> }) {
   const panel = useRef<HTMLElement>(null);
   const chosen = notes.filter(note => actions.selection.has(note.id));
   // Saving can outlive this view; drafts, failures and busy state live in App.
@@ -778,10 +781,8 @@ function TaskNotes({ notes, currentKey, actions, onShow, controller, cards, head
     {note.key !== currentKey && <NotePlacementWarning/>}
   </li>;
   return <section ref={panel} className="task-notes-panel" aria-label={t('Notes in this task')}>
-    {/* Beside the panel's tabs, whose count already says how many notes the task has; phones hide that header. */}
-    {chosen.length > 0 && (headerSlot
-      ? createPortal(<button type="button" className="note-select-all" disabled={selectionLocked} onClick={() => putBack(chosen)}>{t('Remove all from task')}</button>, headerSlot)
-      : <div className="note-selection-head"><span>{t('Added to task: {n}', { n: chosen.length })}</span><button type="button" className="note-select-all" disabled={selectionLocked} onClick={() => putBack(chosen)}>{t('Remove all from task')}</button></div>)}
+    {/* With the list, not in the panel's header, which holds the panel's own controls. */}
+    {chosen.length > 0 && <div className="note-selection-head"><span>{t('Added to task: {n}', { n: chosen.length })}</span><button type="button" className="note-select-all" disabled={selectionLocked} onClick={() => putBack(chosen)}>{t('Remove all from task')}</button></div>}
     {noteGroups(notes).map(({ group, entries }) => {
       const selected = entries.filter(({ note }) => actions.selection.has(note.id));
       const selectedNotes = selected.map(({ note }) => note);
@@ -897,15 +898,27 @@ function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, shows
   const canCollapse = useMedia('(min-width: 681px)'), hidden = canCollapse && collapsed;
   const sideBySide = useMedia('(min-width: 901px)');
   const panelId = useId(), panelToggle = useRef<HTMLButtonElement>(null), taskTab = useRef<HTMLButtonElement>(null);
-  const panel = usePanelWidth('papilot:manuscript-width', '--manuscript-width', '.manuscript-side', t('Resize manuscript panel'), sideBySide && !hidden, () => pdf.current?.fitWidth());
+  const panel = usePanelDock({ key: 'manuscript', widthKey: 'papilot:manuscript-width', property: '--manuscript-width', panel: '.manuscript-side', label: t('Resize manuscript panel'), title: `${project.name} — Papilot`, enabled: sideBySide && !hidden, onResize: () => pdf.current?.fitWidth() });
+  // While the panel is in its own window, the toolbar brings that window forward.
+  const showWindow = panel.away && <button type="button" className="icon-button panel-toggle" aria-label={t('Show panel window')} title={t('Show panel window')} onClick={panel.away}><Icon name="external" size={18}/></button>;
   useEffect(() => { browserStorage.setItem('papilot:manuscript-panel', collapsed ? 'hidden' : 'visible'); }, [collapsed]);
   const togglePanel = canCollapse && <button ref={panelToggle} type="button" className="icon-button manuscript-panel-toggle" aria-label={hidden ? t('Expand manuscript panel') : t('Collapse manuscript panel')} title={hidden ? t('Expand manuscript panel') : t('Collapse manuscript panel')} aria-expanded={!hidden} aria-controls={panelId} onClick={() => {
     setCollapsed(value => !value); pdf.current?.fitWidth();
     requestAnimationFrame(() => panelToggle.current?.focus());
   }}><Icon name={hidden ? 'panelExpand' : 'panelCollapse'} size={18}/></button>;
   // Sharing exports the paper, so it sits with the page's own tools.
-  const [taskActions, setTaskActions] = useState<HTMLDivElement | null>(null), sideHeader = useMedia('(min-width: 681px)');
-  const pageTools = <>{tools}{share}{hidden && togglePanel}</>;
+  const pageTools = <>{tools}{share}{hidden && togglePanel}{showWindow}</>;
+  // The note library opens at the right of the pages; a floating panel there
+  // keeps it beside the panel instead of under it, when there is room.
+  const pages = useRef<HTMLElement>(null);
+  function libraryPlace(): React.CSSProperties | undefined {
+    const float = panel.floating, box = pages.current?.getBoundingClientRect();
+    if (!float || !box) return undefined;
+    const width = Math.min(340, box.width - 16), right = box.right - 8;
+    if (float.x >= right || float.x + float.width <= right - width) return undefined;
+    const beside = box.right - float.x + 8;
+    return box.right - beside - width >= box.left + 8 ? { right: beside } : undefined;
+  }
   // PDF or Changes stays as the author left it when they come back to the paper.
   const [mode, showMode] = useState<PdfMode>(() => !isPlayground && readPlace('mode:' + project.id) === 'changes' ? 'changes' : 'pdf'), [committing, setCommitting] = useState(false);
   const setMode = (value: PdfMode) => {
@@ -938,7 +951,7 @@ function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, shows
     })}/>;
   // The button always says how many notes are saved, and pops as more arrive.
   const notesLabel = notes.length ? `${t('My notes')} · ${tn(notes.length, 'Note on the PDF', '{n} notes on the PDF')}` : t('My notes');
-  const pdfTools = <>{tools}{problemsButton}<button type="button" data-notes-home="library" className={'icon-button' + (readingNotes ? ' active' : '')} aria-label={notesLabel} title={notesLabel} aria-pressed={readingNotes} onClick={() => { if (readingNotes) void closeReadingNotes(); else { setActive(''); setReadingNotes(true); } }}><Icon name="notes" size={16}/>{notes.length > 0 && <span className="notes-count" aria-hidden="true">{notes.length}</span>}</button>{share}{hidden && togglePanel}</>;
+  const pdfTools = <>{tools}{problemsButton}<button type="button" data-notes-home="library" className={'icon-button' + (readingNotes ? ' active' : '')} aria-label={notesLabel} title={notesLabel} aria-pressed={readingNotes} onClick={() => { if (readingNotes) void closeReadingNotes(); else { setActive(''); setReadingNotes(true); } }}><Icon name="notes" size={16}/>{notes.length > 0 && <span className="notes-count" aria-hidden="true">{notes.length}</span>}</button>{share}{hidden && togglePanel}{showWindow}</>;
   const staged = Array.isArray(git?.files) && !git.merging ? git.files.filter(file => file.staged).map(file => file.path) : [];
   const reloadGit = () => void api<GitStatus>(`/projects/${project.id}/git`).then(onGit, () => undefined);
   const commitButton = (inFrame: boolean) => staged.length > 0 && (inFrame
@@ -962,13 +975,13 @@ function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, shows
     setView('task'); setCollapsed(false);
     requestAnimationFrame(() => taskTab.current?.focus());
   }
-  return <div className={'manuscript show-' + view + (hidden ? ' panel-collapsed' : '')} style={panel.style}>
+  return <div {...panel.area} className={'manuscript dock-area show-' + view + (hidden ? ' panel-collapsed' : '')}>
     {panel.resizer}
     {mode === 'changes' ? <section className="manuscript-pages" aria-label={t('Uncommitted changes in the PDF')}>
       <ReviewFrame key={'changes:' + project.id} changesOf={project.id} lead={switcher} tools={<>{commitButton(false)}{pageTools}</>} completion={commitButton(true)} onDecided={reloadGit}
         sources={review} onOpenSource={isPlayground ? undefined : request => { if (phone()) return false; source.reveal(request.file, request.lines, request.marks); setView('source'); setCollapsed(false); return true; }}
         onCurrentChange={change => { if (!phone()) void source.follow(change, () => { setView('source'); setCollapsed(false); }); }}/>
-    </section> : <section className="manuscript-pages" aria-label={t('PDF preview')} aria-busy={!build || build.status === 'building'}>
+    </section> : <section ref={pages} className="manuscript-pages" aria-label={t('PDF preview')} aria-busy={!build || build.status === 'building'}>
       {!build?.key && <div className="pdf-toolbar manuscript-lead" role="toolbar" aria-label={t('PDF controls')}>{switcher}<div className="pdf-toolbar-spacer"/>{pdfTools}</div>}
       {error && <div className="manuscript-note error" role="alert">{error}</div>}
       {build?.status === 'failed' && (build.key
@@ -983,20 +996,21 @@ function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, shows
           onSource={async (target, key) => { if (!await closeReadingNotes()) return; setActive(''); setView('source'); setCollapsed(false); void source.open(target, key); }} passage={source.passage}/></Suspense>
         : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>{t('Compiling the PDF…')}</h2></div>}
       {returnedPlace && active === returnedPlace && notes.some(note => note.id === returnedPlace && note.key !== build?.key) && <div className="manuscript-note" role="status"><NotePlacementWarning/></div>}
-      {readingNotes && <><div aria-hidden="true" className="pdf-reading-notes-scrim" onClick={() => void closeReadingNotes()}/><aside className="pdf-reading-notes" aria-label={t('PDF note library')}><NotesPanel key={project.id + ':' + (manuscriptDocument(data) || '')} controller={notesPanel} notes={notes} sections={data?.noteSections} pageLayouts={data?.notePageLayouts} currentKey={build?.key} active={active} actions={actions} onShow={show} onAdded={() => void reviewAddedNotes()} onClose={() => void closeReadingNotes()}/></aside></>}
+      {readingNotes && <><div aria-hidden="true" className="pdf-reading-notes-scrim" onClick={() => void closeReadingNotes()}/><aside className="pdf-reading-notes" style={libraryPlace()} aria-label={t('PDF note library')}><NotesPanel key={project.id + ':' + (manuscriptDocument(data) || '')} controller={notesPanel} notes={notes} sections={data?.noteSections} pageLayouts={data?.notePageLayouts} currentKey={build?.key} active={active} actions={actions} onShow={show} onAdded={() => void reviewAddedNotes()} onClose={() => void closeReadingNotes()}/></aside></>}
     </section>}
-    <aside id={panelId} className="manuscript-side" aria-label={t('Manuscript panels')} hidden={hidden}>
-      <div className="manuscript-side-header">
-        {!hidden && togglePanel}
+    {panel.place(<aside id={panelId} className="manuscript-side" aria-label={t('Manuscript panels')} hidden={hidden}>
+      <div className="manuscript-side-header" {...panel.header}>
+        {!hidden && !panel.away && togglePanel}
         <div className="side-tabs" role="tablist" aria-label={t('Manuscript panels')}>
           <button ref={taskTab} role="tab" data-task-home aria-selected={side === 'task'} title={t('New task')} onClick={() => setView('task')}><Icon name="compose" size={14}/><span className="tab-label">{t('New task')}</span>{actions.selection.selected.length > 0 && <span className="count" aria-hidden="true">{actions.selection.selected.length}</span>}</button>
-          {source.tab && <SourceTab tab={source.tab} selected={side === 'source'} onSelect={() => setView('source')} onClose={source.close}/>}
+          {source.tab && <SourceTab tab={source.tab} selected={side === 'source'} onSelect={() => setView('source')} onClose={source.close} onPopOut={panel.away ? undefined : source.popOut}/>}
         </div>
-        <div ref={setTaskActions} className="side-header-actions" hidden={side !== 'task'}/>
+        {panel.control}
       </div>
-      <div className="side-pane" hidden={side !== 'task'}>{newTask(<TaskNotes headerSlot={sideHeader ? taskActions : null} cards={taskCards} controller={taskNotes} notes={notes} currentKey={build?.key} actions={actions} onShow={show}/>)}</div>
+      <div className="side-pane" hidden={side !== 'task'}>{newTask(<TaskNotes cards={taskCards} controller={taskNotes} notes={notes} currentKey={build?.key} actions={actions} onShow={show}/>)}</div>
       {source.panel && <div className="side-pane" hidden={side !== 'source'}>{source.panel}</div>}
-    </aside>
+    </aside>)}
+    {panel.preview}
     {committing && <CommitDialog branch={git?.branch ?? null} files={staged} staged remote={Boolean(git?.remote)} agent={writer && agentLabel(writer.agent)} onClose={() => setCommitting(false)}
       generate={writer && (fresh => api<{ message: string }>(`/projects/${project.id}/git/message`, { paths: staged, staged: true, ...writer, language: commitMessageLanguage(), fresh }).then(result => result.message))}
       commit={async (message, push) => {
@@ -1152,10 +1166,12 @@ function App() {
   const manuscriptBuildRequests = useRef(new Set<string>());
   const [pendingManuscriptBuilds, setPendingManuscriptBuilds] = useState(new Set<string>());
   const [git, setGit] = useState<{ projectId: string; status: GitStatus | null }>({ projectId: '', status: null });
-  const [chatWidth, setChatWidth] = useState(() => Number(browserStorage.getItem('papilot:chat-width')) || 0);
   // Appearance, language and notifications live in Settings; a new language re-renders everything.
   const theme = useTheme(); const { language: uiLanguage } = useLanguage();
   const [settings, setSettings] = useState<false | SettingsInitialPage>(false);
+  // These dialogs show in this window; opened from a panel in a window of its
+  // own, this one comes forward with them (as the desktop app allows).
+  useEffect(() => { if ((settings || deleteTarget || modal) && popoutFocused()) window.focus(); }, [settings, deleteTarget, modal]);
   const [gitResolutions, setGitResolutions] = useState<Record<string, GitResolution>>({});
   const openSettings = useCallback(() => {
     const dialog = document.querySelector('.settings-dialog')?.closest('dialog');
@@ -1181,7 +1197,6 @@ function App() {
   useEffect(() => { browserStorage.setItem('papilot:sidebar', sidebarVisible ? 'visible' : 'hidden'); }, [sidebarVisible]);
   // Earlier versions saved the view and reopened it at every start.
   useEffect(() => { browserStorage.removeItem('papilot:layout'); }, []);
-  useEffect(() => { if (chatWidth) browserStorage.setItem('papilot:chat-width', String(chatWidth)); else browserStorage.removeItem('papilot:chat-width'); }, [chatWidth]);
   useEffect(() => { if (newDraft) browserStorage.setItem('papilot:new-task', newDraft); else browserStorage.removeItem('papilot:new-task'); }, [newDraft]);
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -1249,7 +1264,7 @@ function App() {
         if (removed) setProjectId(removed.projectId);
         token = next.csrf; snapshotRef.current = next; setState(next); setOnline(true); setConnectionError('');
         // Tell the author what changed while they were in another tab or app.
-        if (previous && notifying() && (document.hidden || !document.hasFocus())) for (const alert of taskAlerts(previous, next, notificationState().events)) void notify(alert, id => { setSelected(id); setSidebar(false); setSettings(false); });
+        if (previous && notifying() && (document.hidden || !document.hasFocus()) && !popoutFocused()) for (const alert of taskAlerts(previous, next, notificationState().events)) void notify(alert, id => { setSelected(id); setSidebar(false); setSettings(false); });
         for (const id of composers.current.keys()) if (!next.tasks.some(t => t.id === id)) { composers.current.delete(id); timelineCache.current.delete(id); browserStorage.removeItem('papilot:draft:' + id); }
         setDeleteTarget(current => current && !next.tasks.some(t => t.id === current.id) ? null : current);
         setEditingPaper(current => current && !next.projects.some(p => p.id === current.id) ? null : current);
@@ -1259,7 +1274,7 @@ function App() {
         if (!loaded.current) { loaded.current = true; if (!isPlayground && savedTask === null && !selection) setSelected(next.tasks.filter(task => !task.archivedAt).at(-1)?.id || ''); }
       });
       const selection = selectedRef.current;
-      if (!document.hidden && selection && snapshotRef.current?.tasks.some(t => t.id === selection)) await refreshTimeline(selection);
+      if (!(document.hidden && !popoutVisible()) && selection && snapshotRef.current?.tasks.some(t => t.id === selection)) await refreshTimeline(selection);
     } catch (e) { setOnline(false); setConnectionError(e instanceof Error ? e.message : String(e)); }
   }, [snapshotRequest, refreshTimeline, savedTask]);
   useEffect(() => {
@@ -1276,8 +1291,9 @@ function App() {
     function start() {
       const cycle = ++generation;
       clearTimeout(timer); events?.close(); events = undefined;
-      // A hidden tab stops reading the host, unless it has notifications to give.
-      if ((document.hidden && !notifying()) || !navigator.onLine) { snapshotRequest.cancel(); timelineRequest.cancel(); if (!navigator.onLine) { setOnline(false); setConnectionError(t('You are offline. Your draft is kept in this browser.')); } return; }
+      // A hidden tab stops reading the host, unless it has notifications to give
+      // or a pop-out of it, such as the chat on another display, is in view.
+      if ((document.hidden && !popoutVisible() && !notifying()) || !navigator.onLine) { snapshotRequest.cancel(); timelineRequest.cancel(); if (!navigator.onLine) { setOnline(false); setConnectionError(t('You are offline. Your draft is kept in this browser.')); } return; }
       if (canStreamUpdates(protocol)) {
         events = new EventSource('/api/events');
         events.addEventListener('change', () => { if (cycle === generation) void refresh(); });
@@ -1290,16 +1306,16 @@ function App() {
         await refresh();
         if (cycle !== generation) return;
         const busy = snapshotRef.current?.tasks.some(t => ['preparing', 'running', 'waiting_input', 'queued', 'building'].includes(t.status));
-        timer = setTimeout(() => void poll(), events?.readyState === EventSource.OPEN ? 10000 : document.hidden ? 5000 : busy ? 1000 : 2500);
+        timer = setTimeout(() => void poll(), events?.readyState === EventSource.OPEN ? 10000 : document.hidden && !popoutVisible() ? 5000 : busy ? 1000 : 2500);
       }
       void poll();
     }
     start();
-    document.addEventListener('visibilitychange', start);
+    document.addEventListener('visibilitychange', start); document.addEventListener(POPOUT_VISIBILITY, start);
     window.addEventListener('online', start);
     window.addEventListener('offline', start);
     const unsubscribe = subscribeNotifications(start);
-    return () => { generation++; clearTimeout(timer); events?.close(); snapshotRequest.cancel(); timelineRequest.cancel(); unsubscribe(); document.removeEventListener('visibilitychange', start); window.removeEventListener('online', start); window.removeEventListener('offline', start); };
+    return () => { generation++; clearTimeout(timer); events?.close(); snapshotRequest.cancel(); timelineRequest.cancel(); unsubscribe(); document.removeEventListener('visibilitychange', start); document.removeEventListener(POPOUT_VISIBILITY, start); window.removeEventListener('online', start); window.removeEventListener('offline', start); };
   }, [refresh, snapshotRequest, timelineRequest]);
   useEffect(() => {
     browserStorage.setItem('papilot:task', selected);
@@ -1508,7 +1524,8 @@ function App() {
       return;
     }
     const input = newTaskInput.current, submittedNotes = new Set(attached.map(note => note.id));
-    const restoreFocus = input?.closest('form')?.contains(document.activeElement);
+    // The composer may be in a panel's own window, with focus in its document.
+    const restoreFocus = input?.closest('form')?.contains(input.ownerDocument.activeElement);
     setCreating(true); setCreateError('');
     try {
       // The ID is kept until creation succeeds, so a retried request cannot create a second task.
@@ -1543,7 +1560,7 @@ function App() {
         .map(entry => reviewing ? entry : entry.kind === 'clear' ? { ...entry, selected: [] }
           : 'note' in entry && entry.note.projectId === target ? { ...entry, selected: false } : entry);
       historyChanged();
-      if (restoreFocus && input?.isConnected && (document.activeElement === document.body || input.closest('form')?.contains(document.activeElement))) input.focus({ preventScroll: true });
+      if (restoreFocus && input?.isConnected && (input.ownerDocument.activeElement === input.ownerDocument.body || input.closest('form')?.contains(input.ownerDocument.activeElement))) input.focus({ preventScroll: true });
       // Reload pending notes from the server: a retry may have returned an
       // earlier successful task, while newer notes still belong to the draft.
       if (notes.length) void loadManuscript(target);
@@ -1626,24 +1643,6 @@ function App() {
     setState(previous => previous ? { ...previous, tasks: previous.tasks.map(t => t.id === target.id ? { ...t, title } : t) } : previous);
     try { await api('/tasks/' + target.id + '/rename', { title }); } catch (e) { reportError(e); }
     await refresh(true);
-  }
-  // The divider sets the chat width; CSS keeps both panels usable when the window narrows.
-  function resizeChat(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    const handle = event.currentTarget, grid = handle.parentElement!.getBoundingClientRect();
-    handle.setPointerCapture(event.pointerId); document.body.classList.add('resizing');
-    const move = (e: PointerEvent) => setChatWidth(Math.round(Math.min(Math.max(grid.right - e.clientX, 300), grid.width - 360)));
-    const stop = () => { document.body.classList.remove('resizing'); handle.removeEventListener('pointermove', move); handle.removeEventListener('lostpointercapture', stop); };
-    handle.addEventListener('pointermove', move); handle.addEventListener('lostpointercapture', stop);
-  }
-  function nudgeChat(event: React.KeyboardEvent<HTMLDivElement>) {
-    const current = event.currentTarget.parentElement!.querySelector<HTMLElement>('.activity-panel')?.offsetWidth || 400;
-    const max = event.currentTarget.parentElement!.offsetWidth - 360;
-    const next = event.key === 'ArrowLeft' ? current + 24 : event.key === 'ArrowRight' ? current - 24 : event.key === 'Home' ? max : event.key === 'End' ? 300 : null;
-    if (event.key === 'Enter') { event.preventDefault(); setChatWidth(0); return; }
-    if (next === null) return;
-    event.preventDefault(); setChatWidth(Math.min(Math.max(next, 300), max));
   }
   // Older backends do not report this capability. A current backend always
   // supplies it; never restore a saved Git page when Git is missing there.
@@ -2108,14 +2107,23 @@ function App() {
     setLayout(current => current === 'review' ? 'split' : current);
     return true;
   };
+  const chatPanel = usePanelDock({ key: 'task', widthKey: 'papilot:chat-width', property: '--chat-width', panel: '.activity-panel', label: t('Resize chat panel'),
+    title: task ? `${task.title} — Papilot` : 'Papilot', enabled: Boolean(task) && !mobile && taskLayout === 'split' && task?.mode !== 'citations',
+    fill: { on: !mobile && taskLayout === 'conversation', set: on => selectLayout(on ? 'conversation' : 'split') } });
   const taskSourceSide = taskSource.tab && taskSource.panel ? {
     selected: taskSide === 'source', panel: taskSource.panel,
     tabs: <div className="side-tabs panel-tabs" role="tablist" aria-label={t('Task panels')}>
       <button role="tab" aria-selected={taskSide === 'chat'} onClick={() => setTaskSide('chat')}><Icon name="chat" size={14}/><span className="tab-label">{t('Chat')}</span></button>
-      <SourceTab tab={taskSource.tab} selected={taskSide === 'source'} onSelect={() => setTaskSide('source')} onClose={taskSource.close}/>
+      <SourceTab tab={taskSource.tab} selected={taskSide === 'source'} onSelect={() => setTaskSide('source')} onClose={taskSource.close} onPopOut={chatPanel.away ? undefined : taskSource.popOut}/>
     </div>,
   } : undefined;
   const pause = () => { if (task) void action('/tasks/' + task.id + '/interrupt'); };
+  // The chat docks or floats like the manuscript's panel when both panels show.
+  // The chat hides and comes back as the manuscript's panel does.
+  const hideChat = !mobile && <button type="button" className="icon-button panel-toggle" data-chat-toggle aria-label={t('Hide chat')} title={t('Hide chat')} aria-expanded="true" aria-controls={chatPanel.away ? undefined : 'conversation-panel'}
+    onClick={() => { chatPanel.closeWindow(); selectLayout('review'); }}><Icon name="panelCollapse" size={18}/></button>;
+  const showChat = !mobile && (!conversationVisible || chatPanel.away) && <button type="button" className="icon-button panel-toggle" data-chat-toggle aria-label={chatPanel.away ? t('Show chat window') : t('Show chat')} title={chatPanel.away ? t('Show chat window') : t('Show chat')} aria-expanded={chatPanel.away ? undefined : false}
+    onClick={() => chatPanel.away ? chatPanel.away() : selectLayout('split')}><Icon name={chatPanel.away ? 'external' : 'panelExpand'} size={18}/>{replyNeeded && <i className="attention-dot" aria-hidden="true"/>}</button>;
   // With only the chat in view, the feedback bar moves to the end of the conversation.
   const chatOnly = mobile ? taskTab === 'conversation' : taskLayout === 'conversation';
   const saved = task ? taskSaveStatus(task) : null;
@@ -2171,7 +2179,7 @@ function App() {
       // With a view transition this runs a frame or more after the click; if
       // the author has moved on, say into the composer, focus stays there.
       const focused = document.activeElement;
-      if (!focused || focused === document.body || focused.closest('.workspace-view-selector')) document.querySelector<HTMLElement>('.workspace-view-selector [aria-pressed="true"]')?.focus({ preventScroll: true });
+      if (!focused || focused === document.body || focused.closest('.workspace-view-selector, [data-chat-toggle]')) document.querySelector<HTMLElement>(mobile ? '.workspace-view-selector [aria-pressed="true"]' : '[data-chat-toggle]')?.focus({ preventScroll: true });
     };
     if (!document.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       document.documentElement.classList.remove('switching-workspace');
@@ -2200,14 +2208,12 @@ function App() {
           {task.status === 'deleting' ? <button className="button secondary compact" onClick={() => setDeleteTarget(task)}>{t('Retry deletion')}</button> : task.status === 'uncertain' ? <button className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/reconcile')}><Icon name="refresh" size={14}/>{t('Check status')}</button> : active && !conversationVisible ? <button className="button secondary compact" aria-label={t('Pause task')} title={t('Pause {agent}', { agent: agentName(task) })} disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={pause}><Icon name="pause" size={14}/><span className="button-label">{t('Pause')}</span></button> : task.error && !conversationVisible ? <button className="button secondary compact" onClick={() => { setMobileTab('conversation'); setLayout(current => current === 'review' ? 'split' : current); }}>{t('View details')}</button> : null}
         </div>
   );
-  const workspaceViews = task && <div className="view-selector workspace-view-selector" role="group" aria-label={t('Workspace view')}>{mobile ? <>
+  // Phones show one panel at a time; elsewhere the chat's own toggle and
+  // position menu arrange it (panel-dock.tsx).
+  const workspaceViews = task && mobile && <div className="view-selector workspace-view-selector" role="group" aria-label={t('Workspace view')}>
           <button aria-label={pending ? t('Review, {n} to decide', { n: pending }) : t('Review')} aria-pressed={mobileTab === 'review'} onClick={() => selectLayout('review')}><Icon name="paper" size={16}/><span>{t('Review')}</span>{pending > 0 && <b className="view-count" aria-hidden="true">{pending}</b>}</button>
           <button aria-label={replyNeeded ? t('Chat (reply needed)') : t('Chat')} aria-pressed={mobileTab === 'conversation'} onClick={() => selectLayout('conversation')}><Icon name="chat" size={16}/><span>{t('Chat')}</span>{replyNeeded && <i className="attention-dot" aria-hidden="true"/>}</button>
-        </> : <>
-          <button aria-label={t('Review')} title={t('PDF review only')} aria-pressed={layout === 'review'} onClick={() => selectLayout('review')}><Icon name="paper" size={16}/><span>{t('Review')}</span></button>
-          <button aria-label={t('Split')} title={t('Review and chat side by side')} aria-pressed={layout === 'split'} onClick={() => selectLayout('split')}><Icon name="split" size={16}/><span>{t('Split')}</span></button>
-          <button aria-label={replyNeeded ? t('Chat (reply needed)') : t('Chat')} title={noManuscriptChanges(task) ? t('This conversation has no manuscript changes.') : t('Chat only')} aria-pressed={layout === 'conversation'} onClick={() => selectLayout('conversation')}><Icon name="chat" size={16}/><span>{t('Chat')}</span>{replyNeeded && <i className="attention-dot" aria-hidden="true"/>}</button>
-        </>}</div>;
+        </div>;
   const totalNotes = project && state?.manuscriptNoteCounts ? state.manuscriptNoteCounts[project.id] ?? 0 : savedNotes?.length;
   const manuscriptCount = totalNotes !== undefined && <span className="manuscript-note-count" aria-hidden="true">{totalNotes}</span>;
   const countDescription = totalNotes === undefined ? undefined : tn(totalNotes, '{n} annotation', '{n} annotations');
@@ -2249,6 +2255,8 @@ function App() {
     <div className="new-task-start">
     {!noteSelection.selected.length && <div className="new-task-welcome"><PapilotMark size={44}/><h2>{t('What are we revising next?')}</h2></div>}
     {newSkill?.output !== 'annotations' && attachments}
+    {/* Docked at the bottom, the task's notes and the composer sit side by side. */}
+    <div className="new-task-compose">
     {missingAgent && <NoAgentNotice hosted={Boolean(state?.host)} message={missingReadOnlyAgent ? errorText(noReadOnlyAgent) : undefined} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} onAdd={() => setSettings('agents')}/>}
     {suggestWriter && <WriterSuggestion ready={writerReady} onUse={() => { chooseModel('papilot', runtimes.papilot?.models.find(model => model.isDefault)?.id || ''); dismissWriter(); }} onSetUp={() => setSettings('agents')} onDismiss={dismissWriter}/>}
     <Composer attachments={newSkill?.output === 'annotations' ? undefined : newFiles.draft} upload={(file, signal) => uploadAttachment(project!.id, file, signal)} imageHint={agentChoice === 'antigravity' && newFiles.files.some(file => file.mime.startsWith('image/'))} autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={noteSelection.selected.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
@@ -2261,6 +2269,7 @@ function App() {
     {createError && <p className="inline-error" role="alert">{createError}</p>}
     {PlaygroundPresets && <Suspense fallback={null}><PlaygroundPresets selected={noteSelection.selected} open={id => openPreparedTask(id)} disabled={creating}/></Suspense>}
     {runtimes[agentChoice]?.usage && <UsageSummary agent={agentLabel(agentChoice)} usage={runtimes[agentChoice]!.usage!}/>}
+    </div>
     </div>
   </section>;
 
@@ -2444,18 +2453,18 @@ function App() {
       {state && !state.host && <RequirementsBanner state={requirements} onOpen={setSettings}/>}
       {state && !online && <div className="connection-banner" role="status"><Icon name="alert" size={15}/><span>{t('Connection lost. Showing the last update; your draft is kept.')}</span><button onClick={() => void refresh(true)}>{t('Retry connection')}</button></div>}
       {task?.mode === 'citations' ? <CitationCheckView key={task.id} task={task} load={api} agents={readOnlyAgents.map(id => ({ value: id, label: agentLabel(id), runtime: runtimes[id] }))} reconnect={async () => { await api('/reconnect', {}); await refresh(true); }} lead={!mobile ? sidebarToggle : null} onOpen={(target, evidence) => evidenceActions.open?.(target, evidence)} onCite={suggestion => draftInvestigation(citeRequest(suggestion))}/>
-      : task ? <div className={`task-grid layout-${taskLayout} show-${taskTab}`} style={chatWidth ? { '--chat-width': `${chatWidth}px` } as React.CSSProperties : undefined}>
-          {!mobile && taskLayout === 'split' && <div className="panel-resizer" role="separator" aria-orientation="vertical" aria-label={t('Resize chat panel')} aria-valuenow={chatWidth || undefined} aria-valuemin={300} tabIndex={0} title={t('Drag to resize · Double-click to reset')} onPointerDown={resizeChat} onDoubleClick={() => setChatWidth(0)} onKeyDown={nudgeChat}/>}
+      : task ? <div {...chatPanel.area} className={`task-grid dock-area layout-${taskLayout} show-${taskTab}`}>
+          {chatPanel.resizer}
           <section id="review-panel" className="review-panel" aria-label={t('PDF review')}>
-          {!mobile && !chatOnly && task.status === 'deleting' && (sidebarToggle || !conversationVisible) && <div className="review-placeholder-toolbar">{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}<div className="panel-tools">{!conversationVisible && taskStateActions}</div></div>}
+          {!mobile && !chatOnly && task.status === 'deleting' && (sidebarToggle || !conversationVisible) && <div className="review-placeholder-toolbar">{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}<div className="panel-tools">{!conversationVisible && taskStateActions}{showChat}</div></div>}
           {(task.review?.state === 'build_failed' || task.status === 'failed' && task.review?.job?.status === 'failed') && <div className="review-build-error" role="status"><Icon name="alert" size={15}/><span>{t('Could not generate the PDF comparison.')}</span><button className="button secondary compact" disabled={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}>{t('Retry build')}</button></div>}
-          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : !task.preparation && task.mode === 'review' ? <AiReviewView key={task.id} task={task} api={api} onCopied={() => void loadManuscript(task.projectId)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}</> : null} tools={!mobile && !conversationVisible ? taskStateActions : null}/> : <TaskDocument key={task.id} projectId={task.projectId} manuscript={manuscriptData.data} placeholder={task.preparation ? <PreparingTask task={task}/> : <PendingComparison task={task} busy={taskActionBusy} onBuild={() => void action('/tasks/' + task.id + '/publish')}/>} task={task} sources={taskReview} onOpenSource={openTaskSource} onRetryComparison={isPlayground ? undefined : () => void action('/tasks/' + task.id + '/publish')} retryBusy={comparisonRetryBusy} onChanges={next => setTaskChanges(current => JSON.stringify(current) === JSON.stringify(next) ? current : next)} onCurrentChange={change => { if (taskSource.editing && taskSide === 'source') void taskSource.follow(change, () => undefined); }} onDecided={() => void refresh(true)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}</> : null} tools={<>{reviewTools}{!mobile && !conversationVisible && taskStateActions}</>} completion={chatOnly ? null : completion} onComment={() => { setMobileTab('conversation'); setTaskSide('chat'); setLayout(current => current === 'review' ? 'split' : current); }}/>}
-        </section><Activity key={task.id} runtimes={runtimes} manualSettingsVersion={manualSettingsVersion} relatedTasks={state?.tasks.filter(other => other.id === task.restart?.taskId || other.restart?.taskId === task.id) || []} onOpenTask={id => { setSelected(id); setSidebar(false); }} source={taskSourceSide} onRevealQuote={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} task={task} lead={!mobile && chatOnly ? sidebarToggle : null} tools={!mobile && conversationVisible ? taskControls : null} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={taskRequests} refresh={() => void refresh(true)} errorActions={task.preparation && task.status === 'failed' ? <div className="task-error-actions">
+          {task.status === 'deleting' ? <div className="review-placeholder"><div className="placeholder-icon"><Icon name="trash" size={22}/></div><h2>{t('Deletion is in progress')}</h2><p>{t('This task is reserved until its worktree cleanup is confirmed. Use Retry deletion if the connection was interrupted.')}</p></div> : !task.preparation && task.mode === 'review' ? <AiReviewView key={task.id} task={task} api={api} onCopied={() => void loadManuscript(task.projectId)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}</> : null} tools={!mobile ? <>{!conversationVisible && taskStateActions}{showChat}</> : null}/> : <TaskDocument key={task.id} projectId={task.projectId} manuscript={manuscriptData.data} placeholder={task.preparation ? <PreparingTask task={task}/> : <PendingComparison task={task} busy={taskActionBusy} onBuild={() => void action('/tasks/' + task.id + '/publish')}/>} task={task} sources={taskReview} onOpenSource={openTaskSource} onRetryComparison={isPlayground ? undefined : () => void action('/tasks/' + task.id + '/publish')} retryBusy={comparisonRetryBusy} onChanges={next => setTaskChanges(current => JSON.stringify(current) === JSON.stringify(next) ? current : next)} onCurrentChange={change => { if (taskSource.editing && taskSide === 'source') void taskSource.follow(change, () => undefined); }} onDecided={() => void refresh(true)} lead={!mobile && !chatOnly && (sidebarToggle || !conversationVisible) ? <>{sidebarToggle}{!conversationVisible && <>{manuscriptShortcut}{workspaceViews}</>}</> : null} tools={<>{reviewTools}{!mobile && !conversationVisible && taskStateActions}{showChat}</>} completion={chatOnly ? null : completion} onComment={() => { setMobileTab('conversation'); setTaskSide('chat'); setLayout(current => current === 'review' ? 'split' : current); }}/>}
+        </section>{chatPanel.place(<Activity key={task.id} runtimes={runtimes} manualSettingsVersion={manualSettingsVersion} relatedTasks={state?.tasks.filter(other => other.id === task.restart?.taskId || other.restart?.taskId === task.id) || []} onOpenTask={id => { setSelected(id); setSidebar(false); }} source={taskSourceSide} dock={chatPanel.control ? { header: chatPanel.header, control: chatPanel.control } : undefined} onRevealQuote={() => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); }} task={task} lead={!mobile ? <>{chatOnly && sidebarToggle}{hideChat}</> : null} tools={!mobile && conversationVisible ? taskControls : null} connection={<AgentConnectionNotice name={agentName(task)} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')}/>} runtime={runtimes[task.agent || 'codex']} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} composer={composers.current.get(task.id)!} answerDrafts={answerDrafts.current} items={timeline.taskId === task.id ? timeline.items : timelineCache.current.get(task.id) || []} loading={timeline.taskId === task.id ? itemsLoading : !timelineCache.current.has(task.id)} loadError={timelineError.taskId === task.id ? timelineError.message : ''} retry={() => void refreshTimeline(task.id)} requests={taskRequests} refresh={() => void refresh(true)} errorActions={task.preparation && task.status === 'failed' ? <div className="task-error-actions">
             <button type="button" className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/prepare')}><Icon name="refresh" size={14}/>{t('Retry')}</button>
             <button type="button" className="button secondary compact" onClick={() => setDeleteTarget(task)}><Icon name="trash" size={14}/>{t('Delete task…')}</button>
           </div> : chatOnly && task.mode !== 'review' && ['failed', 'interrupted'].includes(task.status) ? <div className="task-error-actions">
             <button type="button" className="button secondary compact" disabled={taskActionBusy} aria-busy={taskActionBusy} onClick={() => void action('/tasks/' + task.id + '/publish')}><Icon name="diff" size={14}/>{task.review?.round ? t('Regenerate PDF comparison') : t('Generate PDF comparison')}</button>
-          </div> : null} onTaskSaved={acceptSavedTask} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={chatOnly ? <>{reviewFeedback(true)}{completion && <div className="review-feedback card commit-card task-delivery">{completion}</div>}</> : null} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/></div>
+          </div> : null} onTaskSaved={acceptSavedTask} reportError={reportError} pause={pause} pausing={taskActionBusy} skills={projectSkills} feedback={chatOnly ? <>{reviewFeedback(true)}{completion && <div className="review-feedback card commit-card task-delivery">{completion}</div>}</> : null} openReview={chatOnly ? () => { setMobileTab('review'); setLayout(current => current === 'conversation' ? 'split' : current); } : undefined}/>)}{chatPanel.preview}</div>
       : manuscriptOpen && project ? <ManuscriptView evidenceActions={evidenceActions} evidenceFocus={evidenceFocus} onEvidenceShown={() => setEvidenceFocus(null)} showsChecks={Boolean(state?.tasks.some(item => item.projectId === project.id && item.mode === 'citations' && item.citationCheck?.show))} onOpenTask={id => void switchWorkspace(id, true)} returnedPlace={returnedPlace} onPlaceShown={id => setReturnedPlace(current => id === current ? '' : current)} notesRequest={libraryRequest} taskCards={taskCards} key={project.id + project.path} navigationGuard={manuscriptNavigationGuard} collapsed={manuscriptCollapsed} setCollapsed={setManuscriptCollapsed} navigation={!mobile ? sidebarToggle : null} project={project} data={shownManuscript} error={manuscriptData.error} view={manuscriptView} setView={setManuscriptView} region={region} setRegion={setRegion} active={activeNote} setActive={setActiveNote} actions={noteActions} newTask={newTaskPanel} tools={!mobile ? manuscriptTools : null} share={!mobile ? manuscriptShare : null} onFixProblems={fixProblems} diagnoseBuild={isPlayground || !diagnosisAgent ? undefined : failureId => api<BuildRepairResult>(`/projects/${project.id}/manuscript/repair`, { failureId, agent: diagnosisAgent.agent, model: diagnosisAgent.model })} onGit={status => updateGit(project.id, status)} writer={commitWriter} reportError={reportError} openFile={openFile} onOpened={() => setOpenFile(null)} onEditing={setEditingFile}/>
       : gitOpen && project ? <GitWorkspace key={project.id + project.path} projectId={project.id} navigation={sidebarToggle} git={projectGit} hosted={Boolean(state?.host)} onStatus={status => updateGit(project.id, status)} resolver={conflictWriter} resolution={resolution?.busy || resolution?.merge === mergeId ? resolution : undefined} setResolution={value => setGitResolutions(resolutions => {
         if (value) return { ...resolutions, [commitContextKey]: value };

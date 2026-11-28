@@ -3,6 +3,7 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { MathPlugins } from './math-plugins.ts';
 import { t, useLanguage } from './i18n.ts';
+import { copyText } from './owner-window.ts';
 
 // Host paths are references, not routes on the Papilot web server. Clicking
 // copies the path, including line numbers, even over Tailscale HTTP.
@@ -10,20 +11,12 @@ function FileReference({ path, children }: { path: string; children: ReactNode }
   // The reply around it is memoized, so its label follows the language itself.
   useLanguage();
   const [copied, setCopied] = useState(false);
-  async function copy() {
+  async function copy(button: HTMLElement) {
     let value = path;
     try { value = decodeURI(path); } catch { /* Keep literal percent signs. */ }
-    let ok = false;
-    try { await navigator.clipboard.writeText(value); ok = true; }
-    catch {
-      const area = document.createElement('textarea');
-      area.value = value; area.style.position = 'fixed'; area.style.opacity = '0';
-      document.body.append(area); area.select();
-      try { ok = document.execCommand('copy'); } finally { area.remove(); }
-    }
-    setCopied(ok);
+    setCopied(await copyText(value, button));
   }
-  return <button type="button" className="file-reference" title={path} aria-label={copied ? t('Copied path') : t('Copy path: {path}', { path })} onClick={() => void copy()}>{children}</button>;
+  return <button type="button" className="file-reference" title={path} aria-label={copied ? t('Copied path') : t('Copy path: {path}', { path })} onClick={event => void copy(event.currentTarget)}>{children}</button>;
 }
 
 // Code is never mathematics: fenced blocks, then inline code spans.

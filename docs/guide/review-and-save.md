@@ -1,6 +1,6 @@
 ## Review typeset changes
 
-When an agent finishes editing its isolated Git worktree, Papilot compiles the paper and opens the **Review** workspace (**Review**, **Split** or **Chat** on desktop; **Review** and **Chat** tabs on phones):
+When an agent finishes editing its isolated Git worktree, Papilot compiles the paper and opens the **Review** workspace. On desktop the chat sits beside the review: **Hide chat** at the start of its header leaves the review on its own, **Show chat** in the review toolbar brings it back, and **Fill the window** in the chat's position menu shows the chat alone (see [Arrange panels and windows](quickstart.md#arrange-panels-and-windows)). Phones switch between **Review** and **Chat** tabs:
 
 ![Reviewing typeset before-and-after PDF diffs](../assets/readme-showcase/why-review.png)
 

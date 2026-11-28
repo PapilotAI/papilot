@@ -4,7 +4,10 @@ import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from 'ele
 // Keep these in step with INTERFACE_SIZES in src/web/appearance.ts.
 const interfaceSizes = [1, 1.1, 1.25, 1.5, 1.75, 2];
 const setZoom = (factor: unknown) => {
-  if (typeof factor === 'number' && interfaceSizes.includes(factor)) webFrame.setZoomFactor(factor);
+  if (typeof factor !== 'number' || !interfaceSizes.includes(factor)) return;
+  webFrame.setZoomFactor(factor);
+  // The workspace's pop-out windows take the same size (popout-windows.ts).
+  ipcRenderer.send('papilot:zoomed', factor);
 };
 
 // The main process passes the desktop's window button layout (Linux) as an

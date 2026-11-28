@@ -13,11 +13,18 @@
 [data-desktop-controls="left"]:not([data-desktop="darwin"]){--desktop-leading-space:var(--desktop-controls-width)}
 [data-desktop-controls="left"] .sidebar-collapsed .desktop-window-drag{width:var(--desktop-leading-space)}
 [data-desktop-controls="left"] .sidebar-collapsed .sidebar-toggle{margin-left:var(--desktop-leading-space,0px)}
+/* Docked on the left, with the sidebar hidden, a panel's header is what
+   meets the leading controls. */
+[data-desktop-controls="left"] .sidebar-collapsed .dock-area[data-dock=left]>:is(.manuscript-side,.activity-panel)>:is(.panel-heading,.manuscript-side-header){padding-left:calc(4px + var(--desktop-leading-space,0px))}
 [data-desktop] :is(.pdf-toolbar,.workspace-navigation,.review-placeholder-toolbar,.git-toolbar,.git-details-toolbar,.git-diff-toolbar,.review-host-bar,.panel-heading,.manuscript-side-header){-webkit-app-region:drag}
 /* Over the changes the host bar lets clicks through to the viewer's own bar,
    whose controls it marks with these holes. They take no clicks themselves. */
 .review-host-bar>.review-bar-hole{position:absolute;pointer-events:none;-webkit-app-region:no-drag}
 [data-desktop] :is(button,a,input,select,textarea,[role="slider"],[role="combobox"]){-webkit-app-region:no-drag}
+/* A side panel that docks and floats (panel-dock.tsx) moves by its header,
+   so the header is no longer the window's title bar; floating, the panel also
+   takes the presses over a toolbar it covers. */
+[data-desktop] .dock-area[data-dock]>:is(.manuscript-side,.activity-panel)>:is(.panel-heading,.manuscript-side-header),[data-desktop] .dock-area[data-dock=float]>:is(.manuscript-side,.activity-panel,.panel-edge,.panel-corner){-webkit-app-region:no-drag}
 /* app-region inherits, so a popover or dialog opened from a toolbar would be a
    drag handle too. On macOS that stops every click reaching the window. */
 [data-desktop] :is([popover],dialog){-webkit-app-region:no-drag}
@@ -39,8 +46,12 @@
 }
 [data-desktop-controls="right"] .sidebar-header{border-bottom:1px solid var(--line);-webkit-app-region:drag}
 [data-desktop-controls="right"] .main{--desktop-window-space:var(--desktop-controls-width)}
-[data-desktop-controls="right"] .manuscript:not(.panel-collapsed)>.manuscript-pages,
-[data-desktop-controls="right"] .task-grid.layout-split>.review-panel{--desktop-window-space:0px}
+/* A panel docked on the right (or stacked, undocked) takes the controls' room
+   from the pages beside it; docked elsewhere, the pages reach the edge and
+   keep it, and the panel's own header does not need it. */
+[data-desktop-controls="right"] .manuscript:not(.panel-collapsed):is(:not([data-dock]),[data-dock=right])>.manuscript-pages,
+[data-desktop-controls="right"] .task-grid.layout-split:is(:not([data-dock]),[data-dock=right])>.review-panel,
+[data-desktop-controls="right"] .dock-area:is([data-dock=left],[data-dock=bottom],[data-dock=float])>:is(.manuscript-side,.activity-panel){--desktop-window-space:0px}
 [data-desktop-controls="right"] :is(.pdf-toolbar,.workspace-navigation,.review-placeholder-toolbar,.panel-heading,.manuscript-side-header,.git-details-toolbar,.git-diff-toolbar,.review-tools){padding-right:calc(8px + var(--desktop-window-space,0px))}
 [data-desktop-controls="right"] .review-host-bar.pdf-toolbar{padding-right:0}
 [data-desktop-controls="right"] .git-workspace .git-panel{--desktop-window-space:0px}

@@ -375,7 +375,7 @@ try {
   const editTaskNote = () => taskCard.getByRole('button', { name: 'Edit note 1', exact: true });
   const taskText = () => taskCard.locator('.note-edit-trigger');
   const taskEditor = taskCard.getByRole('textbox', { name: 'Edit note 1', exact: true });
-  await expect(page.locator('.manuscript-side-header').getByRole('button', { name: 'Remove all from task', exact: true })).toHaveText('Remove all from task');
+  await expect(page.locator('.task-notes-panel').getByRole('button', { name: 'Remove all from task', exact: true })).toHaveText('Remove all from task');
   await editTaskNote().focus(); await page.keyboard.press('Enter');
   await expect(taskEditor).toBeFocused();
   await expect(taskEditor).toHaveValue('Revise n1.');
@@ -383,7 +383,7 @@ try {
   await expect(taskCard.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0);
   await expect(taskCard.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
   await expect(send()).toBeDisabled();
-  await expect(page.locator('.manuscript-side-header').getByRole('button', { name: 'Remove all from task', exact: true })).toBeDisabled();
+  await expect(page.locator('.task-notes-panel').getByRole('button', { name: 'Remove all from task', exact: true })).toBeDisabled();
   await taskEditor.fill('   ');
   await expect(taskCard.getByRole('button', { name: 'Remove note 1 from task', exact: true })).toBeDisabled();
   await taskEditor.press('Escape');

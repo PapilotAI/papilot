@@ -14,6 +14,12 @@ await server.listen({ host: '127.0.0.1', port: 0 });
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
 const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1200, height: 780 } });
 const errors = []; page.on('pageerror', error => errors.push(error.message));
+// On desktop the chat's position menu fills the window with it or docks it beside the review.
+async function placeChat(position) {
+  await page.locator('#conversation-panel .panel-heading').getByRole('button', { name: /^Panel position/ }).click();
+  await page.getByRole('menuitemradio', { name: position, exact: true }).click();
+  await expect(page.locator('.task-grid')).toHaveClass(position === 'Fill the window' ? /layout-conversation/ : /layout-split/);
+}
 const task = { id: 'reply-task', projectId: 'paper', agent: 'claude', name: 'reply', title: 'Check the table width', instructions: 'Keep the table within the column.', worktree: '/tmp/paper', threadId: 'thread', turnId: 'turn', status: 'reviewing', createdAt: 1, updatedAt: 1, review: null };
 const runtime = { connected: true, authenticated: true, models: [] };
 const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Example paper', path: '/tmp/paper' }], tasks: [task], requests: [], runtime, runtimes: { claude: runtime } };
@@ -39,7 +45,7 @@ await page.route('**/api/**', async route => {
 });
 try {
   await page.goto(`http://127.0.0.1:${server.server.address().port}`);
-  await page.getByRole('button', {name:'Chat', exact:true}).click();
+  await placeChat('Fill the window');
   await expect(page.getByText(text, { exact: true })).toHaveCount(baseline ? 2 : 1);
   await page.screenshot({ animations: 'disabled', path: `test-results/reply-duplicates-${baseline ? 'before' : 'after'}.png` });
   await page.reload();

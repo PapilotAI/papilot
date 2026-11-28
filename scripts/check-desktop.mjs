@@ -301,6 +301,60 @@ try {
   await openFromFileMenu();
   await opened('local-paper');
   assert.equal((await (await fetch(`${origin}/api/state`)).json()).projects.length, 3);
+  // The source editor opens in a framed window of its own, at the interface
+  // size, and opens again where it was last closed.
+  await page.locator('.manuscript-row').getByRole('button', { name: /^(Files|文件)/ }).click();
+  await page.getByRole('list', { name: /^(Repository files|仓库文件)$/ }).getByRole('button', { name: 'main.tex', exact: true }).click();
+  const sourceField = page.locator('.source-panel').getByRole('textbox');
+  await expect(sourceField).toContainText('Local paper.');
+  // A panel that docks and floats moves by its header, so the header is not
+  // the window's title bar; the PDF toolbar still is.
+  const region = locator => locator.first().evaluate(element => getComputedStyle(element).getPropertyValue('-webkit-app-region'));
+  assert.equal(await page.locator('.manuscript').getAttribute('data-dock'), 'right');
+  assert.equal(await region(page.locator('.manuscript-side-header')), 'no-drag');
+  assert.equal(await region(page.locator('.manuscript-pages .pdf-toolbar')), 'drag');
+  const panelPosition = page.locator('.manuscript-side-header').getByRole('button', { name: /^(Panel position|面板位置)/ });
+  await panelPosition.click(); await page.getByRole('menuitemradio', { name: /^(Float over the page|浮动在页面上方)$/ }).click();
+  await expect(page.locator('.manuscript')).toHaveAttribute('data-dock', 'float');
+  assert.equal(await region(page.locator('.manuscript-side')), 'no-drag', 'a floating panel takes the presses over a toolbar it covers');
+  await panelPosition.click(); await page.getByRole('menuitem', { name: /^(Reset panel layout|重置面板布局)$/ }).click();
+  await expect(page.locator('.manuscript')).toHaveAttribute('data-dock', 'right');
+  const popOut = page.getByRole('button', { name: /^(Open in a new window|在新窗口中打开)$/ });
+  const openPopout = async () => {
+    const [popup] = await Promise.all([application.waitForEvent('window'), popOut.click()]);
+    await expect(popup.locator('.popout-root').getByRole('textbox')).toContainText('Local paper.');
+    return popup;
+  };
+  const popoutWindow = () => application.evaluate(({ BrowserWindow }) => {
+    const all = BrowserWindow.getAllWindows(), popup = all.find(window => window.webContents.getURL() === 'about:blank');
+    const main = all.find(window => window !== popup);
+    return popup && { bounds: popup.getBounds(), zoom: popup.webContents.getZoomFactor(), mainZoom: main.webContents.getZoomFactor(), sandbox: popup.webContents.getLastWebPreferences().sandbox };
+  });
+  await page.evaluate(() => window.papilotDesktop.setZoom(1.25));
+  const zoomed = await openPopout();
+  assert.deepEqual(await popoutWindow().then(({ zoom, mainZoom, sandbox }) => ({ zoom, mainZoom, sandbox })), { zoom: 1.25, mainZoom: 1.25, sandbox: true });
+  // Sized in the page's pixels, at the interface size: it shows what it asked for.
+  // The screen is in its own pixels, which the interface size does not scale; a
+  // window wider than the screen is narrowed to fit it.
+  const shown = await zoomed.evaluate(() => ({ width: innerWidth, asked: Math.min(900, Math.floor(screen.availWidth / 1.25)) }));
+  assert.ok(Math.abs(shown.width - shown.asked) <= 24, `the window shows its asked width at the interface size: ${JSON.stringify(shown)}`);
+  const throttled = () => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL() !== 'about:blank').webContents.getBackgroundThrottling());
+  assert.equal(await throttled(), false, 'the page keeps its pace while a pop-out shows it');
+  await page.evaluate(() => window.papilotDesktop.setZoom(1));
+  await expect.poll(() => popoutWindow().then(window => window.zoom)).toBe(1);
+  const place = { x: 120, y: 140, width: 700, height: 520 };
+  await application.evaluate(({ BrowserWindow }, place) => {
+    const popup = BrowserWindow.getAllWindows().find(window => window.webContents.getURL() === 'about:blank');
+    popup.setBounds(place); popup.close();
+  }, place);
+  await expect(page.locator('.source-panel-away')).toHaveCount(0);
+  await expect(sourceField).toContainText('Local paper.');
+  await expect.poll(throttled, { message: 'and is throttled again when hidden without one' }).toBe(true);
+  await openPopout();
+  assert.deepEqual((await popoutWindow()).bounds, place);
+  await page.getByRole('button', { name: /^(Move back here|移回此处)$/ }).click();
+  await expect.poll(popoutWindow).toBe(undefined);
+  await page.getByRole('tablist').locator('.side-tab-close').click();
   // A paper moves by choosing its folder, never by typing a path.
   await paperMenu.click();
   await page.getByRole('menuitem', { name: /^(Edit local-paper|编辑 local-paper)$/ }).click();
@@ -337,6 +391,22 @@ try {
   await expect.poll(zoomFactor).toBeCloseTo(1.25);
   assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('papilot:appearance'))).size, 1.25);
   await captureZoom('zoom');
+  // A pop-out open when the main window closes remembers where it was.
+  const openSource = async window => {
+    await window.locator('.manuscript-row').getByRole('button', { name: /^(Files|文件)/ }).click();
+    await window.getByRole('list', { name: /^(Repository files|仓库文件)$/ }).getByRole('button', { name: 'main.tex', exact: true }).click();
+    const [popup] = await Promise.all([application.waitForEvent('window'), window.getByRole('button', { name: /^(Open in a new window|在新窗口中打开)$/ }).click()]);
+    await expect(popup.locator('.popout-root').getByRole('textbox')).toContainText('\\documentclass');
+  };
+  await page.keyboard.press('Escape');
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  await openSource(page);
+  const quitPlace = { x: 160, y: 120, width: 640, height: 480 };
+  await application.evaluate(({ BrowserWindow }, place) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL() === 'about:blank').setBounds(place), quitPlace);
+  // As when the main window closes on Windows or Linux, its pop-outs go with
+  // it, destroyed without their own close event.
+  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL() !== 'about:blank').emit('closed'));
+  await expect.poll(popoutWindow).toBe(undefined);
   await page.evaluate(() => localStorage.setItem('papilot:desktop-smoke', 'keep draft'));
   await application.close(); application = null;
   await assert.rejects(fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(5000) }), 'Quitting Electron stops its backend');
@@ -345,6 +415,8 @@ try {
   await reopened.waitForURL(origin + '/');
   assert.equal(await reopened.evaluate(() => localStorage.getItem('papilot:desktop-smoke')), 'keep draft', 'Local preferences survive a desktop restart');
   await expect.poll(zoomFactor, { message: 'Interface size survives a desktop restart' }).toBeCloseTo(1.25);
+  await openSource(reopened);
+  assert.deepEqual((await popoutWindow()).bounds, quitPlace, 'a pop-out closed with the main window reopens where it was');
   await zoomMenu('zoom-reset');
   await expect.poll(zoomFactor).toBeCloseTo(1);
   await application.close(); application = null;

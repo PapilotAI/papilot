@@ -17,6 +17,12 @@ const page = await context.newPage();
 await page.clock.install();
 await page.addInitScript(() => localStorage.setItem('papilot:advanced-git', 'on'));
 const errors = []; page.on('pageerror', error => errors.push(error.message));
+// On desktop the chat's position menu fills the window with it or docks it beside the review.
+async function placeChat(position) {
+  await page.locator('#conversation-panel .panel-heading').getByRole('button', { name: /^Panel position/ }).click();
+  await page.getByRole('menuitemradio', { name: position, exact: true }).click();
+  await expect(page.locator('.task-grid')).toHaveClass(position === 'Fill the window' ? /layout-conversation/ : /layout-split/);
+}
 const diffFailures = [];
 page.on('requestfailed', request => {
   if (new URL(request.url()).pathname.endsWith('/git/diff')) diffFailures.push(request.failure()?.errorText);
@@ -181,8 +187,7 @@ try {
   // A task's inline commit step also uses English, despite its Chinese title.
   Object.assign(task, { title: '改进引言', status: 'reviewing', deferred: true, review: { state: 'done', round: 1, counts: { accepted: 1 }, files: ['main.tex'] } });
   const taskLink = page.locator(`.task-row[data-task="${task.id}"] .task-link`);
-  const taskView = name => page.getByRole('group', { name: 'Workspace view', exact: true }).getByRole('button', { name, exact: true });
-  const reloadTaskChat = async () => { await page.reload(); await taskLink.click(); await taskView('Chat').click(); };
+  const reloadTaskChat = async () => { await page.reload(); await taskLink.click(); await placeChat('Fill the window'); };
   await reloadTaskChat();
   const taskCommit = page.locator('.task-apply');
   const taskMessage = taskCommit.getByRole('textbox', { name: 'Commit message', exact: true });
@@ -218,8 +223,8 @@ try {
   assert.equal(messageRequests.at(-1).fresh, true);
   const beforeCleared = messageRequests.length;
   await taskMessage.fill('');
-  await taskView('Split').click();
-  await taskView('Chat').click();
+  await placeChat('Dock on the right');
+  await placeChat('Fill the window');
   await expect(taskMessage).toHaveValue('');
   assert.equal(messageRequests.length, beforeCleared);
 
@@ -522,7 +527,7 @@ try {
   task.status = 'interrupted'; task.deferred = true;
   task.review = { state: 'done', round: 0, counts: { pending: 0 }, files: ['main.tex'] };
   await page.reload(); await openTask();
-  await page.getByRole('group', { name: 'Workspace view' }).getByRole('button', { name: 'Chat', exact: true }).click();
+  await placeChat('Fill the window');
   const taskGenerate = page.locator('.task-apply:visible').getByRole('button', { name: 'Generate commit message' }).first();
   await expect(taskGenerate).toHaveAttribute('title', /Codex/);
   await taskGenerate.click();

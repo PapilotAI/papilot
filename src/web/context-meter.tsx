@@ -1,6 +1,7 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ContextUsage } from '../shared.ts';
 import { locale, t } from './i18n.ts';
+import { viewOf } from './owner-window.ts';
 
 // How full the agent's context window is: a ring beside Send. Hovering it
 // gives the exact counts; clicking opens what fills the window, when the
@@ -23,7 +24,7 @@ export function ContextMeter({ usage }: { usage?: ContextUsage | null }) {
     if (!open || !panel.current || !button.current) return;
     // Above the ring, inside the window.
     const rect = button.current.getBoundingClientRect(), box = panel.current;
-    box.style.left = `${Math.max(8, Math.min(rect.right - box.offsetWidth, window.innerWidth - box.offsetWidth - 8))}px`;
+    box.style.left = `${Math.max(8, Math.min(rect.right - box.offsetWidth, viewOf(box).innerWidth - box.offsetWidth - 8))}px`;
     box.style.top = `${Math.max(8, rect.top - box.offsetHeight - 8)}px`;
   }, [open, usage]);
   if (!usage?.window) return null;

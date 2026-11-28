@@ -14,8 +14,8 @@
 .side-tabs>.side-tab-closable:hover{color:var(--text-2)}
 .side-tabs>.side-tab-closable[data-selected=true]{color:var(--text)}
 .side-tab-closable>button[role=tab]{display:flex;align-items:center;gap:6px;height:28px;padding:0 2px 0 8px;font-size:12px;font-weight:500;color:inherit}
-.side-tab-close{position:relative;display:grid;place-items:center;width:20px;height:20px;margin-right:4px;border-radius:var(--r-sm);color:var(--text-3)}
-.side-tab-close:hover,.side-tab-close:focus-visible{background:var(--bg-muted);color:var(--text)}
+.side-tab-close,.side-tab-action{position:relative;display:grid;place-items:center;width:20px;height:20px;margin-right:4px;border-radius:var(--r-sm);color:var(--text-3)}
+.side-tab-close:hover,.side-tab-close:focus-visible,.side-tab-action:hover,.side-tab-action:focus-visible{background:var(--bg-muted);color:var(--text)}
 .side-tab-close[data-dirty]>svg{opacity:0}
 .side-tab-close[data-dirty]::after{content:"";position:absolute;width:7px;height:7px;border-radius:50%;background:currentColor}
 .side-tab-close[data-dirty]:hover>svg,.side-tab-close[data-dirty]:focus-visible>svg{opacity:1}
@@ -62,3 +62,17 @@
 @media(prefers-reduced-motion:reduce){.add-source,.source-panel .cm-source-flash::after{animation:none}}
 /* One panel at a time on a phone, like New task. */
 @media(max-width:680px){.manuscript.show-source .manuscript-pages{display:none}.add-source{width:40px;height:40px}.side-tab-closable>button[role=tab]{font-size:13px}.side-tab-close{width:32px;height:32px}.source-panel-message,.source-panel-note,.source-panel-error,.source-panel-problems{font-size:13px}.source-panel-problem{min-height:36px}}
+
+/* The editor in a window of its own, to put on another display; its tab
+   says where it is and brings it back. Phones and touch tablets open windows
+   as tabs, which hide this one. */
+.side-tab-action{margin-right:0}
+@media (max-width:680px),(hover:none){.side-tab-popout{display:none}}
+.source-panel-away{justify-content:center;align-items:center;gap:12px;padding:24px 16px}
+.source-panel-away>.source-panel-message{padding:0}
+.source-panel-away-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+.popout-root{position:fixed;inset:0;display:flex;flex-direction:column;background:var(--bg);color:var(--text);font:13px/1.45 var(--sans)}
+.popout-source{flex:1;min-height:0;display:flex;flex-direction:column}
+.popout-source-header{display:flex;align-items:center;gap:8px;min-height:40px;padding:4px 8px 4px 14px;border-bottom:1px solid var(--line);color:var(--text-2);font-size:12px}
+.popout-source-file{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-weight:500}
+.popout-source-dirty{flex:none;width:7px;height:7px;border-radius:50%;background:currentColor}

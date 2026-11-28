@@ -82,6 +82,12 @@ await page.route('**/api/**', async route => {
 });
 await page.route('**/review/**', route => route.fulfill({ contentType: 'text/html', body: '<html lang="en"><head></head><body><div class="bar">Review round 2</div><main id="paper"><p>PDF review fixture</p></main></body></html>' }));
 const sync = () => page.evaluate(() => window.dispatchEvent(new Event('online')));
+// On desktop the chat's position menu fills the window with it or docks it beside the review.
+async function placeChat(position) {
+  await page.locator('#conversation-panel .panel-heading').getByRole('button', { name: /^Panel position/ }).click();
+  await page.getByRole('menuitemradio', { name: position, exact: true }).click();
+  await expect(page.locator('.task-grid')).toHaveClass(position === 'Fill the window' ? /layout-conversation/ : /layout-split/);
+}
 try {
   await page.goto(origin);
   // The chat shows the skill, typeset mathematics and feedback, never the prompts.
@@ -102,20 +108,20 @@ try {
   await expect(page.locator('.review-feedback')).toHaveCount(0);
   // Comments go back to the agent through the composer, including in chat-only view.
   task.review = { ...task.review, unsent: 4, comments: 1 }; await sync();
-  await page.getByRole('button', { name: 'Chat', exact: true }).click();
+  await placeChat('Fill the window');
   await expect(page.locator('.composer .review-draft')).toContainText('4 review updates');
   await expect(page.locator('.thread .commit-card')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Split', exact: true }).click();
+  await placeChat('Dock on the right');
   await page.getByRole('button', { name: 'Send instructions', exact: true }).click();
   await expect.poll(() => messages.length).toBe(1);
   assert.equal(messages[0].feedback, true);
   task.review = { ...task.review, unsent: 0, comments: 0 }; await sync();
-  await page.getByRole('button', { name: 'Chat', exact: true }).click();
+  await placeChat('Fill the window');
   // The accepted changes are saved when the author chooses: applied or committed.
   const commitCard = page.locator('.thread .commit-card');
   await expect(commitCard.getByRole('button', { name: 'Apply to workspace', exact: true })).toBeEnabled();
   await expect(commitCard.getByRole('textbox', { name: 'Commit message', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Split', exact: true }).click();
+  await placeChat('Dock on the right');
 
   // "/" lists skills in the follow-up composer; the chosen one runs without text.
   const followUp = page.getByRole('textbox', { name: 'Instructions for Codex' });
@@ -186,7 +192,7 @@ try {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await selectOption(page.getByRole('dialog', { name: 'Settings' }).getByRole('combobox', { name: 'Language' }), 'zh-Hans');
   await page.keyboard.press('Escape');
-  await expect(page.locator('.manuscript-side-header').getByRole('button', { name: '全部移出', exact: true })).toBeVisible();
+  await expect(page.locator('.task-notes-panel').getByRole('button', { name: '全部移出', exact: true })).toBeVisible();
   await expect(page.locator('.side-tabs .count')).toHaveText('2');
   await page.screenshot({ path: 'test-results/merged-task-notes.png' });
   await page.setViewportSize({ width: 390, height: 844 });

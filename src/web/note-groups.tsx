@@ -3,6 +3,7 @@ import { canonicalGroup, GROUP_COLORS, GROUP_NAMES, NOTE_GROUPS, type NoteGroup 
 import { Icon } from './icons.tsx';
 import { t, tn } from './i18n.ts';
 import './note-groups.css';
+import { viewOf, isNode } from './owner-window.ts';
 
 export const groupName = (group: NoteGroup) => t(GROUP_NAMES[group]);
 export const groupStyle = (group?: NoteGroup): CSSProperties => group ? { '--note-color': GROUP_COLORS[group], '--note-ink': canonicalGroup(group) === 'yellow' ? '#422f00' : '#fff' } as CSSProperties : {};
@@ -22,17 +23,17 @@ export function GroupPicker({ value, onChange, disabled, tool, forNote, wholeGro
   useEffect(() => {
     if (!open) return;
     const dismiss = () => menu.current?.hidePopover();
-    const scroll = (event: Event) => { if (event.target instanceof Node && event.target.contains(trigger.current)) dismiss(); };
-    window.addEventListener('resize', dismiss); document.addEventListener('scroll', scroll, true);
-    return () => { window.removeEventListener('resize', dismiss); document.removeEventListener('scroll', scroll, true); };
+    const scroll = (event: Event) => { if (isNode(event.target) && event.target.contains(trigger.current)) dismiss(); };
+    const view = viewOf(trigger.current); view.addEventListener('resize', dismiss); view.document.addEventListener('scroll', scroll, true);
+    return () => { view.removeEventListener('resize', dismiss); view.document.removeEventListener('scroll', scroll, true); };
   }, [open]);
   function choices() { return Array.from(menu.current!.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')); }
   function show() {
     const panel = menu.current!, rect = trigger.current!.getBoundingClientRect();
     const horizontal = rail && Boolean(trigger.current?.closest('[aria-orientation="horizontal"]'));
     panel.showPopover();
-    panel.style.left = `${Math.max(8, Math.min(horizontal ? rect.left + (rect.width - panel.offsetWidth) / 2 : rail ? rect.right + 8 : rect.left, window.innerWidth - panel.offsetWidth - 8))}px`;
-    panel.style.top = `${Math.max(8, Math.min(horizontal ? rect.top - panel.offsetHeight - 10 : rail ? rect.top - 8 : rect.bottom + 6, window.innerHeight - panel.offsetHeight - 8))}px`;
+    panel.style.left = `${Math.max(8, Math.min(horizontal ? rect.left + (rect.width - panel.offsetWidth) / 2 : rail ? rect.right + 8 : rect.left, viewOf(panel).innerWidth - panel.offsetWidth - 8))}px`;
+    panel.style.top = `${Math.max(8, Math.min(horizontal ? rect.top - panel.offsetHeight - 10 : rail ? rect.top - 8 : rect.bottom + 6, viewOf(panel).innerHeight - panel.offsetHeight - 8))}px`;
     (choices().find(item => item.getAttribute('aria-checked') === 'true') || choices()[0])?.focus();
   }
   function choose(next: NoteGroup | null) {
@@ -53,7 +54,7 @@ export function GroupPicker({ value, onChange, disabled, tool, forNote, wholeGro
       event.stopPropagation();
       if (event.key === 'Escape') { event.preventDefault(); menu.current?.hidePopover(); trigger.current?.focus(); }
       else if (['ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-        event.preventDefault(); const items = choices(), index = items.indexOf(document.activeElement as HTMLButtonElement);
+        event.preventDefault(); const items = choices(), index = items.indexOf(menu.current!.ownerDocument.activeElement as HTMLButtonElement);
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1) + items.length) % items.length;
         items[next]?.focus();
       }

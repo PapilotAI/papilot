@@ -66,6 +66,65 @@ try {
   const viewer = page.frameLocator('.review-frame'), side = page.locator('#conversation-panel');
   await expect(viewer.locator('.change.current')).toBeVisible({ timeout: 60000 });
 
+  // The chat docks like the manuscript's panel (check-panel-docking.mjs):
+  // on the left, beside the review, or floating over it with the review
+  // still usable around it.
+  const grid = page.locator('.task-grid'), review = page.locator('#review-panel');
+  const position = side.getByRole('button', { name: 'Panel position' });
+  const rect = locator => locator.evaluate(element => element.getBoundingClientRect().toJSON());
+  await position.click(); await page.getByRole('menuitemradio', { name: 'Dock on the left' }).click();
+  await expect(grid).toHaveAttribute('data-dock', 'left');
+  assert.ok((await rect(side)).right <= (await rect(review)).left + 1, 'the chat is left of the review');
+  await page.screenshot({ path: 'test-results/task-dock-left.png' });
+  await position.click(); await page.getByRole('menuitemradio', { name: 'Float over the page' }).click();
+  await expect(grid).toHaveAttribute('data-dock', 'float');
+  assert.equal(Math.round((await rect(review)).width), Math.round((await rect(grid)).width), 'the review takes the whole width');
+  await expect(viewer.locator('.change.current')).toBeVisible();
+  await page.screenshot({ path: 'test-results/task-dock-float.png' });
+  // Its header's empty space moves it.
+  const heading = await rect(side.locator('.panel-heading')), before = await rect(side), button = await rect(position);
+  await page.mouse.move(button.x - 40, heading.y + heading.height / 2); await page.mouse.down();
+  await page.mouse.move(button.x - 240, heading.y + heading.height / 2 + 100, { steps: 6 }); await page.mouse.up();
+  await expect.poll(async () => { const after = await rect(side); return [Math.round(after.x - before.x), Math.round(after.y - before.y)]; }).toEqual([-200, 100]);
+  // Its own window: the review takes the whole width and its toolbar brings
+  // the chat forward; closing the window docks the chat where it was.
+  const [chatWindow] = await Promise.all([page.waitForEvent('popup'), position.click().then(() => page.getByRole('menuitemradio', { name: 'Open in a new window' }).click())]);
+  await expect(grid).toHaveAttribute('data-dock', 'window');
+  await expect(chatWindow.locator('#conversation-panel .composer textarea')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Show chat window' })).toBeVisible();
+  await chatWindow.screenshot({ path: 'test-results/task-dock-window.png' });
+  await chatWindow.close();
+  await expect(grid).toHaveAttribute('data-dock', 'float');
+  // Filling the window brings the chat back from its own.
+  const [again] = await Promise.all([page.waitForEvent('popup'), position.click().then(() => page.getByRole('menuitemradio', { name: 'Open in a new window' }).click())]);
+  await again.locator('#conversation-panel .panel-heading').getByRole('button', { name: /^Panel position/ }).click();
+  await again.getByRole('menuitemradio', { name: 'Fill the window' }).click();
+  await expect.poll(() => again.isClosed()).toBe(true);
+  await expect(grid).toHaveClass(/layout-conversation/);
+  await expect(side.locator('.composer textarea')).toBeVisible();
+  await position.click(); await page.getByRole('menuitemradio', { name: 'Float over the page' }).click();
+  await expect(grid).toHaveClass(/layout-split/);
+  await position.click(); await page.getByRole('menuitem', { name: 'Reset panel layout' }).click();
+  await expect(grid).toHaveAttribute('data-dock', 'right');
+
+  // The chat hides and comes back from its own toggle, and fills the window
+  // from its menu.
+  await side.getByRole('button', { name: 'Hide chat' }).click();
+  await expect(grid).toHaveClass(/layout-review/);
+  await expect(side).toBeHidden();
+  const showChat = page.getByRole('button', { name: 'Show chat', exact: true });
+  await expect(showChat).toBeFocused();
+  await page.waitForFunction(() => !document.documentElement.classList.contains('switching-workspace'));
+  await page.screenshot({ path: 'test-results/task-chat-hidden.png' });
+  await showChat.click();
+  await expect(grid).toHaveClass(/layout-split/);
+  await expect(side.getByRole('button', { name: 'Hide chat' })).toBeFocused();
+  await position.click(); await page.getByRole('menuitemradio', { name: 'Fill the window' }).click();
+  await expect(grid).toHaveClass(/layout-conversation/);
+  await expect(position).toHaveAccessibleName(/Filling the window/);
+  await position.click(); await page.getByRole('menuitemradio', { name: 'Dock on the right' }).click();
+  await expect(grid).toHaveClass(/layout-split/);
+
   // LaTeX on a change opens its file beside the chat, at the change, not in the card.
   await viewer.locator('.change.current .source-toggle').click();
   const tab = side.getByRole('tab', { name: 'method.tex' }), chat = side.getByRole('tab', { name: 'Chat' });
@@ -98,8 +157,20 @@ try {
   await expect(viewer.locator('.change.current')).toHaveAttribute('data-stop', '2');
 
   // Accepting in the editor decides the change in the review; its marks go.
-  await cards.nth(0).locator('.cm-review-accept').click();
+  // The editor does so in a window of its own too, where its caret still
+  // picks the review's current change; closing the window brings it back.
+  const [popup] = await Promise.all([page.waitForEvent('popup'), side.getByRole('button', { name: 'Open in a new window' }).click()]);
+  const outCards = popup.locator('.cm-review-card');
+  await expect(outCards).toHaveCount(3);
+  await outCards.nth(0).locator('.cm-review-accept').click();
   await expect.poll(() => app.review.pageState(task.name).decisions.c001).toBe('accepted');
+  await expect(outCards).toHaveCount(2);
+  await popup.locator('.cm-line', { hasText: 'first paragraph' }).click();
+  await expect(viewer.locator('.change.current')).toHaveAttribute('data-stop', '0');
+  await popup.locator('.cm-line', { hasText: 'third paragraph' }).click();
+  await expect(viewer.locator('.change.current')).toHaveAttribute('data-stop', '2');
+  await popup.screenshot({ path: 'test-results/task-source-popout.png' });
+  await popup.close();
   await expect(cards).toHaveCount(2);
   await expect(side.locator('.cm-review-removed')).toHaveCount(2);
 

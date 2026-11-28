@@ -19,6 +19,12 @@ const origin = `http://127.0.0.1:${server.server.address().port}`;
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
 const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1440, height: 900 } });
 const page = await context.newPage(), errors = [];
+// On desktop the chat's position menu fills the window with it or docks it beside the review.
+async function placeChat(position) {
+  await page.locator('#conversation-panel .panel-heading').getByRole('button', { name: /^Panel position/ }).click();
+  await page.getByRole('menuitemradio', { name: position, exact: true }).click();
+  await expect(page.locator('.task-grid')).toHaveClass(position === 'Fill the window' ? /layout-conversation/ : /layout-split/);
+}
 page.on('pageerror', error => errors.push(error.message));
 const task = { id: 'fixture-task', projectId: 'paper', agent: 'codex', name: 'p-task', title: 'Revise the introduction', instructions: 'Keep the meaning.', worktree: '/tmp/paper', threadId: 'thread', turnId: 'turn', model: null, effort: null, status: 'running', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: null };
 const runtime = { permissionOptions: new Codex().permissionOptions(), connected: true, authenticated: true, account: null, error: null, models: [
@@ -78,7 +84,7 @@ await page.route('**/api/**', async route => {
 
 try {
   await page.goto(origin);
-  await page.getByRole('button', {name:'Chat', exact:true}).click();
+  await placeChat('Fill the window');
   const trigger = page.locator('.activity-panel').getByRole('button', { name: 'Agent settings', exact: true });
   const menu = page.getByRole('dialog', { name: 'Agent settings', exact: true });
   const workspace = menu.getByRole('radio', { name: 'Workspace access', exact: true });
@@ -316,7 +322,8 @@ try {
     for (const profile of profiles) {
       Object.assign(task, { agent: profile.id, model: null, effort: null, permissions: 'workspace' });
       await page.reload();
-      await page.getByRole('button', { name: language === 'en' ? 'Chat' : '对话', exact: true }).click();
+      if (width > 680) await placeChat('Fill the window');
+      else await page.getByRole('button', { name: language === 'en' ? 'Chat' : '对话', exact: true }).click();
       const settings = page.locator('.activity-panel .agent-picker-trigger');
       const panel = page.locator('.activity-panel .agent-picker-panel');
       for (const option of snapshot.runtimes[profile.id].permissionOptions) {

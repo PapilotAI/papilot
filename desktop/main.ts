@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, screen, session, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,7 @@ import { readEnvironment, saveEnvironment, startWsl, linuxPath, type Environment
 import { overleafSignIn } from './overleaf-sign-in.js';
 import { typelessControl } from './typeless-control.js';
 import { detectWindowButtons, windowButtonsArgument, type WindowButtons } from './window-buttons.js';
+import { isPopout, isZoom, placeOnDisplays, popoutPlaces } from './popout-windows.js';
 
 const nix = process.env.PAPILOT_INSTALL_METHOD === 'nix';
 const packageUpdates = process.env.PAPILOT_DESKTOP_PACKAGE_UPDATES === '1' ||
@@ -63,6 +64,9 @@ function external(url: string) {
 function zoom(direction: 'in' | 'out' | 'reset') {
   window?.webContents.send('papilot:zoom', direction);
 }
+// The workspace's pop-out windows, which take its interface size.
+// Each pop-out, with how it saves its place.
+const popouts = new Map<BrowserWindow, () => void>();
 function showWindow() {
   if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); return; }
   if (!origin) return;
@@ -75,7 +79,38 @@ function showWindow() {
     show: false, backgroundColor: '#ffffff', webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true,
       preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)),
       additionalArguments: windowButtons ? [windowButtonsArgument(windowButtons)] : [] } });
-  window.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: 'deny' }; });
+  // A pop-out of the workspace, such as the source editor, opens as a framed
+  // window where it was last closed; any other window opens in the browser.
+  const places = popoutPlaces(app.getPath('userData'));
+  window.webContents.setWindowOpenHandler(({ url, frameName, features }) => {
+    if (!isPopout(url, frameName)) { external(url); return { action: 'deny' }; }
+    // The page asks in its own pixels, which the interface size scales; the
+    // window is sized and placed in the screen's. A panel dropped outside the
+    // window opens where it was dropped.
+    const zoom = window?.webContents.getZoomFactor() ?? 1;
+    const asked = (name: string) => { const value = new RegExp(`(?:^|,)${name}=(-?\\d+)`).exec(features); return value ? Math.round(Number(value[1]) * zoom) : undefined; };
+    const [x, y, width, height] = ['left', 'top', 'width', 'height'].map(asked);
+    const size = width !== undefined && height !== undefined ? { width, height } : {};
+    const place = x !== undefined && y !== undefined ? { ...size, x, y } : placeOnDisplays(places.read(frameName), screen.getAllDisplays().map(display => display.workArea)) ?? size;
+    return { action: 'allow', overrideBrowserWindowOptions: { ...place, minWidth: 360, minHeight: 300, titleBarStyle: 'default', autoHideMenuBar: process.platform !== 'darwin' } };
+  });
+  window.webContents.on('did-create-window', (child, { url, frameName }) => {
+    // Only the workspace itself, not a frame within it, opens a pop-out.
+    if (!isPopout(url, frameName) || child.webContents.opener !== window?.webContents.mainFrame) { child.destroy(); return; }
+    const remember = () => { if (!child.isDestroyed() && !child.isMinimized() && !child.isFullScreen()) places.save(frameName, child.getNormalBounds()); };
+    popouts.set(child, remember);
+    // While a pop-out shows the workspace, the page behind it keeps its pace
+    // even when its own window is hidden.
+    window?.webContents.setBackgroundThrottling(false);
+    child.on('closed', () => { popouts.delete(child); if (!popouts.size) window?.webContents.setBackgroundThrottling(true); });
+    // Its blank page resets the zoom as it loads.
+    const size = () => { if (window) child.webContents.setZoomFactor(window.webContents.getZoomFactor()); };
+    size(); child.webContents.on('did-finish-load', size);
+    child.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: 'deny' }; });
+    child.webContents.on('will-navigate', (event, url) => { event.preventDefault(); external(url); });
+    child.webContents.on('will-attach-webview', event => event.preventDefault());
+    child.on('close', remember);
+  });
   window.webContents.on('will-navigate', (event, url) => {
     if (new URL(url).origin !== origin) { event.preventDefault(); external(url); }
   });
@@ -84,7 +119,8 @@ function showWindow() {
   window.on('close', event => {
     if (process.platform === 'darwin' && !quitting) { event.preventDefault(); window?.hide(); }
   });
-  window.on('closed', () => { window = null; });
+  // Destroying skips a pop-out's close event, so its place is saved first.
+  window.on('closed', () => { window = null; for (const [child, remember] of popouts) { remember(); child.destroy(); } });
   window.once('ready-to-show', () => window?.show());
   void window.loadURL(origin).catch(error => { if (!quitting) dialog.showErrorBox('Could not open Papilot', String(error)); });
 }
@@ -178,6 +214,10 @@ else {
         if (folder && window === target) target.webContents.send('papilot:open-folder', folder);
       } catch (error) { dialog.showErrorBox('Could not open folder', error instanceof Error ? error.message : String(error)); }
     };
+    ipcMain.on('papilot:zoomed', (event, factor: unknown) => {
+      if (!window || event.sender !== window.webContents || !isZoom(factor)) return;
+      for (const child of popouts.keys()) child.webContents.setZoomFactor(factor);
+    });
     ipcMain.on('papilot:window', (event, action: unknown) => {
       if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return;
       if (!event.senderFrame || new URL(event.senderFrame.url).origin !== origin) return;

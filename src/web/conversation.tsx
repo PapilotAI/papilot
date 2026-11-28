@@ -34,6 +34,7 @@ import { TaskModelPicker } from './task-model-picker.tsx';
 import { TaskPermissionOptions } from './task-permissions.tsx';
 import { toolIcon, toolNote, toolSentence, toolSummary, workflowKind } from './tool-calls.ts';
 import { type RefreshUsage } from './usage.tsx';
+import { viewOf, copyText } from './owner-window.ts';
 export const agentName = (task: Task) => agentLabel(task.agent || 'codex') || 'Codex';
 export const workingAgentName = (task: Task) => task.manualTurn?.executor?.agent ? agentLabel(task.manualTurn.executor.agent) : agentName(task);
 export const ACTIVE = ['running', 'waiting_input', 'queued'];
@@ -107,19 +108,11 @@ export function createConversation(api: ConversationApi) {
     </div>;
   }
 
-  // Clipboard access needs a secure context; Tailscale HTTP falls back to a hidden selection.
   function CopyButton({ text }: { text: string }) {
     const [copied, setCopied] = useState(false);
     useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(false), 1600); return () => clearTimeout(timer); }, [copied]);
-    async function copy() {
-      try { await navigator.clipboard.writeText(text); }
-      catch {
-        const area = document.createElement('textarea'); area.value = text; area.readOnly = true; area.style.position = 'fixed'; area.style.opacity = '0';
-        document.body.append(area); area.select(); document.execCommand('copy'); area.remove();
-      }
-      setCopied(true);
-    }
-    return <button type="button" className="message-action" aria-label={copied ? t('Copied') : t('Copy message')} onClick={() => void copy()}><Icon name={copied ? 'check' : 'copy'} size={14}/><span>{copied ? t('Copied') : t('Copy')}</span></button>;
+    async function copy(button: HTMLElement) { setCopied(await copyText(text, button)); }
+    return <button type="button" className="message-action" aria-label={copied ? t('Copied') : t('Copy message')} onClick={event => void copy(event.currentTarget)}><Icon name={copied ? 'check' : 'copy'} size={14}/><span>{copied ? t('Copied') : t('Copy')}</span></button>;
   }
 
   // Commands arrive wrapped in the login shell that ran them, and files with
@@ -271,7 +264,9 @@ export function createConversation(api: ConversationApi) {
     return entries;
   }
 
-  function Activity({ runtimes, manualSettingsVersion = 0, relatedTasks, onOpenTask, source, onRevealQuote, task, runtime, reconnecting, onReconnect, skills, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, onTaskSaved, reportError, pause, pausing, openReview, feedback, connection, tools, lead, errorActions }: { runtimes: Partial<Record<AgentId, RuntimeStatus>>; manualSettingsVersion?: number; relatedTasks: Task[]; onOpenTask: (id: string) => void; source?: { tabs: React.ReactNode; panel: React.ReactNode; selected: boolean }; errorActions?: React.ReactNode; tools?: React.ReactNode; lead?: React.ReactNode; onRevealQuote: () => void; task: Task; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void; skills: Skill[]; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; onTaskSaved: (task: Task) => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void; feedback?: React.ReactNode; connection?: React.ReactNode }) {
+  function Activity({ runtimes, manualSettingsVersion = 0, relatedTasks, onOpenTask, source, dock, onRevealQuote, task, runtime, reconnecting, onReconnect, skills, composer, answerDrafts, items, loading, loadError, retry, requests, refresh, onTaskSaved, reportError, pause, pausing, openReview, feedback, connection, tools, lead, errorActions }: { runtimes: Partial<Record<AgentId, RuntimeStatus>>; manualSettingsVersion?: number; relatedTasks: Task[]; onOpenTask: (id: string) => void; source?: { tabs: React.ReactNode; panel: React.ReactNode; selected: boolean };
+    /** Moves the panel: its header's empty space and its position button (panel-dock.tsx). */
+    dock?: { header?: React.HTMLAttributes<HTMLDivElement>; control: React.ReactNode }; errorActions?: React.ReactNode; tools?: React.ReactNode; lead?: React.ReactNode; onRevealQuote: () => void; task: Task; runtime?: RuntimeStatus; reconnecting: boolean; onReconnect: () => void; skills: Skill[]; composer: ComposerDraft; answerDrafts: Map<string, Record<string, string>>; items: TimelineItem[]; loading: boolean; loadError: string; retry: () => void; requests: PendingRequest[]; refresh: () => void; onTaskSaved: (task: Task) => void; reportError: (e: unknown) => void; pause: () => void; pausing: boolean; openReview?: () => void; feedback?: React.ReactNode; connection?: React.ReactNode }) {
     const input = useRef<HTMLTextAreaElement>(null);
     const reviewNotes = reviewDraft(task.id), notes = useReviewDraft(task.id);
     const [savingModel, setSavingModel] = useState(false);
@@ -320,7 +315,8 @@ export function createConversation(api: ConversationApi) {
     useEffect(() => { if (shouldFollow.current && !scroller.current?.querySelector(':popover-open')) latest(); }, [items, requests, awaitingManual]);
     useEffect(() => {
       if (!scroller.current) return;
-      const observer = new ResizeObserver(() => { if (back.current !== undefined) goBack(); else if (shouldFollow.current) latest(); });
+      // Made by the scroller's own window, which may be the chat's pop-out.
+      const observer = new (viewOf(scroller.current) as typeof window).ResizeObserver(() => { if (back.current !== undefined) goBack(); else if (shouldFollow.current) latest(); });
       observer.observe(scroller.current); return () => observer.disconnect();
     }, []);
     const feedbackCount = task.mode === 'review' ? 0 : pendingReviewFeedback(task.review);
@@ -404,7 +400,7 @@ export function createConversation(api: ConversationApi) {
       : awaitingManual ? (effectiveManualExecutor ? t('Sending asks {agent} to apply the edits in this task.', { agent: agentLabel(effectiveManualExecutor.agent) }) : manualExecutor === null ? t('Connect a local agent in Settings → Agents to apply replies.') : '')
       : emptyNotes ? canSend ? tn(emptyNotes, '{n} empty comment will stay in drafts', '{n} empty comments will stay in drafts') : t('Write a comment or message to send.') : active ? t('{agent} is working · new instructions run next', { agent: activeAgent }) : '';
     // A source tab beside the chat hides the chat while it is selected; both stay as they were.
-    return <section id="conversation-panel" className="activity-panel" data-side={source?.selected ? 'source' : undefined} aria-label={t('{agent} conversation', { agent: agentName(task) })}><div className="panel-heading">{lead}{source?.tabs}{tools && <div className="panel-tools">{tools}</div>}</div>
+    return <section id="conversation-panel" className="activity-panel" data-side={source?.selected ? 'source' : undefined} aria-label={t('{agent} conversation', { agent: agentName(task) })}><div className="panel-heading" {...dock?.header}>{lead}{source?.tabs}{tools && <div className="panel-tools">{tools}</div>}{dock?.control}</div>
       {source && <div className="side-pane" hidden={!source.selected}>{source.panel}</div>}
       <div className="conversation-history"><div className="messages" ref={scroller} onScroll={() => { if (scroller.current && back.current === undefined) { const el = scroller.current; shouldFollow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; setFollowing(shouldFollow.current); savePlace(place, shouldFollow.current ? undefined : Math.round(el.scrollTop)); } }}><div className="thread">
         {loading && <p className="muted" role="status">{t('Loading conversation…')}</p>}

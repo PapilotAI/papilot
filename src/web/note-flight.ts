@@ -74,7 +74,11 @@ const after = (then: () => void) => requestAnimationFrame(() => requestAnimation
 // A note added to the task flies from its card to its place in the task, or
 // to the New task tab when the task is out of view. Call this before the
 // change and the returned function once the note is in the task.
+// Flights cross this page only: a card in a window of its own lands without one.
+const elsewhere = (card: HTMLElement) => card.ownerDocument !== document;
+
 export function noteToTask(card: HTMLElement) {
+  if (elsewhere(card)) return () => undefined;
   const box = card.getBoundingClientRect(), ghost = copy(card), known = new Set(references().map(element => element.dataset.note));
   return () => after(() => {
     const arrived = references().find(element => !known.has(element.dataset.note));
@@ -91,6 +95,7 @@ export function noteToTask(card: HTMLElement) {
 // Taking a note back out from its card flies the task's copy back onto the
 // card's button.
 export function noteFromTask(id: string, card: HTMLElement) {
+  if (elsewhere(card)) return () => undefined;
   const reference = references().find(element => element.dataset.note === id && visible(element));
   const button = card.querySelector<HTMLElement>('.note-send, .pdf-note-attach');
   const box = reference?.getBoundingClientRect(), ghost = reference && copy(reference);
@@ -107,7 +112,7 @@ export function returnNotes(cards: HTMLElement[]) {
   if (!target || !cards.length) return;
   if (still()) { receive(target, cards.length); return; }
   const destination = target.getBoundingClientRect();
-  const flights = cards.slice(0, 5).flatMap((card, index) => {
+  const flights = cards.filter(card => !elsewhere(card)).slice(0, 5).flatMap((card, index) => {
     const box = card.getBoundingClientRect();
     return box.width && box.height ? [fly(card.cloneNode(true) as HTMLElement, box, destination, index * 70)] : [];
   });

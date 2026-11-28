@@ -776,21 +776,50 @@ try {
   assert.equal(await page.getByText(/Proofread|Each task edits its own Git worktree/).count(), 0);
   await page.getByRole('button', { name: /^Clarify the introduction/ }).click();
   console.log('PASS: English UI, stale selection recovery, paper menu, modal focus containment, Escape, focus restoration, and the new-task composer');
-  const views = page.locator('.view-selector');
-  async function selectWorkspaceView(name) {
-    await views.getByRole('button', { name, exact: true }).click();
-    await page.waitForFunction(name => !document.documentElement.classList.contains('switching-workspace') && document.querySelector('.workspace-view-selector [aria-pressed=true]')?.getAttribute('aria-label') === name, name);
+  // On desktop, Hide chat leaves only the review, Show chat brings the chat
+  // back beside it, and the chat's position menu fills the window with it.
+  const taskGrid = page.locator('.task-grid');
+  const hideChat = page.getByRole('button', { name: 'Hide chat', exact: true });
+  const showChat = page.getByRole('button', { name: 'Show chat', exact: true });
+  const chatPosition = page.locator('#conversation-panel .panel-heading').getByRole('button', { name: /^Panel position/ });
+  const workspaceLayouts = { Review: 'review', Split: 'split', Chat: 'conversation' };
+  const currentLayout = () => taskGrid.evaluate(grid => ['review', 'split', 'conversation'].find(layout => grid.classList.contains('layout-' + layout)));
+  async function settleLayout(layout) {
+    await page.waitForFunction(layout => !document.documentElement.classList.contains('switching-workspace') && document.querySelector('.task-grid')?.classList.contains('layout-' + layout), layout);
   }
+  async function placeChat(position) {
+    await chatPosition.click();
+    await page.getByRole('menuitemradio', { name: position, exact: true }).click();
+  }
+  async function selectWorkspaceView(name) {
+    const target = workspaceLayouts[name], current = await currentLayout();
+    if (target === 'review') { if (current !== 'review') await hideChat.click(); }
+    else {
+      if (current === 'review') { await showChat.click(); await settleLayout('split'); }
+      if (target === 'conversation' && current !== 'conversation') await placeChat('Fill the window');
+      if (target === 'split' && current === 'conversation') await placeChat('Dock on the right');
+    }
+    await settleLayout(target);
+  }
+  async function expectChatShown(shown) {
+    await expect(taskGrid).toHaveClass(new RegExp(`layout-${shown ? 'split' : 'review'}`));
+    await expect(shown ? hideChat : showChat).toHaveAttribute('aria-expanded', String(shown));
+    if (shown) await expect(showChat).toHaveCount(0);
+    else await expect(hideChat).toBeHidden();
+  }
+  assert.equal(await page.getByRole('group', { name: 'Workspace view' }).count(), 0, 'Desktop tasks have no view switcher');
   await selectWorkspaceView('Review');
   assert.equal(await page.getByRole('region', { name: 'PDF review', exact: true }).isVisible(), true);
   assert.equal(await page.getByRole('region', { name: 'Codex conversation', exact: true }).isVisible(), false);
-  await selectWorkspaceView('Review');
-  assert.equal(await views.getByRole('button', { name: 'Review', exact: true }).getAttribute('aria-pressed'), 'true');
+  await expectChatShown(false);
   await selectWorkspaceView('Chat');
   assert.equal(await page.getByRole('region', { name: 'PDF review', exact: true }).isVisible(), false);
+  await expect(chatPosition).toHaveAccessibleName('Panel position · Filling the window');
+  await expect(hideChat).toBeVisible();
   await page.getByText('3 changes to review', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Open review', exact: true }).click();
-  assert.equal(await views.getByRole('button', { name: 'Split', exact: true }).getAttribute('aria-pressed'), 'true');
+  await expectChatShown(true);
+  await expect(chatPosition).toHaveAccessibleName('Panel position · Docked on the right');
   assert.equal(await page.getByRole('button', { name: 'Open review', exact: true }).count(), 0);
   assert.equal(await page.getByRole('region', { name: 'PDF review', exact: true }).isVisible(), true);
   assert.equal(await page.locator('.topbar').count(), 0);
@@ -812,15 +841,18 @@ try {
   await page.keyboard.press('Escape');
   assert.equal(await taskMenu.evaluate(el => el === document.activeElement), true);
   console.log('PASS: Views select explicitly, PDF tools stay with the review, and menus support keyboard navigation');
-  for (const name of ['Review', 'Chat', 'Split']) {
+  // Focus follows the chat toggle to its counterpart; the position menu keeps it.
+  const focusAfterSwitch = { Review: showChat, Split: hideChat, Chat: chatPosition };
+  for (const name of ['Review', 'Split', 'Chat']) {
     await selectWorkspaceView(name);
-    await page.waitForFunction(() => document.querySelector('.task-grid .view-selector [aria-pressed="true"]') === document.activeElement);
+    await expect(focusAfterSwitch[name]).toBeFocused();
     await page.getByRole('button', { name: 'Hide task list', exact: true }).click();
     const showTasks = page.getByRole('button', { name: 'Show task list', exact: true });
     await page.waitForFunction(() => document.querySelector('.main .sidebar-toggle') === document.activeElement);
     await showTasks.click();
     assert.equal((await page.locator('.task-grid').boundingBox()).y, 0);
   }
+  await selectWorkspaceView('Split');
   await page.waitForFunction(() => document.querySelector('.review-frame').contentDocument.documentElement.style.getPropertyValue('--papilot-lead') === '0px');
   console.log('PASS: Content toolbars retain view-switch focus and reopen the sidebar in every desktop layout');
 
@@ -846,10 +878,10 @@ try {
     };
   });
   try {
-    for (const [failure, view] of [['timeout', 'Review'], ['update', 'Chat']]) {
+    for (const [failure, view] of [['timeout', 'Review'], ['update', 'Split'], ['timeout', 'Chat']]) {
       await page.evaluate(failure => { window.workspaceTransitionFailure = failure; }, failure);
       await selectWorkspaceView(view);
-      await expect(views.getByRole('button', { name: view, exact: true })).toBeFocused();
+      await expect(focusAfterSwitch[view]).toBeFocused();
       await page.clock.runFor(1);
     }
     assert.deepEqual(pageErrors.slice(transitionErrors), [], 'Failed transition promises never become uncaught page errors');
@@ -2115,7 +2147,7 @@ try {
   assert.equal(await page.getByRole('button', { name: 'View details', exact: true }).count(), 0);
   await selectWorkspaceView('Review');
   await page.getByRole('button', { name: 'View details', exact: true }).click();
-  assert.equal(await views.getByRole('button', { name: 'Split', exact: true }).getAttribute('aria-pressed'), 'true');
+  await expectChatShown(true);
   await page.locator('.task-error').getByText(task.error, { exact: true }).waitFor();
   // With only the chat in view, the error offers the PDF comparison the review panel holds.
   await selectWorkspaceView('Chat');

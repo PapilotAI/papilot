@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Icon } from './icons.tsx';
+import { viewOf, isNode } from './owner-window.ts';
 
 // A swatch is any CSS background: a color, or a gradient for a two-tone theme.
 export interface SelectOption { value: string; label: string; detail?: string; swatch?: string; group?: string; disabled?: boolean }
@@ -26,12 +27,12 @@ export function ChipSelect({ label, value, options, onChange, disabled, icon, cl
     // A scroll event may arrive after the chip already opened at its new position.
     const scroll = (event: Event) => {
       const chip = trigger.current, anchor = anchorPosition.current;
-      if (!chip || !anchor || !(event.target instanceof Node) || !event.target.contains(chip)) return;
+      if (!chip || !anchor || !isNode(event.target) || !event.target.contains(chip)) return;
       const { left, top } = chip.getBoundingClientRect();
       if (left !== anchor.left || top !== anchor.top) dismiss();
     };
-    window.addEventListener('resize', dismiss); document.addEventListener('scroll', scroll, true);
-    return () => { window.removeEventListener('resize', dismiss); document.removeEventListener('scroll', scroll, true); };
+    const view = viewOf(trigger.current); view.addEventListener('resize', dismiss); view.document.addEventListener('scroll', scroll, true);
+    return () => { view.removeEventListener('resize', dismiss); view.document.removeEventListener('scroll', scroll, true); };
   }, [open]);
   // Only the list scrolls to the option: scrollIntoView would also scroll the
   // page under the chip, and a page that moves closes the list.
@@ -48,10 +49,10 @@ export function ChipSelect({ label, value, options, onChange, disabled, icon, cl
     const panel = list.current!, rect = trigger.current!.getBoundingClientRect();
     anchorPosition.current = { left: rect.left, top: rect.top };
     panel.style.minWidth = `${rect.width}px`;
-    const below = window.innerHeight - rect.bottom - 14, above = rect.top - 14, up = below < Math.min(panel.scrollHeight, 240) && above > below;
+    const below = viewOf(panel).innerHeight - rect.bottom - 14, above = rect.top - 14, up = below < Math.min(panel.scrollHeight, 240) && above > below;
     panel.style.maxHeight = `${Math.max(120, Math.min(360, up ? above : below))}px`;
-    const left = rect.left + rect.width / 2 > window.innerWidth / 2 ? rect.right - panel.offsetWidth : rect.left;
-    panel.style.left = `${Math.max(8, Math.min(left, window.innerWidth - panel.offsetWidth - 8))}px`;
+    const left = rect.left + rect.width / 2 > viewOf(panel).innerWidth / 2 ? rect.right - panel.offsetWidth : rect.left;
+    panel.style.left = `${Math.max(8, Math.min(left, viewOf(panel).innerWidth - panel.offsetWidth - 8))}px`;
     panel.style.top = `${up ? rect.top - panel.offsetHeight - 6 : rect.bottom + 6}px`;
   }
   function show(start = selected) {

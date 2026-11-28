@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './icons.tsx';
+import { viewOf, isNode } from './owner-window.ts';
 
 // An href opens in a new tab; with download, it saves the file instead.
 export interface MenuAction { id?: string; label: string; title?: string; detail?: string; hint?: string; indent?: number; select?: () => void; href?: string; download?: boolean; disabled?: boolean; danger?: boolean; checked?: boolean; toggled?: boolean; icon?: ReactNode; divider?: boolean; edit?: { label: string; select: () => void } }
@@ -19,26 +20,27 @@ export function ActionMenu({ label, actions, children, className = 'icon-button 
     const dismiss = () => menu.current?.hidePopover();
     // Close when a scrolling ancestor moves the trigger, but leave independent
     // panes (including a PDF finishing its load) and the menu itself alone.
-    const scroll = (event: Event) => { if (event.target instanceof Node && event.target.contains(trigger.current) && !menu.current?.contains(event.target)) dismiss(); };
-    window.addEventListener('resize', dismiss);
+    const scroll = (event: Event) => { if (isNode(event.target) && event.target.contains(trigger.current) && !menu.current?.contains(event.target)) dismiss(); };
+    const view = viewOf(trigger.current);
+    view.addEventListener('resize', dismiss);
     // The phone menu is a fixed bottom sheet. Scrolling the content behind
     // it (including Chat following its latest message) does not move it.
-    if (!window.matchMedia('(max-width: 680px)').matches) document.addEventListener('scroll', scroll, true);
-    return () => { window.removeEventListener('resize', dismiss); document.removeEventListener('scroll', scroll, true); };
+    if (!view.matchMedia('(max-width: 680px)').matches) view.document.addEventListener('scroll', scroll, true);
+    return () => { view.removeEventListener('resize', dismiss); view.document.removeEventListener('scroll', scroll, true); };
   }, [open]);
   function position() {
     const panel = menu.current!, rect = trigger.current!.getBoundingClientRect();
     if (align === 'side') {
       const right = rect.right + 6, left = rect.left - panel.offsetWidth - 6;
-      panel.style.left = `${right + panel.offsetWidth <= window.innerWidth - 8 || left < 8 ? Math.max(8, Math.min(right, window.innerWidth - panel.offsetWidth - 8)) : left}px`;
-      panel.style.top = `${Math.max(8, Math.min(rect.top - 5, window.innerHeight - panel.offsetHeight - 8))}px`;
+      panel.style.left = `${right + panel.offsetWidth <= viewOf(panel).innerWidth - 8 || left < 8 ? Math.max(8, Math.min(right, viewOf(panel).innerWidth - panel.offsetWidth - 8)) : left}px`;
+      panel.style.top = `${Math.max(8, Math.min(rect.top - 5, viewOf(panel).innerHeight - panel.offsetHeight - 8))}px`;
       return;
     }
     if (align === 'start') panel.style.minWidth = `${rect.width}px`;
     const left = align === 'start' ? rect.left : rect.right - panel.offsetWidth;
-    panel.style.left = `${Math.max(8, Math.min(left, window.innerWidth - panel.offsetWidth - 8))}px`;
+    panel.style.left = `${Math.max(8, Math.min(left, viewOf(panel).innerWidth - panel.offsetWidth - 8))}px`;
     const below = rect.bottom + 6, above = rect.top - panel.offsetHeight - 6;
-    panel.style.top = `${below + panel.offsetHeight > window.innerHeight - 8 && above >= 8 ? above : Math.max(8, Math.min(below, window.innerHeight - panel.offsetHeight - 8))}px`;
+    panel.style.top = `${below + panel.offsetHeight > viewOf(panel).innerHeight - 8 && above >= 8 ? above : Math.max(8, Math.min(below, viewOf(panel).innerHeight - panel.offsetHeight - 8))}px`;
   }
   function choices() { return Array.from(menu.current!.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)')); }
   function close() { menu.current?.hidePopover(); }
@@ -64,7 +66,7 @@ export function ActionMenu({ label, actions, children, className = 'icon-button 
       event.stopPropagation();
       if (event.key === 'Escape' || (align === 'side' && event.key === 'ArrowLeft')) { event.preventDefault(); close(); trigger.current?.focus(); }
       else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-        event.preventDefault(); const items = choices(), current = items.indexOf(document.activeElement as HTMLElement);
+        event.preventDefault(); const items = choices(), current = items.indexOf(menu.current!.ownerDocument.activeElement as HTMLElement);
         const index = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
         items[index]?.focus();
       }
