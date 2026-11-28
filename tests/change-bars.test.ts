@@ -36,3 +36,9 @@ test('one reader finds the bars in every state the editor shows: a reloaded file
   assert.deepEqual(read(reloaded), [{ kind: 'modified', from: 0, to: 1 }]);
   assert.deepEqual(read(moved), [{ kind: 'modified', from: 1, to: 2 }]);
 });
+
+test('of several base moves in one update, the last one wins', () => {
+  const state = EditorState.create({ doc: 'a\nb', extensions: changeBars(text('a\nb')) });
+  const moved = state.update({ effects: [setBase.of(text('x\ny')), setBase.of(text('a\nc'))] }).state;
+  assert.deepEqual(barChanges(moved), [{ kind: 'modified', from: 1, to: 2 }]);
+});

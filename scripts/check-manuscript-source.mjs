@@ -379,6 +379,13 @@ try {
   await page.waitForTimeout(600);
   await shot('dark');
 
+  // A commit moves the text the bars compare with, without changing the
+  // file: the bars and their scrollbar marks clear in place.
+  await expect(panel.locator('.cm-change-bar').first()).toBeVisible();
+  git('commit', '-qam', 'Herons and a closing paragraph');
+  await expect(panel.locator('.cm-change-bar'), 'nothing differs from the new commit').toHaveCount(0, { timeout: 20000 });
+  await expect(panel.locator('.cm-change-ruler > *'), 'nor along the scrollbar').toHaveCount(0);
+
   assert.deepEqual(errors, []);
   console.log('PASS: the source tool opens the clicked passage in an editor that marks its changes since the last commit, saves without an agent, flashes the saved lines in the new PDF and the editor, reports encoding and compile errors, refuses stale saves, keeps drafts, and follows the Changes view both ways');
 } catch (error) {

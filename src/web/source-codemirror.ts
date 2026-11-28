@@ -283,18 +283,19 @@ const lines = (text: string | null) => text === null ? Text.empty : Text.of(text
 const barsField = StateField.define<{ base: Text; chunks: readonly Chunk[] }>({
   create: state => ({ base: Text.empty, chunks: Chunk.build(Text.empty, state.doc) }),
   update: (value, tr) => {
-    for (const effect of tr.effects) if (effect.is(setBase)) return { base: effect.value, chunks: Chunk.build(effect.value, tr.newDoc) };
+    // Effects apply in order: the last base wins.
+    const base = tr.effects.reduce<Text | null>((last, effect) => effect.is(setBase) ? effect.value : last, null);
+    if (base) return { base, chunks: Chunk.build(base, tr.newDoc) };
     return tr.docChanged ? { base: value.base, chunks: Chunk.updateB(value.chunks, value.base, tr.newDoc, tr.changes) } : value;
   },
 });
 /** The lines that changed since the bars' base. */
 export const barChanges = (state: EditorState) => { const { base, chunks } = state.field(barsField); return changedLines(base, state.doc, chunks); };
-// Edits redraw anyway; a base moved without one needs its own redraw.
+// The ruler redraws on edits; a base moved without one needs its own redraw.
 const baseMoved = (update: ViewUpdate) => update.startState.field(barsField).base !== update.state.field(barsField).base;
 export function changeBars(base: Text, onClick?: (line: number) => void): Extension {
   return [barsField.init(state => ({ base, chunks: Chunk.build(base, state.doc) })), changeRuler(view => barChanges(view.state)), gutter({
     class: 'cm-change-bars',
-    lineMarkerChange: baseMoved,
     markers: view => {
       const doc = view.state.doc, marks: { from: number; marker: GutterMarker }[] = [];
       for (const change of barChanges(view.state)) {
@@ -485,7 +486,8 @@ export class SourceCodeEditor {
    *  its last commit; `text` is the file they were found in. */
   showAuthors(spans: AuthorSpan[], text: string) {
     if (this.view.state.doc.toString() !== text) return;
-    const doc = this.view.state.doc, changed = Chunk.build(this.view.state.field(barsField).base, doc).map(chunk => [chunk.fromB, chunk.toB]);
+    // Marks are clipped to the ranges the bars show.
+    const changed = this.view.state.field(barsField).chunks.map(chunk => [chunk.fromB, chunk.toB]);
     const shown = spans.flatMap(span => changed.flatMap(([from, to]) => { const start = Math.max(from, span.from), end = Math.min(to, span.to); return end > start ? [{ ...span, from: start, to: end }] : []; }));
     this.view.dispatch({ effects: setAuthors.of(shown) });
   }
