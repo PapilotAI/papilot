@@ -152,6 +152,7 @@ function commitInstructions(language: CommitMessageLanguage = 'auto') {
 const mergeInstructions = 'You resolve Git merge conflicts in the repository of a LaTeX paper. Edit only the files listed as conflicted, and in each one remove every conflict marker (<<<<<<<, ||||||| , =======, >>>>>>>) so that the text reads as one coherent version. Keep the changes from both sides wherever they are compatible; where both sides rewrote the same passage, combine their intent, and where they truly contradict each other, prefer the version that is more complete and correct and say so. Keep the LaTeX valid: balanced environments and braces, labels, references and citations. You may read any file to understand the context. Do not edit other files, and do not run Git commands that change the repository, such as add, commit, merge, checkout, reset, restore or stash: the author reviews the result and commits the merge.';
 // The model a task's turn runs on: the one it started with, while the task's
 // own model may already be the user's choice for the next turn.
+const runAttempt = (run?: Pick<Run, 'id' | 'attemptId'> | null) => run ? (run.attemptId || run.id) : undefined;
 const turnModel = (run: Run | undefined, task: Task) => run && run.model !== undefined ? run.model : task.model;
 const blankRuntime = (): RuntimeStatus => ({ connected: false, authenticated: false, account: null, error: null, models: [] });
 
@@ -359,7 +360,7 @@ export class Workspace extends EventEmitter {
         const task = this.store.taskByThread(threadId);
         if (!task) return null;
         const activeRun = this.active.get(task.id);
-        const run = activeRun && (!clientId || activeRun.id === clientId) ? activeRun : undefined;
+        const run = activeRun && (!clientId || activeRun.id === clientId || activeRun.attemptId === clientId) ? activeRun : undefined;
         if (!run) return null;
         const items = this.store.items(task.id);
         const userItem = items.find(item => item.id === run.id);
@@ -656,8 +657,8 @@ export class Workspace extends EventEmitter {
       const finishedAt = Date.now();
       this.store.saveRun({ ...run, status: 'interrupted', finishedAt });
       this.store.recordActivity({
-        key: `turn:${run.id}`,
-        at: run.createdAt,
+        key: `turn:${runAttempt(run)}`,
+        at: run.startedAt ?? run.createdAt,
         kind: 'agent_turn',
         projectId: task.projectId,
         taskId: task.id,
@@ -673,7 +674,27 @@ export class Workspace extends EventEmitter {
     if (id !== 'collaboration') this.syncCollaborationRuntime();
     this.emit('change');
   }
-  snapshot(): Snapshot { return { version: VERSION, projects: this.store.projects(), manuscriptNoteCounts: this.store.manuscriptNoteCounts(), tasks: this.store.tasks(), pinnedTaskIds: this.store.pinnedTaskIds(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimeStatus(), ...(this.allowedAgents ? { allowedAgents: [...this.allowedAgents] } : {}) }; }
+  snapshot(): Snapshot {
+    const rawTasks = this.store.tasks();
+    const candidates = rawTasks.filter(task => task.status === 'failed' && !task.preparation);
+    const lastRuns = candidates.length ? this.store.latestRunStatus(candidates.map(task => task.id)) : null;
+    const tasks = lastRuns ? rawTasks.map(task => {
+      const retry = this.retryInfo(task, lastRuns.get(task.id));
+      return retry ? { ...task, canRetry: true, retryAgent: retry.agent } : task;
+    }) : rawTasks;
+    return { version: VERSION, projects: this.store.projects(), manuscriptNoteCounts: this.store.manuscriptNoteCounts(), tasks, pinnedTaskIds: this.store.pinnedTaskIds(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimeStatus(), ...(this.allowedAgents ? { allowedAgents: [...this.allowedAgents] } : {}) };
+  }
+  private retryInfo(task: Task, last?: { id: string; status: Run['status']; requestKey: string }) {
+    if (task.status !== 'failed' || task.preparation || last?.status !== 'failed') return null;
+    if (task.failedRunId !== undefined ? task.failedRunId !== last.id : task.review?.job?.status === 'failed') return null;
+    const agent = this.agentOf(task);
+    if (!this.isAgentAllowed(agent) || isManualAgent(agent)) return null;
+    if (task.mode === 'review' && this.agents[agent].supportsReadOnlyTasks === false) return null;
+    const handover = this.mergeHandover(task, { requestKey: last.requestKey } as Run);
+    const effectiveAgent = handover?.agent ?? agent;
+    if (!this.isAgentAllowed(effectiveAgent)) return null;
+    return { agent: effectiveAgent };
+  }
   // Each agent's status with the author's choices in Settings → Agents.
   private runtimeStatus() {
     const off = this.agentsOff, hidden = this.hiddenModels;
@@ -681,6 +702,7 @@ export class Workspace extends EventEmitter {
     return Object.fromEntries(ids.map(id => [id, {
       ...this.runtimes[id],
       ...(this.agents[id].supportsReadOnlyTasks === false ? { supportsReadOnlyTasks: false } : {}),
+      ...(this.agents[id].refresh || usesCodex(id) ? { canRefresh: true } : {}),
       ...(off.includes(id) ? { hidden: true } : {}),
       ...(hidden[id] ? { hiddenModels: hidden[id] } : {}),
     }])) as Partial<Record<AgentId, RuntimeStatus>>;
@@ -696,24 +718,26 @@ export class Workspace extends EventEmitter {
       try { if (agent.preload && (!agent.detect || await agent.detect()) && !this.closing) await agent.preload(); } catch { /* Connecting reports it. */ }
     }));
   }
-  async connect() {
+  async connect(refresh = false) {
     if (this.connecting) return this.connecting;
     this.woken.clear();
     const real = (this.allowedAgents ?? AGENTS).filter(id => id !== 'collaboration');
-    this.connecting = Promise.all(real.map(id => this.connectAgent(id)))
-      .then(() => this.isAgentAllowed('collaboration') ? this.connectAgent('collaboration') : undefined)
+    this.connecting = Promise.all(real.map(id => this.connectAgent(id, false, refresh)))
+      .then(() => this.isAgentAllowed('collaboration') ? this.connectAgent('collaboration', false, refresh) : undefined)
       .then(() => { this.syncCollaborationRuntime(); this.emit('change'); this.schedule(); })
       .finally(() => { this.connecting = null; });
     return this.connecting;
   }
   /** Reads one agent's account and models again, after its credentials change. */
-  async refreshAgent(id: AgentId) {
+  async refreshAgent(id: AgentId, wake = false, strict = false) {
     if (!this.isAgentAllowed(id)) return;
-    await this.connectAgent(id);
+    const error = await this.connectAgent(id, wake, true);
     this.syncCollaborationRuntime();
     this.emit('change');
+    this.schedule();
+    if (strict && error) throw error instanceof Error ? error : new Error(errorText(error));
   }
-  private async connectAgent(id: AgentId, wake = false) {
+  private async connectAgent(id: AgentId, wake = false, refresh = false): Promise<unknown> {
     if (this.closing || !this.isAgentAllowed(id)) return;
     if (id === 'collaboration' && !this.collaborationEnabled && !this.store.tasks().some(task => task.agent === 'collaboration')) return;
     if (isManualAgent(id) && !this.chatgptProEnabled && !this.store.tasks().some(task => isManualAgent(task.agent))) return;
@@ -734,8 +758,10 @@ export class Workspace extends EventEmitter {
       agent.close();
       agent.emit('disconnected', new Error('Codex restarted to load the current sign-in.'));
     }
+    const wasHealthy = agent.ready && runtime.connected && runtime.authenticated;
     try {
-      await agent.start();
+      if (refresh && agent.ready && agent.refresh) await agent.refresh();
+      else await agent.start();
       let account;
       try { account = await agent.request('account/read', { refreshToken: false }); }
       catch (e) { if (usesCodex(id) && signInFailure({ message: errorText(e) })) { this.signedOut(id); return; } throw e; }
@@ -749,8 +775,10 @@ export class Workspace extends EventEmitter {
         agent.request('model/list', {}, 20000),
         usesCodex(id) ? agent.request('config/read', { includeLayers: false }, 20000) : Promise.resolve(null),
       ]);
-      runtime.models = catalog.status === 'fulfilled' ? (catalog.value.data || []).map(agentModel) : [];
-      if (usesCodex(id)) {
+      const catalogError = catalog.status === 'rejected' ? catalog.reason : undefined;
+      if (catalog.status === 'fulfilled') runtime.models = (catalog.value.data || []).map(agentModel);
+      else if (!refresh) runtime.models = [];
+      if (usesCodex(id) && (catalog.status === 'fulfilled' || !refresh)) {
         // model/list marks the catalog recommendation, not the host's configured
         // model. Read through Codex so CODEX_HOME and configuration layers apply.
         const config = configuration.status === 'fulfilled' ? configuration.value?.config : undefined;
@@ -767,7 +795,13 @@ export class Workspace extends EventEmitter {
       // must not wait for this optional display data.
       if (id === 'antigravity') void this.readUsage(id);
       else await this.readUsage(id);
-    } catch (e) { runtime.error = errorText(e); runtime.connected = false; }
+      return refresh ? catalogError : undefined;
+    } catch (e) {
+      // Keep an already-connected agent and its cached catalog usable when a
+      // live refresh probe fails transiently; still return the error to callers.
+      if (!(refresh && wasHealthy)) { runtime.error = errorText(e); runtime.connected = false; }
+      return e;
+    }
   }
   // A Codex that lost its sign-in is still running but cannot work. Showing
   // it signed out offers Refresh, and holds queued tasks until it is back.
@@ -1113,6 +1147,64 @@ export class Workspace extends EventEmitter {
     if (task.preparation && task.status === 'failed') void this.prepareTask(taskId);
     return this.store.task(taskId);
   }
+  // Retry the latest failed turn using the task's current agent and model
+  // settings, refreshing the agent catalog first when its saved model is
+  // missing or the agent was unavailable. Re-queues the failed run in place so
+  // PDF note associations, Collaboration metadata, merge handovers, and
+  // automatic build-repair limits stay linked to the original user message.
+  async retryTurn(taskId: string) {
+    const task = this.store.task(taskId);
+    if (task.preparation && task.status === 'failed') return this.retryTask(taskId);
+    if (task.status !== 'failed') throw new Error('Only a failed step can be retried.');
+    const agent = this.agentOf(task);
+    this.assertAgentAllowed(agent);
+    if (isManualAgent(agent)) throw new Error('Only a failed step can be retried.');
+    if (task.mode === 'review') this.requireReviewAgent(agent);
+    const initialLast = this.store.lastRun(taskId);
+    if (!initialLast || initialLast.status !== 'failed') throw new Error('There is no failed step to retry.');
+    if (task.failedRunId !== undefined ? task.failedRunId !== initialLast.id : task.review?.job?.status === 'failed') throw new Error('There is no failed step to retry.');
+    const handover = this.mergeHandover(task, initialLast);
+    const effectiveAgent = handover?.agent ?? agent;
+    const effectiveModel = handover ? handover.model : task.model;
+    this.assertAgentAllowed(effectiveAgent);
+    const runtime = this.runtimes[effectiveAgent];
+    if (!runtime.connected || !runtime.authenticated || (effectiveModel && !runtime.models.some(model => model.id === effectiveModel))) {
+      let refreshFailure: unknown;
+      try { await this.refreshAgent(effectiveAgent, true, true); } catch (e) { refreshFailure = e; }
+      const refreshed = this.runtimes[effectiveAgent];
+      if (!refreshed.connected || !refreshed.authenticated || (refreshFailure && effectiveModel && !refreshed.models.some(model => model.id === effectiveModel))) {
+        throw new Error(errorText(refreshFailure || refreshed.error || `${AGENT_NAMES[effectiveAgent]} is unavailable.`));
+      }
+    }
+    this.store.transaction(() => {
+      if (this.store.runs().some(r => r.taskId === taskId && r.status === 'queued')) throw new Error('This task already has queued instructions. Wait or pause it first.');
+      const current = this.store.task(taskId);
+      if (current.status !== 'failed' || current.preparation) throw new Error('Only a failed step can be retried.');
+      const currentAgent = this.agentOf(current);
+      this.assertAgentAllowed(currentAgent);
+      if (isManualAgent(currentAgent)) throw new Error('Only a failed step can be retried.');
+      if (current.mode === 'review') this.requireReviewAgent(currentAgent);
+      if (this.switching.has(taskId)) throw new Error('Wait for this task to switch agents before sending more instructions.');
+      if (this.committing.has(current.projectId) || current.delivery?.pending) throw new Error('Wait for the current delivery before sending more instructions.');
+      const last = this.store.lastRun(taskId);
+      if (!last || last.status !== 'failed' || last.id !== initialLast.id || last.attemptId !== initialLast.attemptId) throw new Error('There is no failed step to retry.');
+      if (current.failedRunId !== undefined ? current.failedRunId !== last.id : current.review?.job?.status === 'failed') throw new Error('There is no failed step to retry.');
+      const currentHandover = this.mergeHandover(current, last);
+      if (currentHandover) this.assertAgentAllowed(currentHandover.agent);
+      const { startedAt: _, noteRounds: _nr, noteOptions: _no, workflowAudit: _wa, ...base } = last;
+      const run: Run = {
+        ...base,
+        attemptId: randomUUID(),
+        status: 'queued',
+        finishedAt: null,
+        reviewRound: 0,
+      };
+      this.store.saveRun(run);
+      this.store.updateTask(taskId, { status: 'queued', error: null, failedRunId: null, ...(current.archivedAt ? { archivedAt: null } : {}) });
+    });
+    this.schedule();
+    return this.store.task(taskId);
+  }
   // Makes a saved task's manuscript copy: connecting to the review engine,
   // its task and worktree, and an AI review's PDF; then the queued first
   // message can run. One preparation runs per task. A failure leaves the
@@ -1261,7 +1353,7 @@ export class Workspace extends EventEmitter {
         if ((saved.taskId && saved.taskId !== taskId) || saved.deletedAt !== undefined) throw new Error('A selected PDF note is no longer available. Refresh the manuscript and try again.');
         this.store.saveAnnotation({ ...note, taskId });
       }
-      if (!BUSY.has(current.status)) this.store.updateTask(taskId, { status: 'queued', error: null });
+      if (!BUSY.has(current.status)) this.store.updateTask(taskId, { status: 'queued', error: null, failedRunId: null });
       // Writing to an archived task brings it back to the task list.
       if (current.archivedAt && !options.build) this.store.updateTask(taskId, { archivedAt: null });
       this.store.saveItem({ id: run.id, taskId, type: 'user', text: options.feedback || options.build ? '' : text.trim(), createdAt: run.createdAt, ...(Object.keys(meta).length ? { meta } : {}) });
@@ -1606,8 +1698,8 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
     const isCollabV2 = this.agentOf(task) === 'collaboration' && this.agents.collaboration instanceof CollaborationRuntime;
     const isLegacyCollab = this.agentOf(task) === 'collaboration' && !isCollabV2;
     this.store.recordActivity({
-      key: `turn:${run.id}`,
-      at: Date.now(),
+      key: `turn:${runAttempt(run)}`,
+      at: run.startedAt ?? Date.now(),
       kind: 'agent_turn',
       projectId: task.projectId,
       taskId: task.id,
@@ -1615,10 +1707,10 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
       model: isCollabV2 ? null : activeModel,
       data: { role: task.mode === 'review' ? 'review' : 'edit', status: 'running', ...(projectName ? { projectName } : {}) },
     }, true);
-    this.store.updateTask(task.id, { status: 'running', turnId: null, error: null });
+    this.store.updateTask(task.id, { status: 'running', turnId: null, error: null, failedRunId: null });
     const reviewer = await this.approvalReviewer(task);
     const permissions = task.mode !== 'review' ? await agent.taskPermissionConfig?.(task.permissions || 'workspace', task.worktree) : undefined;
-    if (this.active.get(task.id)?.id !== run.id) return;
+    if (runAttempt(this.active.get(task.id)) !== runAttempt(run)) return;
     // A new thread hears the author's memory in its instructions. Resumed
     // threads keep their first instructions under most agents, so a change
     // since then reaches them at the start of the next turn instead.
@@ -1645,7 +1737,7 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
         }
       }
       if (freshThread && codex && result?.thread?.id) this.codexUsage.seedThread(result.thread.id);
-      if (this.active.get(task.id)?.id !== run.id) return;
+      if (runAttempt(this.active.get(task.id)) !== runAttempt(run)) return;
       // Settings can change while the agent loads. Keep this turn's snapshot,
       // and never overwrite a newer choice with the thread's resolved model.
       const current = this.store.task(task.id);
@@ -1660,8 +1752,8 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
       task = { ...task, threadId: result.thread.id, ...(!exec ? { model: activeModel } : { manualExecutor: { agent: runAgent, model: activeModel, effort: exec.effort } }), ...started };
       if (activeModel && !isCollabV2) {
         this.store.recordActivity({
-          key: `turn:${run.id}`,
-          at: Date.now(),
+          key: `turn:${runAttempt(run)}`,
+          at: run.startedAt ?? Date.now(),
           kind: 'agent_turn',
           projectId: task.projectId,
           taskId: task.id,
@@ -1686,7 +1778,7 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
     let paperInstructions = '';
     if (this.paperTools && task.mode !== 'review' && !isCollabV2 && !(runAgent === 'cursor' && task.permissions !== 'full')) {
       const epoch = this.connectionEpochs.get(runAgent);
-      const current = () => !this.closing && agent.ready && this.active.get(task.id)?.id === run.id && this.connectionEpochs.get(runAgent) === epoch;
+      const current = () => !this.closing && agent.ready && runAttempt(this.active.get(task.id)) === runAttempt(run) && this.connectionEpochs.get(runAgent) === epoch;
       paperInstructions = '\n\n' + paperToolInstructions;
       if (runAgent !== 'papilot') {
         const file = await this.toolBridge.open(task.id, current, (tool, args) => this.paperTools!(this.store.task(task.id), tool, args, current));
@@ -1710,15 +1802,15 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
     const serviceTier = exec ? undefined : effectiveServiceTier(model, task.serviceTier);
     // Apply the native policy (including configured roots and tmp exclusions)
     // and the current worktree reviewer even on already-loaded threads.
-    try { result = await agent.request('turn/start', { threadId: task.threadId, input, cwd: task.worktree, ...permissions?.turn, ...reviewer, clientUserMessageId: run.id, ...(activeModel ? { model: activeModel } : {}), ...(effort ? { effort } : {}), ...(codex && serviceTier ? { serviceTier } : {}) }); }
+    try { result = await agent.request('turn/start', { threadId: task.threadId, input, cwd: task.worktree, ...permissions?.turn, ...reviewer, clientUserMessageId: runAttempt(run), ...(activeModel ? { model: activeModel } : {}), ...(effort ? { effort } : {}), ...(codex && serviceTier ? { serviceTier } : {}) }); }
     catch (error) {
-      if (this.active.get(task.id)?.id !== run.id) return;
+      if (runAttempt(this.active.get(task.id)) !== runAttempt(run)) return;
       if (error instanceof RpcResponseError) throw error;
       this.store.saveRun({ ...run, status: 'uncertain' });
       this.store.updateTask(task.id, { status: 'uncertain', error: `${name} did not confirm whether this turn started. Select Check status before continuing. ` + errorText(error) });
       return;
     }
-    if (this.active.get(task.id)?.id !== run.id) return;
+    if (runAttempt(this.active.get(task.id)) !== runAttempt(run)) return;
     // A cancelled queued message has not delivered its comments. Advance only
     // after Codex acknowledges starting the turn that contains that feedback.
     if (run.feedbackCursor !== undefined) this.store.updateTask(task.id, { feedbackCursor: Math.max(this.store.task(task.id).feedbackCursor, run.feedbackCursor) });
@@ -1731,7 +1823,7 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
   }
   private failRun(run: Run, error: unknown) {
     const active = this.active.get(run.taskId);
-    if (active?.id !== run.id) return;
+    if (runAttempt(active) !== runAttempt(run)) return;
     this.stopWorkflow(run.taskId);
     this.active.delete(run.taskId);
     this.earlyCompletions.delete(run.taskId); this.earlyRequests.delete(run.taskId);
@@ -1739,8 +1831,8 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
     const finishedAt = Date.now(), task = this.store.task(run.taskId), id = this.runAgentOf(task);
     this.store.saveRun({ ...run, status: 'failed', finishedAt });
     this.store.recordActivity({
-      key: `turn:${run.id}`,
-      at: run.createdAt,
+      key: `turn:${runAttempt(run)}`,
+      at: run.startedAt ?? run.createdAt,
       kind: 'agent_turn',
       projectId: task.projectId,
       taskId: task.id,
@@ -1748,7 +1840,7 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
       model: id === 'collaboration' && this.agents.collaboration instanceof CollaborationRuntime ? null : turnModel(active, task),
       data: { role: task.mode === 'review' ? 'review' : 'edit', status: 'failed', finishedAt, ...(this.projectName(task.projectId) ? { projectName: this.projectName(task.projectId) } : {}) },
     }, true);
-    this.holdForReview(run.taskId, { status: 'failed', turnId: null, pendingRunId: null, ...(task.manualTurn ? { manualTurn: null } : {}), error: errorText(error) });
+    this.holdForReview(run.taskId, { status: 'failed', failedRunId: run.id, turnId: null, pendingRunId: null, ...(task.manualTurn ? { manualTurn: null } : {}), error: errorText(error) });
     if (usesCodex(id) && signInFailure({ message: errorText(error) })) this.signedOut(id);
     this.schedule();
   }
@@ -1936,7 +2028,7 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
       const isCollabV2 = agent === 'collaboration' && this.agents.collaboration instanceof CollaborationRuntime;
       if (agent === 'collaboration' && !isCollabV2 && p.turn.status === 'completed') {
         const controller = this.workflowStops.get(task.id), epoch = this.connectionEpochs.get(agent);
-        const sameRun = () => !this.closing && this.active.get(task.id)?.id === run!.id && this.connectionEpochs.get(agent) === epoch && this.store.task(task.id).turnId === eventTurn;
+        const sameRun = () => !this.closing && runAttempt(this.active.get(task.id)) === runAttempt(run) && this.connectionEpochs.get(agent) === epoch && this.store.task(task.id).turnId === eventTurn;
         let failure: unknown;
         try { await this.checkWorkflowAudit(task, run); } catch (error) { failure = error; }
         if (!sameRun()) return;
@@ -1960,8 +2052,8 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
       const mergedNoteOptions = run.noteOptions?.length ? run.noteOptions : savedRun?.noteOptions;
       this.store.saveRun({ ...run, ...(mergedNoteOptions?.length ? { noteOptions: mergedNoteOptions } : {}), ...(agent === 'collaboration' && !isCollabV2 ? { workflowAudit: savedRun?.workflowAudit } : {}), status, finishedAt });
       this.store.recordActivity({
-        key: `turn:${run.id}`,
-        at: run.createdAt,
+        key: `turn:${runAttempt(run)}`,
+        at: run.startedAt ?? run.createdAt,
         kind: 'agent_turn',
         projectId: latestTask.projectId,
         taskId: latestTask.id,
@@ -1971,7 +2063,7 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
       }, true);
       this.settleHandoff(task, eventTurn, status === 'completed');
       if (status !== 'completed') this.store.settleSteps(task.id);
-      const ended = { turnId: null, pendingRunId: null, ...(latestTask.manualTurn ? { manualTurn: null } : {}), error: p.turn.error?.message || null };
+      const ended = { turnId: null, pendingRunId: null, failedRunId: status === 'failed' ? run.id : null, ...(latestTask.manualTurn ? { manualTurn: null } : {}), error: p.turn.error?.message || null };
       // A completed turn builds; publish() holds that build for the action.
       if (status === 'completed') this.store.updateTask(task.id, { ...ended, status: 'building' });
       else this.holdForReview(task.id, { ...ended, status });
@@ -2016,7 +2108,7 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
     const { tool, arguments: args } = message.params || {};
     const agent = this.runAgentOf(task), run = this.active.get(task.id), epoch = this.connectionEpochs.get(agent);
     const current = () => !this.closing && runtime.ready && this.agents[agent] === runtime
-      && this.connectionEpochs.get(agent) === epoch && run && this.active.get(task.id)?.id === run.id
+      && this.connectionEpochs.get(agent) === epoch && run && runAttempt(this.active.get(task.id)) === runAttempt(run)
       && this.store.task(task.id).turnId === task.turnId;
     const reply = (success: boolean, text: string) => {
       if (!current()) return;
@@ -2195,7 +2287,7 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
     if (!run || !task.threadId) throw new Error(`The pending turn could not be identified. Reconnect ${name} and check again.`);
     const { thread } = await this.agents[runAgent].request('thread/read', { threadId: task.threadId, includeTurns: true }, 20000);
     if (this.store.task(taskId).status !== 'uncertain') return this.store.task(taskId);
-    const turn = thread.turns?.find((turn: any) => turn.id === task.turnId || turn.items?.some((item: any) => item.type === 'userMessage' && item.clientId === run.id));
+    const turn = thread.turns?.find((turn: any) => turn.id === task.turnId || turn.items?.some((item: any) => item.type === 'userMessage' && item.clientId === (run.attemptId || run.id)));
     if (!turn) throw new Error(`${name} has not confirmed this turn yet. Check again in a moment.`);
     const completion = this.earlyCompletions.get(taskId)?.get(turn.id);
     this.earlyCompletions.delete(taskId);
@@ -2385,7 +2477,7 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
     if (this.publishing.has(taskId) || (!automatic && (BUSY.has(task.status) || task.status === 'queued'))) throw new Error('This task is busy. Wait for it to finish or pause it first.');
     this.publishing.add(taskId);
     const runs = this.store.runs().filter(run => run.taskId === taskId && run.status === 'completed' && (run.reviewRound === 0 || (run.reviewRound === undefined && run.id === after?.id))).map(run => run.id);
-    this.store.updateTask(taskId, { status: 'building', error: null, pendingBuild: { requestId: randomUUID(), runs, sendBack: Boolean(after && !after.requestKey.startsWith(BUILD_FIX)), restarts: 0 } });
+    this.store.updateTask(taskId, { status: 'building', error: null, failedRunId: null, pendingBuild: { requestId: randomUUID(), runs, sendBack: Boolean(after && !after.requestKey.startsWith(BUILD_FIX)), restarts: 0 } });
     return (async () => {
       await this.reviewIdle(taskId);
       if (!this.holdForReview(taskId, { status: 'building' })) await this.buildReview(task);
@@ -2508,7 +2600,7 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
         this.holdForReview(taskId, { status: 'uncertain', pendingBuild: pending,
           error: 'The PDF comparison service could not be reached. Your edits are saved. Select Check status to recover the existing build.' });
       }
-      else this.holdForReview(taskId, { status: 'failed', pendingBuild: null, error: errorText(e) });
+      else this.holdForReview(taskId, { status: 'failed', failedRunId: null, pendingBuild: null, error: errorText(e) });
     }
   }
   private prepareOptions(task: Task, client: ReviewClient) {
@@ -2557,7 +2649,7 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
         this.store.updateTask(task.id, { status: this.store.runs().some(r => r.taskId === task.id && r.status === 'queued') ? 'queued' : 'reviewing', error: null, aiReview: { ...review, key: snapshot.key, notes: (review?.notes || 0) + result.notes.length }, review: { state: 'done', round: null, counts: {}, unsent: 0, comments: 0, files: [] } });
       });
     } catch (error) {
-      this.store.updateTask(task.id, { status: 'failed', error: errorText(error) });
+      this.store.updateTask(task.id, { status: 'failed', failedRunId: null, error: errorText(error) });
     }
     this.schedule();
   }

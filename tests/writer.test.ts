@@ -342,6 +342,32 @@ test('Papilot Writer lists the provider\'s models and falls back to Pi\'s entrie
   await offline.start();
   const fallback = (await offline.request('model/list')).data.map((model: any) => model.model);
   assert.ok(fallback.length > 2 && fallback.every((id: string) => id.startsWith('openai/')), 'Pi\'s built-in entries stand in');
+
+  // Refresh forces a new fetch and preserves the last good catalog on transient failure.
+  let fetchCount = 0;
+  let models = [{ id: 'gpt-6' }, { id: 'gpt-5.4' }];
+  let failFetch = false;
+  const refreshed = new WriterAgent({
+    dir: fs.mkdtempSync(path.join(os.tmpdir(), 'papilot writer refresh ')),
+    auth: AuthStorage.inMemory({ openai: { type: 'api_key', key: 'sk-test' } }),
+    env: {},
+    fetch: async () => {
+      fetchCount++;
+      if (failFetch) throw new Error('temporary outage');
+      return new Response(JSON.stringify({ data: models }));
+    },
+  });
+  await refreshed.start();
+  assert.deepEqual((await refreshed.request('model/list')).data.map((m: any) => m.model).sort(), ['openai/gpt-5.4', 'openai/gpt-6']);
+  assert.equal(fetchCount, 1);
+  models = [{ id: 'gpt-6.2' }, { id: 'gpt-6' }];
+  await refreshed.refresh();
+  assert.equal(fetchCount, 2, 'refresh bypasses CATALOG_TTL');
+  assert.deepEqual((await refreshed.request('model/list')).data.map((m: any) => m.model).sort(), ['openai/gpt-6', 'openai/gpt-6.2']);
+  failFetch = true;
+  await assert.rejects(() => refreshed.refresh(), /temporary outage/);
+  assert.equal(fetchCount, 3);
+  assert.deepEqual((await refreshed.request('model/list')).data.map((m: any) => m.model).sort(), ['openai/gpt-6', 'openai/gpt-6.2'], 'transient refresh failure preserves the last good catalog');
 });
 
 test('tool calls read as sentences and a run of them as a summary of what happened', async () => {

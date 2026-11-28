@@ -68,6 +68,7 @@ export class CursorAgent extends Adapter {
   }
   private user: { apiKeyName: string; userEmail?: string } | null = null;
   private catalog: CursorModel[] = [];
+  private probeRead: Promise<void> | null = null;
   private agents = new Map<string, CursorAgentHandle>();
   private sandboxed = new Map<string, boolean>();
   private ids: Record<string, string> = {};
@@ -77,11 +78,22 @@ export class CursorAgent extends Adapter {
   }
   detect() { return this.configured(); }
   async preload() { if (packageFile('@cursor/sdk')) await this.load(); }
+  private async loadAccount() {
+    if (this.probeRead) return this.probeRead;
+    this.probeRead = (async () => {
+      const sdk = await this.load();
+      const [user, models] = await Promise.all([sdk.Cursor.me(), sdk.Cursor.models.list()]);
+      this.user = user; this.catalog = models; this.ready = true;
+    })();
+    try { await this.probeRead; }
+    finally { this.probeRead = null; }
+  }
   async start() {
     if (this.ready) return;
-    const sdk = await this.load();
-    const [user, models] = await Promise.all([sdk.Cursor.me(), sdk.Cursor.models.list()]);
-    this.user = user; this.catalog = models; this.ready = true;
+    await this.loadAccount();
+  }
+  async refresh() {
+    await this.loadAccount();
   }
   private defaultModel() { return this.catalog.find(model => model.id === 'auto') || this.catalog[0]; }
   protected account() {

@@ -4525,3 +4525,108 @@ test('hidden models stay out of automatic choices, and reset turns every agent o
     assert.equal(f.store.preference('hidden-models'), undefined, 'an empty list removes the saved choice');
   } finally { f.close(); }
 });
+
+test('refreshAgent reloads connected agent models and retryTurn refreshes missing models before re-running', async () => {
+  const f = fixture();
+  try {
+    let models = [{ model: 'gemini-4-hydrogen', displayName: 'Gemini 4 Hydrogen', isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: 'high' }], defaultReasoningEffort: 'high' }];
+    let refreshes = 0;
+    const agy = new FakeCodex();
+    agy.ready = true;
+    (agy as any).refresh = async () => {
+      refreshes++;
+      models = [{ model: 'gemini-4-neon', displayName: 'Gemini 4 Neon', isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: 'high' }], defaultReasoningEffort: 'high' }];
+    };
+    agy.handler = async (method: string) => {
+      if (method === 'account/read') return { account: { type: 'Google account' }, requiresOpenaiAuth: false };
+      if (method === 'model/list') return { data: models };
+      return method === 'turn/start' ? { turn: { id: 'turn-new' } } : { thread: { id: 'thread' } };
+    };
+    (f.workspace as any).agents.antigravity = agy;
+    Object.assign(f.workspace.runtimes.antigravity, { installed: true, connected: true, authenticated: true, models: [{ id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', isDefault: true, efforts: ['high'], defaultEffort: 'high' }] });
+
+    await f.workspace.refreshAgent('antigravity');
+    assert.equal(refreshes, 1);
+    assert.deepEqual(f.workspace.runtimes.antigravity.models.map(m => m.id), ['gemini-4-neon']);
+
+    // Simulate a task that failed because its saved model was absent from a stale catalog.
+    f.workspace.runtimes.antigravity.models = [{ id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', isDefault: true, efforts: ['high'], defaultEffort: 'high' }];
+    f.store.updateTask(f.task.id, { agent: 'antigravity', model: 'gemini-4-neon', effort: 'high', status: 'failed', error: 'invalid model selection', threadId: null, turnId: null, archivedAt: 100 });
+    f.store.saveRun({ id: 'failed-run-1', taskId: f.task.id, requestKey: 'build-fix:job-1', prompt: 'Tighten the conclusion.', status: 'failed', createdAt: 1, finishedAt: 2, reviewRound: 0 });
+    f.store.saveItem({ id: 'failed-run-1', taskId: f.task.id, type: 'user', text: 'Tighten the conclusion.', createdAt: 1, meta: { notes: [{ where: 'Page 1', quote: 'Old', comment: 'Fix' }] } });
+    const snapBefore = f.workspace.snapshot();
+    assert.equal(snapBefore.tasks.find(t => t.id === f.task.id)?.canRetry, true);
+    assert.equal(snapBefore.runtimes?.antigravity?.canRefresh, true);
+    assert.equal(snapBefore.runtimes?.kimi?.canRefresh, undefined, 'ACP adapters without refresh() do not advertise canRefresh');
+
+    const retried = await f.workspace.retryTurn(f.task.id);
+    assert.equal(refreshes, 2, 'retryTurn refreshes the agent when the saved model is absent');
+    assert.equal(retried.error, null);
+    assert.equal(retried.archivedAt, null, 'retrying unarchives an archived failed task');
+    assert.equal(f.store.items(f.task.id).filter(item => item.type === 'user').length, 1, 'retry does not duplicate user bubbles');
+    const retriedRun = f.store.lastRun(f.task.id)!;
+    assert.equal(retriedRun.id, 'failed-run-1', 'retry keeps the original run ID so PDF notes and Collaboration metadata stay linked');
+    assert.equal(retriedRun.requestKey, 'build-fix:job-1', 'retry preserves build-repair and merge prefixes verbatim');
+    assert.ok(retriedRun.attemptId && retriedRun.attemptId !== retriedRun.id, 'retry assigns a fresh attemptId for clientUserMessageId');
+    for (let i = 0; i < 100 && !agy.calls.some(call => call.method === 'turn/start'); i++) await tick();
+    const start = agy.calls.find(call => call.method === 'turn/start')!.params;
+    assert.equal(start.model, 'gemini-4-neon');
+    assert.equal(start.clientUserMessageId, retriedRun.attemptId);
+    assert.match(start.input[0].text, /Tighten the conclusion\./);
+
+    // If refreshing the agent fails, retryTurn rejects, leaves the failed task actionable, and keeps a healthy agent connected.
+    f.store.updateTask(f.task.id, { status: 'failed', failedRunId: 'failed-run-1', error: 'invalid model selection' });
+    f.store.saveRun({ id: 'failed-run-1', taskId: f.task.id, requestKey: 'build-fix:job-1', prompt: 'Tighten the conclusion.', status: 'failed', createdAt: 1, finishedAt: 2, reviewRound: 0 });
+    f.workspace.runtimes.antigravity.models = [{ id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', isDefault: true, efforts: ['high'], defaultEffort: 'high' }];
+    (agy as any).refresh = async () => { throw new Error('agy login expired'); };
+    await assert.rejects(() => f.workspace.retryTurn(f.task.id), /agy login expired/);
+    assert.equal(f.store.task(f.task.id).status, 'failed');
+    assert.equal(f.store.task(f.task.id).error, 'invalid model selection');
+    assert.equal(f.workspace.runtimes.antigravity.connected, true, 'transient refresh failure keeps a healthy agent connected');
+    assert.deepEqual(f.workspace.runtimes.antigravity.models.map(m => m.id), ['gemini-4-hydrogen']);
+
+    // A PDF build failure after an earlier failed turn clears failedRunId so Retry does not replay the old turn.
+    f.store.updateTask(f.task.id, { status: 'failed', failedRunId: null, error: 'LaTeX build failed' });
+    assert.equal(f.workspace.snapshot().tasks.find(t => t.id === f.task.id)?.canRetry, undefined);
+    await assert.rejects(() => f.workspace.retryTurn(f.task.id), /There is no failed step to retry\./);
+
+    // Explicit model/list timeout during strict refresh preserves the last good catalog and surfaces the error.
+    (agy as any).refresh = async () => {};
+    agy.handler = async (method: string) => {
+      if (method === 'account/read') return { account: { type: 'Google account' }, requiresOpenaiAuth: false };
+      if (method === 'model/list') throw new Error('model/list timed out');
+      return { thread: { id: 'thread' } };
+    };
+    f.workspace.runtimes.antigravity.models = [{ id: 'gemini-4-neon', name: 'Gemini 4 Neon', isDefault: true, efforts: ['high'], defaultEffort: 'high' }];
+    await assert.rejects(() => f.workspace.refreshAgent('antigravity', false, true), /model\/list timed out/);
+    assert.deepEqual(f.workspace.runtimes.antigravity.models.map(m => m.id), ['gemini-4-neon'], 'strict refresh preserves last good catalog when model/list fails');
+
+    // Activity events are recorded separately per attempt, and stale tool callbacks from an earlier attempt are rejected.
+    const activityKeys = f.store.db.prepare('SELECT key FROM activity_events WHERE task_id=? AND kind=?').all(f.task.id, 'agent_turn').map((r: any) => r.key);
+    assert.ok(activityKeys.includes(`turn:${retriedRun.attemptId}`), 'retry attempt records its own activity key');
+
+    // A failed merge-handover task advertises its effective merge agent as retryAgent.
+    f.store.updateTask(f.task.id, { agent: 'codex', status: 'failed', failedRunId: 'merge-run-1', error: 'merge model missing', mergeAgent: { agent: 'antigravity', model: 'gemini-4-neon', effort: 'high' } });
+    f.store.saveRun({ id: 'merge-run-1', taskId: f.task.id, requestKey: 'merge-review-1', prompt: 'Resolve', status: 'failed', createdAt: 2, finishedAt: 3, reviewRound: 0 });
+    assert.equal(f.workspace.snapshot().tasks.find(t => t.id === f.task.id)?.retryAgent, 'antigravity');
+    f.store.updateTask(f.task.id, { mergeAgent: null, failedRunId: undefined });
+
+    // Non-failed, manual, disallowed, and build-only failures are not retryable.
+    f.store.updateTask(f.task.id, { status: 'reviewing', error: null });
+    await assert.rejects(() => f.workspace.retryTurn(f.task.id), /Only a failed step can be retried\./);
+    f.store.updateTask(f.task.id, { status: 'failed', error: 'LaTeX build failed' });
+    f.store.saveRun({ id: 'completed-run-1', taskId: f.task.id, requestKey: 'req-done-1', prompt: 'Done', status: 'completed', createdAt: 3, finishedAt: 4, reviewRound: 1 });
+    assert.equal(f.workspace.snapshot().tasks.find(t => t.id === f.task.id)?.canRetry, undefined);
+    await assert.rejects(() => f.workspace.retryTurn(f.task.id), /There is no failed step to retry\./);
+
+    f.store.saveRun({ id: 'failed-run-2', taskId: f.task.id, requestKey: 'req-failed-2', prompt: 'Manual', status: 'failed', createdAt: 5, finishedAt: 6, reviewRound: 0 });
+    f.store.updateTask(f.task.id, { agent: 'chatgpt', status: 'failed', error: 'Manual error' });
+    assert.equal(f.workspace.snapshot().tasks.find(t => t.id === f.task.id)?.canRetry, undefined);
+    await assert.rejects(() => f.workspace.retryTurn(f.task.id), /Only a failed step can be retried\./);
+
+    f.store.updateTask(f.task.id, { agent: 'antigravity', status: 'failed', error: 'Disallowed' });
+    (f.workspace as any).allowedAgents = ['codex'];
+    assert.equal(f.workspace.snapshot().tasks.find(t => t.id === f.task.id)?.canRetry, undefined);
+    await assert.rejects(() => f.workspace.retryTurn(f.task.id), /not enabled|disabled|not allowed/i);
+  } finally { f.close(); }
+});

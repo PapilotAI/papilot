@@ -6,7 +6,7 @@ import { t } from './i18n.ts';
 // An agent's models. With onHide, each one is a toggle for whether the
 // pickers offer it. A long catalog can be searched, and Show all and Hide all
 // then apply to the matches.
-export function RuntimeModels({ models, connected, hidden = [], onHide }: { models: AgentModel[]; connected: boolean; hidden?: string[]; onHide?: (hidden: string[]) => void }) {
+export function RuntimeModels({ models, connected, hidden = [], onHide, onRefresh, refreshing = false }: { models: AgentModel[]; connected: boolean; hidden?: string[]; onHide?: (hidden: string[]) => void; onRefresh?: () => void; refreshing?: boolean }) {
   const [expanded, setExpanded] = useState(false), [query, setQuery] = useState('');
   const terms = onHide ? query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean) : [];
   const matches = terms.length ? models.filter(model => terms.every(term => `${model.name} ${model.id}`.toLocaleLowerCase().includes(term))) : models;
@@ -14,12 +14,15 @@ export function RuntimeModels({ models, connected, hidden = [], onHide }: { mode
   const hiddenCount = models.filter(model => hidden.includes(model.id)).length;
   const matching = matches.map(model => model.id);
   const toggle = (id: string) => onHide?.(hidden.includes(id) ? hidden.filter(item => item !== id) : [...hidden, id]);
+  const showAll = Boolean(onHide && connected && matching.some(id => hidden.includes(id)));
+  const hideAll = Boolean(onHide && connected && matching.some(id => !hidden.includes(id)));
   return <section className="runtime-agent-models" aria-label={t('Available models')}>
     <div className="runtime-models-head">
       <h5>{t('Available models')}{connected && models.length > 0 && <small>{hiddenCount ? t('{shown} of {total}', { shown: models.length - hiddenCount, total: models.length }) : models.length}</small>}</h5>
-      {onHide && connected && matching.length > 0 && <div className="runtime-models-actions">
-        {matching.some(id => hidden.includes(id)) && <button type="button" onClick={() => onHide(hidden.filter(id => !matching.includes(id)))}>{t('Show all')}</button>}
-        {matching.some(id => !hidden.includes(id)) && <button type="button" onClick={() => onHide([...new Set([...hidden, ...matching])])}>{t('Hide all')}</button>}
+      {(showAll || hideAll || (connected && onRefresh)) && <div className="runtime-models-actions">
+        {showAll && <button type="button" onClick={() => onHide!(hidden.filter(id => !matching.includes(id)))}>{t('Show all')}</button>}
+        {hideAll && <button type="button" onClick={() => onHide!([...new Set([...hidden, ...matching])])}>{t('Hide all')}</button>}
+        {connected && onRefresh && <button type="button" disabled={refreshing} aria-busy={refreshing || undefined} onClick={onRefresh}>{refreshing ? t('Refreshing…') : t('Refresh')}</button>}
       </div>}
     </div>
     {!connected ? <p>{t('Connect and sign in to load the model list.')}</p> : !models.length ? <p>{t('This agent has not reported a model list. Its configured default can still be used.')}</p> : <>

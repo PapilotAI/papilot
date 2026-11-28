@@ -2440,3 +2440,36 @@ test('commit-message routes honor explicit agents and default task requests to t
     assert.equal(calls.length, 3);
   } finally { await f.close(); }
 });
+
+test('agent refresh and task retry routes validate CSRF, agent allowlists, and delegate cleanly', async () => {
+  const f = await fixture();
+  let refreshed: string[] = [];
+  let retried: string[] = [];
+  f.workspace.refreshAgent = async id => {
+    refreshed.push(id);
+    f.workspace.runtimes[id].models = [{ id: 'gemini-4-neon', name: 'Gemini 4 Neon', isDefault: true, efforts: ['high'], defaultEffort: 'high' }];
+  };
+  f.workspace.retryTurn = async id => {
+    retried.push(id);
+    return f.store.updateTask(id, { status: 'queued', error: null });
+  };
+  try {
+    assert.equal((await f.local.inject({ method: 'POST', url: '/api/runtime/antigravity/refresh', headers: LOCAL, payload: {} })).statusCode, 403);
+    assert.equal((await f.local.inject({ method: 'POST', url: '/api/runtime/unknown/refresh', headers: f.as, payload: {} })).statusCode, 400);
+    const refreshRes = await f.local.inject({ method: 'POST', url: '/api/runtime/antigravity/refresh', headers: f.as, payload: {} });
+    assert.equal(refreshRes.statusCode, 200);
+    assert.deepEqual(refreshed, ['antigravity']);
+    assert.deepEqual(refreshRes.json().runtime.models.map((m: any) => m.id), ['gemini-4-neon']);
+
+    assert.equal((await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/retry', headers: LOCAL, payload: {} })).statusCode, 403);
+    const retryRes = await f.local.inject({ method: 'POST', url: '/api/tasks/thesis-task/retry', headers: f.as, payload: {} });
+    assert.equal(retryRes.statusCode, 200);
+    assert.deepEqual(retried, ['thesis-task']);
+    assert.equal(retryRes.json().status, 'queued');
+
+    (f.workspace as any).allowedAgents = ['codex'];
+    const disallowed = await f.local.inject({ method: 'POST', url: '/api/runtime/antigravity/refresh', headers: f.as, payload: {} });
+    assert.equal(disallowed.statusCode, 400);
+    assert.match(disallowed.json().error, /not enabled on this host/);
+  } finally { await f.close(); }
+});

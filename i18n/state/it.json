@@ -4745,7 +4745,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Refresh": {
-    "revision": "8ef98bf1a75aa2431f037765d58e3fb201544158b99f86c8301c0dc888c6c0c1",
+    "revision": "9841f917165a700aa54127ef1bb8ba41393c5f925b97d15fa3db27fa4d832bf6",
     "textHash": "39dfe8da7df12db8072c90539d64974ce9ff2b365d0c79faf6ea5c1522788450",
     "model": "gemini-4-argon-medium"
   },
@@ -4770,8 +4770,8 @@
     "model": "gemini-4-argon-medium"
   },
   "Refreshing…": {
-    "revision": "61bf058518a5ff42195ed86d0f9a87859b0b1e2496dbc59d7c818d791a84acca",
-    "textHash": "a613ed4e642220411484ce57bc37629b427e211505378c496f96db9443713530",
+    "revision": "a879998d101cd42cb785e3dd36c09fd174041805389d17d20d26989422ab5929",
+    "textHash": "58fd00b07916c13ef2f7be885aa2a43abe8c8e31c1eb8fa83cb0924efcd70dd1",
     "model": "gemini-4-argon-medium"
   },
   "Regenerate PDF comparison": {

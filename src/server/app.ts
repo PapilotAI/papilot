@@ -565,7 +565,7 @@ export async function buildApp(options: AppOptions) {
       clearInterval(heartbeat); if (timer) clearTimeout(timer); if (paperTimer) clearTimeout(paperTimer); if (presenceTimer) clearTimeout(presenceTimer); workspace.off('change', change); overleaf.off('change', change); overleaf.off('presence', presence); manuscripts.off('change', paper);
     });
   });
-  app.post('/api/reconnect', async request => { await workspace.connect(); return workspace.snapshot().runtime; });
+  app.post('/api/reconnect', async () => { await workspace.connect(true); return workspace.snapshot().runtime; });
   // Papilot Writer's model providers: subscription sign-ins and API keys.
   const writer = async () => {
     workspace.assertAgentAllowed('papilot');
@@ -597,6 +597,14 @@ export async function buildApp(options: AppOptions) {
     if (!runtime.connected || !runtime.authenticated) return { usage: null };
     await workspace.readUsage(id);
     return { usage: runtime.usage };
+  });
+  app.post<{ Params: { agent: string } }>('/api/runtime/:agent/refresh', async (request, reply) => {
+    const id = request.params.agent;
+    if (!isAgentId(id)) return reply.code(400).send({ error: 'Unknown agent.' });
+    workspace.assertAgentAllowed(id);
+    const wake = (request.body as { wake?: unknown } | undefined)?.wake === true;
+    await workspace.refreshAgent(id, wake, true);
+    return { runtime: workspace.snapshot().runtimes?.[id] || workspace.runtimes[id] };
   });
   // Codex names reasoning efforts with short lowercase words (low, medium, xhigh).
   const agent = (value: unknown): AgentId => isAgentId(value) ? value : workspace.defaultAgentId();
@@ -695,6 +703,7 @@ export async function buildApp(options: AppOptions) {
   });
   // Retry for a task whose preparation failed; it answers at once as well.
   app.post<{ Params: { id: string } }>('/api/tasks/:id/prepare', task, request => workspace.retryTask(request.params.id));
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/retry', task, request => workspace.retryTurn(request.params.id));
   app.post<{ Params: { id: string } }>('/api/tasks/:id/agent', task, request => {
     const body = (request.body || {}) as any;
     if (!isAgentId(body.agent)) throw new Error('Choose a valid destination agent.');

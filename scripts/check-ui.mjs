@@ -46,7 +46,7 @@ await page.addInitScript(() => {
 const pageErrors = [];
 page.on('pageerror', error => pageErrors.push(error.message));
 const task = { id: 'fixture-task-0001', projectId: 'fixture-paper', name: 'p-fixture', title: 'Clarify the introduction', instructions: 'Keep the technical meaning.', worktree: '/tmp/fixture', threadId: null, turnId: null, model: null, status: 'reviewing', createdAt: 1, updatedAt: 1, feedbackCursor: 0, error: null, review: { state: 'reviewing', round: 1, counts: { pending: 3, commented: 1 } } };
-const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: task.projectId, name: 'Example paper', path: '/tmp/fixture', createdAt: 1 }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, account: null, error: null, models: [{ id: 'fast-model', name: 'Fast model', isDefault: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' }, { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', serviceTiers: ['priority'] }], usage: { plan: 'pro', windows: [{ usedPercent: 83, minutes: 10080, resetsAt: Date.now() + 3 * 86_400_000 }], credits: { unlimited: false, balance: 12418.76 }, reached: false } } };
+const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: task.projectId, name: 'Example paper', path: '/tmp/fixture', createdAt: 1 }], tasks: [task], requests: [], runtime: { connected: true, authenticated: true, canRefresh: true, account: null, error: null, models: [{ id: 'fast-model', name: 'Fast model', isDefault: true, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' }, { id: 'deep-model', name: 'Deep model', isDefault: false, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', serviceTiers: ['priority'] }], usage: { plan: 'pro', windows: [{ usedPercent: 83, minutes: 10080, resetsAt: Date.now() + 3 * 86_400_000 }], credits: { unlimited: false, balance: 12418.76 }, reached: false } } };
 // Claude is available with its own models; Antigravity is not installed.
 snapshot.runtimes = { codex: snapshot.runtime, claude: { connected: true, authenticated: true, account: 'Claude Max', error: null, models: [{ id: 'opus', name: 'Opus 5.5', isDefault: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: null }, { id: 'haiku', name: 'Haiku 5.5', isDefault: false, efforts: ['low', 'medium', 'high'], defaultEffort: null }] }, antigravity: { connected: false, authenticated: false, account: null, error: 'spawn agy ENOENT', models: [] }, kimi: { installed: true, connected: false, authenticated: false, account: null, error: null, models: [] }, cursor: { installed: false, connected: false, authenticated: false, account: null, error: null, models: [] } };
 const messages = [];
@@ -119,6 +119,7 @@ const fixtureWords = JSON.parse(fs.readFileSync('tests/fixtures/outline-words.js
 const interruptions = [];
 let reconnects = 0;
 let reconnectFailure = false;
+const agentRefreshes = [], retries = [];
 await context.addInitScript(() => localStorage.setItem('papilot:task', 'removed-task'));
 await page.route('**/api/**', async route => {
   const url = new URL(route.request().url());
@@ -138,6 +139,12 @@ await page.route('**/api/**', async route => {
     return json(captured);
   }
   if (url.pathname === '/api/reconnect') { reconnects++; return reconnectFailure ? route.fulfill({ status: 503, json: { error: 'Connection failed.' } }) : json({ ok: true }); }
+  if (/^\/api\/runtime\/[^/]+\/refresh$/.test(url.pathname)) {
+    const id = url.pathname.split('/')[3];
+    agentRefreshes.push(id);
+    if (reconnectFailure) return route.fulfill({ status: 503, json: { error: 'Connection failed.' } });
+    return json({ runtime: snapshot.runtimes[id] });
+  }
   if (url.pathname === '/api/runtime/latex') return latexFailure ? route.fulfill({ status: 503, json: { error: 'Probe unavailable.' } }) : route.fulfill({ contentType: 'application/json', body: JSON.stringify(latexInstallation) });
   if (url.pathname === '/api/diagnostics') {
     diagnosticRequests.push(route.request().postDataJSON());
@@ -256,6 +263,13 @@ await page.route('**/api/**', async route => {
     return json(createResult);
   }
   if (url.pathname.endsWith('/publish')) { publishes.push(url.pathname.split('/')[3]); return json({ ok: true }); }
+  if (url.pathname.endsWith('/retry')) {
+    const id = url.pathname.split('/')[3];
+    retries.push(id);
+    const target = snapshot.tasks.find(t => t.id === id);
+    if (target) { target.status = 'queued'; target.error = null; target.canRetry = false; }
+    return json(target || { ok: true });
+  }
   if (url.pathname.endsWith('/prepare')) {
     const pending = snapshot.tasks.find(t => t.id === url.pathname.split('/')[3]);
     pending.status = 'preparing'; pending.error = null;
@@ -493,13 +507,25 @@ try {
   assert.equal(reconnects, reconnectsBeforeSetup + 1);
   reconnectFailure = false;
   const originalCursor = snapshot.runtimes.cursor;
-  snapshot.runtimes.cursor = { ...originalCursor, installed: true, connected: true, authenticated: true, account: 'SDK account', models: [{ id: 'auto', name: 'Auto', isDefault: true, efforts: [], defaultEffort: null }] };
+  snapshot.runtimes.cursor = { ...originalCursor, installed: true, connected: true, authenticated: true, canRefresh: true, account: 'SDK account', models: [{ id: 'auto', name: 'Auto', isDefault: true, efforts: [], defaultEffort: null }] };
   await Promise.all([page.waitForResponse(response => response.url().endsWith('/api/diagnostics')), agentDetail.getByRole('button', { name: 'Reconnect', exact: true }).click()]);
   await availability('cursor').getByText('Ready', { exact: true }).waitFor();
   await agentDetail.locator('.runtime-agent-header').getByText('SDK account', { exact: true }).waitFor();
   await agentDetail.locator('.runtime-model-list').getByText('Auto', { exact: true }).waitFor();
   assert.equal(await agentDetail.locator('.runtime-agent-help').count(), 0);
   assert.equal(reconnects, reconnectsBeforeSetup + 2);
+  const refreshesBeforeModel = agentRefreshes.length;
+  reconnectFailure = true;
+  await Promise.all([page.waitForResponse(response => response.url().endsWith('/api/runtime/cursor/refresh')), agentDetail.locator('.runtime-models-actions').getByRole('button', { name: 'Refresh', exact: true }).click()]);
+  await agentDetail.getByRole('alert').waitFor();
+  await agentDetail.locator('.runtime-model-list').getByText('Auto', { exact: true }).waitFor();
+  reconnectFailure = false;
+  snapshot.runtimes.cursor = { ...snapshot.runtimes.cursor, models: [{ id: 'auto', name: 'Auto', isDefault: true, efforts: [], defaultEffort: null }, { id: 'composer-2', name: 'Composer 2', isDefault: false, efforts: [], defaultEffort: null }] };
+  await Promise.all([page.waitForResponse(response => response.url().endsWith('/api/runtime/cursor/refresh')), agentDetail.locator('.runtime-models-actions').getByRole('button', { name: 'Refresh', exact: true }).click()]);
+  await agentDetail.locator('.runtime-model-list').getByText('Composer 2', { exact: true }).waitFor();
+  assert.equal(await agentDetail.getByRole('alert').count(), 0);
+  assert.equal(agentRefreshes.length, refreshesBeforeModel + 2);
+  assert.equal(agentRefreshes.at(-1), 'cursor');
   snapshot.runtimes.cursor = originalCursor;
   await agentDetail.getByRole('button', { name: 'Close agent details' }).click();
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
@@ -2126,6 +2152,27 @@ try {
   task.error = null; task.review.job = null;
   await selectWorkspaceView('Split');
   console.log('PASS: Long conversations follow new messages, preserve history reading position, and offer a jump back');
+
+  task.status = 'failed'; task.error = 'invalid model selection (--model "gemini-4-neon" --effort "")'; task.review.job = null; task.canRetry = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.locator('.task-error').getByText(task.error, { exact: true }).waitFor();
+  const retryStepBtn = page.locator('.task-error-actions').getByRole('button', { name: 'Retry', exact: true });
+  const refreshAgentBtn = page.locator('.task-error-actions').getByRole('button', { name: 'Refresh', exact: true });
+  await retryStepBtn.waitFor();
+  await refreshAgentBtn.waitFor();
+  await page.screenshot({ path: 'test-results/task-error-actions-desktop.png', animations: 'disabled' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.screenshot({ path: 'test-results/task-error-actions-mobile-dark.png', animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ colorScheme: 'light' });
+  const refreshesBeforeStep = agentRefreshes.length;
+  await Promise.all([page.waitForResponse(response => response.url().endsWith('/api/runtime/codex/refresh')), refreshAgentBtn.click()]);
+  assert.equal(agentRefreshes.length, refreshesBeforeStep + 1);
+  await Promise.all([page.waitForResponse(response => response.url().endsWith(`/api/tasks/${task.id}/retry`)), retryStepBtn.click()]);
+  assert.deepEqual(retries, [task.id]);
+  await page.locator('.task-error').waitFor({ state: 'detached' });
+  console.log('PASS: Failed conversation steps offer Refresh and Retry actions');
 
   task.status = 'running';
   await page.evaluate(() => window.dispatchEvent(new Event('online')));

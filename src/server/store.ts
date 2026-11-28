@@ -72,6 +72,18 @@ export class Store extends EventEmitter {
     if (result.changes) this.emit('change');
   }
   runs() { return this.rows<Run>('runs'); }
+  lastRun(taskId: string) {
+    const row = this.db.prepare('SELECT data FROM runs WHERE task_id=? ORDER BY rowid DESC LIMIT 1').get(taskId) as { data: string } | undefined;
+    return row ? JSON.parse(row.data) as Run : undefined;
+  }
+  latestRunStatus(taskIds: string[]) {
+    const result = new Map<string, { id: string; status: Run['status']; requestKey: string }>();
+    if (!taskIds.length) return result;
+    const placeholders = taskIds.map(() => '?').join(',');
+    const rows = this.db.prepare(`SELECT id, task_id, status, request_key FROM runs WHERE task_id IN (${placeholders}) ORDER BY rowid`).all(...taskIds) as { id: string; task_id: string; status: Run['status']; request_key: string }[];
+    for (const row of rows) result.set(row.task_id, { id: row.id, status: row.status, requestKey: row.request_key });
+    return result;
+  }
   project(id: string) { const v = this.projects().find(p => p.id === id); if (!v) throw new Error('Paper project not found.'); return v; }
   task(id: string) { const task = this.findTask(id); if (!task) throw new Error('Task not found.'); return task; }
   // Agents stream several events a second, each naming its thread; reading
@@ -226,7 +238,7 @@ export class Store extends EventEmitter {
         const finishedAt = Date.now();
         this.saveRun({ ...r, status: 'interrupted', finishedAt });
         this.settleSteps(r.taskId);
-        this.recordActivity({ key: `turn:${r.id}`, at: r.createdAt, kind: 'agent_turn', projectId: task?.projectId, taskId: r.taskId, agent: task?.manualTurn?.executor?.agent || task?.agent || 'codex', model: task?.manualTurn?.executor?.model ?? task?.model, data: { role: task?.mode === 'review' ? 'review' : 'edit', status: 'interrupted', finishedAt } }, true);
+        this.recordActivity({ key: `turn:${r.attemptId || r.id}`, at: r.startedAt ?? r.createdAt, kind: 'agent_turn', projectId: task?.projectId, taskId: r.taskId, agent: task?.manualTurn?.executor?.agent || task?.agent || 'codex', model: task?.manualTurn?.executor?.model ?? task?.model, data: { role: task?.mode === 'review' ? 'review' : 'edit', status: 'interrupted', finishedAt } }, true);
       }
       for (const t of this.tasks().filter(t => ['running', 'waiting_input'].includes(t.status) || (t.mode === 'review' && t.status === 'building'))) {
         if (t.status === 'waiting_input' && t.manualTurn?.status === 'awaiting_reply') continue;

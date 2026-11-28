@@ -8,6 +8,7 @@ export interface DiagnosticsSettingsProps {
   project?: Pick<Project, 'id' | 'name'>;
   check: (projectId: string | undefined, signal: AbortSignal) => Promise<DiagnosticReport>;
   reconnect: () => Promise<void>;
+  refreshAgent?: (id: AgentId) => Promise<void>;
   latex: (signal: AbortSignal) => Promise<LatexInstallation | null>;
   /** The compiler for this host: GET with no choice, POST with one. */
   compiler?: (choice?: CompilerChoice['compiler']) => Promise<CompilerChoice>;
@@ -19,7 +20,7 @@ export interface DiagnosticsSettingsProps {
   allowedAgents?: AgentId[];
 }
 
-export function DiagnosticsSettings({ online, runtimes, project, check, reconnect, writer, agentSettings, allowedAgents }: DiagnosticsSettingsProps) {
+export function DiagnosticsSettings({ online, runtimes, project, check, reconnect, refreshAgent, writer, agentSettings, allowedAgents }: DiagnosticsSettingsProps) {
   const [report, setReport] = useState<DiagnosticReport | null>(null), [busy, setBusy] = useState(true), [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -31,6 +32,6 @@ export function DiagnosticsSettings({ online, runtimes, project, check, reconnec
     return () => controller.abort();
   }, [attempt, project?.id, check]);
   return <div className="diagnostics-settings settings-page">
-    <RuntimeAgents online={online} runtimes={runtimes} allowedAgents={allowedAgents} report={report} busy={busy} checkFailed={failed} checkAgain={() => setAttempt(value => value + 1)} reconnect={async () => { await reconnect(); setAttempt(value => value + 1); }} writer={writer} save={agentSettings}/>
+    <RuntimeAgents online={online} runtimes={runtimes} allowedAgents={allowedAgents} report={report} busy={busy} checkFailed={failed} checkAgain={() => setAttempt(value => value + 1)} reconnect={async () => { await reconnect(); setAttempt(value => value + 1); }} refreshAgent={refreshAgent ? async id => { await refreshAgent(id); setAttempt(value => value + 1); } : undefined} writer={writer} save={agentSettings}/>
   </div>;
 }

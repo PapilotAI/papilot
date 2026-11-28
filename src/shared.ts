@@ -101,6 +101,12 @@ export interface Task {
   pendingBuild?: PendingBuild | null;
   // Present until the task's manuscript copy exists (see TaskPreparation).
   preparation?: TaskPreparation | null;
+  /** True when the latest turn failed and can be retried via POST /api/tasks/:id/retry. */
+  canRetry?: boolean;
+  /** Effective agent for retrying a failed turn. */
+  retryAgent?: AgentId;
+  /** The run ID that produced the current failed status, or null when another operation failed. */
+  failedRunId?: string | null;
 }
 // A task the author is through with, so the saved result can offer archiving:
 // every change of its last result is decided, no comment or rejection
@@ -118,7 +124,7 @@ export function taskFinished(task: Task) {
 // or the published round. Older runs omit it. model is the one the turn started
 // with; usage records keep it when the task's model changes during the turn.
 // startedAt: when Papilot sent the run to its agent; a run cancelled while queued has none.
-export interface Run { workflowAudit?: { fingerprint: string; report: string; files: string[] }; id: string; taskId: string; requestKey: string; prompt: string; model?: string | null; attachments?: Attachment[]; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; startedAt?: number; finishedAt: number | null; reviewRound?: number | null; noteRounds?: Record<number, number>; noteOptionsRequested?: boolean; noteOptions?: PreparedNoteOptions[] }
+export interface Run { workflowAudit?: { fingerprint: string; report: string; files: string[] }; id: string; attemptId?: string; taskId: string; requestKey: string; prompt: string; model?: string | null; attachments?: Attachment[]; feedbackCursor?: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'uncertain'; createdAt: number; startedAt?: number; finishedAt: number | null; reviewRound?: number | null; noteRounds?: Record<number, number>; noteOptionsRequested?: boolean; noteOptions?: PreparedNoteOptions[] }
 /** One part of what fills the context window; ids are named in the web app. */
 export interface ContextPart { id: string; tokens: number }
 /** breakdown: the parts, when the agent can tell them apart, adding up to the window. */
@@ -414,7 +420,7 @@ export interface Usage { plan: string | null; windows: UsageWindow[]; credits: {
 // credentials or key); such agents are not offered. Older servers omit it.
 // hidden: collaboration mode is not enabled, or the author turned the agent
 // off in Settings → Agents. hiddenModels: models left out of the pickers.
-export interface RuntimeStatus { hidden?: boolean; hiddenModels?: string[]; permissionOptions?: TaskPermissionOption[]; supportsReadOnlyTasks?: false; connected: boolean; authenticated: boolean; authenticationUnchecked?: true; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null; installed?: boolean }
+export interface RuntimeStatus { hidden?: boolean; hiddenModels?: string[]; permissionOptions?: TaskPermissionOption[]; supportsReadOnlyTasks?: false; canRefresh?: boolean; connected: boolean; authenticated: boolean; authenticationUnchecked?: true; account: string | null; error: string | null; models: AgentModel[]; usage?: Usage | null; installed?: boolean }
 // A change in Settings → Agents: turn an agent on or off, choose which of its
 // models the pickers offer, or turn every agent on and show every model.
 export type AgentSettingsChange = { agent: AgentId; enabled?: boolean; hiddenModels?: string[] } | { reset: true };

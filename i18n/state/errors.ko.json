@@ -819,6 +819,11 @@
     "textHash": "69acbf2f20b8a09b21eac5f4109b73dfb9d025f8617e71ca371957091c7183e7",
     "model": "gemini-4-argon-medium"
   },
+  "Only a failed step can be retried.": {
+    "revision": "66f6127f347c63969ed8b649d4d84794983d2e37095a6bb7cbf79af3a2405b17",
+    "textHash": "b0890655e5d56c8dbbb48609b53ccc41d17c94011b39ae86af7161186e738c96",
+    "model": "gemini-4-argon-medium"
+  },
   "Only the model and its settings can be changed.": {
     "revision": "747f5e63154f60d407366b52ca4a70bccde8e123f47276afab570ffcaab88fbf",
     "textHash": "24fe56a8d5b6210bcbe1f34e4ce163352b18fa0338fb9eb82fd306f31b6a6f88",
@@ -1677,6 +1682,11 @@
   "There is no compilation log yet.": {
     "revision": "894d1568d6a240a82bd5c06c663bb2ceb5e3aa7cf447fcc17be2a0dcf642d871",
     "textHash": "00c0f638dae65909f31622f4d648ed018a35ac5c1fa9fa3b5a2cc66dbd8720a7",
+    "model": "gemini-4-argon-medium"
+  },
+  "There is no failed step to retry.": {
+    "revision": "a6dadbecdb7c648efe0cebaadb260e38b102952d7771523b0f402fdcb6a41adf",
+    "textHash": "c55079492bf29c07204ac1170cca58b68511d64587440618be43a62b373e1d0f",
     "model": "gemini-4-argon-medium"
   },
   "There is no new review feedback to send.": {

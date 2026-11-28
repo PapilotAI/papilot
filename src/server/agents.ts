@@ -32,6 +32,8 @@ export interface AgentRuntime extends EventEmitter {
   /** Loads an SDK this host already has, without starting the agent. */
   preload?(): Promise<void>;
   start(): Promise<void>;
+  /** Reloads an already-connected agent's account and model catalog when asked to refresh. */
+  refresh?(): Promise<void>;
   /** Ends the conversation of a task being deleted, so the agent lets go of
    *  what it keeps open in the task worktree before Papilot removes it. */
   closeThread?(threadId: string): Promise<void>;
@@ -244,30 +246,51 @@ export class ClaudeAgent extends Adapter {
   async preload() { if (packageFile('@anthropic-ai/claude-agent-sdk')) await this.load(); }
   // The environment Claude Code runs with; undefined keeps Papilot's own.
   protected environment(): Record<string, string> | undefined { return Object.fromEntries(Object.entries({ ...process.env, PATH: agentPath() }).filter((entry): entry is [string, string] => entry[1] !== undefined)); }
+  private probeRead: Promise<void> | null = null;
   async start() {
     if (this.ready) return;
-    this.cli = this.findCli();
-    if (this.cli) {
-      // Only the login state is read; the credential stays with Claude Code.
-      const status = await execCommand(this.cli, ['auth', 'status', '--json'], { timeout: 20000 }).then(stdout => ({ stdout }), (error: { stdout?: string }) => ({ stdout: error.stdout || '{}' }));
-      try { this.login = JSON.parse(status.stdout); } catch { this.login = null; }
-      // Claude Code's own model list, with versions and efforts; the aliases stand in if it cannot be read.
-      Object.assign(this.info, this.login?.loggedIn ? await this.listModels(this.cli).catch(() => ({ models: [], model: null })) : { models: [], model: null });
-      this.ready = true;
-      return;
-    }
-    const query = await this.load();
-    // Reading the account and models starts Claude Code without sending a prompt.
-    let finish = () => {};
-    const idle = (async function* (): AsyncGenerator<SDKUserMessage> { await new Promise<void>(resolve => { finish = resolve; }); })();
-    const env = this.environment();
-    const probe = query({ prompt: idle, options: { cwd: os.homedir(), settingSources: [], ...(env ? { env } : {}) } });
-    try {
-      const [account, models] = await Promise.all([probe.accountInfo(), probe.supportedModels()]);
-      const context = typeof probe.getContextUsage === 'function' ? await probe.getContextUsage({ detail: 'summary' }).catch(() => null) : null;
-      this.info = { account, models, model: context?.model || null };
-      this.ready = true;
-    } finally { finish(); probe.close(); }
+    await this.probe(false);
+  }
+  async refresh() {
+    await this.probe(true);
+  }
+  private async probe(refresh: boolean) {
+    if (this.probeRead) return this.probeRead;
+    this.probeRead = (async () => {
+      this.cli = this.findCli();
+      if (this.cli) {
+        // Only the login state is read; the credential stays with Claude Code.
+        const status = await execCommand(this.cli, ['auth', 'status', '--json'], { timeout: 20000 }).then(stdout => ({ stdout }), (error: { stdout?: string }) => ({ stdout: error.stdout || '{}' }));
+        try { this.login = JSON.parse(status.stdout); } catch { this.login = null; }
+        // Claude Code's own model list, with versions and efforts; the aliases stand in if it cannot be read on initial startup.
+        if (this.login?.loggedIn) {
+          try {
+            Object.assign(this.info, await this.listModels(this.cli));
+          } catch (error) {
+            if (refresh && this.info.models.length) throw error;
+            Object.assign(this.info, { models: [], model: null });
+          }
+        } else {
+          Object.assign(this.info, { models: [], model: null });
+        }
+        this.ready = true;
+        return;
+      }
+      const query = await this.load();
+      // Reading the account and models starts Claude Code without sending a prompt.
+      let finish = () => {};
+      const idle = (async function* (): AsyncGenerator<SDKUserMessage> { await new Promise<void>(resolve => { finish = resolve; }); })();
+      const env = this.environment();
+      const probe = query({ prompt: idle, options: { cwd: os.homedir(), settingSources: [], ...(env ? { env } : {}) } });
+      try {
+        const [account, models] = await Promise.all([probe.accountInfo(), probe.supportedModels()]);
+        const context = typeof probe.getContextUsage === 'function' ? await probe.getContextUsage({ detail: 'summary' }).catch(() => null) : null;
+        this.info = { account, models, model: context?.model || null };
+        this.ready = true;
+      } finally { finish(); probe.close(); }
+    })();
+    try { await this.probeRead; }
+    finally { this.probeRead = null; }
   }
   // Claude tasks need an API key, an ANTHROPIC_AUTH_TOKEN (for a gateway or an
   // Anthropic-compatible ANTHROPIC_BASE_URL), or a cloud provider's own
@@ -605,6 +628,7 @@ export class GlmAgent extends ClaudeAgent {
   constructor(load: () => Promise<typeof import('@anthropic-ai/claude-agent-sdk')['query']> = () => loadClaude(true), private env: NodeJS.ProcessEnv = process.env,
     platform: NodeJS.Platform = process.platform) { super(load, () => null, undefined, platform); }
   detect() { return Boolean(glmEndpoint(this.env)); }
+  async refresh() { this.ready = Boolean(glmEndpoint(this.env)); }
   protected environment() {
     const endpoint = glmEndpoint(this.env);
     if (!endpoint) throw new Error(GLM_KEY);
@@ -640,6 +664,7 @@ export class AntigravityAgent extends Adapter {
   }
   private catalog: { model: string; displayName: string; efforts: string[]; ids: Record<string, string>; isDefault: boolean; defaultEffort: string | null }[] = [];
   private conversations: Record<string, string> = {};
+  private modelsRead: Promise<void> | null = null;
   private quota: { at: number; result: ReturnType<typeof antigravityLimits> } | null = null;
   private quotaRead: Promise<ReturnType<typeof antigravityLimits>> | null = null;
   private quotaRevision = 0;
@@ -656,13 +681,25 @@ export class AntigravityAgent extends Adapter {
     const env = { ...process.env, PATH: agentPath() };
     return proxy ? { ...env, HTTPS_PROXY: proxy, HTTP_PROXY: proxy, https_proxy: proxy, http_proxy: proxy, NO_PROXY: '127.0.0.1,localhost' } : env;
   }
+  private async loadModels() {
+    if (this.modelsRead) return this.modelsRead;
+    this.modelsRead = (async () => {
+      const stdout = await this.execute(findExecutable(this.binary) || this.binary, ['models'], { env: this.env(), timeout: 60000 });
+      let preferred = '';
+      try { preferred = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.gemini/antigravity-cli/settings.json'), 'utf8')).model || ''; } catch { /* No saved choice. */ }
+      this.catalog = groupModels(stdout, preferred);
+      this.ready = true;
+    })();
+    try { await this.modelsRead; }
+    finally { this.modelsRead = null; }
+  }
   async start() {
     if (this.ready) return;
-    const stdout = await execCommand(findExecutable(this.binary) || this.binary, ['models'], { env: this.env(), timeout: 60000 });
-    let preferred = '';
-    try { preferred = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.gemini/antigravity-cli/settings.json'), 'utf8')).model || ''; } catch { /* No saved choice. */ }
-    this.catalog = groupModels(stdout, preferred);
-    this.ready = true;
+    await this.loadModels();
+  }
+  async refresh() {
+    this.quota = null;
+    await this.loadModels();
   }
   protected account() { return { account: this.ready ? { type: 'Google account' } : null, requiresOpenaiAuth: false }; }
   protected async limits() {

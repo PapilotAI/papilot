@@ -48,7 +48,7 @@ function agentAvailability(online: boolean, runtime?: RuntimeStatus, off = false
   return runtime.error ? 'unavailable' : 'connecting';
 }
 
-export function RuntimeAgents({ online, runtimes, allowedAgents, report, busy, checkFailed, checkAgain, reconnect, writer, save }: { online: boolean; runtimes: Partial<Record<AgentId, RuntimeStatus>>; allowedAgents?: AgentId[]; report: DiagnosticReport | null; busy: boolean; checkFailed: boolean; checkAgain: () => void; reconnect: () => Promise<void>; writer?: (route: string, body?: unknown) => Promise<WriterAuth>; save?: (change: AgentSettingsChange) => Promise<void> }) {
+export function RuntimeAgents({ online, runtimes, allowedAgents, report, busy, checkFailed, checkAgain, reconnect, refreshAgent, writer, save }: { online: boolean; runtimes: Partial<Record<AgentId, RuntimeStatus>>; allowedAgents?: AgentId[]; report: DiagnosticReport | null; busy: boolean; checkFailed: boolean; checkAgain: () => void; reconnect: () => Promise<void>; refreshAgent?: (id: AgentId) => Promise<void>; writer?: (route: string, body?: unknown) => Promise<WriterAuth>; save?: (change: AgentSettingsChange) => Promise<void> }) {
   const [selected, setSelected] = useState<AgentId | null>(null);
   const names = useId();
   // Choices being saved show at once, until the host reports them.
@@ -88,6 +88,8 @@ export function RuntimeAgents({ online, runtimes, allowedAgents, report, busy, c
   const [reconnecting, setReconnecting] = useState(false), [reconnectError, setReconnectError] = useState(false);
   const labels = { ready: t('Ready'), limited: t('Limit reached'), missing: t('Not detected'), signin: t('Sign-in required'), unchecked: t('Sign-in not checked'), connecting: t('Connecting…'), unavailable: t('Unavailable'), unknown: t('Unknown'), off: t('Off') };
   const icons = { ready: 'check', limited: 'alert', missing: 'minus', signin: 'key', unchecked: 'key', connecting: 'refresh', unavailable: 'alert', unknown: 'minus', off: 'pause' };
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
   useEffect(() => { setReconnectError(false); }, [selected]);
   const close = () => { if (selected) cards.current[selected]?.focus(); setSelected(null); };
   const runtime = selected ? runtimes[selected] : undefined;
@@ -97,10 +99,11 @@ export function RuntimeAgents({ online, runtimes, allowedAgents, report, busy, c
   const current = online && runtime?.connected && runtime.authenticated;
   const blocked = state === 'missing' || state === 'signin' || state === 'unavailable';
   const guidance = selected ? agentSetup(selected) : null;
-  async function retry() {
+  async function retry(id?: AgentId) {
     if (reconnecting) return;
+    const target = selectedRef.current;
     setReconnecting(true); setReconnectError(false);
-    try { await reconnect(); } catch { setReconnectError(true); } finally { setReconnecting(false); }
+    try { await (id && refreshAgent ? refreshAgent(id) : reconnect()); } catch { if (selectedRef.current === target) setReconnectError(true); } finally { setReconnecting(false); }
   }
   // Ready agents first and agents that are off last.
   const rank = (availability: string) => availability === 'ready' || availability === 'limited' ? 0 : availability === 'off' ? 2 : 1;
@@ -161,7 +164,7 @@ export function RuntimeAgents({ online, runtimes, allowedAgents, report, busy, c
           <div className="runtime-setup-actions"><button type="button" className="button secondary compact" disabled={!online || reconnecting} onClick={() => void retry()}><Icon name="refresh" size={13}/>{reconnecting ? t('Refreshing…') : t('Refresh')}</button></div>
           {reconnectError && <p role="alert">{t('Could not reconnect. Check the server connection and try again.')}</p>}
         </section>}
-        {current && <details className="writer-models"><summary>{t('Available models')}<span>{runtime.models.length}</span></summary><RuntimeModels key={selected} models={runtime.models} connected {...modelChoices(selected)}/></details>}
+        {current && <details className="writer-models"><summary>{t('Available models')}<span>{runtime.models.length}</span></summary><RuntimeModels key={selected} models={runtime.models} connected {...modelChoices(selected)} onRefresh={online && runtime.canRefresh ? () => void retry(selected) : undefined} refreshing={reconnecting}/>{reconnectError && <p role="alert">{t('Could not reconnect. Check the server connection and try again.')}</p>}</details>}
       </> : <>
       {blocked && guidance && <section className="runtime-agent-help" aria-label={t('Set up this agent')}>
         <p className="runtime-agent-reason" title={runtime?.error || undefined}>{state === 'missing' ? checked?.ok ? t('The latest configuration check found this agent. Reconnect to refresh its live status.') : guidance.summary : state === 'signin' ? (selected === 'collaboration' ? (runtime?.error || guidance.summary) : t('Sign in on the Papilot host to continue.')) : runtime?.error || t('The agent could not connect. Check its setup and try again.')}</p>
@@ -170,13 +173,13 @@ export function RuntimeAgents({ online, runtimes, allowedAgents, report, busy, c
         <div className="runtime-setup-actions"><button type="button" className="button secondary compact" disabled={!online || reconnecting} title={state === 'signin' ? t('Use the current {agent} sign-in on the Papilot host', { agent: agentLabel(selected) }) : undefined} onClick={() => void retry()}><Icon name="refresh" size={13}/>{reconnecting ? state === 'signin' ? t('Refreshing…') : t('Connecting…') : state === 'signin' ? t('Refresh') : t('Reconnect')}</button>{setupGuide}</div>
         {reconnectError && <p role="alert">{t('Could not reconnect. Check the server connection and try again.')}</p>}
       </section>}
-      {current ? <div className="runtime-agent-overview">
-        <RuntimeModels key={selected} models={runtime.models} connected {...modelChoices(selected)}/>
+      {current ? <><div className="runtime-agent-overview">
+        <RuntimeModels key={selected} models={runtime.models} connected {...modelChoices(selected)} onRefresh={online && runtime.canRefresh ? () => void retry(selected) : undefined} refreshing={reconnecting}/>
         <section className="runtime-agent-usage">
           <h5>{t('Usage & limits')}</h5>
           {runtime.usage ? <UsageSummary usage={runtime.usage} agent={agentLabel(selected)} expanded/> : <p className="runtime-agent-note">{t('Usage not reported')}</p>}
         </section>
-      </div> : !blocked && <p className="runtime-agent-note">{t('Connect to view account, models, and usage.')}</p>}
+      </div>{reconnectError && <p role="alert">{t('Could not reconnect. Check the server connection and try again.')}</p>}</> : !blocked && <p className="runtime-agent-note">{t('Connect to view account, models, and usage.')}</p>}
       <details key={selected + String(blocked)} className="runtime-agent-detection">
         <summary><Icon name="terminal" size={14}/><span>{t('Installation & setup')}</span><Icon name="chevronDown" size={14}/></summary>
         <div className="runtime-agent-installation">
