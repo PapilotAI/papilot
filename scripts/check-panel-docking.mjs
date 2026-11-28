@@ -171,6 +171,38 @@ try {
   await expect(area).toHaveAttribute('data-dock', 'float');
   assert.deepEqual(await box(side), floated);
 
+  // With a note in the task: My notes opens beside a floating panel, not
+  // over it, and at the bottom the task's notes sit beside the composer.
+  await choose('Dock on the right');
+  // The pages refit to the new width; select the words once they stay put.
+  const words = page.locator('.pdf-view .textLayer span', { hasText: 'pelicans' }).first();
+  let w = await box(words);
+  for (let steady = 0, tries = 0; steady < 3 && tries < 40; tries++) {
+    await page.waitForTimeout(150);
+    const next = await box(words);
+    steady = JSON.stringify(next) === JSON.stringify(w) ? steady + 1 : 0; w = next;
+  }
+  await page.mouse.move(w.x + 2, w.y + w.height / 2); await page.mouse.down(); await page.mouse.move(w.right - 2, w.y + w.height / 2, { steps: 5 }); await page.mouse.up();
+  await page.getByRole('button', { name: 'Add note', exact: true }).click();
+  await page.locator('.pdf-note-card textarea').last().fill('Name the species');
+  await page.keyboard.press('Escape');
+  await choose('Float over the page');
+  await page.getByRole('button', { name: /^My notes/ }).click();
+  const library = page.getByRole('complementary', { name: 'PDF note library' });
+  await library.getByRole('button', { name: /^Include note 1/ }).click();
+  await expect(page.locator('.task-notes-panel [data-note]')).toHaveCount(1);
+  const shelf = await box(library), floating = await box(side);
+  assert.ok(shelf.right <= floating.x || shelf.x >= floating.right, `My notes beside the floating panel: ${JSON.stringify({ shelf, floating })}`);
+  await shot('float-notes');
+  await library.getByRole('button', { name: 'Close notes' }).click();
+  await choose('Dock at the bottom');
+  const taskNotes = await box(page.locator('.task-notes-panel')), compose = await box(page.locator('.new-task-compose'));
+  assert.ok(taskNotes.right <= compose.x && Math.abs(taskNotes.y - compose.y) < 24, `side by side: ${JSON.stringify({ taskNotes, compose })}`);
+  assert.ok(taskNotes.height >= 150, 'the notes keep the panel\'s height');
+  await shot('bottom-notes');
+  await page.getByRole('button', { name: 'Remove all from task', exact: true }).click();
+  await choose('Float over the page');
+
   // A narrow window keeps its stacked layout, and a wider one the place.
   await page.setViewportSize({ width: 800, height: 900 });
   await expect(area).not.toHaveAttribute('data-dock');

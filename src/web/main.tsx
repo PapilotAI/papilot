@@ -906,6 +906,17 @@ function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, shows
   }}><Icon name={hidden ? 'panelExpand' : 'panelCollapse'} size={18}/></button>;
   // Sharing exports the paper, so it sits with the page's own tools.
   const pageTools = <>{tools}{share}{hidden && togglePanel}{showWindow}</>;
+  // The note library opens at the right of the pages; a floating panel there
+  // keeps it beside the panel instead of under it, when there is room.
+  const pages = useRef<HTMLElement>(null);
+  function libraryPlace(): React.CSSProperties | undefined {
+    const float = panel.floating, box = pages.current?.getBoundingClientRect();
+    if (!float || !box) return undefined;
+    const width = Math.min(340, box.width - 16), right = box.right - 8;
+    if (float.x >= right || float.x + float.width <= right - width) return undefined;
+    const beside = box.right - float.x + 8;
+    return box.right - beside - width >= box.left + 8 ? { right: beside } : undefined;
+  }
   // PDF or Changes stays as the author left it when they come back to the paper.
   const [mode, showMode] = useState<PdfMode>(() => !isPlayground && readPlace('mode:' + project.id) === 'changes' ? 'changes' : 'pdf'), [committing, setCommitting] = useState(false);
   const setMode = (value: PdfMode) => {
@@ -968,7 +979,7 @@ function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, shows
       <ReviewFrame key={'changes:' + project.id} changesOf={project.id} lead={switcher} tools={<>{commitButton(false)}{pageTools}</>} completion={commitButton(true)} onDecided={reloadGit}
         sources={review} onOpenSource={isPlayground ? undefined : request => { if (phone()) return false; source.reveal(request.file, request.lines, request.marks); setView('source'); setCollapsed(false); return true; }}
         onCurrentChange={change => { if (!phone()) void source.follow(change, () => { setView('source'); setCollapsed(false); }); }}/>
-    </section> : <section className="manuscript-pages" aria-label={t('PDF preview')} aria-busy={!build || build.status === 'building'}>
+    </section> : <section ref={pages} className="manuscript-pages" aria-label={t('PDF preview')} aria-busy={!build || build.status === 'building'}>
       {!build?.key && <div className="pdf-toolbar manuscript-lead" role="toolbar" aria-label={t('PDF controls')}>{switcher}<div className="pdf-toolbar-spacer"/>{pdfTools}</div>}
       {error && <div className="manuscript-note error" role="alert">{error}</div>}
       {build?.status === 'failed' && (build.key
@@ -983,7 +994,7 @@ function ManuscriptView({ evidenceActions, evidenceFocus, onEvidenceShown, shows
           onSource={async (target, key) => { if (!await closeReadingNotes()) return; setActive(''); setView('source'); setCollapsed(false); void source.open(target, key); }} passage={source.passage}/></Suspense>
         : !error && build?.status !== 'failed' && <div className="review-placeholder"><div className="placeholder-icon"><span className="spinner large"/></div><h2>{t('Compiling the PDF…')}</h2></div>}
       {returnedPlace && active === returnedPlace && notes.some(note => note.id === returnedPlace && note.key !== build?.key) && <div className="manuscript-note" role="status"><NotePlacementWarning/></div>}
-      {readingNotes && <><div aria-hidden="true" className="pdf-reading-notes-scrim" onClick={() => void closeReadingNotes()}/><aside className="pdf-reading-notes" aria-label={t('PDF note library')}><NotesPanel key={project.id + ':' + (manuscriptDocument(data) || '')} controller={notesPanel} notes={notes} sections={data?.noteSections} pageLayouts={data?.notePageLayouts} currentKey={build?.key} active={active} actions={actions} onShow={show} onAdded={() => void reviewAddedNotes()} onClose={() => void closeReadingNotes()}/></aside></>}
+      {readingNotes && <><div aria-hidden="true" className="pdf-reading-notes-scrim" onClick={() => void closeReadingNotes()}/><aside className="pdf-reading-notes" style={libraryPlace()} aria-label={t('PDF note library')}><NotesPanel key={project.id + ':' + (manuscriptDocument(data) || '')} controller={notesPanel} notes={notes} sections={data?.noteSections} pageLayouts={data?.notePageLayouts} currentKey={build?.key} active={active} actions={actions} onShow={show} onAdded={() => void reviewAddedNotes()} onClose={() => void closeReadingNotes()}/></aside></>}
     </section>}
     {panel.place(<aside id={panelId} className="manuscript-side" aria-label={t('Manuscript panels')} hidden={hidden}>
       <div className="manuscript-side-header" {...panel.header}>
@@ -2238,6 +2249,8 @@ function App() {
     <div className="new-task-start">
     {!noteSelection.selected.length && <div className="new-task-welcome"><PapilotMark size={44}/><h2>{t('What are we revising next?')}</h2></div>}
     {newSkill?.output !== 'annotations' && attachments}
+    {/* Docked at the bottom, the task's notes and the composer sit side by side. */}
+    <div className="new-task-compose">
     {missingAgent && <NoAgentNotice hosted={Boolean(state?.host)} message={missingReadOnlyAgent ? errorText(noReadOnlyAgent) : undefined} reconnecting={pendingActions.has('/reconnect')} onReconnect={() => void action('/reconnect')} onAdd={() => setSettings('agents')}/>}
     {suggestWriter && <WriterSuggestion ready={writerReady} onUse={() => { chooseModel('papilot', runtimes.papilot?.models.find(model => model.isDefault)?.id || ''); dismissWriter(); }} onSetUp={() => setSettings('agents')} onDismiss={dismissWriter}/>}
     <Composer attachments={newSkill?.output === 'annotations' ? undefined : newFiles.draft} upload={(file, signal) => uploadAttachment(project!.id, file, signal)} imageHint={agentChoice === 'antigravity' && newFiles.files.some(file => file.mime.startsWith('image/'))} autoFocus inputRef={newTaskInput} label={t('Describe the revision')} value={newDraft} onChange={setNewDraft} readOnly={creating} onSubmit={() => void createTask()} placeholder={noteSelection.selected.length ? t('Add overall instructions (optional)') : t('Describe the revision')}
@@ -2250,6 +2263,7 @@ function App() {
     {createError && <p className="inline-error" role="alert">{createError}</p>}
     {PlaygroundPresets && <Suspense fallback={null}><PlaygroundPresets selected={noteSelection.selected} open={id => openPreparedTask(id)} disabled={creating}/></Suspense>}
     {runtimes[agentChoice]?.usage && <UsageSummary agent={agentLabel(agentChoice)} usage={runtimes[agentChoice]!.usage!}/>}
+    </div>
     </div>
   </section>;
 

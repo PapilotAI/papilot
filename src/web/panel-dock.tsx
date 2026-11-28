@@ -340,6 +340,8 @@ export function usePanelDock({ key, widthKey, property, panel, label, title, ena
     /** Attributes for the area that holds the panel. */
     area: { ref: setArea, 'data-dock': popout ? 'window' : enabled ? dock : undefined, style: Object.keys(style).length ? style : undefined },
     resizer,
+    /** A floating panel's place in the window, which overlays keep clear of. */
+    floating: enabled && !popout && dock === 'float' ? float : undefined,
     /** Where a dragged panel would land, and where it went. */
     preview: <>
       {drag && !(drag.zone === 'float' && place.dock === 'float') && <div className="dock-preview" data-zone={drag.zone} aria-hidden="true" style={{ left: drag.rect.x, top: drag.rect.y, width: drag.rect.width, height: drag.rect.height }}>

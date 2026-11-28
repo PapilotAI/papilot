@@ -430,6 +430,10 @@ body.resizing.moving-panel{cursor:grabbing}
    welcome, and the start of a task just below the header. */
 .dock-area[data-dock=bottom] .new-task-welcome{display:none}
 .dock-area[data-dock=bottom] .new-task-start{margin:0;padding:4px 0 8px}
+.new-task-compose{display:contents}
+.dock-area[data-dock=bottom] .new-task-panel.has-notes .new-task-start{flex-direction:row;align-items:stretch;gap:16px}
+.dock-area[data-dock=bottom] .new-task-panel.has-notes .task-notes-panel{flex:1 1 0;min-width:0}
+.dock-area[data-dock=bottom] .new-task-panel.has-notes .new-task-compose{display:flex;flex-direction:column;gap:8px;flex:1 1 0;min-width:0;min-height:0;overflow:auto}
 .dock-area[data-dock=bottom] .new-task-panel .composer textarea{min-height:64px}
 .dock-handle{display:flex;flex:none;margin-left:auto}
 .dock-button{width:28px;height:28px;color:var(--text-3);cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none}
