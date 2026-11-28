@@ -2,6 +2,7 @@ import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { ENGINE } from './paths.ts';
 import type { Task } from '../shared.ts';
+import { REVIEW_STATIC_ASSET } from './frontend.ts';
 
 export interface ReviewClient { url: string; token: string; get<T = any>(route: string): Promise<T>; post<T = any>(route: string, body?: unknown, timeout?: number): Promise<T> }
 let modulePromise: Promise<{ connect: (root: string, start?: boolean, options?: { owned?: boolean }) => Promise<ReviewClient | null> }> | null = null;
@@ -71,7 +72,7 @@ export function annotateReviewState(value: unknown, tasks: readonly Task[]): unk
 
 export function allowedReviewRoute(route: string, method: string): boolean {
   if (route.includes('..') || route.includes('\\')) return false;
-  if (method === 'GET') return route === '/' || /^\/(?:option|mixed)-files\/[a-z0-9-]+\/\d+\/[a-f0-9]{64}\/[\w.-]+\.(svg|png|pdf)$/.test(route) || /^\/(assets|fonts)\/[\w./-]+$/.test(route) || /^\/files\/[a-z0-9-]+\/\d+\/[\w.-]+\.(svg|png)$/.test(route) || /^\/api\/tasks(?:\/[a-z0-9-]+(?:\/(?:state|source|rounds\/\d+(?:\/effects\/c\d+|\/references)?))?)?$/.test(route);
+  if (method === 'GET') return route === '/' || /^\/(?:option|mixed)-files\/[a-z0-9-]+\/\d+\/[a-f0-9]{64}\/[\w.-]+\.(svg|png|pdf)$/.test(route) || REVIEW_STATIC_ASSET.test(route.slice(1)) || /^\/files\/[a-z0-9-]+\/\d+\/[\w.-]+\.(svg|png)$/.test(route) || /^\/api\/tasks(?:\/[a-z0-9-]+(?:\/(?:state|source|rounds\/\d+(?:\/effects\/c\d+|\/references)?))?)?$/.test(route);
   return method === 'POST' && /^\/api\/tasks\/[a-z0-9-]+\/(decide|undo|look|source(?:\/options\/preview)?|rounds\/\d+\/(?:references\/confirm|mixed))$/.test(route);
 }
 export function rewriteReviewJson(value: any, prefix: string): any {

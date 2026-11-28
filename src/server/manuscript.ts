@@ -26,16 +26,49 @@ export { anchor, followLines, parseSynctex, settleLines, sourceExcerpt, type Anc
 
 type Rect = [number, number, number, number];
 
+function relativeBuildPath(buildRoot: string, pdfPath: string): string | null {
+  const isWin = /^[a-zA-Z]:[\\/]/.test(buildRoot) || /^[a-zA-Z]:[\\/]/.test(pdfPath);
+  if (isWin) {
+    const rootNorm = buildRoot.replaceAll('\\', '/');
+    const pdfNorm = pdfPath.replaceAll('\\', '/');
+    if (rootNorm.slice(0, 2).toLowerCase() !== pdfNorm.slice(0, 2).toLowerCase()) return null;
+    const folder = path.posix.dirname(path.posix.normalize(rootNorm.slice(2)));
+    const relative = path.posix.relative(folder, path.posix.normalize(pdfNorm.slice(2)));
+    return relative && relative !== '..' && !relative.startsWith('../') && !path.posix.isAbsolute(relative) ? relative : null;
+  }
+  const folder = path.dirname(path.resolve(buildRoot));
+  const relative = path.relative(folder, path.resolve(pdfPath));
+  if (relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) {
+    return relative.replaceAll('\\', '/');
+  }
+  return null;
+}
+
+async function resolveCachedPdf(folder: string, saved: { pdf?: unknown; root?: unknown }): Promise<string | null> {
+  if (typeof saved.pdf !== 'string') return null;
+  const realFolder = await fs.promises.realpath(folder).catch(() => path.resolve(folder));
+  const inFolder = async (file: string) => {
+    const realFile = await fs.promises.realpath(file).catch(() => null);
+    if (!realFile) return false;
+    const rel = path.relative(realFolder, realFile);
+    return Boolean(rel) && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+  };
+  if (fs.existsSync(saved.pdf) && await inFolder(saved.pdf)) return saved.pdf;
+  if (typeof saved.root === 'string') {
+    const rel = relativeBuildPath(saved.root, saved.pdf);
+    if (rel) {
+      const moved = path.resolve(folder, rel);
+      if (fs.existsSync(moved) && await inFolder(moved)) return moved;
+    }
+  }
+  return null;
+}
+
 /** Path-independent preview identity for a compiled PDF, derived from the
  *  build's cache key and the PDF's relative path inside its build folder so
  *  relocated caches keep their preview and annotation identities. */
 export function previewKey(buildKey: string, pdfPath: string, buildRoot?: string): string {
-  let target = pdfPath;
-  if (buildRoot) {
-    const folder = path.dirname(path.resolve(buildRoot));
-    const relative = path.relative(folder, path.resolve(pdfPath));
-    if (relative && relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)) target = relative.replaceAll('\\', '/');
-  }
+  const target = (buildRoot && relativeBuildPath(buildRoot, pdfPath)) || pdfPath;
   return createHash('sha256').update(`${buildKey}:${target}`).digest('hex').slice(0, 16);
 }
 const legacyPreviewKey = (buildKey: string, pdfPath: string) => createHash('sha256').update(buildKey + pdfPath).digest('hex').slice(0, 16);
@@ -516,7 +549,8 @@ export class Manuscripts extends EventEmitter {
       try { document.page(0); } finally { document.close(); }
     } catch { /* The first build pays for it instead. */ }
   }
-  get busyForUpdate() { return this.reviewSnapshots.busy || [...this.builds.values()].some(build => build.status === 'building'); }
+  private activeRepairs = 0;
+  get busyForUpdate() { return this.activeRepairs > 0 || this.reviewSnapshots.busy || [...this.builds.values()].some(build => build.status === 'building'); }
   busyForProject(id: string) { return [id, ...this.projectSessions(id)].some(key => this.builds.get(key)?.status === 'building'); }
   private projectSessions(id: string) { return [...this.sessions].filter(([, session]) => session.projectId === id).map(([key]) => key); }
   forgetProject(id: string) {
@@ -877,6 +911,7 @@ export class Manuscripts extends EventEmitter {
     const checkCurrent = async () => {
       if (this.builds.get(projectId) !== failed || await this.snapshot(root) !== tree || this.builds.get(projectId) !== failed) throw stale();
     };
+    this.activeRepairs++;
     const repair = (async (): Promise<BuildRepairResult> => {
       const { Builder, BuildError, Repo, config, mupdf } = await engine();
       const { ENGINES, loadBuildDocuments, loadProject, readBuildOverrides, readSettings, saveBuildOverrides, signature } = config;
@@ -929,7 +964,7 @@ export class Manuscripts extends EventEmitter {
       this.emit('build-settings', projectId);
       this.start(projectId, root, tree, failed, false, { project: candidate, result, pages });
       return { kind, summary };
-    })().finally(() => this.repairs.delete(failed));
+    })().finally(() => { this.activeRepairs = Math.max(0, this.activeRepairs - 1); this.repairs.delete(failed); });
     this.repairs.set(failed, repair);
     return repair;
   }
@@ -994,20 +1029,7 @@ export class Manuscripts extends EventEmitter {
           // A build from before the state folder moved names its PDF by the
           // former path, which the link left there keeps valid; also fall back
           // to the equivalent relative path inside a copied or relocated folder.
-          const inside = (file: string, base: string) => path.resolve(file).startsWith(path.resolve(base) + path.sep);
-          const realFolder = await fs.promises.realpath(folder).catch(() => path.resolve(folder));
-          const inFolder = async (file: string) => (inside(file, folder) || inside(await fs.promises.realpath(file).catch(() => ''), realFolder))
-            && inside(await fs.promises.realpath(file).catch(() => ''), realFolder);
-          let candidate: string | null = null;
-          if (fs.existsSync(saved.pdf) && await inFolder(saved.pdf)) {
-            candidate = saved.pdf;
-          } else if (typeof saved.root === 'string') {
-            const rel = path.relative(path.dirname(path.resolve(saved.root)), path.resolve(saved.pdf));
-            if (rel && rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel)) {
-              const moved = path.resolve(folder, rel);
-              if (fs.existsSync(moved) && await inFolder(moved)) candidate = moved;
-            }
-          }
+          const candidate = await resolveCachedPdf(folder, saved);
           if (candidate) found = candidate;
         } catch { /* Incomplete builds have no usable PDF. */ }
       }));
@@ -1145,8 +1167,9 @@ export class Manuscripts extends EventEmitter {
   async buildPdf(root: string, key: string) {
     const { stateOf } = await engine();
     try {
-      const info = JSON.parse(await fs.promises.readFile(path.join(stateOf(root), 'cache/builds', key, 'result.json'), 'utf8'));
-      return typeof info.pdf === 'string' && fs.existsSync(info.pdf) ? info.pdf as string : null;
+      const folder = path.join(stateOf(root), 'cache/builds', key);
+      const info = JSON.parse(await fs.promises.readFile(path.join(folder, 'result.json'), 'utf8'));
+      return await resolveCachedPdf(folder, info);
     } catch { return null; }
   }
   /** Where a mark on a manuscript preview PDF is, followed into `working`'s files. */

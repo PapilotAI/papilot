@@ -128,7 +128,7 @@ export async function relocate(file: string, from: string, to: string) {
   // preserves the original encoding, including in files reused without TeX.
   const cleanFrom = from.replaceAll("\\", "/").replace(/\/+$/, ""),
     cleanTo = to.replaceAll("\\", "/").replace(/\/+$/, "");
-  if (!cleanFrom || !cleanTo) return;
+  if (!cleanFrom || !cleanTo || /^[a-zA-Z]:$/.test(cleanFrom) || /^[a-zA-Z]:$/.test(cleanTo)) return;
   const keys = path.dirname(cleanFrom) === path.dirname(cleanTo)
     && [path.basename(cleanFrom), path.basename(cleanTo)].every(name => /^[a-f0-9]{32}$/.test(name));
   const old = Buffer.from((keys ? "/" + path.basename(cleanFrom) : cleanFrom) + "/"),
@@ -139,12 +139,17 @@ export async function relocate(file: string, from: string, to: string) {
   catch { return; }
   const zipped = file.endsWith(".gz");
   if (zipped) data = await unzip(data);
+  const suffixDelta = next.length > old.length && next.subarray(next.length - old.length).equals(old)
+    ? next.length - old.length
+    : 0;
   const boundary = (at: number) => {
-    if (keys || at === 0 || old[0] !== 0x2f /* '/' */) return true;
+    if (keys) return true;
+    if (suffixDelta && at >= suffixDelta && data.subarray(at - suffixDelta, at + old.length).equals(next)) return false;
+    if (at === 0 || old[0] !== 0x2f /* '/' */) return true;
     const prev = data[at - 1];
-    // Avoid matching a path suffix (e.g. /data/x inside /srv/data/x) so relocation stays idempotent.
-    return !((prev >= 0x41 && prev <= 0x5a) || (prev >= 0x61 && prev <= 0x7a) || (prev >= 0x30 && prev <= 0x39)
-      || prev === 0x2e || prev === 0x5f || prev === 0x2d || prev === 0x2f);
+    // Allow file/log/SyncTeX delimiters before a leading '/', treating path
+    // characters (including non-ASCII UTF-8 bytes) as part of an existing path.
+    return prev <= 0x20 || prev === 0x22 || prev === 0x27 || prev === 0x28 || prev === 0x3a || prev === 0x3b || prev === 0x3c || prev === 0x3d || prev === 0x7c;
   };
   let at = data.indexOf(old);
   let matched = false;

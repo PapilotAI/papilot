@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { WriterAuth, WriterCustomApi, WriterProvider } from '../shared.ts';
+import type { RuntimeStatus, WriterAuth, WriterCustomApi, WriterProvider } from '../shared.ts';
 import { BrandIcon, type Brand } from './brand-icon.tsx';
 import { Icon } from './icons.tsx';
 import { errorText, t } from './i18n.ts';
@@ -12,7 +12,11 @@ function ProviderMark({ id }: { id: string }) {
 
 // Provider credentials remain local to Papilot. Only the selected key editor is
 // mounted; subscription sign-ins keep their existing polling and redirect flow.
-export function WriterSetup({ writer, online }: { writer: (route: string, body?: unknown) => Promise<WriterAuth>; online: boolean }) {
+export function WriterSetup({ writer, online, runtime }: {
+  writer: (route: string, body?: unknown) => Promise<WriterAuth>;
+  online: boolean;
+  runtime?: RuntimeStatus;
+}) {
   const [auth, setAuth] = useState<WriterAuth | null>(null), [error, setError] = useState<string | null>(null), [busy, setBusy] = useState<string | null>(null);
   const [keys, setKeys] = useState<Record<string, string>>({}), [code, setCode] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
@@ -53,18 +57,50 @@ export function WriterSetup({ writer, online }: { writer: (route: string, body?:
     setError(null);
   }
   if (!auth) return error ? <p className="runtime-agent-error" role="alert">{errorText(error)}</p> : <p className="runtime-agent-note" role="status">{t('Checking…')}</p>;
-  const connected = auth.providers.filter(provider => provider.configured).length;
+  const gatewayFailed = Boolean(auth.gatewayOnly && runtime && (!runtime.authenticated || runtime.error));
+  const connected = auth.providers.filter(provider => provider.configured && !(provider.kind === 'gateway' && gatewayFailed)).length;
   const loginProviders = auth.providers.filter(provider => provider.kind === 'login');
-  const keyProviders = auth.providers.filter(provider => provider.kind !== 'login');
+  const gatewayProviders = auth.providers.filter(provider => provider.kind === 'gateway');
+  const keyProviders = auth.providers.filter(provider => provider.kind !== 'login' && provider.kind !== 'gateway');
   const unavailable = !online || Boolean(busy);
   const status = (provider: WriterProvider) => provider.configured ? provider.kind === 'login' ? t('Signed in') : provider.source === 'environment' ? t('Environment variable') : t('Saved') : t('API key');
   const providerName = (provider: WriterProvider) => provider.kind === 'custom' ? t('Custom API') : provider.name;
+  const renderProviderTiles = (list: WriterProvider[]) => <ul className="writer-providers">
+    {list.map(provider => {
+      const ok = provider.configured && !(provider.kind === 'gateway' && gatewayFailed);
+      return <li key={provider.id}>
+        <button type="button" className="writer-provider" disabled={Boolean(busy)} ref={element => { providerButtons.current[provider.id] = element; }} data-configured={ok} aria-expanded={selected === provider.id} aria-controls={selected === provider.id ? editorId : undefined} onClick={() => { if (selected === provider.id) closeEditor(); else { setError(null); setSelected(provider.id); } }}>
+          <ProviderMark id={provider.id}/>
+          <span className="writer-provider-copy"><strong>{providerName(provider)}</strong><small className={'writer-provider-status' + (ok ? ' connected' : '')}>{ok && <Icon name="check" size={11}/>}<span>{status(provider)}</span></small></span>
+          <Icon name={selected === provider.id ? 'chevronUp' : 'chevronRight'} size={13}/>
+        </button>
+      </li>;
+    })}
+  </ul>;
+  const selectedEditor = selectedProvider && <div className="writer-key-editor" id={editorId} ref={editor} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (!busy) closeEditor(); } }}>
+    <header><div><ProviderMark id={selectedProvider.id}/><h6 id={`${editorId}-title`} tabIndex={-1}>{providerName(selectedProvider)}</h6></div><button type="button" className="icon-button" aria-label={t('Close')} disabled={Boolean(busy)} onClick={closeEditor}><Icon name="close" size={15}/></button></header>
+    {selectedProvider.kind === 'custom' ? <CustomApiEditor config={auth.customApi} title={`${editorId}-title`} disabled={unavailable} error={error}
+      save={body => void act(selectedProvider.id, '/custom-api', body).then(ok => { if (ok) closeEditor(); })}
+      remove={() => void act(selectedProvider.id, `/providers/${selectedProvider.id}/remove`).then(ok => { if (ok) closeEditor(); })}/>
+    : selectedProvider.configured ? <div className="writer-key-connected">
+      <p><Icon name={selectedProvider.kind === 'gateway' && gatewayFailed ? 'info' : 'check'} size={15}/>{selectedProvider.source === 'environment' ? t('From {variable}', { variable: selectedProvider.env || '' }) : t('Saved')}</p>
+      {selectedProvider.source === 'stored' && <button type="button" className="button secondary compact" disabled={unavailable} onClick={() => void act(selectedProvider.id, `/providers/${selectedProvider.id}/remove`)}>{t('Remove')}</button>}
+    </div> : <form onSubmit={event => { event.preventDefault(); void act(selectedProvider.id, '/keys', { provider: selectedProvider.id, key: keys[selectedProvider.id] || '' }).then(ok => { if (ok) closeEditor(); }); }}>
+      <label htmlFor="writer-api-key">{t('API key for {provider}', { provider: selectedProvider.name })}</label>
+      <div className="writer-key"><input id="writer-api-key" type="password" autoComplete="off" spellCheck={false} placeholder={selectedProvider.env} value={keys[selectedProvider.id] || ''} onChange={event => setKeys(current => ({ ...current, [selectedProvider.id]: event.target.value }))}/><button type="submit" className="button primary compact" disabled={unavailable || !keys[selectedProvider.id]?.trim()}>{busy === selectedProvider.id && <span className="spinner"/>}{t('Save')}</button></div>
+    </form>}
+  </div>;
   return <section className="writer-setup" aria-label={t('Model providers')}>
     <header className="writer-intro">
       <span className="writer-intro-mark" aria-hidden="true"><BrandIcon name="papilot" size={32}/><span><Icon name="spark" size={13}/></span></span>
-      <div><h5>{t('Model providers')}</h5><p>{t('Sign in with a subscription or add an API key.')}</p></div>
+      <div><h5>{t('Model providers')}</h5>{!auth.gatewayOnly && <p>{t('Sign in with a subscription or add an API key.')}</p>}</div>
       {connected > 0 && <span className="writer-connected"><span/>{connected} {t('Connected')}</span>}
     </header>
+    {gatewayProviders.length > 0 && <section aria-labelledby="writer-gateway-title">
+      <div className="writer-section-heading"><h5 id="writer-gateway-title">{t('Environment variable')}</h5><Icon name="globe" size={14}/></div>
+      {renderProviderTiles(gatewayProviders)}
+      {selectedProvider?.kind === 'gateway' && selectedEditor}
+    </section>}
     {loginProviders.length > 0 && <section aria-labelledby="writer-subscriptions-title">
       <div className="writer-section-heading"><h5 id="writer-subscriptions-title">{t('Subscriptions')}</h5><Icon name="key" size={14}/></div>
       <ul className="writer-subscriptions">
@@ -96,28 +132,8 @@ export function WriterSetup({ writer, online }: { writer: (route: string, body?:
     </section>}
     {keyProviders.length > 0 && <section aria-labelledby="writer-keys-title">
       <div className="writer-section-heading"><h5 id="writer-keys-title">{t('API keys')}</h5><Icon name="key" size={14}/></div>
-      <ul className="writer-providers">
-        {keyProviders.map(provider => <li key={provider.id}>
-          <button type="button" className="writer-provider" disabled={Boolean(busy)} ref={element => { providerButtons.current[provider.id] = element; }} data-configured={provider.configured} aria-expanded={selected === provider.id} aria-controls={selected === provider.id ? editorId : undefined} onClick={() => { if (selected === provider.id) closeEditor(); else { setError(null); setSelected(provider.id); } }}>
-            <ProviderMark id={provider.id}/>
-            <span className="writer-provider-copy"><strong>{providerName(provider)}</strong><small className={'writer-provider-status' + (provider.configured ? ' connected' : '')}>{provider.configured && <Icon name="check" size={11}/>}<span>{status(provider)}</span></small></span>
-            <Icon name={selected === provider.id ? 'chevronUp' : 'chevronRight'} size={13}/>
-          </button>
-        </li>)}
-      </ul>
-      {selectedProvider && <div className="writer-key-editor" id={editorId} ref={editor} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (!busy) closeEditor(); } }}>
-        <header><div><ProviderMark id={selectedProvider.id}/><h6 id={`${editorId}-title`} tabIndex={-1}>{providerName(selectedProvider)}</h6></div><button type="button" className="icon-button" aria-label={t('Close')} disabled={Boolean(busy)} onClick={closeEditor}><Icon name="close" size={15}/></button></header>
-        {selectedProvider.kind === 'custom' ? <CustomApiEditor config={auth.customApi} title={`${editorId}-title`} disabled={unavailable} error={error}
-          save={body => void act(selectedProvider.id, '/custom-api', body).then(ok => { if (ok) closeEditor(); })}
-          remove={() => void act(selectedProvider.id, `/providers/${selectedProvider.id}/remove`).then(ok => { if (ok) closeEditor(); })}/>
-        : selectedProvider.configured ? <div className="writer-key-connected">
-          <p><Icon name="check" size={15}/>{selectedProvider.source === 'environment' ? t('From {variable}', { variable: selectedProvider.env || '' }) : t('Saved')}</p>
-          {selectedProvider.source === 'stored' && <button type="button" className="button secondary compact" disabled={unavailable} onClick={() => void act(selectedProvider.id, `/providers/${selectedProvider.id}/remove`)}>{t('Remove')}</button>}
-        </div> : <form onSubmit={event => { event.preventDefault(); void act(selectedProvider.id, '/keys', { provider: selectedProvider.id, key: keys[selectedProvider.id] || '' }).then(ok => { if (ok) closeEditor(); }); }}>
-          <label htmlFor="writer-api-key">{t('API key for {provider}', { provider: selectedProvider.name })}</label>
-          <div className="writer-key"><input id="writer-api-key" type="password" autoComplete="off" spellCheck={false} placeholder={selectedProvider.env} value={keys[selectedProvider.id] || ''} onChange={event => setKeys(current => ({ ...current, [selectedProvider.id]: event.target.value }))}/><button type="submit" className="button primary compact" disabled={unavailable || !keys[selectedProvider.id]?.trim()}>{busy === selectedProvider.id && <span className="spinner"/>}{t('Save')}</button></div>
-        </form>}
-      </div>}
+      {renderProviderTiles(keyProviders)}
+      {selectedProvider && selectedProvider.kind !== 'gateway' && selectedEditor}
     </section>}
     {error && selectedProvider?.kind !== 'custom' && <p className="runtime-agent-error writer-error" role="alert">{errorText(error)}</p>}
     {!auth.gatewayOnly && <details className="writer-storage-note"><summary><Icon name="info" size={13}/>{t('Installation & setup')}<Icon name="chevronDown" size={13}/></summary><p>{t('Claude works with an Anthropic API key only. Papilot keeps these credentials in its own data folder, separate from any Pi installation.')}</p></details>}

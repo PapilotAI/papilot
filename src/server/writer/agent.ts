@@ -112,12 +112,12 @@ export class WriterAgent extends Adapter {
   available(): Model<Api>[] {
     if (!this.registry || !this.credentials) return [];
     const gatewayModels = this.credentials.gateway() ? (this.catalog.get(GATEWAY_PROVIDER)?.models || []) : [];
-    if (this.credentials.gatewayOnly()) return gatewayModels.slice(0, PER_PROVIDER);
+    if (this.credentials.gatewayOnly()) return gatewayModels;
     this.registry.refresh();
     const usable = this.registry.getAvailable().filter(model => this.credentials!.usable(model.provider));
     const providers = [...new Set(usable.map(model => model.provider))].sort((a, b) => (PROVIDER_ORDER.indexOf(a) + 1 || 99) - (PROVIDER_ORDER.indexOf(b) + 1 || 99));
     return [
-      ...gatewayModels.slice(0, PER_PROVIDER),
+      ...gatewayModels,
       ...providers.flatMap(provider => {
         const listed = this.catalog.get(provider)?.models;
         // A provider's own list is already in its order of preference.
@@ -129,14 +129,14 @@ export class WriterAgent extends Adapter {
     ];
   }
   /** Fetches the model list of each configured provider whose list is missing or old. */
-  async refreshModels() {
+  async refreshModels(forceGateway = false) {
     await this.load();
     this.listing ||= (async () => {
       const registry = this.registry!, fetcher = this.options.fetch || fetch;
       const gateway = this.credentials!.gateway();
       if (gateway) {
         const cached = this.catalog.get(GATEWAY_PROVIDER);
-        if (!cached || Date.now() - cached.at >= CATALOG_TTL) {
+        if (forceGateway || !cached || Date.now() - cached.at >= CATALOG_TTL) {
           const redact = this.credentials!.redactCustomErrors(GATEWAY_PROVIDER);
           try {
             const { models, efforts } = await listGatewayModels(gateway, fetcher);
@@ -175,17 +175,30 @@ export class WriterAgent extends Adapter {
     await this.listing;
   }
   private defaultModel() { return this.available()[0]; }
-  protected account() {
-    const configured = this.credentials?.status().providers.filter(provider => provider.configured && this.credentials!.usable(provider.id)) || [];
+  private accountState() {
+    const configured = (this.credentials?.status().providers.filter(provider => provider.configured && this.credentials!.usable(provider.id)) || [])
+      .filter(provider => !(isGatewayProvider(provider.id) && this.gatewayError));
     if (!configured.length) {
-      if (this.credentials?.gatewayOnly()) return { account: null, requiresOpenaiAuth: true, reason: 'Papilot Writer is configured for gateway-only mode, but the model gateway URL or API key is missing.' };
-      return { account: null, requiresOpenaiAuth: true, reason: 'Papilot Writer needs a model provider. Sign in with ChatGPT or GitHub Copilot, or add an API key, in Settings → Agents → Papilot Writer.' };
+      if (this.credentials?.gatewayOnly()) {
+        return {
+          account: null,
+          requiresOpenaiAuth: true,
+          reason: this.gatewayError || 'Papilot Writer is configured for gateway-only mode, but the model gateway URL or API key is missing or invalid.',
+        };
+      }
+      return { account: null, requiresOpenaiAuth: true, reason: this.gatewayError || 'Papilot Writer needs a model provider. Sign in with ChatGPT or GitHub Copilot, or add an API key, in Settings → Agents → Papilot Writer.' };
     }
     if (!this.defaultModel()) {
-      if (this.credentials?.gateway() && !this.gatewayError) return { account: { type: configured.map(provider => provider.name).join(', ') }, requiresOpenaiAuth: false };
       return { account: null, requiresOpenaiAuth: true, reason: this.gatewayError || 'Papilot Writer needs a model provider. Sign in with ChatGPT or GitHub Copilot, or add an API key, in Settings → Agents → Papilot Writer.' };
     }
     return { account: { type: configured.map(provider => provider.name).join(', ') }, requiresOpenaiAuth: false };
+  }
+  protected async account() {
+    await this.load();
+    if (this.credentials?.gateway() && (!this.catalog.has(GATEWAY_PROVIDER) || this.gatewayError)) {
+      await this.refreshModels(Boolean(this.gatewayError));
+    }
+    return this.accountState();
   }
   protected async models() {
     await this.refreshModels();
@@ -333,15 +346,15 @@ export class WriterAgent extends Adapter {
     try {
       await this.load();
       const model = await this.resolve(thread.model);
-      if (!model) throw new Error(String(this.account().reason || 'Papilot Writer has no model available.'));
-      const redact = this.credentials!.redactCustomErrors(model.provider);
-      redactError = message => redact(this.credentials!.redactCustomErrors(model.provider)(message));
+      if (!model) throw new Error(String(this.accountState().reason || 'Papilot Writer has no model available.'));
+      redactError = this.credentials!.redactCustomErrors(model.provider);
       live = await this.open(turn.threadId, thread, model);
       if (stopped) return;
       live.turn = turn;
       const session = live.session;
       if (session.model?.provider !== model.provider || session.model?.id !== model.id) await session.setModel(model);
-      const levels = model.reasoning ? this.ai!.getSupportedThinkingLevels(model) : ['off'];
+      const listed = this.catalog.get(model.provider)?.efforts.get(model.id);
+      const levels = listed?.length ? listed : model.reasoning ? this.ai!.getSupportedThinkingLevels(model) : ['off'];
       session.setThinkingLevel((effort && levels.includes(effort as never) ? effort : levels.includes('medium' as never) ? 'medium' : levels[0]) as never);
       unsubscribe = this.translate(turn, session, value => { error = redactError(value); }, redactError);
       const pictures: ImageContent[] = [];

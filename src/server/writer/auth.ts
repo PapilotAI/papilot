@@ -43,7 +43,6 @@ export interface WriterGatewayConfig {
   key: string;
   api: GatewayApiFormat;
   name: string;
-  exclusive: boolean;
 }
 type CustomApi = WriterCustomApi & { key: string };
 export const isCustomProvider = (id: string) => id.startsWith(`${CUSTOM_API}-`);
@@ -72,15 +71,27 @@ export function validateGatewayBaseUrl(rawUrl: unknown, allowedOrigin?: string):
 const isGatewayOnlyEnv = (env: NodeJS.ProcessEnv) => env.PAPILOT_WRITER_GATEWAY_ONLY === '1' || env.PAPILOT_WRITER_GATEWAY_ONLY === 'true';
 
 function readGatewayConfig(env: NodeJS.ProcessEnv): WriterGatewayConfig | undefined {
-  const baseUrl = validateGatewayBaseUrl(env.PAPILOT_WRITER_GATEWAY_URL);
-  if (!baseUrl) return undefined;
+  const rawUrl = typeof env.PAPILOT_WRITER_GATEWAY_URL === 'string' ? env.PAPILOT_WRITER_GATEWAY_URL.trim() : '';
+  if (!rawUrl) return undefined;
+  const baseUrl = validateGatewayBaseUrl(rawUrl);
+  if (!baseUrl) {
+    console.warn('Ignoring invalid PAPILOT_WRITER_GATEWAY_URL; expected an HTTPS URL (or HTTP on localhost) without credentials, query, or fragment.');
+    return undefined;
+  }
   const parsed = new URL(baseUrl);
   const keyEnv = (typeof env.PAPILOT_WRITER_GATEWAY_KEY_ENV === 'string' && env.PAPILOT_WRITER_GATEWAY_KEY_ENV.trim()) || 'PAPILOT_WRITER_GATEWAY_KEY';
   const key = typeof env[keyEnv] === 'string' ? env[keyEnv]!.trim() : '';
-  if (!key || key.length > 4096 || /[^!-~]/.test(key)) return undefined;
-  const api = parseGatewayApi(env.PAPILOT_WRITER_GATEWAY_API, 'openai-responses');
+  if (!key || key.length > 4096 || /[^!-~]/.test(key) || claudeSubscription(key)) {
+    console.warn(`Ignoring Papilot Writer model gateway because ${keyEnv} is missing or invalid.`);
+    return undefined;
+  }
+  const rawApi = typeof env.PAPILOT_WRITER_GATEWAY_API === 'string' ? env.PAPILOT_WRITER_GATEWAY_API.trim() : '';
+  if (rawApi && !GATEWAY_APIS.has(rawApi as GatewayApiFormat)) {
+    console.warn(`Ignoring unknown PAPILOT_WRITER_GATEWAY_API "${rawApi}"; falling back to openai-responses.`);
+  }
+  const api = parseGatewayApi(rawApi, 'openai-responses');
   const name = (typeof env.PAPILOT_WRITER_GATEWAY_NAME === 'string' && env.PAPILOT_WRITER_GATEWAY_NAME.trim()) || parsed.host || 'Model Gateway';
-  return { baseUrl, keyEnv, key, api, name, exclusive: isGatewayOnlyEnv(env) };
+  return { baseUrl, keyEnv, key, api, name };
 }
 
 function customApi(input: Record<string, unknown>, previous?: CustomApi): CustomApi {

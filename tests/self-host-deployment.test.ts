@@ -50,15 +50,18 @@ test('health endpoint reports busy status only when requested and excludes live 
   (workspace as any).active.set(task.id, { id: 'run-1', taskId: task.id, status: 'running' });
   assert.deepEqual((await app.inject({ url: '/api/health?busy=1', headers })).json().busy, { computing: false, waitingForUser: true });
 
+  store.saveTask({ ...task, status: 'uncertain' });
+  (workspace as any).active.delete(task.id);
+  assert.deepEqual((await app.inject({ url: '/api/health?busy=1', headers })).json().busy, { computing: false, waitingForUser: true });
+
   store.saveTask({ ...task, status: 'running' });
   assert.deepEqual((await app.inject({ url: '/api/health?busy=1', headers })).json().busy, { computing: true, waitingForUser: false });
 
-  (workspace as any).active.delete(task.id);
   store.saveTask({ ...task, status: 'reviewing' });
   assert.deepEqual((await app.inject({ url: '/api/health?busy=1', headers })).json().busy, { computing: false, waitingForUser: false });
 });
 
-test('frontend route helpers classify SPA, review shell, static assets, and reject path traversal', () => {
+test('frontend route helpers classify SPA, review shell, static assets, and reject unsafe paths', () => {
   assert.equal(isFrontendPath('/'), true);
   assert.equal(isFrontendPath('/assets/index.js'), true);
   assert.equal(isFrontendPath('/projects/abc'), true);
@@ -68,37 +71,49 @@ test('frontend route helpers classify SPA, review shell, static assets, and reje
 
   assert.equal(isFrontendPath('/api/health'), false);
   assert.equal(isFrontendPath('/api/state'), false);
+  assert.equal(isFrontendPath('//api/health'), false);
+  assert.equal(isFrontendPath('/%61pi/health'), false);
+  assert.equal(isFrontendPath('/%2e%2e/etc/passwd'), false);
+  assert.equal(isFrontendPath('/api?x=1'), false);
   assert.equal(isFrontendPath('/invite'), false);
+  assert.equal(isFrontendPath('/invite?token=abc'), false);
   assert.equal(isFrontendPath('/sign-in'), false);
+  assert.equal(isFrontendPath('/sign-in?next=/'), false);
+  assert.equal(isFrontendPath('/.env'), false);
+  assert.equal(isFrontendPath('/assets/.env'), false);
   assert.equal(isFrontendPath('api/health'), false);
   assert.equal(isFrontendPath('/assets/../etc/passwd'), false);
   assert.equal(isFrontendPath('/review/my-paper/api/changes/state'), false);
   assert.equal(isFrontendPath('/review/my-paper/changes/files/1/a.svg'), false);
   assert.equal(isFrontendPath('/review/my-paper/assets/../../etc/passwd'), false);
+  assert.equal(isFrontendPath('/review/my-paper/assets/.env'), false);
   assert.equal(isFrontendPath('/review/my-paper/assets/a\\b.js'), false);
   assert.equal(isFrontendPath('/review/BAD_ID/'), false);
 
   assert.deepEqual(parseReviewFrontendPath('/review/paper-1/'), { project: 'paper-1', kind: 'page' });
   assert.deepEqual(parseReviewFrontendPath('/review/paper-1/assets/main.css'), { project: 'paper-1', kind: 'asset', asset: 'assets/main.css' });
   assert.equal(parseReviewFrontendPath('/review/paper-1/assets/../../secret'), null);
+  assert.equal(parseReviewFrontendPath('/review/paper-1/assets/.env'), null);
   assert.equal(parseReviewFrontendPath('/review/paper-1/api/state'), null);
 });
 
-test('preview keys stay identical across relocated build folders, relocate stays idempotent, and copied caches resolve inside target folder', async t => {
+test('preview keys stay identical across relocated build folders and relocate handles non-ASCII paths and drive roots safely', async t => {
   const dir = tempDir(t, 'papilot-relocate-');
   const buildA = path.join(dir, 'data/cache/builds/abcdef0123456789abcdef0123456789');
-  const buildB = path.join(dir, 'srv/papilot/data/cache/builds/abcdef0123456789abcdef0123456789');
+  const buildB = path.join(dir, 'Users/陈/data/cache/builds/abcdef0123456789abcdef0123456789');
   fs.mkdirSync(path.join(buildA, 'build'), { recursive: true });
   fs.mkdirSync(path.join(buildB, 'build'), { recursive: true });
 
   const keyA = previewKey('abcdef0123456789abcdef0123456789', path.join(buildA, 'build/main.pdf'), path.join(buildA, 'src'));
   const keyB = previewKey('abcdef0123456789abcdef0123456789', path.join(buildB, 'build/main.pdf'), path.join(buildB, 'src'));
+  const keyWin = previewKey('abcdef0123456789abcdef0123456789', 'C:\\Users\\author\\cache\\builds\\abcdef0123456789abcdef0123456789\\build\\main.pdf', 'C:\\Users\\author\\cache\\builds\\abcdef0123456789abcdef0123456789\\src');
   assert.equal(keyA, keyB);
+  assert.equal(keyA, keyWin);
 
   const synctexPath = path.join(buildB, 'build/main.synctex.gz');
   const fromSlash = buildA.replaceAll('\\', '/');
   const toSlash = buildB.replaceAll('\\', '/');
-  // Test suffix safety: a path ending in `/data/cache/...` must not be corrupted by replacing `/data/cache/...`.
+  // Test suffix safety with non-ASCII UTF-8 bytes directly preceding the old suffix.
   const original = `SyncTeX Version:1\nInput:1:${fromSlash}/src/main.tex\nInput:2:${toSlash}/src/already.tex\n`;
   fs.writeFileSync(synctexPath, gzipSync(Buffer.from(original, 'utf8')));
 
@@ -108,9 +123,15 @@ test('preview keys stay identical across relocated build folders, relocate stays
   assert.ok(rewritten.includes(`Input:2:${toSlash}/src/already.tex`));
   assert.ok(!rewritten.includes(`Input:1:${fromSlash}/`));
 
-  // Running relocate again must be a no-op (idempotent).
+  // Running relocate again must be a no-op (idempotent even with non-ASCII parent path).
   await relocate(synctexPath, buildA, buildB);
   assert.equal(gunzipSync(fs.readFileSync(synctexPath)).toString('utf8'), rewritten);
+
+  // Windows drive root must be rejected without rewriting unrelated paths.
+  const driveFile = path.join(buildB, 'build/drive.log');
+  fs.writeFileSync(driveFile, 'C:/papers/main.tex\n');
+  await relocate(driveFile, 'C:\\', 'D:\\work');
+  assert.equal(fs.readFileSync(driveFile, 'utf8'), 'C:/papers/main.tex\n');
 });
 
 test('Writer model gateway validates baseUrl origin, fails closed when exclusive gateway is misconfigured, and discovers multi-protocol models', async t => {
@@ -132,13 +153,17 @@ test('Writer model gateway validates baseUrl origin, fails closed when exclusive
 
   const api = Fastify();
   let seenAuth = '';
+  let gatewayMode: 'redirect' | 'fail' | 'ok' = 'redirect';
   api.get('/v1/models', async (request, reply) => {
     seenAuth = String(request.headers.authorization || '');
+    if (gatewayMode === 'redirect') return reply.redirect('http://127.0.0.1:1/steal', 302);
+    if (gatewayMode === 'fail') return reply.code(503).send({ error: 'gateway down' });
     return reply.send({
       data: [
-        { id: 'lab/gemini-pro', name: 'Lab Gemini Pro', api: 'google-generative-ai', contextWindow: 1000000, maxTokens: 65536, efforts: ['low', 'medium', 'high'], baseUrl: 'https://evil.example/steal' },
-        { id: 'lab/gpt', name: 'Lab GPT', api: 'openai-responses', contextWindow: -5, maxTokens: 0 },
-        { id: 'lab/claude', name: 'Lab Claude', api: 'anthropic-messages', contextWindow: 200000, maxTokens: 16384 },
+        { id: 'bad?query#id', name: 'Invalid', api: 'google-generative-ai' },
+        { id: 'lab/gemini-pro', name: 'Lab Gemini Pro', api: 'google-generative-ai', contextWindow: 1000000, maxTokens: 65536, efforts: ['low', null, 'high'], baseUrl: 'https://evil.example/steal' },
+        { id: 'lab/gpt', name: 'Lab GPT', api: 'openai-completions', contextWindow: -5, maxTokens: 0 },
+        { id: 'lab/claude', display_name: 'Lab Claude', api: 'anthropic-messages', contextWindow: 200000, maxTokens: 16384 },
       ],
     });
   });
@@ -166,6 +191,23 @@ test('Writer model gateway validates baseUrl origin, fails closed when exclusive
   assert.equal(status.providers[0].kind, 'gateway');
   assert.equal(status.providers[0].name, 'Lab Gateway');
 
+  // HTTP 3xx redirect must be rejected on startup before model/list is called.
+  const redirectAccount = await writer.request('account/read');
+  assert.equal(redirectAccount.requiresOpenaiAuth, true);
+  assert.ok(redirectAccount.reason);
+
+  // Gateway 503 must report unauthenticated on account/read rather than false Ready.
+  gatewayMode = 'fail';
+  const failedAccount = await writer.request('account/read');
+  assert.equal(failedAccount.requiresOpenaiAuth, true);
+  assert.match(String(failedAccount.reason), /503/);
+
+  // Once the gateway recovers, a single account/read must report authenticated immediately.
+  gatewayMode = 'ok';
+  const recoveredAccount = await writer.request('account/read');
+  assert.equal(recoveredAccount.requiresOpenaiAuth, false);
+  assert.equal(recoveredAccount.account?.type, 'Lab Gateway');
+
   const listed = await writer.request('model/list');
   assert.equal(seenAuth, 'Bearer lab-secret-token');
   assert.deepEqual(listed.data.map((m: any) => m.model), [
@@ -177,11 +219,14 @@ test('Writer model gateway validates baseUrl origin, fails closed when exclusive
   // Cross-origin baseUrl override must be rejected (falls back to gateway baseUrl).
   assert.equal(available[0].baseUrl, baseUrl);
   assert.equal(available[0].api, 'google-generative-ai');
-  // Negative/zero token bounds fall back to safe defaults.
+  assert.deepEqual(listed.data[0].supportedReasoningEfforts, [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }]);
+  // Negative/zero token bounds fall back to safe defaults; openai-completions includes conservative compat flags.
   assert.equal(available[1].contextWindow, 128000);
   assert.equal(available[1].maxTokens, 16384);
+  assert.deepEqual((available[1] as any).compat, { supportsStore: false, supportsStrictMode: false });
   // Anthropic default baseUrl strips trailing /v1 so @anthropic-ai/sdk posts to /v1/messages, not /v1/v1/messages.
   assert.equal(available[2].api, 'anthropic-messages');
+  assert.equal(available[2].name, 'Lab Claude');
   assert.equal(available[2].baseUrl, originUrl);
   assert.equal(writer.credentials!.redactCustomErrors('model-gateway')('Error with lab-secret-token leaked'), 'Error with [redacted] leaked');
 });
