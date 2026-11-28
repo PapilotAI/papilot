@@ -7,7 +7,9 @@ import staticFiles from '@fastify/static';
 import { chromium, webkit } from '../engine/node_modules/playwright/index.mjs';
 import { checkAnnotations } from './site-annotation-checks.mjs';
 import { checkSiteTheme } from './site-theme-checks.mjs';
+import { checkSiteDocs } from './site-docs-checks.mjs';
 import { loadBlogPosts, blogLocales } from './site-blog.mjs';
+import { loadGuideManifest, guideLocales } from './site-docs.mjs';
 import { AGENT_IDS } from '../src/shared.ts';
 
 const languages = JSON.parse(fs.readFileSync('i18n/languages.json', 'utf8'));
@@ -41,6 +43,7 @@ const stateOf = page => page.locator(change).getAttribute('data-state');
 try {
   await checkSiteTheme(browser, origin, watch);
   await checkAnnotations(browser, origin);
+  await checkSiteDocs(browser, origin);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'no-preference' });
   const page = await context.newPage();
   await page.bringToFront();
@@ -60,9 +63,9 @@ try {
   assert.equal(await page.locator('.scroll-cue').getAttribute('href'), '#features');
   assert.equal(await page.locator('video').count(), 0);
 
-  // The left navigation is just Universe and the blog; the demo stays on the right.
+  // The left navigation is Universe, Docs and Blog; the demo stays on the right.
   const anchors = await page.locator('.nav a').evaluateAll(links => links.map(link => link.getAttribute('href')));
-  assert.deepEqual(anchors, [universe, '/blog/']);
+  assert.deepEqual(anchors, [universe, '/guide/', '/blog/']);
   assert.equal(await page.locator('.topbar-actions > .topbar-demo').getAttribute('href'), '/demo');
   assert.equal(await page.locator('.brand + .nav > .topbar-universe').getAttribute('href'), universe);
   assert.equal(await page.getByRole('link', { name: 'Universe', exact: true }).count(), 2, 'the decorative icon does not change the link name');
@@ -205,13 +208,17 @@ try {
   // step for each feature, Overleaf sync, templates and remote access, and
   // each guide link names a section the guide has.
   const guide = 'https://github.com/PapilotAI/papilot/blob/main/docs/guide.md';
-  for (const [selector, href] of [['.feature:has([data-scene=models]) .feature-link a', `${guide}#agents`], ['.hero-overleaf', '#overleaf'], ['#overleaf .section-links a', `${guide}#sync-with-overleaf`], ['.get-links a:first-child', guide]]) {
+  for (const [selector, href] of [['.feature:has([data-scene=models]) .feature-link a', `${guide}#agents`], ['.hero-overleaf', '#overleaf'], ['#overleaf .section-links a', `${guide}#sync-with-overleaf`], ['.get-links a:first-child', '/guide/']]) {
     assert.equal(await page.locator(selector).getAttribute('href'), href, selector);
   }
   assert.equal(await page.locator('.feature-link a').count(), 6, 'each feature has a next step');
   assert.deepEqual(await page.locator('#anywhere .feature-link a').evaluateAll(links => links.map(link => link.getAttribute('href'))), [`${guide}#remote-access-with-tailscale`, universe]);
   const slug = heading => heading.trim().toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s/g, '-');
-  const sections = new Set(fs.readFileSync('docs/guide.md', 'utf8').split('\n').filter(line => /^#{1,6} /.test(line)).map(line => slug(line.replace(/^#+ /, ''))));
+  const guideSource = fs.readFileSync('docs/guide.md', 'utf8');
+  const sections = new Set([
+    ...guideSource.split('\n').filter(line => /^#{1,6} /.test(line)).map(line => slug(line.replace(/^#+ /, ''))),
+    ...[...guideSource.matchAll(/<a id="([^"]+)"><\/a>/g)].map(match => match[1]),
+  ]);
   for (const href of await page.locator(`a[href^="${guide}#"]`).evaluateAll(links => links.map(link => link.getAttribute('href')))) {
     assert.ok(sections.has(href.split('#')[1]), `the guide has a section for ${href}`);
   }
@@ -267,7 +274,8 @@ try {
   const sitemap = fs.readFileSync('_site/sitemap.xml', 'utf8');
   assert.match(fs.readFileSync('_site/robots.txt', 'utf8'), /Sitemap: https:\/\/papilot.ai\/sitemap.xml/);
   const blogPages = blogLocales.length + loadBlogPosts(process.cwd()).reduce((count, post) => count + Object.keys(post.locales).length, 0);
-  assert.equal((sitemap.match(/<url>/g) || []).length, Object.keys(languages).length + 1 + blogPages);
+  const guidePages = guideLocales.length * (1 + loadGuideManifest(process.cwd()).pages.length);
+  assert.equal((sitemap.match(/<url>/g) || []).length, Object.keys(languages).length + 1 + blogPages + guidePages);
   const homeSitemap = [...sitemap.matchAll(/<url>([\s\S]*?)<\/url>/g)].map(match => match[1]).filter(entry => Object.keys(languages).some(locale => entry.startsWith(`<loc>https://papilot.ai${route(locale)}</loc>`))).join('');
   assert.ok(sitemap.includes('<loc>https://papilot.ai/privacy/</loc>'));
   const staticContext = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });

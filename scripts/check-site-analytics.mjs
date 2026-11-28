@@ -38,10 +38,16 @@ const optOutKey = 'papilot-statistics-disabled';
 let browser;
 try {
   for (const entry of [
-    'site', 'docs/assets', 'src', 'public', 'i18n/config.json', 'i18n/languages.json',
+    'site', 'docs/assets', 'docs/guide', 'docs/guide.md', 'docs/guide.zh-CN.md', 'docs/development.md',
+    'docs/windows.md', 'docs/apt.md', 'docs/aur.md', 'docs/nix.md', 'docs/typeless.md',
+    'docs/annotation-routing.md', 'docs/antigravity-usage.md', 'docs/agent-tools.md',
+    'docs/paper-agent.md', 'docs/performance.md', 'docs/fine-grained-diff.md',
+    'docs/readme/README.zh-CN.md', 'desktop/README.md', 'i18n/README.md', '.github/workflows/release.yml',
+    'README.md', 'CHANGELOG.md', '.github/CONTRIBUTING.md', 'engine/docs/reference.md',
+    'src', 'public', 'i18n/config.json', 'i18n/languages.json',
     'package.json', 'index.html', 'vite.config.ts', 'LICENSE', 'engine/src', 'engine/package.json',
     'examples/playground-paper', 'scripts/playground-assets.ts', 'scripts/licenses.ts',
-    'scripts/build-site.mjs', 'scripts/site-i18n.mjs', 'scripts/site-analytics.mjs', 'scripts/site-blog.mjs',
+    'scripts/build-site.mjs', 'scripts/site-i18n.mjs', 'scripts/site-analytics.mjs', 'scripts/site-blog.mjs', 'scripts/site-docs.mjs',
   ]) {
     const target = path.join(fixture, entry);
     fs.mkdirSync(path.dirname(target), { recursive: true });

@@ -7,7 +7,7 @@ Thanks for helping. Papilot is young, so every bug report, idea and pull request
 - **Try it and tell us what broke.** Open an [issue](https://github.com/PapilotAI/papilot/issues/new/choose) with your Papilot version (`papilot --version`), your OS, Node.js and TeX distribution, and the steps to reproduce.
 - **Share ideas and questions** in [Discussions](https://github.com/PapilotAI/papilot/discussions), including how you use Papilot on your own papers.
 - **Pick up an issue.** Issues labelled [good first issue](https://github.com/PapilotAI/papilot/labels/good%20first%20issue) are small and well described; [help wanted](https://github.com/PapilotAI/papilot/labels/help%20wanted) ones are larger.
-- **Improve the docs**: the [README](../README.md), its [Chinese version](../docs/readme/README.zh-CN.md) and the [guide](../docs/guide.md).
+- **Improve the docs**: the [README](../README.md), its [Chinese version](../docs/readme/README.zh-CN.md), the [user documentation](../docs/guide.md) ([简体中文](../docs/guide.zh-CN.md), source in `docs/guide/`) and [development internals](../docs/development.md).
 
 ## Set up
 
@@ -46,7 +46,7 @@ Open `http://127.0.0.1:7276`. For the latest committed development version witho
 | `src/web` | The React interface and the PDF viewer |
 | `src/shared.ts` | Types shared by the server and the interface |
 | `desktop/` | Electron app, native assets, packaging and desktop runtime |
-| `docs/` | User guide, performance notes, requirements, images and translated READMEs in `docs/readme/` |
+| `docs/` | User documentation (`docs/guide/`, plus GitHub hubs `docs/guide.md` and `docs/guide.zh-CN.md`), [development internals](../docs/development.md), architecture notes, images and translated READMEs in `docs/readme/` |
 | `i18n/` | Translation configuration, source catalogs and translation state |
 | `.github/` | Workflows, contribution guide, security policy and community files |
 | `engine/` | The review engine that builds and compares the PDFs, with its own tests |

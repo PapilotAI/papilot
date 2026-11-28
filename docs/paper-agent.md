@@ -1,7 +1,5 @@
 # Papilot Writer: the built-in paper agent (based on Pi)
 
-Status: implemented on `branch/papilot-writer-agent`.
-
 ## Goal
 
 An agent that belongs to Papilot itself and is made for writing papers, not
