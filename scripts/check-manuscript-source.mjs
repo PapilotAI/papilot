@@ -382,7 +382,8 @@ try {
   // A commit moves the text the bars compare with, without changing the
   // file: the bars and their scrollbar marks clear in place.
   await expect(panel.locator('.cm-change-bar').first()).toBeVisible();
-  git('commit', '-qam', 'Herons and a closing paragraph');
+  // The server may hold Git's index for a moment; commit once it lets go.
+  await expect.poll(() => { try { git('commit', '-qm', 'Herons and a closing paragraph', '--', 'sections/intro.tex'); return true; } catch (error) { if (!String(error.stderr).includes('index.lock')) throw error; return false; } }).toBe(true);
   await expect(panel.locator('.cm-change-bar'), 'nothing differs from the new commit').toHaveCount(0, { timeout: 20000 });
   await expect(panel.locator('.cm-change-ruler > *'), 'nor along the scrollbar').toHaveCount(0);
 
