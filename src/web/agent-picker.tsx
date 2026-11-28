@@ -8,6 +8,7 @@ import { EffortSlider, effortName } from './effort-slider.tsx';
 import { permissionText } from './task-permissions.tsx';
 import { PickerUsage, type RefreshUsage } from './usage.tsx';
 import { shownModels } from './agent-choice.ts';
+import { viewOf } from './owner-window.ts';
 
 function SpeedBolts({ tier, size }: { tier: string; size: number }) {
   return <span className="agent-speed-bolts" aria-hidden="true">
@@ -144,19 +145,19 @@ export function AgentPicker({ label, agents, agent, model, effort, serviceTier, 
   const isSelected = (choice: Choice) => choice.agent.value === agent && (choice.model === model || (!model && (choice.isDefault || choice.model === '')));
   function position() {
     const box = panel.current!, rect = trigger.current!.getBoundingClientRect();
-    box.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - box.offsetWidth - 8))}px`;
+    box.style.left = `${Math.max(8, Math.min(rect.left, viewOf(box).innerWidth - box.offsetWidth - 8))}px`;
     const below = rect.bottom + 6, above = rect.top - box.offsetHeight - 6;
-    box.style.top = `${Math.max(8, Math.min(below + box.offsetHeight > window.innerHeight - 8 && above >= 8 ? above : below, window.innerHeight - box.offsetHeight - 8))}px`;
+    box.style.top = `${Math.max(8, Math.min(below + box.offsetHeight > viewOf(box).innerHeight - 8 && above >= 8 ? above : below, viewOf(box).innerHeight - box.offsetHeight - 8))}px`;
   }
   useLayoutEffect(() => { if (open) position(); }, [open, agent, model, selected]);
   useEffect(() => {
     if (!open) return;
     const dismiss = () => panel.current?.hidePopover();
     const scroll = (event: Event) => { if (event.target instanceof Node && event.target.contains(trigger.current) && !panel.current?.contains(event.target)) dismiss(); };
-    const observer = new ResizeObserver(() => { if (panel.current?.matches(':popover-open')) position(); });
+    const observer = new (viewOf(trigger.current) as typeof window).ResizeObserver(() => { if (panel.current?.matches(':popover-open')) position(); });
     if (panel.current) observer.observe(panel.current);
-    window.addEventListener('resize', dismiss); document.addEventListener('scroll', scroll, true);
-    return () => { observer.disconnect(); window.removeEventListener('resize', dismiss); document.removeEventListener('scroll', scroll, true); };
+    const view = viewOf(trigger.current); view.addEventListener('resize', dismiss); view.document.addEventListener('scroll', scroll, true);
+    return () => { observer.disconnect(); view.removeEventListener('resize', dismiss); view.document.removeEventListener('scroll', scroll, true); };
   }, [open]);
   useEffect(() => { if (disabled || noAgent) panel.current?.hidePopover(); }, [disabled, noAgent]);
   function revealOption(option: HTMLElement | null | undefined) {
@@ -215,7 +216,7 @@ export function AgentPicker({ label, agents, agent, model, effort, serviceTier, 
     </button>
     <div ref={panel} id={id} popover="auto" role="dialog" aria-label={label || t('Agent settings')} className={'agent-picker-panel' + (permission ? ' has-permissions' : '')} onToggle={event => {
       const shown = (event.nativeEvent as ToggleEvent).newState === 'open'; setOpen(shown);
-      if (!shown && (!document.activeElement || document.activeElement === document.body || panel.current?.contains(document.activeElement))) trigger.current?.focus();
+      const focused = trigger.current?.ownerDocument.activeElement; if (!shown && (!focused || focused === trigger.current?.ownerDocument.body || panel.current?.contains(focused))) trigger.current?.focus();
     }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); panel.current?.hidePopover(); trigger.current?.focus(); } }}>
       <label className="model-search"><Icon name="search" size={14}/>
         <input ref={search} type="search" value={query} placeholder={t('Search models')} aria-label={t('Search models')} role="combobox" aria-expanded="true" aria-controls={`${id}-list`} aria-autocomplete="list"

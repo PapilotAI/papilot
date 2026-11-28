@@ -414,7 +414,7 @@ const reviewField = StateField.define<ReviewState | null>({
 const reviewView = (options: SourceEditorOptions) => EditorView.decorations.compute([reviewField, 'doc'], state => reviewDecorations(state.field(reviewField), state.doc, options));
 
 export class SourceCodeEditor {
-  readonly view: EditorView;
+  view: EditorView;
   private editable = new Compartment();
   private font = new Compartment();
   private unsubscribeFont: () => void;
@@ -534,7 +534,8 @@ export class SourceCodeEditor {
   flash(ranges: [number, number][]) {
     clearTimeout(this.flashTimer);
     this.view.dispatch({ effects: setFlash.of([]) });
-    requestAnimationFrame(() => {
+    // The editor's own window paints it, which may be a pop-out's.
+    (this.view.dom.ownerDocument.defaultView ?? window).requestAnimationFrame(() => {
       if (!this.view.dom.isConnected) return;
       this.view.dispatch({ effects: setFlash.of(ranges) });
       this.flashTimer = setTimeout(() => { if (this.view.dom.isConnected) this.view.dispatch({ effects: setFlash.of([]) }); }, 1100);
@@ -542,6 +543,16 @@ export class SourceCodeEditor {
   }
 
   focus() { this.view.focus(); }
+
+  /** Moves the editor, with its text, history and scroll, into another
+   *  element, which may be in another window. The view is built afresh
+   *  there: its observers and frames belong to the window it was made in. */
+  attach(parent: HTMLElement) {
+    if (this.view.dom.parentNode === parent) return;
+    const { state } = this.view, scrollTo = this.view.scrollSnapshot();
+    this.view.destroy();
+    this.view = new EditorView({ parent, state, scrollTo, root: parent.getRootNode() as Document | ShadowRoot });
+  }
 
   destroy() { clearTimeout(this.flashTimer); this.unsubscribeFont(); this.view.destroy(); }
 }

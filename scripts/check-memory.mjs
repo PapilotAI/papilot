@@ -50,6 +50,12 @@ const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHA
 const errors = [];
 // The task is selected at desktop size and shown with its chat only, where
 // the save step is the last card; a phone shows the same in its Chat tab.
+// On desktop the chat's position menu fills the window with it or docks it beside the review.
+async function placeChat(page, position) {
+  await page.locator('#conversation-panel .panel-heading').getByRole('button', { name: /^Panel position/ }).click();
+  await page.getByRole('menuitemradio', { name: position, exact: true }).click();
+  await expect(page.locator('.task-grid')).toHaveClass(position === 'Fill the window' ? /layout-conversation/ : /layout-split/);
+}
 async function open(viewport, colorScheme = 'light') {
   const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1280, height: 820 }, colorScheme });
   page.on('pageerror', error => errors.push(error.message));
@@ -77,7 +83,8 @@ async function open(viewport, colorScheme = 'light') {
   await page.goto(`http://127.0.0.1:${server.server.address().port}/?task=${task.id}`);
   await page.locator('.task-list .task-title', { hasText: task.title }).first().click();
   await page.setViewportSize(viewport);
-  await page.getByRole('button', { name: 'Chat', exact: true }).click();
+  if (viewport.width > 680) await placeChat(page, 'Fill the window');
+  else await page.getByRole('button', { name: 'Chat', exact: true }).click();
   return page;
 }
 const localFile = path.join(paper, '.papilot', 'memory.local.md'), sharedFile = path.join(paper, '.papilot', 'memory.md'), personalFile = path.join(home, 'memory.md');

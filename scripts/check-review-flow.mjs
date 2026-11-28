@@ -134,6 +134,13 @@ await page.route('**/api/**', appRoutes);
 await page.route('**/review/**', reviewRoutes);
 const viewer = () => page.frameLocator('.review-frame');
 const sync = async () => page.evaluate(() => window.dispatchEvent(new Event('online')));
+// On desktop the chat's position menu fills the window with it or docks it beside the review.
+const chatPosition = () => page.locator('#conversation-panel .panel-heading').getByRole('button', { name: /^Panel position/ });
+async function placeChat(position) {
+  await chatPosition().click();
+  await page.getByRole('menuitemradio', { name: position, exact: true }).click();
+  await expect(page.locator('.task-grid')).toHaveClass(position === 'Fill the window' ? /layout-conversation/ : /layout-split/);
+}
 async function expectStatus(locator, label, token) {
   await expect(locator).toBeVisible();
   await expect(locator).toHaveText(label);
@@ -555,10 +562,10 @@ try {
   const messageBefore = messageRequests.length;
   await card.getByRole('textbox', { name: 'Commit message' }).fill('My reviewed task');
   await expect(card.getByText('Choose how to save the accepted changes to your manuscript.', { exact: true })).toBeHidden();
-  await page.getByRole('button', { name: 'Chat', exact: true }).click();
+  await placeChat('Fill the window');
   await expect(page.getByRole('button', { name: 'Apply to workspace', exact: true })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Commit message' })).toHaveValue('My reviewed task');
-  await page.getByRole('button', { name: 'Split', exact: true }).click();
+  await placeChat('Dock on the right');
   await expect(applyButton()).toBeVisible();
   assert.equal(messageRequests.length, messageBefore, 'Switching views reuses the initial commit draft');
   assert.equal(await card.evaluate(el => el.parentElement.firstElementChild === el), true);
@@ -677,8 +684,9 @@ try {
     await expect(card.getByRole('textbox')).toHaveCount(0);
     await expect(card.getByRole('button', { name: /apply|commit|manual/i })).toHaveCount(0);
     await card.getByRole('button', { name: 'Open chat', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Chat', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await page.getByRole('button', { name: 'Split', exact: true }).click();
+    await expect(page.locator('.task-grid')).toHaveClass(/layout-conversation/);
+    await expect(chatPosition()).toHaveAccessibleName('Panel position · Filling the window');
+    await placeChat('Dock on the right');
   }
   task.status = 'reviewing'; task.reconciliation = null;
   // The title depends on an earlier applied edit: offer a reviewed combined
@@ -772,7 +780,8 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
   // Questions keep the author's PDF layout and offer both PDF and chat.
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.getByRole('button', { name: 'Split', exact: true }).click();
+  // Phone tabs leave the desktop layout side by side.
+  await expect(page.locator('.task-grid')).toHaveClass(/layout-split/);
   const question = { ...task, id: 'question-fixture', name: 'question', title: 'What does this equation mean?', status: 'reviewing', review: { state: 'editing', round: null, counts: {}, job: { status: 'done', outcome: 'empty' } } };
   snapshot.tasks.push(question); await sync();
   await page.locator('[data-task="question-fixture"] .task-link').click();
@@ -781,8 +790,14 @@ try {
   await expect(page.getByText('This equation expresses conservation of mass.', { exact: true })).toBeVisible();
   await expect(page.locator('.review-panel')).toBeVisible();
   const questionViews = page.getByRole('group', { name: 'Workspace view' });
-  await expect(questionViews.getByRole('button')).toHaveCount(3);
-  await expect(questionViews.getByRole('button', { name: 'Split', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  // On desktop the chat hides from its header, or fills the window from its position menu.
+  const hideChat = page.getByRole('button', { name: 'Hide chat', exact: true });
+  const showChat = page.getByRole('button', { name: 'Show chat', exact: true });
+  await expect(questionViews).toHaveCount(0);
+  await expect(page.locator('.task-grid')).toHaveClass(/layout-split/);
+  await expect(hideChat).toHaveAttribute('aria-expanded', 'true');
+  await expect(showChat).toHaveCount(0);
+  await expect(chatPosition()).toHaveAccessibleName('Panel position · Docked on the right');
   await expect(page.getByRole('button', { name: 'Generate PDF comparison', exact: true })).toHaveCount(0);
   await page.reload();
   await expect(page.locator('.review-panel')).toBeVisible();
@@ -854,10 +869,12 @@ try {
   question.status = 'reviewing';
   question.review = { ...task.review, job: { status: 'done', outcome: 'published' } };
   await page.setViewportSize({ width: 1440, height: 1000 }); await sync();
-  await questionViews.getByRole('button', { name: 'Review', exact: true }).click();
+  await hideChat.click();
   await expect(page.locator('.review-frame')).toBeVisible();
-  await expect(questionViews.getByRole('button')).toHaveCount(3);
-  await expect(page.getByRole('button', { name: 'Review', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(questionViews).toHaveCount(0);
+  await expect(page.locator('.task-grid')).toHaveClass(/layout-review/);
+  await expect(showChat).toHaveAttribute('aria-expanded', 'false');
+  await expect(hideChat).toBeHidden();
   question.review.job.outcome = 'unchanged'; await sync();
   await expect(page.locator('.review-frame')).toBeVisible();
   console.log('PASS: Answer-only tasks keep the PDF and chat views without a generate prompt; reload, mobile, follow-up questions, and later manuscript changes preserve the review preference');

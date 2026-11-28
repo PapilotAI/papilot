@@ -4,6 +4,15 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Added
+
+- Edit LaTeX on another display: **Open in a new window** on the source editor's tab moves the editor, with its unsaved text, undo history and a task's review cards, into a window of its own. Saving there compiles as usual, and **Move back here**, or closing the window, returns it to its tab.
+- Arrange the workspace like a code editor: the manuscript's side panel and a task's chat dock on the right, left or bottom, float over the page, or open in a window of their own for another display, from the new position button in the panel's header or by dragging the panel by its header. Drop it on an edge to dock it, anywhere else to float it, or outside the Papilot window to open it in its own; closing that window docks it again. Panels resize from their edge or corner, remember their place in this browser, and **Reset panel layout** restores the default. The desktop app reopens each window where it was last closed and at the interface size.
+
+### Changed
+
+- A task's **Review**, **Split** and **Chat** switch on the desktop is replaced by **Hide chat** and **Show chat**, as the manuscript's panel already has, and **Fill the window** in the chat's position menu. Phones keep their **Review** and **Chat** tabs.
+
 ### Fixed
 
 - Saving a LaTeX file no longer occasionally stops the source editor with “Field is not present in this state”. The bars beside changed lines and their marks along the scrollbar now stay in place across a save and follow the saved text.

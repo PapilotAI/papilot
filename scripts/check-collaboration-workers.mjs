@@ -15,6 +15,12 @@ await server.register(staticFiles, { root: path.resolve(process.env.PAPILOT_WEB_
 await server.listen({ host: '127.0.0.1', port: 0 });
 const browser = await chromium.launch({ channel: process.env.PAPILOT_BROWSER_CHANNEL || 'chrome', headless: true });
 const errors = [];
+// On desktop the chat's position menu fills the window with it or docks it beside the review.
+async function placeChat(page, position) {
+  await page.locator('#conversation-panel .panel-heading').getByRole('button', { name: /^Panel position/ }).click();
+  await page.getByRole('menuitemradio', { name: position, exact: true }).click();
+  await expect(page.locator('.task-grid')).toHaveClass(position === 'Fill the window' ? /layout-conversation/ : /layout-split/);
+}
 const task = { id: 'collab-task', projectId: 'paper', agent: 'collaboration', model: 'gpt-test', name: 'collab', title: 'Revise the notes', instructions: '', worktree: '/tmp/paper', threadId: 'thread', turnId: 'turn', status: 'running', createdAt: 1, updatedAt: 1, review: null };
 const runtime = { connected: true, authenticated: true, installed: true, models: [{ id: 'gpt-test', name: 'Test model', isDefault: true, efforts: [], defaultEffort: null }] };
 const snapshot = { version: 'test', csrf: 'fixture', projects: [{ id: 'paper', name: 'Example paper', path: '/tmp/paper' }], tasks: [task], requests: [], runtime, runtimes: { codex: runtime, collaboration: { ...runtime, hidden: false } } };
@@ -65,7 +71,8 @@ try {
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.server.address().port}`);
     const zh = language === 'zh-CN';
-    await page.getByRole('button', { name: zh ? '对话' : 'Chat', exact: true }).click();
+    if (width > 680) await placeChat(page, 'Fill the window');
+    else await page.getByRole('button', { name: zh ? '对话' : 'Chat', exact: true }).click();
     const group = page.locator('.thread > .tool-group');
     await expect(group).toHaveCount(1);
     // Worker steps are not thread lines of their own.
@@ -187,7 +194,8 @@ try {
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.server.address().port}`);
     const zh = language === 'zh-CN';
-    await page.getByRole('button', { name: zh ? '对话' : 'Chat', exact: true }).click();
+    if (width > 680) await placeChat(page, 'Fill the window');
+    else await page.getByRole('button', { name: zh ? '对话' : 'Chat', exact: true }).click();
     const cards = page.locator('.collab-dispatch-card');
     await expect(cards).toHaveCount(2);
     // Turn 1's finished card must remain Done even while Turn 2 is running.

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import type { BuildProblem, ManuscriptBuild, ManuscriptProblems, SourceFile, SourcePlace, SourceSave, TaskSourceSave } from '../shared.ts';
 import type { PdfHandle, PdfPassage, Rect, Target } from './pdf-view.tsx';
 import type { CurrentChange, ReviewChanges } from '../../engine/src/web/review-events.ts';
@@ -9,6 +10,7 @@ import { browserStorage } from './storage.ts';
 import { isPlayground } from './playground-mode.ts';
 import { findPicked, lineSpan } from './source-match.ts';
 import { personName, usePresence } from './overleaf-presence.ts';
+import { openPopout, type Popout } from './popout-window.ts';
 import './source-panel.css';
 
 // Editing the manuscript's LaTeX by hand. A click on the PDF, or a change
@@ -133,7 +135,13 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   const mount = useRef((element: HTMLDivElement | null) => {
     if (host.current === element) return;
     host.current = element;
-    if (!element) { editor.current?.destroy(); editor.current = null; shown.current = null; return; }
+    // Moving between this page and a pop-out window keeps the editor: the
+    // old place lets go before the new one takes it, in the same commit.
+    if (!element) {
+      queueMicrotask(() => { if (!host.current) { editor.current?.destroy(); editor.current = null; shown.current = null; } });
+      return;
+    }
+    if (editor.current) { editor.current.attach(element); return; }
     void import('./source-codemirror.ts').then(({ SourceCodeEditor }) => {
       if (host.current !== element || editor.current) return;
       editor.current = new SourceCodeEditor({
@@ -306,13 +314,16 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
 
   // Each keystroke: whether there are unsaved changes, and the draft, a
   // moment later.
-  const typing = useRef<{ frame: number; timer?: ReturnType<typeof setTimeout> }>({ frame: 0 });
+  // The frame comes from the editor's own window: a pop-out keeps typing while
+  // this one is hidden, when this one paints nothing.
+  const typing = useRef<{ frame: number; window?: Window; timer?: ReturnType<typeof setTimeout> }>({ frame: 0 });
   actions.current.typed = () => {
     // The passage stops standing out on the PDF, as it does in the editor;
     // a draft coming back is not the author typing.
     if (!restoring.current && latest.current?.anchor?.marks.length) update(value => value.anchor ? { ...value, anchor: { ...value.anchor, marks: [] } } : value);
-    cancelAnimationFrame(typing.current.frame);
-    typing.current.frame = requestAnimationFrame(() => {
+    typing.current.window?.cancelAnimationFrame(typing.current.frame);
+    const frames = typing.current.window = editor.current?.view.dom.ownerDocument.defaultView ?? window;
+    typing.current.frame = frames.requestAnimationFrame(() => {
       const view = editor.current, file = latest.current?.file;
       if (!view || !file) return;
       const text = view.text;
@@ -325,7 +336,8 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   // Read from the editor itself: the dirty state renders a frame later.
   const unsaved = () => Boolean(editor.current && latest.current?.file && editor.current.text !== latest.current.file.text);
   actions.current.escape = () => {
-    if (unsaved() || latest.current?.saving) return false;
+    // Escape does not close a window of its own.
+    if (unsaved() || latest.current?.saving || popout) return false;
     close(); return true;
   };
   const lineTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -456,6 +468,27 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   }
 
   const name = edit?.file ? edit.file.file.slice(edit.file.file.lastIndexOf('/') + 1) : t('LaTeX source');
+  // The editor in a window of its own, to put on another display. It stays
+  // this hook's: the file, its draft, the review's cards and the compile of
+  // a save carry on, and closing the window brings it back to its tab.
+  const [popout, setPopout] = useState<Popout | null>(null);
+  const windowTitle = `${dirty ? '• ' : ''}${edit?.file?.file || name} — Papilot`;
+  function popOut() {
+    const opened = openPopout(scope.replace(/[^\w-]/g, '_'), windowTitle, () => setPopout(null));
+    if (opened) setPopout(opened);
+  }
+  useEffect(() => () => popout?.dispose(), [popout]);
+  useEffect(() => { if (!edit) setPopout(null); }, [Boolean(edit)]);
+  useEffect(() => { popout?.setTitle(windowTitle); }, [popout, windowTitle]);
+  // The editor has moved by now; it keeps the focus where it went.
+  const moved = useRef(popout);
+  useEffect(() => {
+    if (moved.current === popout) return;
+    moved.current = popout;
+    editor.current?.focus();
+  }, [popout]);
+  const body = edit && <SourcePanel edit={edit} dirty={dirty} mount={mount} onClose={popout ? () => undefined : close}
+    onReload={() => void reload()} onJump={jump} onProblems={onProblems ?? (() => undefined)}/>;
   return {
     open, follow, close, editing: Boolean(edit),
     /** Opens a file at lines, with `marks` within them standing out and flashing. */
@@ -469,20 +502,41 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
     passage: edit?.anchor ? { page: edit.anchor.page, marks: edit.anchor.marks } as PdfPassage : undefined,
     // The tab names the file, with a dot while there are unsaved changes.
     tab: edit ? { file: edit.file?.file || '', name, dirty, saving: Boolean(edit.saving) } : null,
-    panel: edit ? <SourcePanel edit={edit} dirty={dirty} mount={mount} onClose={close}
-      onReload={() => void reload()} onJump={jump} onProblems={onProblems ?? (() => undefined)}/> : null,
+    panel: edit ? popout ? <>
+      <section className="source-panel source-panel-away" role="tabpanel" aria-label={t('Edit source')}>
+        <p className="source-panel-message">{t('This file is open in a separate window.')}</p>
+        <div className="source-panel-away-actions">
+          <button type="button" className="button secondary compact" onClick={() => popout.window.focus()}>{t('Show window')}</button>
+          <button type="button" className="button ghost compact" onClick={() => setPopout(null)}>{t('Move back here')}</button>
+        </div>
+      </section>
+      {createPortal(<div className="popout-source">
+        <header className="popout-source-header">
+          <Icon name="toolSource" size={14}/>
+          <span className="popout-source-file" title={edit.file?.file}>{edit.file?.file || name}</span>
+          {(dirty || edit.saving) && <span className="popout-source-dirty" title={t('Unsaved')}/>}
+          <button type="button" className="button ghost compact" onClick={() => { setPopout(null); window.focus(); }}>{t('Move back to the main window')}</button>
+        </header>
+        {body}
+      </div>, popout.root)}
+    </> : body : null,
+    /** Opens the editor in a window of its own; undefined while it is in one. */
+    popOut: edit && !popout ? popOut : undefined,
   };
 }
 
 /** The source tab, which closes itself like an editor's: a dot while
  *  unsaved, a cross under the pointer. */
-export function SourceTab({ tab, selected, onSelect, onClose }: {
+export function SourceTab({ tab, selected, onSelect, onClose, onPopOut }: {
   tab: { file: string; name: string; dirty: boolean; saving: boolean }; selected: boolean;
   onSelect: () => void; onClose: () => void;
+  /** Opens the editor in a window of its own. */
+  onPopOut?: () => void;
 }) {
   const unsaved = `${t('Unsaved')} · ${t('Close (the draft is kept)')}`;
   return <span className="side-tab-closable" role="presentation" data-selected={selected}>
     <button role="tab" aria-selected={selected} title={tab.file || t('Edit source')} onClick={onSelect}><Icon name="toolSource" size={14}/><span className="tab-label">{tab.name}</span></button>
+    {onPopOut && <button type="button" className="side-tab-action side-tab-popout" aria-label={t('Open in a new window')} title={t('Open in a new window')} onClick={onPopOut}><Icon name="external" size={12}/></button>}
     <button type="button" className="side-tab-close" data-dirty={tab.dirty || tab.saving || undefined}
       aria-label={tab.dirty ? unsaved : t('Close')} title={tab.dirty ? unsaved : t('Close')} onClick={onClose}><Icon name="close" size={12}/></button>
   </span>;

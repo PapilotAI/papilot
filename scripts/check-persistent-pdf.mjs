@@ -66,6 +66,13 @@ const preview = page.locator('.task-document-preview');
 const canvas = preview.locator('.pdfViewer canvas').first();
 const pdfPage = preview.locator('.pdfViewer .page').first();
 const views = page.getByRole('group', { name: 'Workspace view' });
+// On desktop the chat's position menu fills the window with it or docks it beside the PDF.
+const chatPosition = page.locator('#conversation-panel .panel-heading').getByRole('button', { name: /^Panel position/ });
+async function placeChat(position) {
+  await chatPosition.click();
+  await page.getByRole('menuitemradio', { name: position, exact: true }).click();
+  await expect(page.locator('.task-grid')).toHaveClass(position === 'Fill the window' ? /layout-conversation/ : /layout-split/);
+}
 async function readable() {
   await expect(preview).toBeVisible();
   await expect(canvas).toBeVisible();
@@ -99,7 +106,9 @@ try {
     await expect(preview.locator('.review-placeholder')).toHaveCount(0);
     await readable();
     assert.ok(await original.evaluate(el => el.isConnected), 'Task status must not remount the PDF');
-    await expect(views.getByRole('button')).toHaveCount(3);
+    // Every task status keeps the chat's hide and fill-the-window controls.
+    await expect(page.getByRole('button', { name: 'Hide chat', exact: true })).toBeVisible();
+    await expect(chatPosition).toBeVisible();
     // A stopped turn can build its first comparison from the toolbar, without
     // a prompt over the PDF; waiting turns and answers have nothing to build.
     await expect(preview.getByRole('button', { name: 'Generate PDF comparison', exact: true })).toHaveCount(['building', 'failed'].includes(status) ? 1 : 0);
@@ -302,7 +311,7 @@ try {
   await box.evaluate(el => { el.scrollTop = el.scrollHeight * 0.62; });
   await expect.poll(() => box.evaluate(el => Math.round(el.scrollTop))).toBeGreaterThan(500);
   await page.waitForTimeout(250);
-  await views.getByRole('button', { name: 'Chat', exact: true }).click();
+  await placeChat('Fill the window');
   await expect(preview).toBeHidden();
   await page.keyboard.press('Control+f');
   await page.keyboard.press('Meta+f');
@@ -313,11 +322,11 @@ try {
   await sync();
   await expect(page.locator('.task-grid')).toHaveClass(/layout-conversation/);
   await expect.poll(() => requests.some(url => url.includes('key=rebuilt'))).toBe(true);
-  await views.getByRole('button', { name: 'Split', exact: true }).click();
+  await placeChat('Dock on the right');
   await readable();
   await expect.poll(() => box.evaluate(el => Math.round(el.scrollTop))).toBeGreaterThan(500);
   // A chosen view lasts for the session; Papilot starts side by side again.
-  await views.getByRole('button', { name: 'Chat', exact: true }).click();
+  await placeChat('Fill the window');
   await expect(page.locator('.task-grid')).toHaveClass(/layout-conversation/);
   await page.evaluate(() => localStorage.setItem('papilot:layout', 'conversation'));
   await page.reload();

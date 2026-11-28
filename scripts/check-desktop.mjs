@@ -301,6 +301,52 @@ try {
   await openFromFileMenu();
   await opened('local-paper');
   assert.equal((await (await fetch(`${origin}/api/state`)).json()).projects.length, 3);
+  // The source editor opens in a framed window of its own, at the interface
+  // size, and opens again where it was last closed.
+  await page.locator('.manuscript-row').getByRole('button', { name: /^(Files|文件)/ }).click();
+  await page.getByRole('list', { name: /^(Repository files|仓库文件)$/ }).getByRole('button', { name: 'main.tex', exact: true }).click();
+  const sourceField = page.locator('.source-panel').getByRole('textbox');
+  await expect(sourceField).toContainText('Local paper.');
+  // A panel that docks and floats moves by its header, so the header is not
+  // the window's title bar; the PDF toolbar still is.
+  const region = locator => locator.first().evaluate(element => getComputedStyle(element).getPropertyValue('-webkit-app-region'));
+  assert.equal(await page.locator('.manuscript').getAttribute('data-dock'), 'right');
+  assert.equal(await region(page.locator('.manuscript-side-header')), 'no-drag');
+  assert.equal(await region(page.locator('.manuscript-pages .pdf-toolbar')), 'drag');
+  const panelPosition = page.locator('.manuscript-side-header').getByRole('button', { name: /^(Panel position|面板位置)/ });
+  await panelPosition.click(); await page.getByRole('menuitemradio', { name: /^(Float over the page|浮动在页面上方)$/ }).click();
+  await expect(page.locator('.manuscript')).toHaveAttribute('data-dock', 'float');
+  assert.equal(await region(page.locator('.manuscript-side')), 'no-drag', 'a floating panel takes the presses over a toolbar it covers');
+  await panelPosition.click(); await page.getByRole('menuitem', { name: /^(Reset panel layout|重置面板布局)$/ }).click();
+  await expect(page.locator('.manuscript')).toHaveAttribute('data-dock', 'right');
+  const popOut = page.getByRole('button', { name: /^(Open in a new window|在新窗口中打开)$/ });
+  const openPopout = async () => {
+    const [popup] = await Promise.all([application.waitForEvent('window'), popOut.click()]);
+    await expect(popup.locator('.popout-root').getByRole('textbox')).toContainText('Local paper.');
+    return popup;
+  };
+  const popoutWindow = () => application.evaluate(({ BrowserWindow }) => {
+    const all = BrowserWindow.getAllWindows(), popup = all.find(window => window.webContents.getURL() === 'about:blank');
+    const main = all.find(window => window !== popup);
+    return popup && { bounds: popup.getBounds(), zoom: popup.webContents.getZoomFactor(), mainZoom: main.webContents.getZoomFactor(), sandbox: popup.webContents.getLastWebPreferences().sandbox };
+  });
+  await page.evaluate(() => window.papilotDesktop.setZoom(1.25));
+  await openPopout();
+  assert.deepEqual(await popoutWindow().then(({ zoom, mainZoom, sandbox }) => ({ zoom, mainZoom, sandbox })), { zoom: 1.25, mainZoom: 1.25, sandbox: true });
+  await page.evaluate(() => window.papilotDesktop.setZoom(1));
+  await expect.poll(() => popoutWindow().then(window => window.zoom)).toBe(1);
+  const place = { x: 120, y: 140, width: 700, height: 520 };
+  await application.evaluate(({ BrowserWindow }, place) => {
+    const popup = BrowserWindow.getAllWindows().find(window => window.webContents.getURL() === 'about:blank');
+    popup.setBounds(place); popup.close();
+  }, place);
+  await expect(page.locator('.source-panel-away')).toHaveCount(0);
+  await expect(sourceField).toContainText('Local paper.');
+  await openPopout();
+  assert.deepEqual((await popoutWindow()).bounds, place);
+  await page.getByRole('button', { name: /^(Move back here|移回此处)$/ }).click();
+  await expect.poll(popoutWindow).toBe(undefined);
+  await page.getByRole('tablist').locator('.side-tab-close').click();
   // A paper moves by choosing its folder, never by typing a path.
   await paperMenu.click();
   await page.getByRole('menuitem', { name: /^(Edit local-paper|编辑 local-paper)$/ }).click();
