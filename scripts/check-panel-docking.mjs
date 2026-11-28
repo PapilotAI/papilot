@@ -139,6 +139,7 @@ try {
   await page.mouse.move(button0.x + 14, button0.y + 14); await page.mouse.down();
   await page.mouse.move(a.x + 20, a.y + 300, { steps: 6 });
   await expect(page.locator('.dock-preview'), 'an edge shows where the panel would dock').toBeVisible();
+  await page.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'));
   await shot('dragging');
   await page.keyboard.press('Escape');
   await expect(page.locator('.dock-preview')).toHaveCount(0);
@@ -193,12 +194,14 @@ try {
   await expect(page.locator('.task-notes-panel [data-note]')).toHaveCount(1);
   const shelf = await box(library), floating = await box(side);
   assert.ok(shelf.right <= floating.x || shelf.x >= floating.right, `My notes beside the floating panel: ${JSON.stringify({ shelf, floating })}`);
+  await page.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'));
   await shot('float-notes');
   await library.getByRole('button', { name: 'Close notes' }).click();
   await choose('Dock at the bottom');
   const taskNotes = await box(page.locator('.task-notes-panel')), compose = await box(page.locator('.new-task-compose'));
   assert.ok(taskNotes.right <= compose.x && Math.abs(taskNotes.y - compose.y) < 24, `side by side: ${JSON.stringify({ taskNotes, compose })}`);
   assert.ok(taskNotes.height >= 150, 'the notes keep the panel\'s height');
+  await page.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'));
   await shot('bottom-notes');
   await page.getByRole('button', { name: 'Remove all from task', exact: true }).click();
   await choose('Float over the page');
