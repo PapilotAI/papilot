@@ -39,11 +39,11 @@ export function AgentConnectionNotice({ name, runtime, reconnecting, onReconnect
 
 // Adding an agent is the way forward, so it is the main action; Reconnect
 // checks again once one is installed.
-export function NoAgentNotice({ message, reconnecting, onReconnect, onAdd }: { message?: string; reconnecting: boolean; onReconnect: () => void; onAdd: () => void }) {
+export function NoAgentNotice({ message, reconnecting, onReconnect, onAdd, hosted = false }: { message?: string; reconnecting: boolean; onReconnect: () => void; onAdd: () => void; hosted?: boolean }) {
   return <div className="agent-connection no-agent" data-state="error">
-    <div className="agent-connection-message" role="status"><Icon name="alert" size={14}/><span>{message || t('No agent is set up on this computer yet. Add one, such as Codex or Claude Code, then select Reconnect.')}</span></div>
+    <div className="agent-connection-message" role="status"><Icon name="alert" size={14}/><span>{message || (hosted ? t('Unavailable') : t('No agent is set up on this computer yet. Add one, such as Codex or Claude Code, then select Reconnect.'))}</span></div>
     <div className="agent-connection-actions">
-      <button type="button" className="button primary compact" onClick={onAdd}>{t('Add an agent')}</button>
+      {!hosted && <button type="button" className="button primary compact" onClick={onAdd}>{t('Add an agent')}</button>}
       <button type="button" className="button secondary compact" disabled={reconnecting} onClick={onReconnect}><Icon name="refresh" size={13}/>{reconnecting ? t('Connecting…') : t('Reconnect')}</button>
     </div>
   </div>;
@@ -102,15 +102,16 @@ function agentState(runtime?: RuntimeStatus) {
 // selected model's reasoning effort, speed and permissions sit below the list. Native
 // popovers keep the menu above the PDF and scrolling panels, with
 // outside-click and Escape dismissal.
-export function AgentPicker({ label, agents, agent, model, effort, serviceTier, reconnecting, onReconnect, onSelect, onChange, disabled, description, permissions, permissionMode, allowUnknownDefault = true, noAgent = false, refreshUsage }: {
+export function AgentPicker({ label, agents, agent, model, effort, serviceTier, reconnecting, onReconnect, onSelect, onChange, disabled, description, permissions, permissionMode, allowUnknownDefault = true, noAgent = false, singleAgent = false, refreshUsage }: {
   label?: string; agents: AgentOption[]; agent: AgentId; model: string; effort: string; serviceTier?: string;
   reconnecting: boolean; onReconnect: () => void;
   onSelect: (agent: AgentId, model: string) => void; onChange: (change: Partial<{ effort: string; serviceTier: string }>) => void; disabled?: boolean; description?: string; allowUnknownDefault?: boolean;
-  permissions?: ReactNode; permissionMode?: TaskPermissions; noAgent?: boolean;
+  permissions?: ReactNode; permissionMode?: TaskPermissions; noAgent?: boolean; singleAgent?: boolean;
   refreshUsage?: RefreshUsage;
 }) {
   const id = useId(), trigger = useRef<HTMLButtonElement>(null), panel = useRef<HTMLDivElement>(null), search = useRef<HTMLInputElement>(null), list = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false), [query, setQuery] = useState(''), [active, setActive] = useState(''), [recent, setRecent] = useState(readRecent);
+  const single = singleAgent && agents.length === 1;
   const current = agents.find(item => item.value === agent) || agents[0];
   const runtime = current?.runtime, models = runtime?.models || [];
   const selected = model ? models.find(item => item.id === model) : models.find(item => item.isDefault);
@@ -123,7 +124,7 @@ export function AgentPicker({ label, agents, agent, model, effort, serviceTier, 
   const accelerated = Boolean(tiers?.includes(speed));
   const permission = runtime?.permissionOptions?.find(option => option.value === permissionMode);
   const disconnected = runtime && (!runtime.connected || !runtime.authenticated);
-  const summary = noAgent ? t('No agent') : [agentName, modelName, currentEffort ? effortName(currentEffort) : '', accelerated ? speedName(speed) : '', permission ? permissionText(permission.label) : ''].filter((part, index, all) => part && all.indexOf(part) === index).join(' · ');
+  const summary = noAgent ? t('No agent') : [single ? '' : agentName, modelName, currentEffort ? effortName(currentEffort) : '', accelerated ? speedName(speed) : '', permission ? permissionText(permission.label) : ''].filter((part, index, all) => part && all.indexOf(part) === index).join(' · ');
   // Every model of every agent that the author did not hide; an agent without a model list offers its default.
   const choices = (option: AgentOption): Choice[] => {
     const list = option.runtime?.models || [];
@@ -192,12 +193,13 @@ export function AgentPicker({ label, agents, agent, model, effort, serviceTier, 
   }
   const renderChoice = (choice: Choice) => {
     const chosen = isSelected(choice), state = agentState(choice.agent.runtime);
-    const optionLabel = [choice.name, choice.source, choice.agent.label].filter((part, index, all) => part && all.indexOf(part) === index).join(' · ');
+    const optionLabel = [choice.name, choice.source, single ? '' : choice.agent.label].filter((part, index, all) => part && all.indexOf(part) === index).join(' · ');
+    const recentMeta = [single ? '' : choice.agent.label, choice.source].filter(Boolean).join(' · ');
     return <div key={choice.key} id={`${id}-${choice.key.replace(/\W/g, '_')}`} data-key={choice.key} role="option" aria-selected={chosen} aria-label={optionLabel}
       className={'model-option' + (choice.key === active ? ' active' : '')} onPointerMove={() => setActive(choice.key)} onClick={() => choose(choice)}>
-      {choice.recent && <BrandIcon name={choice.agent.value} size={15}/>}<span className="model-option-name">{choice.name}</span>
+      {choice.recent && !single && <BrandIcon name={choice.agent.value} size={15}/>}<span className="model-option-name">{choice.name}</span>
       {choice.isDefault && !choice.recent && <small className="model-option-tag">{t('Default')}</small>}
-      {(choice.recent || state) && <small className={'model-option-agent' + (state ? ' warn' : '')}>{choice.recent ? [choice.agent.label, choice.source].filter(Boolean).join(' · ') : state}</small>}
+      {((choice.recent && recentMeta) || state) && <small className={'model-option-agent' + (state ? ' warn' : '')}>{choice.recent ? recentMeta : state}</small>}
       {chosen && <Icon name="check" size={14}/>}
     </div>;
   };
@@ -206,7 +208,7 @@ export function AgentPicker({ label, agents, agent, model, effort, serviceTier, 
     <button ref={trigger} type="button" className="agent-picker-trigger" aria-label={label || t('Agent settings')} aria-description={summary} title={summary + (disconnected ? ` · ${t('{agent} is unavailable', { agent: agentName })}` : '')} aria-haspopup="dialog" aria-expanded={open} aria-controls={id} disabled={disabled || noAgent}
       onClick={() => panel.current?.matches(':popover-open') ? panel.current.hidePopover() : show()}
       onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); show(); } }}>
-      {noAgent ? <span className="agent-picker-selection">{t('No agent')}</span> : <><BrandIcon name={agent} size={15}/>{!permission && modelName !== agentName && <span className="agent-picker-agent">{agentName}</span>}
+      {noAgent ? <span className="agent-picker-selection">{t('No agent')}</span> : <><BrandIcon name={agent} size={15}/>{!permission && !single && modelName !== agentName && <span className="agent-picker-agent">{agentName}</span>}
       <span className="agent-picker-selection">
         <ModelLabel model={modelName} effort={permission ? undefined : currentEffort} speed={accelerated ? speed : undefined}/>
         {permission && <small className="agent-permission-label" data-mode={permission.value}>{permissionText(permission.label)}</small>}
@@ -229,9 +231,9 @@ export function AgentPicker({ label, agents, agent, model, effort, serviceTier, 
       <div ref={list} id={`${id}-list`} role="listbox" aria-label={t('Models')} className="model-list">
         {recentItems.length > 0 && <div role="group" aria-label={t('Recent')} className="model-group"><div className="model-group-head" aria-hidden="true">{t('Recent')}</div>{recentItems.map(renderChoice)}</div>}
         {groups.map(group => <div key={group.option.value} role="group" aria-label={group.option.label} className="model-group">
-          <div className="model-group-head" aria-hidden="true"><BrandIcon name={group.option.value} size={15}/>{group.option.label}</div>
+          {!single && <div className="model-group-head" aria-hidden="true"><BrandIcon name={group.option.value} size={15}/>{group.option.label}</div>}
           {bySource(group.items).map(part => part.source
-            ? <div key={part.source} role="group" aria-label={`${group.option.label}, ${part.source}`} className="model-subgroup"><div className="model-subgroup-head" aria-hidden="true">{part.source}</div>{part.items.map(renderChoice)}</div>
+            ? <div key={part.source} role="group" aria-label={single ? part.source : `${group.option.label}, ${part.source}`} className="model-subgroup"><div className="model-subgroup-head" aria-hidden="true">{part.source}</div>{part.items.map(renderChoice)}</div>
             : <Fragment key="">{part.items.map(renderChoice)}</Fragment>)}
         </div>)}
         {!visible.length && <p className="model-empty">{t('No models match “{query}”', { query: query.trim() })}</p>}

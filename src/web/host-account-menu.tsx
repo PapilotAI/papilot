@@ -3,7 +3,7 @@ import type { HostChrome } from '../shared.ts';
 import { Icon } from './icons.tsx';
 import { t } from './i18n.ts';
 
-function initialsFor(name?: string, email?: string) {
+export function initialsFor(name?: string, email?: string) {
   const source = (name || email || '').trim();
   if (!source) return 'P';
   const words = source.split(/[\s@._-]+/).filter(Boolean);

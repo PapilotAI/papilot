@@ -63,6 +63,24 @@
 .settings-page>:is(section,.settings-card)+:is(section,.settings-card),.settings-page>section>.settings-card+.settings-card{border-top:1px solid var(--line);border-image:var(--settings-rule)}
 .settings-section-title{display:flex;align-items:center;gap:8px;min-height:40px;margin:0;padding-top:4px;font-size:12px;font-weight:500;color:var(--text)}
 .settings-section-title+.settings-card>.settings-row:first-child{padding-top:4px}
+.settings-account-card{display:flex;flex-direction:column;gap:12px}
+.settings-account-top{display:flex;align-items:center;gap:12px;min-width:0}
+.settings-account-avatar{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font:600 13px/1 var(--sans);letter-spacing:.02em}
+.settings-account-identity{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.settings-account-heading{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0}
+.settings-account-heading strong{font-size:13px;font-weight:600;color:var(--text);overflow-wrap:anywhere}
+.settings-account-plan{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:500}
+.settings-account-identity p{margin:0;font-size:12px;color:var(--text-2);overflow-wrap:anywhere}
+.settings-account-usage{display:flex;flex-direction:column;gap:5px;max-width:360px}
+.settings-account-usage.is-warn .host-account-usage-row strong{color:var(--amber-text)}
+.settings-account-usage.is-danger .host-account-usage-row strong{color:var(--red)}
+.settings-account-usage.is-warn .host-account-progress{accent-color:var(--amber-text)}
+.settings-account-usage.is-warn .host-account-progress::-webkit-progress-value,.settings-account-usage.is-warn .host-account-progress::-moz-progress-bar{background:var(--amber-text)}
+.settings-account-usage.is-danger .host-account-progress{accent-color:var(--red)}
+.settings-account-usage.is-danger .host-account-progress::-webkit-progress-value,.settings-account-usage.is-danger .host-account-progress::-moz-progress-bar{background:var(--red)}
+.settings-account-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.settings-account-actions>a.button{text-decoration:none}
+.settings-account-actions>.danger-text{color:var(--red)}
 .settings-content .settings-model-select{max-width:min(320px,100%)}
 .settings-card .settings-choice{flex-wrap:wrap}
 .settings-card .settings-text{flex:1 1 0;min-width:0;overflow-wrap:anywhere}
