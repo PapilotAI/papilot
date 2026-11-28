@@ -61,6 +61,7 @@ import { systemRequirements } from './system-requirements.ts';
 import { findExecutable } from '../../bin/agent-paths.mjs';
 import { OverleafService } from './overleaf/service.ts';
 import { registerOverleafRoutes } from './overleaf/routes.ts';
+import { resolveHostChrome, type HostChromeConfig } from './host-chrome.ts';
 
 const importsByWorkspace = new WeakMap<Workspace, PaperImports>();
 const overleafByWorkspace = new WeakMap<Workspace, OverleafService>();
@@ -157,6 +158,8 @@ export interface AppOptions {
   systemRequirements?: typeof systemRequirements;
   overleaf?: OverleafService;
   library?: Library;
+  singlePaper?: boolean;
+  hostChrome?: HostChromeConfig | null;
 }
 
 // Serve the local workspace, including authenticated personal Tailscale access.
@@ -414,7 +417,15 @@ export async function buildApp(options: AppOptions) {
     await options.prepareDemo?.();
     // Check the backend environment (Linux when using WSL), again on each poll
     // so installing Git unlocks version management without a page reload.
-    const body = JSON.stringify({ ...workspace.snapshot(), gitAvailable: Boolean(findExecutable('git')), overleaf: overleaf.state(), csrf: options.csrf });
+    const host = resolveHostChrome(options.hostChrome, request.headers, request.raw.socket.remoteAddress);
+    const body = JSON.stringify({
+      ...workspace.snapshot(),
+      ...(options.singlePaper ? { singlePaper: true as const } : {}),
+      ...(host ? { host } : {}),
+      gitAvailable: Boolean(findExecutable('git')),
+      overleaf: overleaf.state(),
+      csrf: options.csrf,
+    });
     // The app polls every second or two and most polls find nothing new: those
     // get an empty 304 instead of every task again to download and parse.
     const tag = `"${createHash('sha1').update(body).digest('base64url')}"`;
@@ -557,6 +568,7 @@ export async function buildApp(options: AppOptions) {
   app.post('/api/reconnect', async request => { await workspace.connect(); return workspace.snapshot().runtime; });
   // Papilot Writer's model providers: subscription sign-ins and API keys.
   const writer = async () => {
+    workspace.assertAgentAllowed('papilot');
     const runtime = workspace.agents.papilot as WriterAgent;
     if (!(runtime instanceof WriterAgent)) throw Object.assign(new Error('Papilot Writer is not available.'), { statusCode: 404 });
     await runtime.preload();
@@ -580,13 +592,17 @@ export async function buildApp(options: AppOptions) {
   app.post<{ Params: { agent: string } }>('/api/runtime/:agent/usage', async (request, reply) => {
     const id = request.params.agent;
     if (!isAgentId(id)) return reply.code(400).send({ error: 'Unknown agent.' });
+    workspace.assertAgentAllowed(id);
     const runtime = workspace.runtimes[id];
     if (!runtime.connected || !runtime.authenticated) return { usage: null };
     await workspace.readUsage(id);
     return { usage: runtime.usage };
   });
   // Codex names reasoning efforts with short lowercase words (low, medium, xhigh).
-  const agent = (value: unknown): AgentId => isAgentId(value) ? value : 'codex';
+  const agent = (value: unknown): AgentId => isAgentId(value) ? value : workspace.defaultAgentId();
+  const requireMultiPaper = () => {
+    if (options.singlePaper) throw Object.assign(new Error('This Papilot instance manages a single paper.'), { statusCode: 403 });
+  };
   const effort = (value: unknown) => typeof value === 'string' && /^[a-z]{1,16}$/.test(value) ? value : undefined;
   const string = (value: unknown, name: string, max?: number) => { if (typeof value !== 'string' || !value.trim()) throw new Error(`${name} is required.`); if (max !== undefined && value.length > max) throw new Error(`${name} is required and must be no longer than ${max} characters.`); return value.trim(); };
   const helperModelSettings = (b: Record<string, unknown>) => {
@@ -600,15 +616,16 @@ export async function buildApp(options: AppOptions) {
     try { return { templates: await universe.templates() }; }
     catch (error) { return { templates: [], error: (error as Error).message }; }
   });
-  app.post('/api/projects/create', request => creations!.create((request.body || {}) as any, (root, name) => workspace.addProject(root, name)));
-  app.post('/api/projects/open', request => openFolder((request.body || {}) as any, root => workspace.projectByPath(root), (root, name) => workspace.addProject(root, name)));
+  app.post('/api/projects/create', request => { requireMultiPaper(); return creations!.create((request.body || {}) as any, (root, name) => workspace.addProject(root, name)); });
+  app.post('/api/projects/open', request => { requireMultiPaper(); return openFolder((request.body || {}) as any, root => workspace.projectByPath(root), (root, name) => workspace.addProject(root, name)); });
   // Hosts with their own file browser can register an existing repository
   // without selecting a default document or changing its build settings.
   app.post('/api/projects/register', async request => {
+    requireMultiPaper();
     const root = await workspace.projectRoot(string((request.body as any)?.path, 'Repository path'));
     return { project: await workspace.addProject(root) };
   });
-  registerImportUpload(app, imports);
+  if (!options.singlePaper) registerImportUpload(app, imports);
   app.post('/api/folders', request => listFolders((request.body || {}) as any));
   // The system picker appears on this computer's screen, so only a browser here may open it.
   app.post<{ Body: { path?: unknown; title?: unknown } }>('/api/folders/choose', async (request, reply) => {
@@ -623,20 +640,22 @@ export async function buildApp(options: AppOptions) {
   // A waiting picker request would otherwise hold shutdown open.
   app.addHook('preClose', async () => closeFolderPicker());
   // Legacy base64 clients still buffer JSON; browser file uploads use the streaming route above.
-  app.post('/api/imports', { bodyLimit: 90 * 1024 * 1024 }, request => imports!.create((request.body || {}) as any));
-  app.get<{ Params: { id: string } }>('/api/imports/:id', request => imports!.get(request.params.id));
-  app.post<{ Params: { id: string } }>('/api/imports/:id/build', request => imports!.build(request.params.id, (request.body || {}) as any));
-  app.post<{ Params: { id: string } }>('/api/imports/:id/repair', request => imports!.build(request.params.id, (request.body || {}) as any, (root, error) => workspace.repairImport(root, error, { agent: agent((request.body as any)?.agent) })));
-  app.post<{ Params: { id: string } }>('/api/imports/:id/finish', request => imports!.finish(request.params.id, (root, name) => workspace.addProject(root, name)));
+  app.post('/api/imports', { bodyLimit: 90 * 1024 * 1024 }, request => { requireMultiPaper(); return imports!.create((request.body || {}) as any); });
+  app.get<{ Params: { id: string } }>('/api/imports/:id', request => { requireMultiPaper(); return imports!.get(request.params.id); });
+  app.post<{ Params: { id: string } }>('/api/imports/:id/build', request => { requireMultiPaper(); return imports!.build(request.params.id, (request.body || {}) as any); });
+  app.post<{ Params: { id: string } }>('/api/imports/:id/repair', request => { requireMultiPaper(); return imports!.build(request.params.id, (request.body || {}) as any, (root, error) => workspace.repairImport(root, error, { agent: agent((request.body as any)?.agent) })); });
+  app.post<{ Params: { id: string } }>('/api/imports/:id/finish', request => { requireMultiPaper(); return imports!.finish(request.params.id, (root, name) => workspace.addProject(root, name)); });
   app.post<{ Params: { id: string } }>('/api/projects/:id/rename', project(), request => workspace.renameProject(request.params.id, string((request.body as any).name, 'Paper name', 120)));
   const paperIdle = (id: string) => { if (manuscripts.busyForProject(id) || changes.busyForProject(id)) throw Object.assign(new Error('Wait for this paper’s PDF build to finish before changing its path or removing it.'), { statusCode: 409 }); };
   const forgetPaper = (id: string) => { manuscripts.forgetProject(id); changes.forgetProject(id); };
   app.post<{ Params: { id: string } }>('/api/projects/:id/path', async request => {
+    requireMultiPaper();
     const id = request.params.id, body = request.body as any;
     const result = await workspace.changeProjectPath(id, string(body?.path, 'Repository path', 4000), () => paperIdle(id), body?.name === undefined ? undefined : string(body.name, 'Paper name', 120));
     forgetPaper(id); overleaf.moved(id); return result;
   });
   app.post<{ Params: { id: string } }>('/api/projects/:id/remove', request => {
+    requireMultiPaper();
     const id = request.params.id, result = workspace.removeProject(id, () => paperIdle(id));
     forgetPaper(id); overleaf.removed(id); return result;
   });

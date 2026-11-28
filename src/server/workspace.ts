@@ -19,6 +19,7 @@ import { Codex, RpcResponseError } from './codex.ts';
 import { taskAccessInstructions } from './task-permissions.ts';
 import { latexRepairInstructions } from './latex-repair.ts';
 import { AGENT_NAMES, AntigravityAgent, ClaudeAgent, GlmAgent, type AgentRuntime } from './agents.ts';
+import { parseAllowedAgents } from './host-chrome.ts';
 import { ACP_PROFILES, AcpAgent } from './acp.ts';
 import { CursorAgent } from './cursor.ts';
 import { GrokAgent } from './grok.ts';
@@ -173,8 +174,9 @@ export class Workspace extends EventEmitter {
   private workflowStops = new Map<string, AbortController>();
   // Running delegations by timeline item, so the author can stop one worker.
   private workflowWorkers = new Map<string, { taskId: string; controller: AbortController }>();
-  get collaborationEnabled() { return this.store.preference<boolean>('collaboration') === true; }
+  get collaborationEnabled() { return this.isAgentAllowed('collaboration') && this.store.preference<boolean>('collaboration') === true; }
   setCollaborationEnabled(enabled: boolean) {
+    if (enabled) this.assertAgentAllowed('collaboration');
     this.store.savePreference('collaboration', enabled);
     this.runtimes.collaboration.hidden = !enabled;
     this.syncCollaborationRuntime();
@@ -198,13 +200,18 @@ export class Workspace extends EventEmitter {
     return { enabled: this.collaborationEnabled, ...this.collaborationConfig, resolved: this.collaborationResolved(), readOnlyAgents: this.readOnlyAgentMap() };
   }
   setCollaborationConfig(patch: Partial<CollaborationConfig>) {
+    this.assertAgentAllowed('collaboration');
     const next = collaborationConfig({ ...this.collaborationConfig, ...patch });
+    for (const route of [next.router, next.judge, ...Object.values(next.routes), ...next.racers, ...(next.lanes || []).flatMap(lane => lane.models)]) {
+      if (route) this.assertAgentAllowed(route.agent);
+    }
     this.store.savePreference('collaboration-settings', next);
     this.syncCollaborationRuntime();
     this.emit('change');
   }
   setCollaborationRoutes(routes: CollaborationRoutes) { this.setCollaborationConfig({ routes: collaborationRoutes(routes) }); }
   resetCollaborationConfig() {
+    this.assertAgentAllowed('collaboration');
     this.store.savePreference('collaboration-settings', { ...DEFAULT_COLLABORATION_CONFIG, routes: { ...DEFAULT_COLLABORATION_CONFIG.routes }, racers: [], lanes: [] });
     this.syncCollaborationRuntime();
     this.emit('change');
@@ -227,8 +234,9 @@ export class Workspace extends EventEmitter {
       void this.refreshAgent('collaboration').catch(() => {}).finally(() => { this.collaborationRefreshing = false; });
     }
   }
-  get chatgptProEnabled() { return this.store.preference<boolean>(CHATGPT_PRO_ENABLED) === true; }
+  get chatgptProEnabled() { return this.isAgentAllowed('chatgpt') && this.store.preference<boolean>(CHATGPT_PRO_ENABLED) === true; }
   setChatgptProEnabled(enabled: boolean) {
+    if (enabled) this.assertAgentAllowed('chatgpt');
     this.store.savePreference(CHATGPT_PRO_ENABLED, enabled);
     this.runtimes.chatgpt.hidden = !enabled;
     this.emit('change');
@@ -243,6 +251,7 @@ export class Workspace extends EventEmitter {
   }
   get chatgptProAutoSyncGithub() { return this.store.preference<boolean>(CHATGPT_PRO_AUTO_SYNC_GITHUB) === true; }
   setChatgptProAutoSyncGithub(enabled: boolean) {
+    this.assertAgentAllowed('chatgpt');
     this.store.savePreference(CHATGPT_PRO_AUTO_SYNC_GITHUB, enabled || undefined);
     this.emit('change');
   }
@@ -250,6 +259,8 @@ export class Workspace extends EventEmitter {
     return { enabled: this.chatgptProEnabled, executor: this.chatgptProExecutor, autoSyncGithub: this.chatgptProAutoSyncGithub };
   }
   setChatgptProExecutor(choice: HelperChoice | null) {
+    this.assertAgentAllowed('chatgpt');
+    if (choice) this.assertAgentAllowed(choice.agent);
     this.store.savePreference(CHATGPT_PRO_EXECUTOR, choice ?? undefined);
     this.emit('change');
   }
@@ -269,6 +280,7 @@ export class Workspace extends EventEmitter {
   }
   agentOff(id: AgentId) { return this.agentsOff.includes(id); }
   setAgentEnabled(id: AgentId, enabled: boolean) {
+    this.assertAgentAllowed(id);
     const others = this.agentsOff.filter(item => item !== id);
     const known = this.runtimes[id].models, currentHidden = this.hiddenModels[id] || [];
     const clearHidden = enabled && known.length > 0 && known.every(model => currentHidden.includes(model.id));
@@ -286,6 +298,7 @@ export class Workspace extends EventEmitter {
     if (enabled) this.startTurnedOn([id]);
   }
   setHiddenModels(id: AgentId, models: string[]) {
+    this.assertAgentAllowed(id);
     const unique = [...new Set(models)], known = this.runtimes[id].models;
     // Hiding every model of an agent turns the agent off and clears its hidden list
     // so turning it back on later restores its models instead of leaving 0 selected.
@@ -318,7 +331,7 @@ export class Workspace extends EventEmitter {
     this.startTurnedOn(off);
   }
   private startTurnedOn(ids: AgentId[]) {
-    for (const id of ids) if (!this.agents[id].ready) void this.refreshAgent(id).then(() => this.schedule(), error => {
+    for (const id of ids) if (this.isAgentAllowed(id) && !this.agents[id].ready) void this.refreshAgent(id).then(() => this.schedule(), error => {
       this.runtimes[id].error = errorText(error); this.runtimes[id].connected = false; this.emit('change');
     });
   }
@@ -545,8 +558,16 @@ export class Workspace extends EventEmitter {
     return computing || waitingForUser;
   }
   readonly attachments: Attachments;
-  constructor(public store: Store, public codex: AgentRuntime = new Codex(), private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}) {
+  readonly allowedAgents: AgentId[] | null;
+  isAgentAllowed(id: AgentId) { return !this.allowedAgents || this.allowedAgents.includes(id); }
+  defaultAgentId(): AgentId { return this.allowedAgents?.[0] ?? 'codex'; }
+  assertAgentAllowed(id: AgentId) {
+    if (!this.isAgentAllowed(id)) throw Object.assign(new Error(`${AGENT_NAMES[id]} is not enabled on this host.`), { statusCode: 400 });
+  }
+  constructor(public store: Store, public codex: AgentRuntime = new Codex(), private connectReview = reviewClient, others: Partial<Record<AgentId, AgentRuntime>> = {}, allowedAgents: AgentId[] | null = parseAllowedAgents(process.env.PAPILOT_ALLOWED_AGENTS)) {
     super();
+    this.allowedAgents = allowedAgents ? [...allowedAgents] : null;
+    this.runtime = this.runtimes[this.defaultAgentId()] ?? this.runtimes.codex;
     this.attachments = new Attachments(store);
     if (store.preference<number>(MEMORY_SINCE) === undefined) store.savePreference(MEMORY_SINCE, Date.now());
     this.agents = { papilot: others.papilot || new WriterAgent(), pi: others.pi || new PiAgent(), codex, claude: others.claude || new ClaudeAgent(), cursor: others.cursor || new CursorAgent(), copilot: others.copilot || new AcpAgent(ACP_PROFILES.copilot), grok: others.grok || new GrokAgent(), antigravity: others.antigravity || new AntigravityAgent(),
@@ -565,9 +586,9 @@ export class Workspace extends EventEmitter {
       agent.on('disconnected', e => this.disconnected(id, e));
     }
     // Papilot Writer's sign-ins and keys are managed in Papilot: show them at once.
-    this.agents.papilot.on('credentials', () => void this.refreshAgent('papilot'));
+    this.agents.papilot.on('credentials', () => { if (this.isAgentAllowed('papilot')) void this.refreshAgent('papilot'); });
   }
-  private agentOf(task: Task): AgentId { return task.agent && AGENTS.includes(task.agent) ? task.agent : 'codex'; }
+  private agentOf(task: Task): AgentId { return task.agent && AGENTS.includes(task.agent) ? task.agent : this.defaultAgentId(); }
   /** The runtime actually executing the active turn (a local executor for ChatGPT Pro turns). */
   private runAgentOf(task: Task): AgentId { return task.manualTurn?.executor?.agent ?? this.agentOf(task); }
   /** The agent that learns from a task's reviews: its own, its local executor for ChatGPT Pro, or Collaboration mode's resolved read-only helper. */
@@ -652,23 +673,24 @@ export class Workspace extends EventEmitter {
     if (id !== 'collaboration') this.syncCollaborationRuntime();
     this.emit('change');
   }
-  snapshot(): Snapshot { return { version: VERSION, projects: this.store.projects(), manuscriptNoteCounts: this.store.manuscriptNoteCounts(), tasks: this.store.tasks(), pinnedTaskIds: this.store.pinnedTaskIds(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimeStatus() }; }
+  snapshot(): Snapshot { return { version: VERSION, projects: this.store.projects(), manuscriptNoteCounts: this.store.manuscriptNoteCounts(), tasks: this.store.tasks(), pinnedTaskIds: this.store.pinnedTaskIds(), requests: [...this.requests.values()].map(({ rpcId: _, agent: __, ...r }) => r), runtime: this.runtime, runtimes: this.runtimeStatus(), ...(this.allowedAgents ? { allowedAgents: [...this.allowedAgents] } : {}) }; }
   // Each agent's status with the author's choices in Settings → Agents.
   private runtimeStatus() {
     const off = this.agentsOff, hidden = this.hiddenModels;
-    return Object.fromEntries(AGENTS.map(id => [id, {
+    const ids = this.allowedAgents ?? AGENTS;
+    return Object.fromEntries(ids.map(id => [id, {
       ...this.runtimes[id],
       ...(this.agents[id].supportsReadOnlyTasks === false ? { supportsReadOnlyTasks: false } : {}),
       ...(off.includes(id) ? { hidden: true } : {}),
       ...(hidden[id] ? { hiddenModels: hidden[id] } : {}),
-    }])) as Record<AgentId, RuntimeStatus>;
+    }])) as Partial<Record<AgentId, RuntimeStatus>>;
   }
   /** Loads the SDKs of the agents this host has before the server answers
    *  requests. Evaluating one blocks for up to a few hundred milliseconds,
    *  which would otherwise hold up whatever the app asked for while the
    *  agents connect. SDKs not installed yet are fetched when first used. */
   async preload() {
-    await Promise.all(AGENTS.map(async id => {
+    await Promise.all((this.allowedAgents ?? AGENTS).map(async id => {
       const agent = this.agents[id];
       if (this.agentOff(id)) return;
       try { if (agent.preload && (!agent.detect || await agent.detect()) && !this.closing) await agent.preload(); } catch { /* Connecting reports it. */ }
@@ -677,21 +699,22 @@ export class Workspace extends EventEmitter {
   async connect() {
     if (this.connecting) return this.connecting;
     this.woken.clear();
-    const real = AGENTS.filter(id => id !== 'collaboration');
+    const real = (this.allowedAgents ?? AGENTS).filter(id => id !== 'collaboration');
     this.connecting = Promise.all(real.map(id => this.connectAgent(id)))
-      .then(() => this.connectAgent('collaboration'))
+      .then(() => this.isAgentAllowed('collaboration') ? this.connectAgent('collaboration') : undefined)
       .then(() => { this.syncCollaborationRuntime(); this.emit('change'); this.schedule(); })
       .finally(() => { this.connecting = null; });
     return this.connecting;
   }
   /** Reads one agent's account and models again, after its credentials change. */
   async refreshAgent(id: AgentId) {
+    if (!this.isAgentAllowed(id)) return;
     await this.connectAgent(id);
     this.syncCollaborationRuntime();
     this.emit('change');
   }
   private async connectAgent(id: AgentId, wake = false) {
-    if (this.closing) return;
+    if (this.closing || !this.isAgentAllowed(id)) return;
     if (id === 'collaboration' && !this.collaborationEnabled && !this.store.tasks().some(task => task.agent === 'collaboration')) return;
     if (isManualAgent(id) && !this.chatgptProEnabled && !this.store.tasks().some(task => isManualAgent(task.agent))) return;
     if (!wake && this.agentOff(id)) return;
@@ -866,6 +889,7 @@ export class Workspace extends EventEmitter {
     const existing = this.store.findTask(input.id);
     if (existing) { if (existing.projectId !== input.projectId || existing.mode !== 'citations') throw new Error('Invalid task ID.'); return existing; }
     if (this.store.taskDeleted(input.id)) throw new Error('This task was deleted. Create a new task instead.');
+    if (input.agent) this.assertAgentAllowed(input.agent);
     this.requireReadOnlyAgent(input.agent);
     if (input.agent && (this.agentOff(input.agent) || this.runtimes[input.agent].installed === false)) throw new Error('Connect an agent that supports read-only tasks, such as Codex.');
     this.store.project(input.projectId);
@@ -884,6 +908,8 @@ export class Workspace extends EventEmitter {
     const task = this.store.task(taskId);
     if (task.mode !== 'citations') throw new Error('This task does not check citations.');
     if (task.status === 'running') return task;
+    if (choice?.agent) this.assertAgentAllowed(choice.agent);
+    else if (task.agent) this.assertAgentAllowed(task.agent);
     this.requireReadOnlyAgent(choice?.agent || task.agent);
     this.store.updateTask(task.id, { status: 'running', error: null, ...(choice ? { agent: choice.agent, model: choice.model ?? null, effort: choice.effort ?? null } : {}) });
     this.runCitationCheck?.(this.store.task(task.id));
@@ -900,19 +926,21 @@ export class Workspace extends EventEmitter {
       if (input.prepareReview && existing.preparation) this.reviewCopies.set(existing.id, input.prepareReview);
       return this.retryTask(existing.id);
     }
-    if (input.agent === 'collaboration' && !this.collaborationEnabled) throw new Error('Enable collaboration mode in Settings → Experiments first.');
-    if (isManualAgent(input.agent) && !this.chatgptProEnabled) throw new Error('Enable ChatGPT Pro (web) in Settings → Experiments first.');
-    if (this.agentOff(input.agent || 'codex')) throw new Error('Turn this agent on in Settings → Agents first.');
-    if (input.agent === 'collaboration' && input.prepareReview) throw new Error('Choose another agent for an AI review. Collaboration mode edits annotations.');
-    if (isManualAgent(input.agent) && input.prepareReview) throw new Error('Choose a local agent for an AI review.');
-    if (input.prepareReview) this.requireReviewAgent(input.agent || 'codex');
-    this.validateTaskPermissions(input.permissions ?? 'workspace', input.agent || 'codex', Boolean(input.prepareReview));
+    const taskAgent = input.agent || this.defaultAgentId();
+    this.assertAgentAllowed(taskAgent);
+    if (taskAgent === 'collaboration' && !this.collaborationEnabled) throw new Error('Enable collaboration mode in Settings → Experiments first.');
+    if (isManualAgent(taskAgent) && !this.chatgptProEnabled) throw new Error('Enable ChatGPT Pro (web) in Settings → Experiments first.');
+    if (this.agentOff(taskAgent)) throw new Error('Turn this agent on in Settings → Agents first.');
+    if (taskAgent === 'collaboration' && input.prepareReview) throw new Error('Choose another agent for an AI review. Collaboration mode edits annotations.');
+    if (isManualAgent(taskAgent) && input.prepareReview) throw new Error('Choose a local agent for an AI review.');
+    if (input.prepareReview) this.requireReviewAgent(taskAgent);
+    this.validateTaskPermissions(input.permissions ?? 'workspace', taskAgent, Boolean(input.prepareReview));
     if (input.prepareReview && (input.annotations?.length || input.attachments?.length)) throw new Error('AI review uses the manuscript PDF. Start a separate editing task to send notes or attachments.');
     // Pin the model shown to the author, including for clients using the default.
-    const taskAgent = input.agent || 'codex', agentModels = this.runtimes[taskAgent].models, hidden = this.hiddenModels[taskAgent] || [];
+    const agentModels = this.runtimes[taskAgent].models, hidden = this.hiddenModels[taskAgent] || [];
     const defaultModel = agentModels.find(model => model.isDefault);
     const fallbackModel = defaultModel && (hidden.includes(defaultModel.id) ? agentModels.find(model => !hidden.includes(model.id)) || defaultModel : defaultModel);
-    input = { ...input, model: input.model || fallbackModel?.id };
+    input = { ...input, agent: taskAgent, model: input.model || fallbackModel?.id };
     if (input.serviceTier !== undefined) {
       if (input.agent && input.agent !== 'codex') throw new Error('Service tiers are only available for Codex.');
       const models = this.runtimes.codex.models;
@@ -977,6 +1005,7 @@ export class Workspace extends EventEmitter {
       return (saved.permissions || 'workspace') === permissions ? saved : this.updateTaskPermissions(taskId, permissions);
     }
     const destination = () => {
+      this.assertAgentAllowed(input.agent);
       if (input.agent === 'collaboration' && !this.collaborationEnabled) throw new Error('Enable collaboration mode before selecting it.');
       if (isManualAgent(input.agent) && !this.chatgptProEnabled) throw new Error('Enable ChatGPT Pro (web) before selecting it.');
       if (this.agentOff(input.agent)) throw new Error('Turn this agent on in Settings → Agents first.');
@@ -1157,6 +1186,7 @@ export class Workspace extends EventEmitter {
   async enqueue(taskId: string, text: string, requestKey: string, includeFeedback = true, options: { attachments?: string[]; skill?: SkillFile; notes?: Annotation[]; groupInstructions?: GroupInstructions; reviewNotes?: NoteSummary[]; returnedNotes?: Map<string, number>; feedback?: boolean; build?: BuildFailure; merge?: TaskReconciliation; admit?: Task } = {}) {
     if (this.switching.has(taskId)) throw new Error('Wait for this task to switch agents before sending more instructions.');
     const task = options.admit ?? this.store.task(taskId);
+    this.assertAgentAllowed(this.agentOf(task));
     if (task.status === 'deleting') throw new Error('This task is being deleted.');
     if (task.mode === 'review' && ((options.skill && options.skill.output !== 'annotations') || options.notes?.length || options.reviewNotes?.length || options.attachments?.length || options.feedback || options.build)) throw new Error('AI review accepts review instructions only. Start an editing task to send notes, skills or attachments.');
     if (task.mode !== 'review' && options.skill?.output === 'annotations') throw new Error('Start a new task to run the AI review skill on the current PDF.');
@@ -1305,8 +1335,9 @@ export class Workspace extends EventEmitter {
     }
   }
   private resolveManualExecutor(override?: HelperChoice | null, fallback?: Task['manualExecutor']): { agent: AgentId; model: string | null; effort: string | null } {
-    const usable = (id: AgentId) => !isManualAgent(id) && id !== 'collaboration' && !this.agentOff(id) && this.agents[id].ready && this.runtimes[id].authenticated;
+    const usable = (id: AgentId) => this.isAgentAllowed(id) && !isManualAgent(id) && id !== 'collaboration' && !this.agentOff(id) && this.agents[id].ready && this.runtimes[id].authenticated;
     const pickChoice = (choice: { agent: AgentId; model?: string | null; effort?: string | null }, strictError: boolean) => {
+      if (strictError) this.assertAgentAllowed(choice.agent);
       if (!usable(choice.agent)) {
         if (strictError) throw new Error(`Connect ${AGENT_NAMES[choice.agent]} in Settings → Agents, or choose another local agent in Settings → Experiments.`);
         return null;
@@ -1320,6 +1351,7 @@ export class Workspace extends EventEmitter {
       if (override.agent === 'collaboration' || isManualAgent(override.agent)) {
         throw new Error('Choose a local agent to apply ChatGPT Pro’s suggestions.');
       }
+      this.assertAgentAllowed(override.agent);
       return pickChoice(override, true)!;
     }
     if (fallback) {
@@ -1328,7 +1360,7 @@ export class Workspace extends EventEmitter {
     }
     const configured = this.chatgptProExecutor;
     if (configured) return pickChoice(configured, true)!;
-    const id = AGENTS.find(usable);
+    const id = (this.allowedAgents ?? AGENTS).find(usable);
     if (!id) throw new Error('Connect a local agent in Settings → Agents to apply ChatGPT Pro’s suggestions.');
     const hidden = this.hiddenModels[id] || [];
     const models = this.runtimes[id].models;
@@ -2693,9 +2725,10 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
    * use the small model of the agent it would use anyway. */
   quickModel(): QuickModel | null {
     const choice = this.store.preference<QuickModel | null>(QUICK_MODEL);
-    return choice && isAgentId(choice.agent) ? choice : null;
+    return choice && isAgentId(choice.agent) && this.isAgentAllowed(choice.agent) ? choice : null;
   }
   setQuickModel(choice: QuickModel | null) {
+    if (choice) this.assertAgentAllowed(choice.agent);
     this.requireReadOnlyAgent(choice?.agent);
     this.store.savePreference(QUICK_MODEL, choice);
   }
@@ -2703,7 +2736,7 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
   // while it is signed in; otherwise the fallback agent's small model does it.
   private quick(fallback: { agent?: AgentId; model?: string }, what: string) {
     const choice = this.quickModel();
-    if (choice && !this.agentOff(choice.agent) && this.agents[choice.agent].ready && this.runtimes[choice.agent].authenticated && this.agents[choice.agent].supportsReadOnlyTasks !== false) {
+    if (choice && this.isAgentAllowed(choice.agent) && !this.agentOff(choice.agent) && this.agents[choice.agent].ready && this.runtimes[choice.agent].authenticated && this.agents[choice.agent].supportsReadOnlyTasks !== false) {
       const models = this.helperChoices(choice.agent, choice.model), model = models.find(item => item.id === choice.model) || lightModel(models) || models.find(item => item.isDefault);
       return { id: choice.agent, model, effort: choice.effort && model?.efforts.includes(choice.effort) ? choice.effort : model?.efforts[0] };
     }
@@ -2714,6 +2747,7 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
   // The agent and model a task chose for its quick job; one signed out or off says so.
   // An agent still connecting, as just after Papilot starts, is waited for.
   private async chosen(choice: { agent: AgentId; model?: string | null; effort?: string | null }, what: string) {
+    this.assertAgentAllowed(choice.agent);
     if (!this.agents[choice.agent].ready && !this.agentOff(choice.agent)) { await this.connecting; if (!this.agents[choice.agent].ready) await this.connectAgent(choice.agent).catch(() => undefined); }
     const runtime = this.runtimes[choice.agent];
     if (this.agentOff(choice.agent) || !this.agents[choice.agent].ready || !runtime.authenticated) throw new Error(`Connect ${AGENT_NAMES[choice.agent]} to ${what}, or choose another model.`);
@@ -2724,6 +2758,7 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
   /** One quick job's reply, from a read-only turn that has everything it
    * needs in its prompt, and the agent and model that wrote it. */
   async quickReply(options: { instructions: string; prompt: string; what: string; projectId?: string; signal?: AbortSignal; onText?: (text: string) => void; choice?: { agent?: AgentId; model?: string | null; effort?: string | null } }) {
+    if (options.choice?.agent) this.assertAgentAllowed(options.choice.agent);
     this.requireReadOnlyAgent(options.choice?.agent);
     const { id, model, effort } = options.choice?.agent ? await this.chosen(options.choice as { agent: AgentId; model?: string | null; effort?: string | null }, options.what) : this.quick({}, options.what);
     const reply = await this.oneOff(id, { cwd: os.tmpdir(), sandbox: 'read-only', instructions: options.instructions, prompt: options.prompt, model, effort, what: options.what, projectId: options.projectId, signal: options.signal, onText: options.onText });
@@ -2733,15 +2768,16 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
   // author chose, or else the first that is signed in, with the chosen model
   // or the default one; light asks for the agent's small model when it has one.
   private helper(choice: { agent?: AgentId; model?: string }, task: string, options: { light?: boolean; readOnly?: boolean; strict?: 'commit-message' | 'conflict-resolution' } = {}) {
+    if (choice.agent) this.assertAgentAllowed(choice.agent);
     if (choice.agent === 'collaboration') {
       const resolved = this.collaborationResolved();
       const candidates = options.readOnly
-        ? [resolved.router, resolved.judge, resolved.routes.quick, resolved.routes.rigorous, resolved.routes.polish].filter((r): r is CollaborationRoute => Boolean(r && this.supportsReadOnlyAgent(r.agent)))
-        : [resolved.routes.rigorous, resolved.routes.polish, resolved.routes.quick].filter((r): r is CollaborationRoute => Boolean(r));
+        ? [resolved.router, resolved.judge, resolved.routes.quick, resolved.routes.rigorous, resolved.routes.polish].filter((r): r is CollaborationRoute => Boolean(r && this.isAgentAllowed(r.agent) && this.supportsReadOnlyAgent(r.agent)))
+        : [resolved.routes.rigorous, resolved.routes.polish, resolved.routes.quick].filter((r): r is CollaborationRoute => Boolean(r && this.isAgentAllowed(r.agent)));
       const mapped = candidates[0];
       choice = mapped ? { agent: mapped.agent, model: mapped.model || undefined } : {};
     }
-    const usable = (id: AgentId) => id !== 'collaboration' && !isManualAgent(id) && this.agents[id].ready && this.runtimes[id].authenticated && (!options.readOnly || this.agents[id].supportsReadOnlyTasks !== false);
+    const usable = (id: AgentId) => this.isAgentAllowed(id) && id !== 'collaboration' && !isManualAgent(id) && this.agents[id].ready && this.runtimes[id].authenticated && (!options.readOnly || this.agents[id].supportsReadOnlyTasks !== false);
     if (usesCustomModel(choice.agent, choice.model) && !usable('papilot')) throw customModelUnavailable();
     if (options.strict && choice.agent) {
       if (isManualAgent(choice.agent) || (options.readOnly && this.agentOff(choice.agent)) || !this.agents[choice.agent].ready || !this.runtimes[choice.agent].authenticated) {
@@ -2751,7 +2787,7 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
       }
       if (options.readOnly && this.agents[choice.agent].supportsReadOnlyTasks === false) throw new Error('The selected commit-message agent does not support read-only tasks. Choose another in Settings → Git.');
     }
-    const id = choice.agent && usable(choice.agent) ? choice.agent : AGENTS.find(id => id !== 'collaboration' && !this.agentOff(id) && usable(id));
+    const id = choice.agent && usable(choice.agent) ? choice.agent : (this.allowedAgents ?? AGENTS).find(id => id !== 'collaboration' && !this.agentOff(id) && usable(id));
     if (!id) {
       if (options.readOnly) throw new Error('Connect an agent that supports read-only tasks, such as Codex.');
       throw new Error(`Sign in to an agent, such as Codex, to ${task}.`);
@@ -2760,13 +2796,15 @@ ${['antigravity', 'zcode'].includes(runAgent) ? 'Use file tools for manuscript e
     return { id, model: (options.light ? lightModel(offered) : undefined) || models.find(item => item.id === choice.model) || offered.find(item => item.isDefault) || offered[0] || models.find(item => item.isDefault) };
   }
   async diagnoseLatexBuild(root: string, prompt: string, choice: { agent: AgentId; model?: string; projectId?: string }) {
+    this.assertAgentAllowed(choice.agent);
     const resolvedChoice = choice.agent === 'collaboration' ? (() => {
       const resolved = this.collaborationResolved();
       const r = [resolved.router, resolved.judge, resolved.routes.rigorous, resolved.routes.quick, resolved.routes.polish]
-        .find(candidate => candidate && this.supportsReadOnlyAgent(candidate.agent));
+        .find(candidate => candidate && this.isAgentAllowed(candidate.agent) && this.supportsReadOnlyAgent(candidate.agent));
       return r ? { ...choice, agent: r.agent as AgentId, model: r.model || undefined } : choice;
     })() : choice;
     const id = resolvedChoice.agent, runtime = this.runtimes[id];
+    this.assertAgentAllowed(id);
     if (this.agentOff(id) || !this.agents[id].ready || !runtime.authenticated) throw new Error('Connect the selected agent before diagnosing compilation problems.');
     if (this.agents[id].supportsReadOnlyTasks === false) throw new Error('The selected agent does not support read-only compilation diagnosis. Select another agent.');
     const models = this.helperChoices(id, resolvedChoice.model);

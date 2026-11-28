@@ -73,6 +73,8 @@ test('no agent is reported only after every runtime is known to be missing', () 
   assert.equal(noAgent({ ...runtimes, claude: runtime() }), false, 'an unknown installation is not absent');
   assert.equal(noAgent({ ...runtimes, claude: runtime(true) }), false);
   assert.deepEqual(offeredAgents({ ...runtimes, claude: runtime(true) }), ['claude']);
+  assert.equal(noAgent({ papilot: runtime(false) }, ['papilot']), true, 'restricted hosts report no agent once all allowed agents are missing');
+  assert.equal(noAgent({ papilot: runtime(true) }, ['papilot']), false);
 });
 
 test('agents turned off are not offered, and hidden models leave the pickers except the current choice', () => {

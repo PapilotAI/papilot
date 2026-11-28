@@ -12,8 +12,9 @@ export function offeredAgents(runtimes: Partial<Record<AgentId, RuntimeStatus>>)
   return AGENT_IDS.filter(id => !agentOff(id, runtimes) && Boolean(runtimes[id] && runtimes[id]!.installed !== false));
 }
 // Wait for the host's report before treating an unknown installation as absent.
-export function noAgent(runtimes: Partial<Record<AgentId, RuntimeStatus>>) {
-  return AGENT_IDS.every(id => agentOff(id, runtimes) || runtimes[id]?.installed === false);
+export function noAgent(runtimes: Partial<Record<AgentId, RuntimeStatus>>, allowedAgents?: AgentId[]) {
+  const ids = allowedAgents ?? AGENT_IDS;
+  return ids.every(id => agentOff(id, runtimes) || runtimes[id]?.installed === false);
 }
 // The models an agent offers in the pickers: those the author did not hide,
 // and the one already chosen.

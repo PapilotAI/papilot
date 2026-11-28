@@ -150,7 +150,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Account": {
-    "revision": "4df9252e2c2419266dfd095ebf059edb1c97612f8145fea4d81f6a3a2d5272db",
+    "revision": "1022317d69b7a8d5e0070bc643f91f158c42fe1527ed0683f9a3c370708d840d",
     "textHash": "df8525011f618f54a41da2ac9e08cbf57c8f4674244d601d41f0fa18d54c19d2",
     "model": "gemini-4-argon-medium"
   },
@@ -393,6 +393,11 @@
     "revision": "c8c4b0132337be753eb382685634f09426a2f6a8ca3f232336b0cd5c2dd87c83",
     "textHash": "47c04e8d2799bd233956dabc0c746276a2d0b261b8e99605e1fc4c9527044713",
     "model": "gemini-4-argon-medium"
+  },
+  "All projects": {
+    "revision": "98bf74e1195d04d9ef3a6cdfb9b0639fd9be41064db3a93812931286bcc6618b",
+    "textHash": "609e34adaea59a7c5449f7fd8e91373c0d9f94ea8fd303b0a5edc490cbe566be",
+    "model": "manual"
   },
   "All skills": {
     "revision": "aa0d0850c39181821405d495714df1f8ad519e9ef36c62b49b8b5deb681cc3bb",
@@ -4730,7 +4735,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Refresh": {
-    "revision": "34548ae010de6aa4f412d3e87ee7fa6ca480848307e4cc3a249ee1d7bb014e4a",
+    "revision": "65e9092125628ee5ce9f81dbefc475b0dec726caeb251c6b3730dc87a00ea6cb",
     "textHash": "3d4f1d8f6788e993735438e97913c07d57d7f59905c58df66117d5aea910dfbf",
     "model": "gemini-4-argon-medium"
   },
@@ -5570,7 +5575,7 @@
     "model": "manual"
   },
   "Settings": {
-    "revision": "36faac3570d3309971b446e7329a454b88267d7e702701da7813a3283e07f442",
+    "revision": "9755dd0d00cd3d32404142290b5fef042dbf938af1430ccfb55650bdaa08b569",
     "textHash": "8a545ebb6beb86ab885a7fbc43811534e3c6c19565153b5da942f80c9d4b6bb6",
     "model": "gemini-4-argon-medium"
   },
@@ -6515,7 +6520,7 @@
     "model": "manual"
   },
   "Tools": {
-    "revision": "e558a1cbd348b54e9fb5f57526d6f3fd159929ac6a65857a4ad2e8be9373a1ca",
+    "revision": "a05ab09fc42c24766c9db813ac83c3d6f3fce33c2038d34bb79887e8c37a5349",
     "textHash": "36fac1b84ffdad7e85efd38213e9d7d4b4e91eabf992a2b508c5c5c89d8e89c0",
     "model": "gemini-4-argon-medium"
   },
@@ -6775,7 +6780,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Usage & limits": {
-    "revision": "8b85e7344df01a0c2c6276c747e362a69a7ba4c510ea568a2cae67eb97e7adb1",
+    "revision": "ade42b686f56de6547d727f1919fc1edb5ecbfc8cd1138ee4d5656e8d10e1596",
     "textHash": "d801db04ffe67049aa40d5888fe548081caabeefe42db913182e2b6dce2f9ab3",
     "model": "gemini-4-argon-medium"
   },

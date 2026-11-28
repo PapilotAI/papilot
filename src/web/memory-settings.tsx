@@ -8,14 +8,14 @@ import { failureText } from './memory-card.tsx';
 import './memory.css';
 
 type API = <T>(route: string, body?: unknown) => Promise<T>;
-export interface MemorySettingsOptions { project?: Project; api: API }
+export interface MemorySettingsOptions { project?: Project; api: API; hosted?: boolean }
 type View = 'paper' | 'personal';
 type Editing = { scope: MemoryScope; rule: string | null; text: string };
 
 // Settings → Memory: whether and in which language Papilot suggests
 // preferences, and the preferences agents follow, grouped by the file that
 // holds them: this paper on this computer, shared with coauthors, or all papers.
-export function MemorySettings({ project, api }: MemorySettingsOptions) {
+export function MemorySettings({ project, api, hosted = false }: MemorySettingsOptions) {
   const [catalog, setCatalog] = useState<MemoryCatalog | null>(null);
   const [view, setView] = useState<View>(project ? 'paper' : 'personal');
   const [error, setError] = useState('');
@@ -53,7 +53,7 @@ export function MemorySettings({ project, api }: MemorySettingsOptions) {
   const file = (scope: MemoryScope) => catalog?.files.find(entry => entry.scope === scope);
   // The shared file is offered when Git would carry it, or when it already holds rules.
   const scopes: MemoryScope[] = view === 'personal' ? ['personal'] : ['paper', ...(catalog?.shareable || file('shared')?.rules.length ? ['shared' as const] : [])];
-  const groupName = (scope: MemoryScope) => scope === 'paper' ? t('Only on this computer') : scope === 'shared' ? t('Shared with coauthors') : t('All papers');
+  const groupName = (scope: MemoryScope) => scope === 'paper' ? (hosted ? t('This paper') : t('Only on this computer')) : scope === 'shared' ? t('Shared with coauthors') : t('All papers');
   const moves = (scope: MemoryScope, rule: string): MenuAction[] => [
     ...(['paper', 'shared', 'personal'] as MemoryScope[]).filter(other => other !== scope && (project || other === 'personal')).map(to => ({
       label: to === 'shared' ? t('Share with coauthors') : to === 'paper' ? (scope === 'shared' ? t('Stop sharing') : t('Move to this paper')) : t('Move to all papers'),
@@ -106,7 +106,7 @@ export function MemorySettings({ project, api }: MemorySettingsOptions) {
       {catalog && scopes.map(scope => {
         const rules = file(scope)?.rules || [], adding = editing?.scope === scope && editing.rule === null;
         return <section key={scope} className="memory-group" aria-label={groupName(scope)}>
-          <header><span>{groupName(scope)}</span><code title={file(scope)?.path}>{file(scope)?.path}</code></header>
+          <header><span>{groupName(scope)}</span>{!hosted && <code title={file(scope)?.path}>{file(scope)?.path}</code>}</header>
           <ul className="memory-list settings-card">
             {!rules.length && !adding && <li className="memory-empty">{t('No preferences yet')}</li>}
             {rules.map(rule => <li key={rule} data-memory-rule={scope + rule}>

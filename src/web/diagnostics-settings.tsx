@@ -15,9 +15,11 @@ export interface DiagnosticsSettingsProps {
   writer?: (route: string, body?: unknown) => Promise<WriterAuth>;
   /** Saves a change to which agents and models are offered. */
   agentSettings?: (change: AgentSettingsChange) => Promise<void>;
+  /** When set, restricts the agents shown to this host allowlist. */
+  allowedAgents?: AgentId[];
 }
 
-export function DiagnosticsSettings({ online, runtimes, project, check, reconnect, writer, agentSettings }: DiagnosticsSettingsProps) {
+export function DiagnosticsSettings({ online, runtimes, project, check, reconnect, writer, agentSettings, allowedAgents }: DiagnosticsSettingsProps) {
   const [report, setReport] = useState<DiagnosticReport | null>(null), [busy, setBusy] = useState(true), [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -29,6 +31,6 @@ export function DiagnosticsSettings({ online, runtimes, project, check, reconnec
     return () => controller.abort();
   }, [attempt, project?.id, check]);
   return <div className="diagnostics-settings settings-page">
-    <RuntimeAgents online={online} runtimes={runtimes} report={report} busy={busy} checkFailed={failed} checkAgain={() => setAttempt(value => value + 1)} reconnect={async () => { await reconnect(); setAttempt(value => value + 1); }} writer={writer} save={agentSettings}/>
+    <RuntimeAgents online={online} runtimes={runtimes} allowedAgents={allowedAgents} report={report} busy={busy} checkFailed={failed} checkAgain={() => setAttempt(value => value + 1)} reconnect={async () => { await reconnect(); setAttempt(value => value + 1); }} writer={writer} save={agentSettings}/>
   </div>;
 }

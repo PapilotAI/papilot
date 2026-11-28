@@ -1719,6 +1719,11 @@
     "textHash": "08a17c25c875f1a1e2058d47bc733cad06b9c17327f98d80fee00da9ccda382b",
     "model": "gemini-4-argon-medium"
   },
+  "This Papilot instance manages a single paper.": {
+    "revision": "5071fc0a334ba42fd9bd330114b35de4e33c35b0e045df7efb606eda1d32cb2c",
+    "textHash": "3c93bf263d22b61966ff109b6bcb9082e769b68f46ad06e6b9b223b519901714",
+    "model": "manual"
+  },
   "This Pi thread is still running.": {
     "revision": "aade9a9d82afbd399b6002a59b928c5a77dd45f80a31ef0933ee1bd4c562ff0f",
     "textHash": "7d9a2ac18b02c3a494e5a1656875ee6bd44c50094cecfebfc6a4dc7bfda6c57f",
@@ -2214,6 +2219,7 @@
     "textHash": "a50513cb17de49b5fb3b6a0379ca7f1095fffb53f4739f3faec5d0897770b0b0",
     "model": "gemini-4-argon-medium"
   },
+  "messages": {},
   "npm is unavailable to Papilot.": {
     "revision": "19f6eca7db8b9168e6f5dfcc095e0e404a63bd95205d9ecc0040f95aa1dc3f50",
     "textHash": "a3af38e6e0579eeafd1608858f8b1fea74208bdc1e360fba66753855ad7ac239",
@@ -2233,6 +2239,5 @@
     "revision": "cc288d089b22880d00c4995f2f747bca8bda753db451efa5a9773ebb1ad6946e",
     "textHash": "1a6a8c87fdcc8c46cc1094ea6388cc1d33f752da9ee3ea965a3eeec44457df8a",
     "model": "codex-manual"
-  },
-  "messages": {}
+  }
 }

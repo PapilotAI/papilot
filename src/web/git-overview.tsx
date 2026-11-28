@@ -43,7 +43,7 @@ export function GitPane({ title, count, actions, open, onToggle, className = '',
 }
 
 // Repository history and related task worktrees in the Git workspace.
-export function GitRepository({ git, load, tasks, onOpenTask, taskStatus }: { git: GitStatus; load: (signal: AbortSignal) => Promise<GitOverview>; tasks: Task[]; onOpenTask: (id: string) => void; taskStatus: (task: Task) => ReactNode }) {
+export function GitRepository({ git, load, tasks, onOpenTask, taskStatus, hosted = false }: { git: GitStatus; load: (signal: AbortSignal) => Promise<GitOverview>; tasks: Task[]; onOpenTask: (id: string) => void; taskStatus: (task: Task) => ReactNode; hosted?: boolean }) {
   const [data, setData] = useState<GitOverview | null>(null), [error, setError] = useState('');
   const [loading, setLoading] = useState(true), [refresh, setRefresh] = useState(0);
   const [selectedPath, setSelectedPath] = useState(''), [expandedPath, setExpandedPath] = useState('');
@@ -104,7 +104,7 @@ export function GitRepository({ git, load, tasks, onOpenTask, taskStatus }: { gi
               <span className="git-graph-subject">{commit.subject}</span>
               <span className="git-graph-author">{commit.author}</span>
               {(taskTrees.length > 0 || refs.length > 0 || commit.remotes?.length || commit.tags?.length) ? <span className="git-graph-refs">
-                {taskTrees.map(tree => <button type="button" key={tree.path} className="git-graph-ref worktree-ref" title={`${label(tree)}\n${treeName(tree)}\n${tree.path}`} onClick={() => reveal(tree)}><Icon name="chat" size={10}/><span>{label(tree)}</span></button>)}
+                {taskTrees.map(tree => <button type="button" key={tree.path} className="git-graph-ref worktree-ref" title={hosted ? `${label(tree)}\n${treeName(tree)}` : `${label(tree)}\n${treeName(tree)}\n${tree.path}`} onClick={() => reveal(tree)}><Icon name="chat" size={10}/><span>{label(tree)}</span></button>)}
                 {refs.map(ref => <span key={ref} className={'git-graph-ref branch-ref' + (ref === git.branch ? ' current-ref' : '')} title={ref}><Icon name="branch" size={10}/><span>{ref}</span></span>)}
                 {commit.remotes?.map(ref => <span key={ref} className="git-graph-ref remote-ref" title={ref}><Icon name="cloud" size={10}/><span>{ref}</span></span>)}
                 {commit.tags?.map(ref => <span key={ref} className="git-graph-ref tag-ref" title={ref}><Icon name="bookmark" size={10}/><span>{ref}</span></span>)}
@@ -133,7 +133,7 @@ export function GitRepository({ git, load, tasks, onOpenTask, taskStatus }: { gi
           </div>
           {expanded && <div className="git-worktree-detail">
             <p className="git-worktree-branch"><Icon name="branch" size={12}/><code>{treeName(tree)}</code>{tree.head && <code>{tree.head.slice(0, 7)}</code>}{!task && !tree.current && <span>{t('No linked task')}</span>}</p>
-            <p className="git-worktree-path">{tree.path}</p>
+            {!hosted && <p className="git-worktree-path">{tree.path}</p>}
             {status?.head && <p>{status.head.subject}</p>}
             {status?.upstream ? <p className="git-worktree-tracking"><code>{status.upstream}</code><span>{t('{ahead} ahead · {behind} behind', { ahead: status.ahead, behind: status.behind })}</span></p> : status && <p>{t('No upstream branch')}</p>}
             {tree.error && <p className="inline-error">{t('Could not read this worktree.')}</p>}
