@@ -4,6 +4,10 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ## [Unreleased]
 
+### Fixed
+
+- Saving a LaTeX file no longer occasionally stops the source editor with “Field is not present in this state”. The bars beside changed lines and their marks along the scrollbar now stay in place across a save and follow the saved text.
+
 ## [0.15.0] - 2026-11-28
 
 Manage cited PDFs and check claims in the new Library, compare whole review pages side by side, use Papilot directly inside VS Code, orchestrate any connected agents in Collaboration Mode v2, install via Homebrew, Scoop, WinGet, and signed APT, and browse the new searchable documentation site. See the [release notes](docs/releases/0.15.0/release-notes.md) for update instructions.

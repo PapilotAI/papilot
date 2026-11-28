@@ -242,7 +242,7 @@ function changeRuler(changes: (view: EditorView) => ReturnType<typeof changedLin
       view.dom.appendChild(this.dom);
       this.draw();
     }
-    update(update: ViewUpdate) { if (update.docChanged || update.geometryChanged || update.heightChanged) this.draw(); }
+    update(update: ViewUpdate) { if (update.docChanged || update.geometryChanged || update.heightChanged || barsMoved(update)) this.draw(); }
     draw() {
       const view = this.view;
       view.requestMeasure({
@@ -274,17 +274,27 @@ function changeRuler(changes: (view: EditorView) => ReturnType<typeof changedLin
 }
 
 // Bars beside the lines that changed since the last commit, and their marks
-// along the scrollbar, kept up to date as the author types.
-function changeBars(base: Text, onClick?: (line: number) => void): Extension {
-  const chunks = StateField.define<readonly Chunk[]>({
-    create: state => Chunk.build(base, state.doc),
-    update: (value, tr) => tr.docChanged ? Chunk.updateB(value, base, tr.newDoc, tr.changes) : value,
-  });
-  return [chunks, changeRuler(view => changedLines(base, view.state.doc, view.state.field(chunks))), gutter({
+// along the scrollbar, kept up to date as the author types. A save moves the
+// base the bars compare with (setBase); the field stays, so every reader,
+// including a measure asked for before the save, finds it.
+export const setBase = StateEffect.define<Text>();
+const barsField = StateField.define<{ base: Text; chunks: readonly Chunk[] }>({
+  create: state => ({ base: Text.empty, chunks: Chunk.build(Text.empty, state.doc) }),
+  update: (value, tr) => {
+    for (const effect of tr.effects) if (effect.is(setBase)) return { base: effect.value, chunks: Chunk.build(effect.value, tr.newDoc) };
+    return tr.docChanged ? { base: value.base, chunks: Chunk.updateB(value.chunks, value.base, tr.newDoc, tr.changes) } : value;
+  },
+});
+/** The lines that changed since the bars' base. */
+export const barChanges = (state: EditorState) => { const { base, chunks } = state.field(barsField); return changedLines(base, state.doc, chunks); };
+const barsMoved = (update: ViewUpdate) => update.startState.field(barsField) !== update.state.field(barsField);
+export function changeBars(base: Text, onClick?: (line: number) => void): Extension {
+  return [barsField.init(state => ({ base, chunks: Chunk.build(base, state.doc) })), changeRuler(view => barChanges(view.state)), gutter({
     class: 'cm-change-bars',
+    lineMarkerChange: barsMoved,
     markers: view => {
       const doc = view.state.doc, marks: { from: number; marker: GutterMarker }[] = [];
-      for (const change of changedLines(base, doc, view.state.field(chunks))) {
+      for (const change of barChanges(view.state)) {
         if (change.kind === 'deleted') marks.push({ from: doc.line(Math.min(change.from + 1, doc.lines)).from, marker: bar('deleted', true, true) });
         else for (let line = change.from; line < change.to; line++) marks.push({ from: doc.line(line + 1).from, marker: bar(change.kind, line === change.from, line === change.to - 1) });
       }
@@ -405,7 +415,6 @@ const reviewView = (options: SourceEditorOptions) => EditorView.decorations.comp
 
 export class SourceCodeEditor {
   readonly view: EditorView;
-  private bars = new Compartment();
   private editable = new Compartment();
   private font = new Compartment();
   private unsubscribeFont: () => void;
@@ -426,7 +435,7 @@ export class SourceCodeEditor {
     return EditorState.create({ doc: text, extensions: [
       lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), history(), bracketMatching(),
       search({ top: false }), highlightSelectionMatches(), latex, syntaxHighlighting(highlight), EditorView.lineWrapping, theme, this.font.of(fontTheme(editorFontSize())),
-      this.editable.of(EditorState.readOnly.of(false)), this.bars.of(changeBars(this.base, options.onChangeBar)), focusField, flashField, this.review, authorsField, cursorsField, cursorsView,
+      this.editable.of(EditorState.readOnly.of(false)), changeBars(this.base, options.onChangeBar), focusField, flashField, this.review, authorsField, cursorsField, cursorsView,
       EditorView.contentAttributes.of({ 'aria-label': options.label, spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off' }),
       keymap.of([
         { key: 'Mod-s', preventDefault: true, run: () => { options.onSave(); return true; } },
@@ -491,7 +500,7 @@ export class SourceCodeEditor {
   /** The last commit changed, such as after a commit. */
   setBase(base: string | null) {
     this.base = base === null ? Text.empty : Text.of(base.split('\n'));
-    this.view.dispatch({ effects: this.bars.reconfigure(changeBars(this.base, this.options.onChangeBar)) });
+    this.view.dispatch({ effects: setBase.of(this.base) });
   }
 
   /** Replaces the whole text as one edit, which the author can undo. */
