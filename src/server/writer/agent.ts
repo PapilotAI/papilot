@@ -84,6 +84,12 @@ export class WriterAgent extends Adapter {
   detect() { return true; }
   async preload() { await this.load(); }
   async start() { await this.load(); this.ready = true; }
+  async refresh() {
+    await this.load();
+    const error = await this.refreshModels(true, true);
+    this.ready = true;
+    if (error) throw error instanceof Error ? error : new Error(String(error));
+  }
   private async load() {
     if (this.registry) return;
     const [sdk, ai] = await Promise.all([import('@mariozechner/pi-coding-agent'), import('@mariozechner/pi-ai')]);
@@ -128,51 +134,69 @@ export class WriterAgent extends Adapter {
       }),
     ];
   }
+  private listingForced = false;
   /** Fetches the model list of each configured provider whose list is missing or old. */
-  async refreshModels(forceGateway = false) {
+  async refreshModels(forceGateway = false, force = false): Promise<unknown> {
     await this.load();
-    this.listing ||= (async () => {
-      const registry = this.registry!, fetcher = this.options.fetch || fetch;
-      const gateway = this.credentials!.gateway();
-      if (gateway) {
-        const cached = this.catalog.get(GATEWAY_PROVIDER);
-        if (forceGateway || !cached || Date.now() - cached.at >= CATALOG_TTL) {
-          const redact = this.credentials!.redactCustomErrors(GATEWAY_PROVIDER);
-          try {
-            const { models, efforts } = await listGatewayModels(gateway, fetcher);
-            if (models.length) {
-              this.catalog.set(GATEWAY_PROVIDER, { models, efforts, at: Date.now() });
-              this.gatewayError = null;
-            } else {
-              this.catalog.delete(GATEWAY_PROVIDER);
-              this.gatewayError = `${gateway.name} returned no models from /models.`;
+    if (this.listing && force && !this.listingForced) await this.listing;
+    if (!this.listing) {
+      this.listingForced = force;
+      let failure: unknown;
+      this.listing = (async () => {
+        const registry = this.registry!, fetcher = this.options.fetch || fetch;
+        const gateway = this.credentials!.gateway();
+        if (gateway) {
+          const cached = this.catalog.get(GATEWAY_PROVIDER);
+          if (force || forceGateway || !cached || Date.now() - cached.at >= CATALOG_TTL) {
+            const redact = this.credentials!.redactCustomErrors(GATEWAY_PROVIDER);
+            try {
+              const { models, efforts } = await listGatewayModels(gateway, fetcher);
+              if (models.length) {
+                this.catalog.set(GATEWAY_PROVIDER, { models, efforts, at: Date.now() });
+                this.gatewayError = null;
+              } else {
+                this.catalog.delete(GATEWAY_PROVIDER);
+                this.gatewayError = `${gateway.name} returned no models from /models.`;
+              }
+            } catch (error) {
+              const message = redact(error instanceof Error ? error.message : String(error));
+              // Preserve a working cached gateway catalog on transient refresh outages
+              // so Writer does not appear signed out while cached models remain usable.
+              if (cached?.models.length) {
+                cached.at = Date.now() - CATALOG_TTL + 60000;
+                failure ??= new Error(message);
+              } else {
+                this.gatewayError = message;
+                failure ??= new Error(message);
+              }
             }
-          } catch (error) {
-            this.gatewayError = redact(error instanceof Error ? error.message : String(error));
-            if (cached) cached.at = Date.now() - CATALOG_TTL + 60000;
           }
         }
-      }
-      if (this.credentials!.gatewayOnly()) return;
-      registry.refresh();
-      const usable = registry.getAvailable().filter(model => !isCustomProvider(model.provider) && !isGatewayProvider(model.provider) && this.credentials!.usable(model.provider));
-      await Promise.all([...new Set(usable.map(model => model.provider))].map(async provider => {
-        const cached = this.catalog.get(provider);
-        if (cached && Date.now() - cached.at < CATALOG_TTL) return;
-        const builtins = usable.filter(model => model.provider === provider);
-        try {
-          const token = await registry.getApiKeyForProvider(provider);
-          const listed = token ? await listModels(provider, token, builtins[0], fetcher, CODEX_CLIENT_VERSION) : null;
-          const models = listed ? fromList(listed, builtins) : [];
-          if (models.length) this.catalog.set(provider, { models, efforts: new Map(listed!.filter(entry => entry.efforts?.length).map(entry => [entry.id, entry.efforts!])), at: Date.now() });
-          else this.catalog.delete(provider);
-        } catch {
-          // Offline or refused: keep the last list, or fall back to Pi's built-in entries.
-          if (cached) cached.at = Date.now() - CATALOG_TTL + 60000;
-        }
-      }));
-    })().finally(() => { this.listing = undefined; });
+        if (this.credentials!.gatewayOnly()) return;
+        registry.refresh();
+        const usable = registry.getAvailable().filter(model => !isCustomProvider(model.provider) && !isGatewayProvider(model.provider) && this.credentials!.usable(model.provider));
+        await Promise.all([...new Set(usable.map(model => model.provider))].map(async provider => {
+          const cached = this.catalog.get(provider);
+          if (!force && cached && Date.now() - cached.at < CATALOG_TTL) return;
+          const builtins = usable.filter(model => model.provider === provider);
+          try {
+            const token = await registry.getApiKeyForProvider(provider);
+            const listed = token ? await listModels(provider, token, builtins[0], fetcher, CODEX_CLIENT_VERSION) : null;
+            const models = listed ? fromList(listed, builtins) : [];
+            if (models.length) this.catalog.set(provider, { models, efforts: new Map(listed!.filter(entry => entry.efforts?.length).map(entry => [entry.id, entry.efforts!])), at: Date.now() });
+            else this.catalog.delete(provider);
+          } catch (error) {
+            // Offline or refused: keep the last list, or fall back to Pi's built-in entries.
+            if (cached) cached.at = Date.now() - CATALOG_TTL + 60000;
+            if (force) failure ??= error;
+          }
+        }));
+      })().finally(() => { this.listing = undefined; this.listingForced = false; });
+      await this.listing;
+      return failure;
+    }
     await this.listing;
+    return undefined;
   }
   private defaultModel() { return this.available()[0]; }
   private accountState() {

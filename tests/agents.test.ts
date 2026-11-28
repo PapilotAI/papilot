@@ -1103,3 +1103,57 @@ test('Claude task threads get Papilot\'s MCP server and may use its tools; read-
     assert.equal(args.includes('--allowedTools'), false);
   } finally { agent?.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('Antigravity refresh reloads available models and resolves newly discovered variants', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papilot-agy-refresh-'));
+  let listing = 'gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)\n';
+  let listCalls = 0;
+  const fake = fakeAgy([[JSON.stringify({ event: 'result', result: { status: 'SUCCESS' } })]]);
+  const agent = new AntigravityAgent('agy', path.join(dir, 'conversations.json'), fake.launch as any, undefined, async (_cmd, args) => {
+    assert.deepEqual(args, ['models']);
+    listCalls++;
+    return listing;
+  });
+  try {
+    await agent.start();
+    assert.equal(listCalls, 1);
+    assert.deepEqual((await agent.request('model/list')).data.map((m: any) => m.model), ['gemini-4-hydrogen']);
+    await agent.start();
+    assert.equal(listCalls, 1, 'repeated start does not re-probe');
+
+    listing = 'gemini-4-neon-high\tGemini 4 Neon (High)\ngemini-4-neon-medium\tGemini 4 Neon (Medium)\n';
+    await agent.refresh();
+    assert.equal(listCalls, 2);
+    assert.deepEqual((await agent.request('model/list')).data.map((m: any) => m.model), ['gemini-4-neon']);
+
+    const seen = events(agent);
+    const { thread } = await agent.request('thread/start', { cwd: dir, model: 'gemini-4-neon' });
+    await agent.request('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'Continue.' }], effort: 'high' });
+    assert.equal((await completed(seen)).status, 'completed');
+    assert.equal(fake.launches[0].args[fake.launches[0].args.indexOf('--model') + 1], 'gemini-4-neon-high');
+  } finally { agent.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Claude refresh re-probes account and models with single-flight deduplication', async () => {
+  let probes = 0;
+  let modelList = [{ value: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', description: '', supportedEffortLevels: ['medium'] }];
+  const load = async () => (() => {
+    probes++;
+    return {
+      accountInfo: async () => ({ email: 'author@example.com', apiKeySource: 'env' }),
+      supportedModels: async () => modelList,
+      close: () => {},
+    } as any;
+  });
+  const agent = new ClaudeAgent(load, () => null);
+  try {
+    await agent.start();
+    assert.equal(probes, 1);
+    assert.deepEqual((await agent.request('model/list')).data.map((m: any) => m.model), ['claude-sonnet-4-6']);
+
+    modelList = [{ value: 'claude-opus-5-5', displayName: 'Claude Opus 5.5', description: '', supportedEffortLevels: ['high'] }];
+    await Promise.all([agent.refresh(), agent.refresh()]);
+    assert.equal(probes, 2, 'concurrent refreshes share one probe');
+    assert.deepEqual((await agent.request('model/list')).data.map((m: any) => m.model), ['claude-opus-5-5']);
+  } finally { agent.close(); }
+});

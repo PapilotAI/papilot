@@ -4745,7 +4745,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Refresh": {
-    "revision": "edbe76a86c208bbe1087d0631bd482baa67f919b9169177836130d47a0606018",
+    "revision": "306f3859dcc09725244d882bfb0dd928c0c2bb2e93223c98c7127f3eefb8ab8c",
     "textHash": "dafb59613e1236142cfb04e696d1455caba7233cfd0790f84a754582c0084ac2",
     "model": "gemini-4-argon-medium"
   },
@@ -4770,7 +4770,7 @@
     "model": "gemini-4-argon-medium"
   },
   "Refreshing…": {
-    "revision": "fa3d57604c62ea7506e7e44d8820063a4f114a823b34f3cf78c0e04d454c8c25",
+    "revision": "5ea63f9d38aa90412c543e66ff13c989c9b827b5c2c10d2bd1a144d1a97ad38f",
     "textHash": "84e496a080f71a0a727367934eb098a8a23f5edbaa634758b2363ec339703dab",
     "model": "gemini-4-argon-medium"
   },
