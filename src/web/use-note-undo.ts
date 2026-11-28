@@ -1,11 +1,19 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { POPOUT_VISIBILITY, popoutDocuments } from './popout-window.ts';
 
-// Notes in the review live in an iframe. Listen in both documents, ahead of
-// review shortcuts, but leave native text editing and unrelated undo alone.
+// Notes in the review live in an iframe, and a panel may be in a window of
+// its own. Listen in all those documents, ahead of review shortcuts, but
+// leave native text editing and unrelated undo alone.
 export function useNoteUndo(undo: () => boolean, frame?: Document | null, redo?: () => boolean) {
   const current = useRef({ undo, redo }); current.current = { undo, redo };
+  const [popouts, setPopouts] = useState(popoutDocuments);
   useEffect(() => {
-    const documents = [...new Set([document, ...(frame ? [frame] : [])])];
+    const update = () => setPopouts(now => { const next = popoutDocuments(); return next.length === now.length && next.every((doc, index) => doc === now[index]) ? now : next; });
+    document.addEventListener(POPOUT_VISIBILITY, update);
+    return () => document.removeEventListener(POPOUT_VISIBILITY, update);
+  }, []);
+  useEffect(() => {
+    const documents = [...new Set([document, ...(frame ? [frame] : []), ...popouts])];
     const key = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.repeat || event.altKey || !(event.metaKey || event.ctrlKey)) return;
       const key = event.key.toLowerCase();
@@ -20,5 +28,5 @@ export function useNoteUndo(undo: () => boolean, frame?: Document | null, redo?:
     };
     documents.forEach(doc => doc.addEventListener('keydown', key, true));
     return () => documents.forEach(doc => doc.removeEventListener('keydown', key, true));
-  }, [frame]);
+  }, [frame, popouts]);
 }

@@ -249,6 +249,15 @@ try {
   await expect(picker).toHaveAttribute('aria-expanded', 'true');
   await outSide.locator('.task-notes-panel').evaluate(element => element.dispatchEvent(new Event('scroll')));
   await expect(picker).toHaveAttribute('aria-expanded', 'false');
+  // A note deleted there comes back with the undo shortcut there.
+  await outSide.getByRole('button', { name: 'Delete note 1', exact: true }).click();
+  await expect(page.locator('.note-tag')).toHaveCount(0);
+  await popup.keyboard.press('ControlOrMeta+z');
+  await expect(page.locator('.note-tag')).toHaveCount(1);
+  // Between the phone and side-by-side widths, the panel still fills its window.
+  await popup.setViewportSize({ width: 800, height: 760 });
+  await expect.poll(async () => Math.round((await box(outSide)).height)).toBeGreaterThan(700);
+  await popup.setViewportSize({ width: 420, height: 760 });
   await outSide.getByRole('button', { name: /^Panel position/ }).click();
   await popup.getByRole('menuitemradio', { name: 'Dock on the left' }).click();
   await expect.poll(() => popup.isClosed()).toBe(true);

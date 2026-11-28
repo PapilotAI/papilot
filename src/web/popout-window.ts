@@ -28,6 +28,8 @@ export const focusedDocument = (): Document => {
   for (const win of open) { try { if (!win.closed && win.document.hasFocus()) return win.document; } catch { /* closing */ } }
   return document;
 };
+/** The documents of the pop-outs open now, for listeners such as shortcuts. */
+export const popoutDocuments = () => [...open].flatMap(win => { try { return win.closed ? [] : [win.document]; } catch { return []; } });
 /** A pop-out shows the workspace even while this window is hidden. */
 export const popoutVisible = () => [...open].some(win => { try { return !win.closed && !win.document.hidden; } catch { return false; } });
 // Told on this document whenever popoutVisible may have changed.

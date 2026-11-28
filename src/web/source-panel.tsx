@@ -316,14 +316,17 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   // moment later.
   // The frame comes from the editor's own window: a pop-out keeps typing while
   // this one is hidden, when this one paints nothing.
-  const typing = useRef<{ frame: number; window?: Window; timer?: ReturnType<typeof setTimeout> }>({ frame: 0 });
+  const typing = useRef<{ frame: number; window?: Window; wait?: ReturnType<typeof setTimeout>; timer?: ReturnType<typeof setTimeout> }>({ frame: 0 });
   actions.current.typed = () => {
     // The passage stops standing out on the PDF, as it does in the editor;
     // a draft coming back is not the author typing.
     if (!restoring.current && latest.current?.anchor?.marks.length) update(value => value.anchor ? { ...value, anchor: { ...value.anchor, marks: [] } } : value);
-    typing.current.window?.cancelAnimationFrame(typing.current.frame);
-    const frames = typing.current.window = editor.current?.view.dom.ownerDocument.defaultView ?? window;
-    typing.current.frame = frames.requestAnimationFrame(() => {
+    typing.current.window?.cancelAnimationFrame(typing.current.frame); clearTimeout(typing.current.wait);
+    // The next frame of a window that paints: the editor's own, this one while
+    // that is minimized or hidden, or a moment later when neither paints.
+    const own = editor.current?.view.dom.ownerDocument.defaultView ?? window;
+    const frames = typing.current.window = !own.document.hidden ? own : !document.hidden ? window : undefined;
+    const settle = () => {
       const view = editor.current, file = latest.current?.file;
       if (!view || !file) return;
       const text = view.text;
@@ -331,7 +334,9 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
       if (latest.current?.error) update(value => ({ ...value, error: undefined }));
       clearTimeout(typing.current.timer);
       typing.current.timer = setTimeout(() => keepDraft(scope, file, text), 400);
-    });
+    };
+    if (frames) typing.current.frame = frames.requestAnimationFrame(settle);
+    else typing.current.wait = setTimeout(settle, 16);
   };
   // Read from the editor itself: the dirty state renders a frame later.
   const unsaved = () => Boolean(editor.current && latest.current?.file && editor.current.text !== latest.current.file.text);
@@ -483,6 +488,8 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   }
   useEffect(() => () => popout?.dispose(), [popout]);
   useEffect(() => { if (!edit) setPopout(null); }, [Boolean(edit)]);
+  // A refused window's notice belongs to the file it was asked for.
+  useEffect(() => setBlocked(false), [edit?.file?.file]);
   useEffect(() => { popout?.setTitle(windowTitle); }, [popout, windowTitle]);
   // The editor has moved by now; it keeps the focus where it went.
   const moved = useRef(popout);

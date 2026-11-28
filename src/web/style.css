@@ -416,7 +416,7 @@ body.resizing.moving-panel{cursor:grabbing}
 .dock-preview[data-zone=window]>span{padding:6px 12px;border-radius:var(--r-md);background:var(--raised);box-shadow:var(--float);color:var(--text);font-size:13px}
 /* A panel in a window of its own fills it. */
 .popout-panel{flex:1;min-height:0;display:flex;flex-direction:column}
-.popout-panel>:is(.manuscript-side,.activity-panel){flex:1;min-height:0;border:0}
+.popout-panel>:is(.manuscript-side,.activity-panel){flex:1;min-height:0;max-height:none;border:0}
 /* A narrow window takes the phone layout, but a panel there keeps its header,
    which a phone hides for its navigation bar. */
 .popout-panel .activity-panel>.panel-heading,.popout-panel .manuscript-side-header{display:flex}
