@@ -36,6 +36,7 @@ Notable changes to Papilot, newest first. The format follows [Keep a Changelog](
 
 ### Fixed
 
+- Fix false delivery and commit conflicts on Windows when CRLF working-tree files are paired with LF Git blobs under `core.autocrlf=true`, and preserve CRLF bytes when initializing imported repositories. ([#352](https://github.com/PapilotAI/papilot/issues/352))
 - Keep changed PDF text and highlights readable in the VS Code extension's dark theme.
 - Keep VS Code review navigation in its tab, resolve task source paths after preparation, protect unsaved files opened through symlinks, and translate native commands and prompts.
 - Use VS Code's display language in review tabs and protect unsaved task source when applying reviewed changes.

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
@@ -445,4 +446,171 @@ it("preserves long comments and review messages in feedback", async () => {
   const cursor = app.review.feedback(task.name).cursor;
   app.review.note(task.name, text);
   expect(app.review.feedback(task.name, cursor).feedback[0].text).toBe(text);
+});
+
+// Simulates a Windows Git checkout under `core.autocrlf=true`: Git HEAD stores
+// LF blobs and `.git/index` has matching stat entries, while the working tree
+// on disk has CRLF line endings.
+function enableAutocrlfCrlf(fixture: Fixture, file = METHOD) {
+  const crlf = BODY.replace(/\n/g, "\r\n");
+  fixture.write(file, crlf);
+  // Backdate mtime so Git does not treat the index entry as racy.
+  const past = new Date(Date.now() - 5000);
+  fs.utimesSync(path.join(fixture.root, file), past, past);
+  execFileSync("git", ["-C", fixture.root, "config", "core.autocrlf", "true"]);
+  execFileSync("git", ["-C", fixture.root, "-c", "core.autocrlf=true", "add", "--all"]);
+  execFileSync("git", ["-C", fixture.root, "-c", "core.autocrlf=true", "commit", "--no-gpg-sign", "-qm", "Windows CRLF import", "--allow-empty"]);
+  execFileSync("git", ["-C", fixture.root, "-c", "core.autocrlf=true", "update-index", "--refresh"]);
+  return crlf;
+}
+
+it("delivers deferred tasks cleanly to Windows CRLF working trees whose Git blobs are LF", async () => {
+  const fx = new Fixture();
+  try {
+    const crlf = enableAutocrlfCrlf(fx);
+    const local = fx.app();
+    expect(fs.readFileSync(path.join(fx.root, METHOD)).includes("\r\n")).toBe(true);
+    expect(fx.repo.blob("HEAD", METHOD)!.includes("\r\n")).toBe(false);
+
+    const deferred = local.tasks.create("win-crlf", "Windows CRLF", [], ["paper"], true);
+    // Task base inherited the LF blob via `.git/index`'s stat cache.
+    expect(local.repo.blob(deferred.base, METHOD)!.includes("\r\n")).toBe(false);
+
+    fx.edit(deferred, METHOD, "Method sentence 2.", "Revised sentence 2.\nInserted line.");
+    const round = fakeRound(local, deferred.name);
+    await local.review.decide(deferred.name, { action: "accept", round: 1, changes: round.units.map((u) => u.id) });
+
+    const preview = await local.delivery.preview(deferred.name);
+    expect(preview?.[METHOD]?.toString()).toContain("Revised sentence 2.\r\nInserted line.\r\n");
+
+    const workspace = await local.delivery.apply(deferred.name);
+    expect(workspace.delivery?.mode).toBe("workspace");
+    expect(fs.readFileSync(path.join(fx.root, METHOD)).toString()).toBe(
+      crlf.replace("Method sentence 2.", "Revised sentence 2.\r\nInserted line."),
+    );
+
+    // A follow-up round in the same task delivers and commits only its own delta
+    // in LF onto HEAD while keeping round 1's workspace edit in CRLF on disk.
+    fx.edit(deferred, METHOD, "Detail sentence 15.", "Updated detail 15.");
+    const second = fakeRound(local, deferred.name);
+    await local.review.decide(deferred.name, { action: "accept", round: 2, changes: second.units.map((u) => u.id) });
+    const committed = await local.delivery.apply(deferred.name, false, "commit", "Apply reviewed edits");
+    expect(committed.delivery?.mode).toBe("commit");
+    expect(fs.readFileSync(path.join(fx.root, METHOD)).toString()).toContain("Updated detail 15.\r\n");
+    expect(fx.repo.blob("HEAD", METHOD)!.includes("\r\n")).toBe(false);
+    expect(fx.repo.blob("HEAD", METHOD)!.toString()).toContain("Updated detail 15.\n");
+    expect(fx.repo.blob("HEAD", METHOD)!.toString()).not.toContain("Revised sentence 2.");
+    const diff = execFileSync("git", ["-C", fx.root, "-c", "core.autocrlf=true", "diff"], { encoding: "utf8" });
+    expect(diff).toContain("Revised sentence 2.");
+    expect(diff).not.toContain("Updated detail 15.");
+
+    // Delivering directly as a commit from a clean CRLF tree leaves `git status` clean.
+    const fx2 = new Fixture();
+    try {
+      enableAutocrlfCrlf(fx2);
+      const local2 = fx2.app();
+      const clean = local2.tasks.create("win-crlf-commit", "Windows CRLF commit", [], ["paper"], true);
+      expect(local2.repo.blob(clean.base, METHOD)!.includes("\r\n")).toBe(false);
+      fx2.edit(clean, METHOD, "Method sentence 4.", "Committed cleanly.\nNext line.");
+      const r3 = fakeRound(local2, clean.name);
+      await local2.review.decide(clean.name, { action: "accept", round: 1, changes: r3.units.map((u) => u.id) });
+      expect((await local2.delivery.apply(clean.name, false, "commit", "Clean commit")).delivery?.mode).toBe("commit");
+      expect(fs.readFileSync(path.join(fx2.root, METHOD)).toString()).toContain("Committed cleanly.\r\nNext line.\r\n");
+      expect(fx2.repo.blob("HEAD", METHOD)!.includes("\r\n")).toBe(false);
+      expect(execFileSync("git", ["-C", fx2.root, "-c", "core.autocrlf=true", "status", "--short"], { encoding: "utf8" })).toBe("");
+    } finally {
+      await fx2.close();
+    }
+  } finally {
+    await fx.close();
+  }
+});
+
+it("merges disjoint CRLF edits and keeps commit reviews LF-clean under core.autocrlf=true", async () => {
+  const fx = new Fixture();
+  try {
+    const crlf = enableAutocrlfCrlf(fx);
+    const local = fx.app();
+
+    // Case A: Disjoint CRLF edit on disk after task creation merges without false reconciliation.
+    const after = local.tasks.create("crlf-after", "CRLF after", [], ["paper"], true);
+    expect(local.repo.blob(after.base, METHOD)!.includes("\r\n")).toBe(false);
+    fx.write(METHOD, crlf.replace("Detail sentence 15.", "Author edit after start."));
+    fx.edit(after, METHOD, "Method sentence 2.", "Agent edit.\nExtra line.");
+    const r1 = fakeRound(local, after.name);
+    await local.review.decide(after.name, { action: "accept", round: 1, changes: r1.units.map((u) => u.id) });
+    const applied = await local.delivery.apply(after.name);
+    expect(applied.delivery?.mode).toBe("workspace");
+    const disk = fs.readFileSync(path.join(fx.root, METHOD)).toString();
+    expect(disk).toContain("Author edit after start.\r\n");
+    expect(disk).toContain("Agent edit.\r\nExtra line.\r\n");
+
+    // Case B: Uncommitted CRLF edit before task creation projects only the agent's
+    // disjoint edit onto LF HEAD without a false CommitNeedsReview.
+    fx.write(METHOD, crlf.replace("Detail sentence 15.", "Uncommitted author edit."));
+    const before = local.tasks.create("crlf-before", "CRLF before", [], ["paper"], true);
+    fx.edit(before, METHOD, "Method sentence 2.", "Committed agent edit.\r\nAdded line.");
+    const r2 = fakeRound(local, before.name);
+    await local.review.decide(before.name, { action: "accept", round: 1, changes: r2.units.map((u) => u.id) });
+    const committed = await local.delivery.apply(before.name, false, "commit", "Commit agent edit only");
+    expect(committed.delivery?.mode).toBe("commit");
+    const headText = fx.repo.blob("HEAD", METHOD)!.toString();
+    expect(headText.includes("\r\n")).toBe(false);
+    expect(headText).toContain("Committed agent edit.\nAdded line.\n");
+    expect(headText).not.toContain("Uncommitted author edit.");
+    expect(fs.readFileSync(path.join(fx.root, METHOD)).toString()).toContain("Uncommitted author edit.\r\n");
+
+    // Case C: An overlapping uncommitted CRLF edit produces an LF-only CommitNeedsReview diff,
+    // and confirming it commits LF to HEAD while keeping CRLF on disk.
+    fx.write(METHOD, fx.repo.blob("HEAD", METHOD)!.toString().replace(/\n/g, "\r\n").replace("Detail sentence 15.", "Author overlap."));
+    const overlap = local.tasks.create("crlf-overlap", "CRLF overlap", [], ["paper"], true);
+    fx.edit(overlap, METHOD, "Author overlap.", "Agent overlap.");
+    const r3 = fakeRound(local, overlap.name);
+    await local.review.decide(overlap.name, { action: "accept", round: 1, changes: r3.units.map((u) => u.id) });
+    const review = await local.delivery.apply(overlap.name, false, "commit", "Combined overlap");
+    expect(review.commitReview?.files).toEqual([METHOD]);
+    expect(review.commitReview?.diff.includes("\r")).toBe(false);
+    const confirmed = await local.delivery.apply(overlap.name, false, "commit", "Combined overlap", review.commitReview!.token);
+    expect(confirmed.delivery?.mode).toBe("commit");
+    expect(fx.repo.blob("HEAD", METHOD)!.includes("\r\n")).toBe(false);
+    expect(fx.repo.blob("HEAD", METHOD)!.toString()).toContain("Agent overlap.\n");
+    expect(fs.readFileSync(path.join(fx.root, METHOD)).toString()).toContain("Agent overlap.\r\n");
+
+    // Case D: Deleting a tracked CRLF file delivers cleanly when destination has only CRLF differences.
+    const fxDel = new Fixture();
+    try {
+      enableAutocrlfCrlf(fxDel);
+      const localDel = fxDel.app();
+      const delTask = localDel.tasks.create("crlf-delete", "CRLF delete", [], ["paper"], true);
+      expect(localDel.repo.blob(delTask.base, METHOD)!.includes("\r\n")).toBe(false);
+      fs.rmSync(path.join(delTask.worktree, METHOD));
+      const rd = fakeRound(localDel, delTask.name);
+      await localDel.review.decide(delTask.name, { action: "accept", round: 1, changes: rd.units.map((u) => u.id) });
+      expect((await localDel.delivery.preview(delTask.name))?.[METHOD]).toBeNull();
+      expect((await localDel.delivery.apply(delTask.name, false, "commit", "Remove method section")).delivery?.mode).toBe("commit");
+      expect(fs.existsSync(path.join(fxDel.root, METHOD))).toBe(false);
+      expect(fxDel.repo.blob("HEAD", METHOD)).toBeNull();
+    } finally {
+      await fxDel.close();
+    }
+  } finally {
+    await fx.close();
+  }
+});
+
+it("applies non-deferred accepts cleanly to CRLF files under core.autocrlf=true", async () => {
+  const fx = new Fixture();
+  try {
+    enableAutocrlfCrlf(fx);
+    const local = fx.app();
+    const direct = local.tasks.create("win-direct", "Win direct", [], ["paper"], false);
+    expect(local.repo.blob(direct.base, METHOD)!.includes("\r\n")).toBe(false);
+    fx.edit(direct, METHOD, "Method sentence 2.", "Direct edit.\nSecond line.");
+    const round = fakeRound(local, direct.name);
+    await local.review.decide(direct.name, { action: "accept", round: 1, changes: round.units.map((u) => u.id) });
+    const disk = fs.readFileSync(path.join(fx.root, METHOD)).toString();
+    expect(disk).toContain("Direct edit.\r\nSecond line.\r\n");
+  } finally {
+    await fx.close();
+  }
 });

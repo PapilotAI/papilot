@@ -25,13 +25,13 @@ export async function planCurrentCommit(repo: Repo, data: Delivery, before: stri
     if (conflict) {
       // Include only the overlapping earlier passages, never the whole dirty
       // file. This is a proposal until the author confirms its exact diff.
-      [content, conflict] = await merge3Async(accepted[file], base[file], head[file], true);
+      [content, conflict] = await merge3Async(head[file], base[file], accepted[file], "theirs");
       if (conflict) throw new Error(`The earlier changes in ${file} cannot be included automatically. Apply to workspace to save your reviewed result without a commit.`);
       dependencies.push(file);
     }
     let [combined, indexConflict] = await merge3Async(staged[file], head[file], content);
     if (indexConflict && dependencies.includes(file) && !(await merge3Async(staged[file], base[file], accepted[file]))[1])
-      [combined, indexConflict] = await merge3Async(content, head[file], staged[file], true);
+      [combined, indexConflict] = await merge3Async(staged[file], head[file], content, "theirs");
     if (indexConflict) throw new Error(`A different version of ${file} is already selected for another commit. Apply to workspace to save this result without changing that selection.`);
     committed[file] = content;
     nextIndex[file] = combined;

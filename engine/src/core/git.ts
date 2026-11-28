@@ -600,22 +600,59 @@ export class Repo {
     }
   }
 }
-/** A three-way merge of file contents; [merged, conflicted]. */
-export async function merge3Async(
-  ours: Buffer | null,
-  base: Buffer | null,
-  theirs: Buffer | null,
-  favorCurrent = false,
-): Promise<[Buffer | null, boolean]> {
-  if (same(ours, base) || same(ours, theirs)) return [theirs, false];
-  if (same(theirs, base)) return [ours, false];
-  if (ours === null || base === null || theirs === null || [ours, base, theirs].some((b) => b.includes(0))) return [null, true];
+// Counts LF and CRLF line breaks so merges can reconcile Windows CRLF working
+// trees with LF Git blobs (e.g. under `core.autocrlf=true`) without rewriting
+// unrelated binary bytes or changing line endings when all inputs agree.
+function eolInfo(data: Buffer) {
+  let lf = 0, crlf = 0;
+  for (let i = 0; i < data.length; i++) {
+    if (data[i] === 0x0a) {
+      lf++;
+      if (i > 0 && data[i - 1] === 0x0d) crlf++;
+    }
+  }
+  return { lf, crlf, style: lf === 0 ? null : crlf * 2 >= lf ? ("\r\n" as const) : ("\n" as const) };
+}
+function stripCrlf(data: Buffer): Buffer {
+  if (!data.includes("\r\n")) return data;
+  const out = Buffer.allocUnsafe(data.length);
+  let len = 0;
+  for (let i = 0; i < data.length; i++) {
+    if (data[i] === 0x0d && i + 1 < data.length && data[i + 1] === 0x0a) continue;
+    out[len++] = data[i];
+  }
+  return out.subarray(0, len);
+}
+// Called only on LF-normalized buffers from `stripCrlf`, so inserting CR before
+// every LF also preserves a bare CR immediately before CRLF (`\r\r\n`).
+function toCrlf(data: Buffer): Buffer {
+  let extra = 0;
+  for (let i = 0; i < data.length; i++) if (data[i] === 0x0a) extra++;
+  if (extra === 0) return data;
+  const out = Buffer.allocUnsafe(data.length + extra);
+  let len = 0;
+  for (let i = 0; i < data.length; i++) {
+    if (data[i] === 0x0a) out[len++] = 0x0d;
+    out[len++] = data[i];
+  }
+  return out;
+}
+function sameWithoutCrlf(a: Buffer, b: Buffer) {
+  return !a.includes(0) && !b.includes(0) && same(stripCrlf(a), stripCrlf(b));
+}
+async function runMergeFile(
+  ours: Buffer,
+  base: Buffer,
+  theirs: Buffer,
+  favor: boolean | "ours" | "theirs",
+): Promise<[Buffer, boolean]> {
+  const favorFlag = favor === "theirs" ? ["--theirs"] : favor ? ["--ours"] : [];
   const folder = await fs.promises.mkdtemp(path.join(os.tmpdir(), "papilot-merge-"));
   try {
     const files = ["ours", "base", "theirs"].map((name) => path.join(folder, name));
     await Promise.all([ours, base, theirs].map((data, i) => fs.promises.writeFile(files[i], data)));
-    const result = await capture(gitBinary(), ["merge-file", "-p", ...(favorCurrent ? ["--ours"] : []), ...files], { check: false });
-    if (result.status > 0 && !favorCurrent) {
+    const result = await capture(gitBinary(), ["merge-file", "-p", ...favorFlag, ...files], { check: false });
+    if (result.status > 0 && !favor) {
       const merged = mergeText(ours, base, theirs);
       if (merged !== null) return [merged, false];
     }
@@ -623,4 +660,47 @@ export async function merge3Async(
   } finally {
     await fs.promises.rm(folder, { recursive: true, force: true });
   }
+}
+/** A three-way merge of file contents; [merged, conflicted]. */
+export async function merge3Async(
+  ours: Buffer | null,
+  base: Buffer | null,
+  theirs: Buffer | null,
+  favor: boolean | "ours" | "theirs" = false,
+): Promise<[Buffer | null, boolean]> {
+  if (same(ours, base) || same(ours, theirs)) return [theirs, false];
+  if (same(theirs, base)) return [ours, false];
+  if (ours === null || base === null || theirs === null) {
+    // Reconcile one-sided deletions and identical-content additions across CRLF/LF.
+    if (theirs === null && ours !== null && base !== null && sameWithoutCrlf(ours, base)) return [null, false];
+    if (ours === null && base !== null && theirs !== null && sameWithoutCrlf(theirs, base)) return [null, false];
+    if (base === null && ours !== null && theirs !== null && sameWithoutCrlf(ours, theirs)) return [ours, false];
+    return [null, true];
+  }
+  if ([ours, base, theirs].some((b) => b.includes(0))) return [null, true];
+  const [oursEol, baseEol, theirsEol] = [ours, base, theirs].map(eolInfo);
+  const anyCrlf = oursEol.crlf > 0 || baseEol.crlf > 0 || theirsEol.crlf > 0;
+  const anyPureLf = (oursEol.lf > 0 && oursEol.crlf === 0)
+    || (baseEol.lf > 0 && baseEol.crlf === 0)
+    || (theirsEol.lf > 0 && theirsEol.crlf === 0);
+  const anyDominantCrlf = oursEol.style === "\r\n" || baseEol.style === "\r\n" || theirsEol.style === "\r\n";
+  const restore = (data: Buffer) => {
+    const target = oursEol.style ?? baseEol.style ?? theirsEol.style;
+    return target === "\r\n" ? toCrlf(data) : data;
+  };
+  if (anyCrlf) {
+    const mergeOurs = stripCrlf(ours), mergeBase = stripCrlf(base), mergeTheirs = stripCrlf(theirs);
+    if (same(mergeOurs, mergeTheirs) || same(mergeTheirs, mergeBase)) return [ours, false];
+    if (same(mergeOurs, mergeBase)) return [restore(mergeTheirs), false];
+    if (anyPureLf && anyDominantCrlf) {
+      const [merged, conflict] = await runMergeFile(mergeOurs, mergeBase, mergeTheirs, favor);
+      return [restore(merged), conflict];
+    }
+  }
+  const [merged, conflict] = await runMergeFile(ours, base, theirs, favor);
+  if (conflict && anyCrlf && !favor) {
+    const [normalized, normalizedConflict] = await runMergeFile(stripCrlf(ours), stripCrlf(base), stripCrlf(theirs), favor);
+    if (!normalizedConflict) return [restore(normalized), false];
+  }
+  return [merged, conflict];
 }
