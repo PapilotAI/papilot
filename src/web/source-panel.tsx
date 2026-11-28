@@ -316,7 +316,14 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   // moment later.
   // The frame comes from the editor's own window: a pop-out keeps typing while
   // this one is hidden, when this one paints nothing.
-  const typing = useRef<{ frame: number; window?: Window; wait?: ReturnType<typeof setTimeout>; timer?: ReturnType<typeof setTimeout> }>({ frame: 0 });
+  const typing = useRef<{ frame: number; window?: Window; wait?: ReturnType<typeof setTimeout>; timer?: ReturnType<typeof setTimeout>; pending?: () => void }>({ frame: 0 });
+  // A window closing before its next frame still records what was typed there.
+  const settleTyping = () => {
+    const pending = typing.current.pending;
+    if (!pending) return;
+    typing.current.window?.cancelAnimationFrame(typing.current.frame); clearTimeout(typing.current.wait);
+    pending();
+  };
   actions.current.typed = () => {
     // The passage stops standing out on the PDF, as it does in the editor;
     // a draft coming back is not the author typing.
@@ -327,6 +334,7 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
     const own = editor.current?.view.dom.ownerDocument.defaultView ?? window;
     const frames = typing.current.window = !own.document.hidden ? own : !document.hidden ? window : undefined;
     const settle = () => {
+      typing.current.pending = undefined;
       const view = editor.current, file = latest.current?.file;
       if (!view || !file) return;
       const text = view.text;
@@ -335,6 +343,7 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
       clearTimeout(typing.current.timer);
       typing.current.timer = setTimeout(() => keepDraft(scope, file, text), 400);
     };
+    typing.current.pending = settle;
     if (frames) typing.current.frame = frames.requestAnimationFrame(settle);
     else typing.current.wait = setTimeout(settle, 16);
   };
@@ -482,7 +491,7 @@ export function useSourceEdit({ api, projectId, taskId, version, build, head, pd
   const [blocked, setBlocked] = useState(false);
   function popOut() {
     // Named by kind, so the desktop app reopens it where the last one was.
-    const opened = openPopout(taskId ? 'source-task' : 'source-manuscript', windowTitle, () => setPopout(null));
+    const opened = openPopout(taskId ? 'source-task' : 'source-manuscript', windowTitle, () => { settleTyping(); setPopout(null); });
     setBlocked(!opened);
     if (opened) setPopout(opened);
   }

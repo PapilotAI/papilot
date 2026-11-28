@@ -15,7 +15,7 @@ import { markText, NoteQuote } from './note-content.tsx';
 import { NoteAttachButton, NoteEditButton, PdfNoteCard, TaskRemoveButton } from './pdf-suggestion.tsx';
 import { StrictMode, Suspense, lazy, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createPortal, flushSync } from 'react-dom';
+import { flushSync } from 'react-dom';
 import { ignorePattern } from '../commit.ts';
 import { effectiveServiceTier, modelServiceTier, AGENT_IDS, isAgentId, isManualAgent, isTaskReviewNote, taskFinished } from '../shared.ts';
 import type { ChatgptProSettings as ChatgptProSettingsState, TaskCommitReview, CompilerChoice, LatexInstallation, ZoteroStatus, AgentId, Annotation, AnnotationGroupEdit, AnnotationGroupState, AnnotationBatch, AnnotationBatchResult, NoteSection, PageReadingLayout, BuildRepairResult, MarkKind, GitDiff, GitFile, GitOverview, GitStatus, Manuscript, ManuscriptProblems, Project, RuntimeStatus, Skill, Snapshot, Task, TimelineItem } from '../shared.ts';
