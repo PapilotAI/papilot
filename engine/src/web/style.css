@@ -1227,7 +1227,8 @@ kbd {
     overflow-x: clip;
   }
 }
-.paper-status {
+.paper-status,
+.compare-status {
   text-align: center;
   padding: 90px 16px;
   color: var(--text-3);
@@ -2362,3 +2363,255 @@ body {
 }
 
 .change[data-note-focus] .side { background: transparent; }
+
+/* Both versions side by side, page beside page: the old version on the
+   left, the new on the right, a blank page where one has no counterpart,
+   and between them a column with each change's number and decisions. */
+.document.compare-view {
+  --compare-gutter: 44px;
+  max-width: 1700px;
+}
+/* The reader's whole-page anchor on the new version's pages. */
+.compare-reading {
+  inset: 0;
+  pointer-events: none;
+}
+.compare-head,
+.compare-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--compare-gutter) minmax(0, 1fr);
+}
+.compare-head {
+  margin: 0 0 8px;
+  font: 500 12px/1.4 var(--sans);
+  color: var(--text-2);
+}
+.compare-head > span {
+  padding-left: 10px;
+  border-left: 2px solid var(--red);
+}
+.compare-head > span + span {
+  grid-column: 3;
+  border-left-color: var(--green);
+}
+.compare-row + .compare-row {
+  margin-top: 16px;
+}
+.compare-page {
+  position: relative;
+  min-width: 0;
+  background: var(--pdf-page, var(--bg));
+  box-shadow: var(--page-shadow);
+}
+.compare-page > canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: var(--pdf-filter, none);
+}
+.compare-blank {
+  background: repeating-linear-gradient(135deg, transparent 0 10px, var(--line) 10px 11px);
+  box-shadow: none;
+  opacity: 0.5;
+}
+/* A change's own comparison crop, with its red or green words, laid over
+   the page where it prints. */
+.compare-mark {
+  position: absolute;
+  z-index: 1;
+  cursor: pointer;
+  background: var(--pdf-page, var(--bg));
+}
+.compare-mark > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: var(--pdf-filter, none);
+}
+.compare-mark[data-state="accepted"],
+.compare-mark[data-state="rejected"] {
+  opacity: 0.55;
+}
+/* The change being reviewed, shaded over exactly its lines on both pages;
+   another change shows its lines faintly under the pointer. */
+.compare-shade {
+  position: absolute;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.compare-mark:hover > .compare-shade {
+  background: color-mix(in srgb, var(--text-3) 10%, transparent);
+}
+.compare-mark.current > .compare-shade {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+/* The middle column: a bar level with each change's lines and its number
+   above it; the change being reviewed is blue, and its decisions open
+   under its bar, inside the column. */
+.compare-gutter {
+  position: relative;
+}
+.compare-spot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  min-height: 10px;
+}
+.compare-spot.current {
+  z-index: 5;
+}
+.compare-bar {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  appearance: none;
+}
+.compare-bar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 6px;
+  margin-left: -3px;
+  border-radius: 3px;
+  background: var(--line-strong);
+  transition: background-color 0.15s;
+}
+.compare-bar:hover::before {
+  background: var(--text-3);
+}
+.compare-spot[data-state="accepted"] .compare-bar::before {
+  background: color-mix(in srgb, var(--green) 60%, transparent);
+}
+.compare-spot[data-state="rejected"] .compare-bar::before {
+  background: color-mix(in srgb, var(--red) 60%, transparent);
+}
+.compare-spot.current .compare-bar::before {
+  background: var(--accent);
+}
+.compare-bar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+.compare-index {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 3px;
+  font: 600 11px/14px var(--sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+.compare-bar:hover .compare-index {
+  color: var(--text-2);
+}
+.compare-spot.current .compare-index {
+  color: var(--accent);
+}
+/* The decisions, as icons in a column under the number; each keeps its name
+   and shortcut in its tooltip. */
+.compare-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+}
+.compare-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+}
+.compare-actions button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font-size: 0;
+  color: var(--text-2);
+  cursor: pointer;
+  appearance: none;
+}
+.compare-actions button:hover:not(:disabled) {
+  background: var(--bg-muted);
+}
+.compare-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.compare-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.compare-actions button::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  -webkit-mask: var(--compare-icon) center / contain no-repeat;
+  mask: var(--compare-icon) center / contain no-repeat;
+}
+.compare-actions .accept,
+.compare-actions .stage {
+  --compare-icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>");
+  color: var(--green);
+}
+.compare-actions .reject,
+.compare-actions .revert {
+  --compare-icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'><path d='M18 6 6 18M6 6l12 12'/></svg>");
+  color: var(--red);
+}
+.compare-actions .comment {
+  --compare-icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linejoin='round'><path d='M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z'/></svg>");
+  color: var(--accent);
+}
+.compare-actions-sep {
+  height: 1px;
+  margin: 2px 4px;
+  background: var(--line);
+}
+.compare-actions .copy-reference {
+  --compare-icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'><rect x='8' y='8' width='12' height='12' rx='2'/><path d='M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2'/></svg>");
+}
+.compare-actions .source-toggle {
+  --compare-icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16'/></svg>");
+}
+.compare-actions .unstage {
+  --compare-icon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'><path d='M5 12h14'/></svg>");
+}
+.ghost.layout-toggle {
+  width: 28px;
+  padding: 0;
+}
+.ghost.layout-toggle svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+.ghost.layout-toggle[aria-pressed="true"] {
+  background: var(--bg-active);
+  color: var(--text);
+}

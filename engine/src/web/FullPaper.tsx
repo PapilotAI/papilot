@@ -24,7 +24,7 @@ import { CompilationErrors } from './CompilationErrors.tsx';
 const besideChunk = (url: string) =>
   import.meta.env.DEV ? url : new URL(url.split("/").pop()!, import.meta.url).href;
 pdfjs.GlobalWorkerOptions.workerSrc = besideChunk(worker);
-const CMapData = cMapData(
+export const CMapData = cMapData(
   import.meta.glob<string>("../../node_modules/pdfjs-dist/cmaps/*.bcmap", {
     eager: true,
     import: "default",
@@ -71,6 +71,7 @@ export function FullPaper({
   onUnavailable,
   place,
   restorePlace = true,
+  active = true,
   resource,
 }: {
   url: string;
@@ -84,6 +85,9 @@ export function FullPaper({
   onUnavailable: () => void;
   place: string;
   restorePlace?: boolean;
+  /** False while another view is shown: the PDF stays loaded, its pages are
+   *  not rendered. */
+  active?: boolean;
 }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null),
     [error, setError] = useState(""),
@@ -182,6 +186,11 @@ export function FullPaper({
       {t("Preparing the full PDF…")} <span className="paper-clock">{clock(now - started)}</span>
     </>
   );
+  if (!active) {
+    // Coming back shows the reader's place, not a newer version's anchor.
+    anchor.current = null;
+    return null;
+  }
   if (error)
     return (
       <div className="paper-status" role="alert">
@@ -286,7 +295,7 @@ function Pages({
         <Fragment key={c.index}>{render(c.block, c.index)}</Fragment>
       ))}
       {paper.pages.map((cuts, page) => (
-        <section className="paper-page" data-page={page} data-pdf-width={paper.width} data-pdf-height={paper.height} key={page}>
+        <section className="paper-page" data-page={page} data-reader-page={page} data-pdf-width={paper.width} data-pdf-height={paper.height} key={page}>
           {cuts.map((cut, i) => (
             <div key={i} data-reading-anchor={`${page}:${i}`} data-pdf-top={cut.top} data-pdf-bottom={cut.bottom}>
               {cut.shown.map(c => (

@@ -3,6 +3,7 @@ import {
   lazy,
   Suspense,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -27,6 +28,7 @@ import { sourceActionLabel, unavailableComparisonMessage, type UnavailableCompar
 import { placeable, type PlacedChange } from "./paper.ts";
 // pdf.js loads only when the full paper is shown.
 const FullPaper = lazy(() => import("./FullPaper.tsx").then((module) => ({ default: module.FullPaper })));
+const ComparePages = lazy(() => import("./ComparePages.tsx").then((module) => ({ default: module.ComparePages })));
 // A hidden tab or a locked phone still polls; the server then knows nobody reads it.
 const stateRoute = (round?: number | null) => {
   const query = new URLSearchParams();
@@ -36,6 +38,8 @@ const stateRoute = (round?: number | null) => {
   return `/state${text ? `?${text}` : ""}`;
 };
 import { EFFECTS_EVENT, EFFECTS_STORAGE, readExpandedEffects } from "./effect-preferences.ts";
+import { LAYOUT_STORAGE, readLayout, saveLayout, type ReviewLayout } from "./layout-preference.ts";
+import { holdReader } from "./reader-handoff.ts";
 import { language, locale, t, tn, withLanguage } from "./i18n.ts";
 import {
   ConfirmReferences,
@@ -170,6 +174,8 @@ function ReviewProgress({ value, total, label }: { value: number; total: number;
     </div>
   );
 }
+// Two versions side by side need a wide window.
+const NARROW = "(max-width: 720px)";
 export function ReviewApp({
   task,
   pinned,
@@ -351,6 +357,23 @@ export function ReviewApp({
     window.addEventListener('storage', stored);
     return () => { window.removeEventListener(SHORTCUT_EVENT, changed); window.removeEventListener('storage', stored); };
   }, []);
+  // Both versions of the whole paper, page beside page, when the host serves
+  // both; remembered, and followed by other open reviews.
+  const [chosenLayout, setChosenLayout] = useState<ReviewLayout>(readLayout);
+  useEffect(() => {
+    const stored = (event: StorageEvent) => { if (event.key === LAYOUT_STORAGE || event.key === null) setChosenLayout(readLayout()); };
+    window.addEventListener('storage', stored);
+    return () => window.removeEventListener('storage', stored);
+  }, []);
+  const [narrow, setNarrow] = useState(() => matchMedia(NARROW).matches);
+  useEffect(() => {
+    const query = matchMedia(NARROW), changed = () => setNarrow(query.matches);
+    query.addEventListener("change", changed);
+    return () => query.removeEventListener("change", changed);
+  }, []);
+  const [compareUnavailable, setCompareUnavailable] = useState(false);
+  // Side by side, the author may deselect every change.
+  const nothingSelected = useRef(false);
   const selectUnitHandler = useRef<(stop: number, unit?: string) => void>(() => {});
   useEffect(() => {
     const changed = (event: Event) => setNoteFocus((event as CustomEvent).detail || null);
@@ -1516,6 +1539,8 @@ export function ReviewApp({
       }
       const action = shortcutAction(event, shortcuts);
       if (!action || (changes && action === 'comment')) return;
+      // Side by side with no change selected, a shortcut decides nothing.
+      if (nothingSelected.current && ["accept", "reject", "comment", "source"].includes(action)) return;
       event.preventDefault();
       const activeUnitGroup = focusedUnit
         ? unitGroup(current, focusedUnit)
@@ -1580,10 +1605,15 @@ export function ReviewApp({
           };
         });
     const index = visibleStop(regions, current, box.top + 60, box.bottom - 100);
+    // Side by side, reading on selects nothing: a change is selected by a
+    // click or by moving to it.
+    if (compare) return;
     if (index !== current) { reached.current = "scroll"; select(index, false); }
     if (index >= 0) remember(index);
   }
-  const actionBar = (index: number) => {
+  // `buttons` alone: the decisions without the bar's navigation, as the
+  // side-by-side pages show them beside the change.
+  const actionBar = (index: number, buttons = false) => {
     if (index !== current || !state) return null;
     const meta = multiUnitAt(index),
       focusedUnit = focusedUnitAt(index),
@@ -1651,6 +1681,38 @@ export function ReviewApp({
           </button>
         );
       });
+    if (buttons)
+      return (
+        <nav className="compare-actions" aria-label={t("Review the current change")}>
+          {renderDecisionButtons(available)}
+          <span className="compare-actions-sep" aria-hidden="true" />
+          <button
+            className="copy-reference"
+            title={t("Copy selected text with this change’s file, line numbers and PDF page")}
+            aria-label={t("Copy reference")}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => void copy(index)}
+          >
+            {t("Copy reference")}
+          </button>
+          <button
+            className="source-toggle"
+            title={[t("Show LaTeX source"), shortcuts.source.map(bindingLabel).join(" / ")].filter(Boolean).join(" · ")}
+            aria-label={t("Show LaTeX source")}
+            aria-keyshortcuts={shortcuts.source.join(" ")}
+            onClick={() => {
+              // The workspace opens it in its editor; on its own, the review
+              // shows the source in the stacked view, at this change.
+              if (offerSource(detail?.units.filter((unit) => units.includes(unit.id)) ?? [])) return;
+              saveLayout("stacked");
+              setChosenLayout("stacked");
+              setOpenSource((previous) => new Set(previous).add(index));
+            }}
+          >
+            LaTeX
+          </button>
+        </nav>
+      );
     return (
       <div className="dock">
         <nav className="actions" aria-label={t("Review the current change")}>
@@ -1841,6 +1903,47 @@ export function ReviewApp({
         </div>
       </section>
     );
+  }
+  // What the side-by-side pages lay over a change: the crops the stacked view
+  // shows for it, an option being previewed or accepted, or the result of a
+  // mixed decision, each with its own files.
+  function compareChange({ block, index }: PlacedChange): PlacedChange {
+    const accepted = optionKey(block.units),
+      option = previewing && optionPreview?.detail && (!optionPreview.units?.length || block.units.some((id) => optionPreview.units!.includes(id)))
+        ? optionPreview.detail
+        : (accepted && optionBlocks[accepted]) || null,
+      shown = option
+        ? [...option.sections.flatMap((s) => s.blocks.filter((b): b is ChangeBlock => b.kind === "change")), ...option.loose]
+          .find((b) => b.units.some((id) => block.units.includes(id))) ?? null
+        : null,
+      restored = Boolean(!shown && option && !previewing &&
+        block.units.every((id) => variants && Object.hasOwn(variants, id) && variants[id] === units.get(id)?.old_text)),
+      key = !changes && !history && !pendingUnits(stops[index], decisions).length
+        ? mixedKey(detail!.round, index, block.units, decisions, variants) : null,
+      mixed = key ? mixedPreviews[key] : undefined,
+      at = (base: string) => (strip: Strip) => ({ ...strip, src: base + strip.src, clean: base + strip.clean });
+    // A preview's crops come from a compile of their own, laid out apart from
+    // the round's new version: each is drawn where the round's crop it
+    // replaces prints, and any further ones follow below the last.
+    // Round crops left over are blanked, so their text does not read as part
+    // of the preview; a crop with no known place is skipped, as on the pages.
+    const onto = (images: Strip[], base: string): Strip[] => {
+      let top: number | undefined;
+      const placed = block.after.length ? images.map((image, k) => {
+        const place = block.after[Math.min(k, block.after.length - 1)];
+        top = k < block.after.length ? place.top : top;
+        const strip = { ...at(base)(image), page: place.page, label: place.label, top, left: place.left };
+        if (top !== undefined) top += image.height;
+        return strip;
+      }) : [];
+      return [...placed, ...block.after.slice(images.length).map((place) => ({ ...place, src: "", clean: "" }))];
+    };
+    const after = mixed?.status === "ready" && mixed.strips?.length && mixed.files
+      ? onto(mixed.strips, mixed.files)
+      : shown && option ? onto(shown.after, option.files)
+      : restored ? onto(block.before, detail!.files)
+      : block.after.map(at(detail!.files));
+    return { index, block: { ...block, before: block.before.map(at(detail!.files)), after } };
   }
   function change(
     block: ChangeBlock,
@@ -2338,8 +2441,31 @@ export function ReviewApp({
       </article>
     );
   }
+  // Rebuilt only when what it shows changes, so the side-by-side marks are
+  // not placed again on every render.
+  const compareChanges = useMemo(() => placed.map(compareChange),
+    [placed, previewing, optionPreview, optionBlocks, variants, decisions, mixedPreviews, changes, history, stops, detail]);
   const fullPaper = Boolean(detail?.pdf) && !detail?.sourceOnly && !detail?.rendering && placeable(placed),
-    paperView = fullPaper && !paperUnavailable;
+    paperView = fullPaper && !paperUnavailable,
+    canCompare = paperView && Boolean(detail?.pdfBefore) && !compareUnavailable && !phoneDock && !narrow,
+    compare = canCompare && chosenLayout === "side-by-side";
+  useEffect(() => { setCompareUnavailable(false); }, [detail?.round, detail?.pdfBefore]);
+  // Switching layouts hands the workspace's page controls from one view's
+  // reader to the other's without clearing them; a new round still clears
+  // them while its PDF loads, as the workspace expects.
+  // Only the author's switch within a round counts: a new round that
+  // renders, or the paper going away, clears them as before.
+  const shownLayout = useRef({ compare, round: detail?.round, paperView, compareUnavailable, chosenLayout });
+  useLayoutEffect(() => {
+    const before = shownLayout.current;
+    shownLayout.current = { compare, round: detail?.round, paperView, compareUnavailable, chosenLayout };
+    // The author's choice changed, not whether the comparison can be shown.
+    if (before.compare === compare || before.round !== detail?.round || !before.paperView || !paperView
+      || before.compareUnavailable !== compareUnavailable || before.chosenLayout === chosenLayout) return;
+    return holdReader(window);
+  }, [compare, detail?.round, paperView, compareUnavailable, chosenLayout]);
+  const [compareOpened, setCompareOpened] = useState(false);
+  useEffect(() => { if (compare) setCompareOpened(true); }, [compare]);
   // The comparisons of the next few undecided changes are fetched and decoded
   // ahead, so the next one is on screen the moment a decision moves on. A
   // small window keeps a phone's memory free.
@@ -2388,7 +2514,7 @@ export function ReviewApp({
     if (paperView) root.dataset.fullPaper = "available";
     else if (paperPending) root.dataset.fullPaper = "pending";
     else delete root.dataset.fullPaper;
-  }, [paperView, paperPending]);
+  }, [paperView, paperPending, compare]);
   useEffect(() => {
     const root = document.documentElement;
     if (detail?.round) {
@@ -2596,6 +2722,27 @@ export function ReviewApp({
               onClick={() => void undo()}
             >
               {t("Undo revert")}
+            </button>
+          )}
+          {canCompare && (
+            <button
+              type="button"
+              className="ghost layout-toggle"
+              aria-pressed={compare}
+              aria-label={t("Side by side")}
+              title={t("Show before and after side by side")}
+              onClick={() => {
+                const next = compare ? "stacked" : "side-by-side";
+                saveLayout(next);
+                setChosenLayout(next);
+              }}
+            >
+              {/* Two pages, unlike the workspace's own split-view icon. */}
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="2.5" y="4.5" width="8" height="15" rx="1" />
+                <rect x="13.5" y="4.5" width="8" height="15" rx="1" />
+                <path d="M4.8 8.5h3.4M4.8 11.5h3.4M15.8 8.5h3.4M15.8 11.5h3.4" />
+              </svg>
             </button>
           )}
           <button
@@ -2850,12 +2997,48 @@ export function ReviewApp({
                 onRetry={references.retry}
               />
             )}
-          <div className="document">
+          <div className={`document${compare ? " compare-view" : ""}`}>
             {detail && paperView ? (
               <>
-                <Suspense fallback={<div className="paper-status" role="status"><div className="pulse" /></div>}>
+                {/* Once opened, both views stay loaded and only the one shown
+                    renders its pages, so switching keeps the review in place. */}
+                {(compare || compareOpened) && (
+                  <Suspense fallback={<div className="compare-status" role="status"><div className="pulse" /></div>}>
+                    {compare && (
+                      <div className="compare-head" aria-hidden="true">
+                        <span>{t("Before")}</span>
+                        <span>{t("After")}</span>
+                      </div>
+                    )}
+                    <ComparePages
+                      key={`${detail.round}:${detail.pdfBefore}:${detail.pdf}`}
+                      active={compare}
+                      restorePlace={linkedChange < 0}
+                      before={detail.pdfBefore!}
+                      after={detail.pdf!}
+                      resource={resource}
+                      files=""
+                      changes={compareChanges}
+                      current={current}
+                      states={(at) => stopState(stops[at]?.units ?? [], decisions)}
+                      controls={(at) => actionBar(at, true)}
+                      onSelect={(at) => { if (!composer && at !== current) { reached.current = "pick"; select(at, false); } }}
+                      onDeselected={(value) => { nothingSelected.current = value; }}
+                      scrollRoot={paper}
+                      readingPlace={`${placeKey}:compare:${detail.round}`}
+                      onReady={(restored) => {
+                        if (restored) return;
+                        const article = paper.current?.querySelector<HTMLElement>(`[data-stop="${snapshot.current.current}"]`);
+                        if (article) reveal(article);
+                      }}
+                      onUnavailable={() => setCompareUnavailable(true)}
+                    />
+                  </Suspense>
+                )}
+                <Suspense fallback={compare ? null : <div className="paper-status" role="status"><div className="pulse" /></div>}>
                 <FullPaper
                   key={`${placeKey}:pdf:${detail.round}:${detail.pdf}`}
+                  active={!compare}
                   url={detail.pdf!}
                   resource={resource}
                   passes={detail.passes}

@@ -2185,7 +2185,13 @@ test('the review page shows each TeX pass of a round\'s new version in the full 
     const complete = await f.local.inject({ url: detail.json().pdf, headers: LOCAL });
     assert.equal(complete.statusCode, 200, complete.body);
     assert.equal(complete.rawPayload.subarray(0, 5).toString(), '%PDF-');
-    for (const url of [`${detail.json().pdf}?pass=99`, `${detail.json().pdf}?pass=0`, `${detail.json().passes}?after=-1`])
+    // The old version, whole, for the side-by-side comparison.
+    assert.equal(detail.json().pdfBefore, '/review/paper/pdf/p-paper/1?version=before');
+    const old = await f.local.inject({ url: detail.json().pdfBefore, headers: LOCAL });
+    assert.equal(old.statusCode, 200, old.body);
+    assert.equal(old.rawPayload.subarray(0, 5).toString(), '%PDF-');
+    for (const url of [`${detail.json().pdf}?pass=99`, `${detail.json().pdf}?pass=0`, `${detail.json().passes}?after=-1`,
+      `${detail.json().pdf}?version=after`, `${detail.json().pdfBefore}&pass=1`, `${detail.json().pdfBefore}&build=x`])
       assert.equal((await f.local.inject({ url, headers: LOCAL })).statusCode, 404, url);
   } finally { engine.close(); await f.close(); fs.rmSync(base, { recursive: true, force: true }); }
 });

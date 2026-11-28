@@ -8,7 +8,7 @@ export function fullPaperSearch(container: HTMLElement, root: HTMLElement, pdf: 
   class Links extends SimpleLinkService {
     override get pagesCount() { return pdf.numPages; }
     override get page() {
-      const pages = [...container.querySelectorAll<HTMLElement>('.paper-page')];
+      const pages = [...container.querySelectorAll<HTMLElement>('[data-reader-page]')];
       return Math.max(1, pages.findIndex(page => page.getBoundingClientRect().bottom > root.getBoundingClientRect().top) + 1);
     }
     // Match geometry below scrolls the paper only, never the embedding document.
@@ -28,7 +28,7 @@ export function fullPaperSearch(container: HTMLElement, root: HTMLElement, pdf: 
     const revealKey = `${query}:${selected.pageIdx}:${selected.matchIdx}`;
     for (let pageIndex = 0; pageIndex < pdf.numPages; pageIndex++) {
       const matches = find.pageMatches?.[pageIndex], lengths = find.pageMatchesLength?.[pageIndex];
-      const page = container.querySelector<HTMLElement>(`.paper-page[data-page="${pageIndex}"]`);
+      const page = container.querySelector<HTMLElement>(`[data-reader-page="${pageIndex}"]`);
       if (!matches?.length || !lengths || !page) continue;
       if (!text.has(pageIndex)) text.set(pageIndex, pdf.getPage(pageIndex + 1).then(page => page.getTextContent({ disableNormalization: true })));
       const content = await text.get(pageIndex)!;

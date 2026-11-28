@@ -530,6 +530,9 @@ export interface RoundDetail extends Omit<RenderedRound, "units"> {
   /** The new version's complete PDF, when the host serves one, so the review
    * can show the changes in the whole paper. */
   pdf?: string;
+  /** The old version's complete PDF, when the host serves one, so the review
+   * can show both versions page by page, side by side. */
+  pdfBefore?: string;
   /** The build whose PDF the strips come from, and the chapters it compiled
    * (["full"] when it is the whole paper). */
   build?: { key: string; targets: string[] };

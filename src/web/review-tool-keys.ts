@@ -8,7 +8,7 @@ import type { Stamp } from './stamps.ts';
 // review bindings keep priority; typing, menus and dialogs keep their own keys.
 export function useReviewToolKeys(options: {
   doc: Document | null; tool: PdfTool; busy: boolean; choose: (tool: PdfTool) => void;
-  lock: (slot: number | null) => void; stamps: Stamp[]; wheel: boolean;
+  lock: (slot: number | null) => void; locked: number | null; stamps: Stamp[]; wheel: boolean;
 }) {
   const shortcuts = useShortcuts();
   const [hand, setHand] = useState(false);
@@ -27,7 +27,12 @@ export function useReviewToolKeys(options: {
       if (event.code === 'Space') {
         if (target?.closest('button,a,[role="button"]')) return;
         event.preventDefault(); event.stopPropagation(); space = true; setHand(true); }
-      else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); state.lock(null); state.choose('select'); }
+      else if (event.key === 'Escape') {
+        // With the select tool chosen and no quick note locked, Escape is the
+        // review's own, such as deselecting a change side by side.
+        if (state.tool === 'select' && state.locked === null) return;
+        event.preventDefault(); event.stopPropagation(); state.lock(null); state.choose('select');
+      }
       else if (!state.busy && state.tool === 'magic' && /^[0-9]$/.test(event.key)) {
         const index = Number(event.key) - 1;
         if (event.key === '0' || state.stamps[index]) { event.preventDefault(); event.stopPropagation(); state.lock(event.key === '0' ? null : index); }
