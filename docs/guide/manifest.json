@@ -1,0 +1,395 @@
+{
+  "groups": [
+    {
+      "id": "getting-started",
+      "locales": { "en": "Getting started", "zh-CN": "快速开始" }
+    },
+    {
+      "id": "writing-review",
+      "locales": { "en": "Writing & review", "zh-CN": "写作与审阅" }
+    },
+    {
+      "id": "agents",
+      "locales": { "en": "Agents & customization", "zh-CN": "智能体与定制" }
+    },
+    {
+      "id": "collaborate",
+      "locales": { "en": "Collaborate & sync", "zh-CN": "协作与多端" }
+    },
+    {
+      "id": "reference",
+      "locales": { "en": "Reference & help", "zh-CN": "参考与排查" }
+    }
+  ],
+  "locales": {
+    "en": {
+      "label": "Docs",
+      "indexTitle": "Papilot Documentation",
+      "indexKicker": "User documentation",
+      "indexSeoTitle": "Papilot Docs · Quickstart, Workflows, Agents and Reference",
+      "indexDescription": "Install Papilot, annotate and review LaTeX revisions directly on the compiled PDF, connect coding agents, sync with Overleaf and troubleshoot issues.",
+      "indexLead": "Revise LaTeX papers directly on the compiled PDF with Papilot Writer or {{codingAgentCount}} coding agents, and review every typeset change before it reaches your files.",
+      "tabOverview": "Overview",
+      "tabGuides": "Guides",
+      "tabAgents": "Agents",
+      "tabCollaborate": "Sync & Remote",
+      "tabReference": "Reference",
+      "quickstartKicker": "Quickstart · 3 minutes",
+      "quickstartTitle": "Your first reviewed revision",
+      "quickstartBody": "Install Papilot, connect an agent, mark a passage on the PDF, review the typeset diff and save your accepted edits.",
+      "quickstartCta": "Start the quickstart",
+      "quickstartVisualAlt": "Papilot PDF review showing typeset before-and-after changes",
+      "corePathsTitle": "Start with the essentials",
+      "cardInstall": "macOS, Windows & WSL, Linux APT/AUR/Nix, CLI server and VS Code setup.",
+      "cardAnnotate": "PDF marking tools, My notes, reference peek, reading anchors and /ai-review.",
+      "cardReview": "Typeset before-and-after diffs, bibliography checks, Accept/Apply/Commit and inline LaTeX.",
+      "cardAgents": "Papilot Writer, {{codingAgentCount}} coding agents, seamless switching and task permissions.",
+      "workflowTitle": "How Papilot works",
+      "workflowSub": "Mark the PDF → isolated worktree edit → typeset diff → apply or commit",
+      "workflowVisualAlt": "Six-step Papilot workflow from opening a paper to committing changes",
+      "quickLinksTitle": "Explore every topic",
+      "contents": "On this page",
+      "mobileContents": "Page sections",
+      "allTopics": "Overview",
+      "previous": "Previous",
+      "next": "Next",
+      "skip": "Skip to content",
+      "mainNavigation": "Documentation sections",
+      "guideNavigation": "Documentation sidebar",
+      "mobileNavigation": "Mobile documentation sidebar",
+      "pagerNavigation": "Previous and next guides",
+      "footerNavigation": "Footer",
+      "languageLabel": "Language",
+      "theme": "Dark mode",
+      "demo": "Try Demo",
+      "product": "Product",
+      "blog": "Blog",
+      "privacy": "Privacy notice",
+      "figureLabel": "Figure",
+      "githubMarkdown": "Read on GitHub",
+      "editOnGithub": "Edit this page",
+      "developerLink": "Developer internals",
+      "searchButton": "Search",
+      "searchLabel": "Search documentation",
+      "searchPlaceholder": "Search docs, commands, settings…",
+      "searchClose": "Close",
+      "searchEmpty": "Type to search guides, settings, commands and symptoms.",
+      "searchNoResults": "No matching sections found.",
+      "searchCount": "{n} matching sections",
+      "searchLoadError": "Search index could not be loaded.",
+      "searchHintMove": "navigate",
+      "searchHintOpen": "open",
+      "experimentalBadge": "Experimental",
+      "experimentalNotice": "Features on this page are opt-in and evolve quickly between releases.",
+      "fallbackNotice": "This page is not translated yet and is shown in English.",
+      "codeBlockLabel": "Code snippet",
+      "copyCode": "Copy code",
+      "copied": "Copied",
+      "copyFailed": "Copy failed",
+      "sectionLinkPrefix": "Link to section"
+    },
+    "zh-CN": {
+      "label": "文档",
+      "indexTitle": "Papilot 文档",
+      "indexKicker": "用户文档中心",
+      "indexSeoTitle": "Papilot 文档 · 快速上手、写作审阅、智能体与参考",
+      "indexDescription": "安装 Papilot，直接在 PDF 上批注和审阅 LaTeX 论文修改，连接编程智能体，与 Overleaf 实时协作并查阅故障排查与配置参考。",
+      "indexLead": "搭配 Papilot Writer 或 {{codingAgentCount}} 种编程智能体，直接在编译后的 PDF 上批注并逐条审阅排版前后对比——确认前绝不改动原稿。",
+      "tabOverview": "概览",
+      "tabGuides": "使用指南",
+      "tabAgents": "智能体",
+      "tabCollaborate": "协作与多端",
+      "tabReference": "参考与排查",
+      "quickstartKicker": "快速上手 · 3 分钟",
+      "quickstartTitle": "完成你的第一次受审阅修订",
+      "quickstartBody": "从安装、连接智能体、在 PDF 上划选批注，到审阅排版前后对比并安全写入或提交到原稿。",
+      "quickstartCta": "开始快速上手",
+      "quickstartVisualAlt": "Papilot 在 PDF 上直接展示排版前后改动对比的界面",
+      "corePathsTitle": "核心入口",
+      "cardInstall": "macOS、Windows 与 WSL、Linux APT/AUR/Nix、命令行服务与 VS Code 扩展。",
+      "cardAnnotate": "PDF 标注工具、My notes 管理、引用悬浮预览、阅读锚点与只读 /ai-review。",
+      "cardReview": "排版前后对比、文献自动核验、Accept/Apply/Commit 边界与手动改源码。",
+      "cardAgents": "内置 Papilot Writer、{{codingAgentCount}} 种编程智能体、原地切换与任务权限。",
+      "workflowTitle": "核心工作流一览",
+      "workflowSub": "PDF 批注 → 独立工作树修改 → 排版对比审阅 → 应用或提交",
+      "workflowVisualAlt": "Papilot 从打开论文到 PDF 批注、审阅和提交的完整六步流程",
+      "quickLinksTitle": "全部专题直达",
+      "contents": "本页目录",
+      "mobileContents": "本页小节",
+      "allTopics": "文档概览",
+      "previous": "上一篇",
+      "next": "下一篇",
+      "skip": "跳到正文",
+      "mainNavigation": "文档分区导航",
+      "guideNavigation": "文档侧边栏",
+      "mobileNavigation": "移动端文档目录",
+      "pagerNavigation": "上下篇导航",
+      "footerNavigation": "页脚",
+      "languageLabel": "语言",
+      "theme": "深色模式",
+      "demo": "在线演示",
+      "product": "产品首页",
+      "blog": "博客",
+      "privacy": "隐私声明",
+      "figureLabel": "图",
+      "githubMarkdown": "在 GitHub 阅读",
+      "editOnGithub": "编辑此页",
+      "developerLink": "开发者内部文档",
+      "searchButton": "搜索",
+      "searchLabel": "搜索文档",
+      "searchPlaceholder": "搜索文档、命令、配置项……",
+      "searchClose": "关闭",
+      "searchEmpty": "输入关键词搜索指南、命令、配置项或故障症状。",
+      "searchNoResults": "未找到匹配的章节。",
+      "searchCount": "找到 {n} 个相关章节",
+      "searchLoadError": "搜索索引加载失败。",
+      "searchHintMove": "选择",
+      "searchHintOpen": "打开",
+      "experimentalBadge": "实验性",
+      "experimentalNotice": "本页介绍的功能需要手动开启，且在版本迭代中可能快速演进。",
+      "fallbackNotice": "本页暂无简体中文译文，当前展示英文原版。",
+      "codeBlockLabel": "代码片段",
+      "copyCode": "复制代码",
+      "copied": "已复制",
+      "copyFailed": "复制失败",
+      "sectionLinkPrefix": "跳转到小节"
+    }
+  },
+  "pages": [
+    {
+      "slug": "quickstart",
+      "group": "getting-started",
+      "locales": {
+        "en": {
+          "title": "Quickstart",
+          "shortTitle": "Quickstart",
+          "summary": "Complete your first reviewed LaTeX revision in six steps — from install and agent setup to PDF marking, review and commit.",
+          "description": "Complete one reviewed LaTeX revision in Papilot from installation and prerequisite checks to applying or committing the result."
+        },
+        "zh-CN": {
+          "title": "快速上手",
+          "shortTitle": "快速上手",
+          "summary": "六步走通你的第一次受审阅修订：从安装、连接智能体到在 PDF 上批注、审阅对比并安全提交。",
+          "description": "在 Papilot 中完成第一次受审阅的 LaTeX 修订：从安装、环境检查到在 PDF 上批注、审阅并应用或提交修改。"
+        }
+      }
+    },
+    {
+      "slug": "installation",
+      "group": "getting-started",
+      "locales": {
+        "en": {
+          "title": "Installation",
+          "shortTitle": "Installation",
+          "summary": "Install Papilot v{{release}} on macOS, Windows (WSL or native), Linux (APT, AUR, AppImage, .deb, Nix), CLI or VS Code.",
+          "description": "Install Papilot on macOS, Windows, WSL, Debian/Ubuntu, Arch Linux, Nix, npm CLI or VS Code and configure Git and TeX prerequisites."
+        },
+        "zh-CN": {
+          "title": "安装指南",
+          "shortTitle": "安装指南",
+          "summary": "在 macOS、Windows（WSL 或原生）、Linux（APT、AUR、AppImage、.deb、Nix）、命令行与 VS Code 上安装 Papilot v{{release}}。",
+          "description": "在 macOS、Windows 与 WSL、Debian/Ubuntu、Arch Linux、Nix、npm CLI 或 VS Code 中安装 Papilot 并准备 Git 与 TeX 环境。"
+        }
+      }
+    },
+    {
+      "slug": "papers-and-templates",
+      "group": "getting-started",
+      "locales": {
+        "en": {
+          "title": "Papers and Templates",
+          "shortTitle": "Papers & templates",
+          "summary": "Open an existing LaTeX folder, import from arXiv, GitHub or ZIP, start from 400+ Papilot Universe templates and switch root documents.",
+          "description": "Open local LaTeX repositories, import copies from arXiv, GitHub, Overleaf or archives, start from Papilot Universe templates and manage multi-document repos."
+        },
+        "zh-CN": {
+          "title": "论文导入与模板",
+          "shortTitle": "论文导入与模板",
+          "summary": "打开本地 LaTeX 仓库，从 arXiv、GitHub、ZIP 导入副本，使用 400+ 会议与学位模板，以及管理多主文档仓库。",
+          "description": "在 Papilot 中打开本地论文、从 arXiv/GitHub/Overleaf/压缩包导入、通过 Papilot Universe 创建模板项目并切换多主文档。"
+        }
+      }
+    },
+    {
+      "slug": "annotate-and-read",
+      "group": "writing-review",
+      "locales": {
+        "en": {
+          "title": "Annotate and Read",
+          "shortTitle": "Annotate & read",
+          "summary": "Use PDF marking tools (Q/T/M/P/D/E/V), organize My notes, peek at citations, bookmark reading anchors and run read-only /ai-review.",
+          "description": "Mark text, equations and figures on the compiled PDF, organize annotations in My notes, use reading anchors and Peek, and run /ai-review."
+        },
+        "zh-CN": {
+          "title": "PDF 批注与阅读",
+          "shortTitle": "PDF 批注与阅读",
+          "summary": "使用 PDF 标注工具（Q/T/M/P/D/E/V）、管理 My notes、悬浮预览引用、使用阅读锚点与裁切白边，以及发起只读 /ai-review。",
+          "description": "掌握 Papilot 的 PDF 标注工具、My notes 批注管理、引用预览与阅读锚点，以及只读 /ai-review 审稿建议。"
+        }
+      }
+    },
+    {
+      "slug": "review-and-save",
+      "group": "writing-review",
+      "locales": {
+        "en": {
+          "title": "Review and Save",
+          "shortTitle": "Review & save",
+          "summary": "Inspect typeset diffs and bibliography checks, distinguish Accept/Apply/Commit/Sync, iterate or reject safely and edit LaTeX inline.",
+          "description": "Review typeset before-and-after PDF diffs, verify citations, understand Accept vs Apply vs Commit vs Sync, recover rejected notes and edit LaTeX directly."
+        },
+        "zh-CN": {
+          "title": "审阅、应用与提交",
+          "shortTitle": "审阅、应用与提交",
+          "summary": "逐条审阅排版对比与参考文献核验，厘清 Accept/Apply/Commit/Sync 边界，处理被拒批注，或直接手改 LaTeX 源码。",
+          "description": "在 Papilot 中审阅排版前后对比与文献核验、理解接受/应用/提交/同步的边界、处理拒绝后退回的批注以及手动修改 LaTeX 源码。"
+        }
+      }
+    },
+    {
+      "slug": "agents",
+      "group": "agents",
+      "locales": {
+        "en": {
+          "title": "Agents and Models",
+          "shortTitle": "Agents & models",
+          "summary": "Connect Papilot Writer or any of {{codingAgentCount}} coding agents, switch models mid-task and control per-agent task permissions.",
+          "description": "Configure Papilot Writer and {{codingAgentCount}} coding agents ({{codingAgentList}}), switch models seamlessly and manage task permissions."
+        },
+        "zh-CN": {
+          "title": "智能体与模型",
+          "shortTitle": "智能体与模型",
+          "summary": "配置内置 Papilot Writer 或 {{codingAgentCount}} 种编程智能体，在任务中原地切换模型，并按智能体控制任务权限。",
+          "description": "在 Papilot 中配置 Papilot Writer 与 {{codingAgentCount}} 种编程智能体（{{codingAgentListZh}}）、无缝切换模型并管理任务权限。"
+        }
+      }
+    },
+    {
+      "slug": "skills-and-memory",
+      "group": "agents",
+      "locales": {
+        "en": {
+          "title": "Skills, Memory and Attachments",
+          "shortTitle": "Skills, memory & files",
+          "summary": "Reuse built-in and custom / skills, persist three-scope Writing Memory that learns from your reviews and attach reference files or images.",
+          "description": "Use built-in and custom slash skills, configure local, shared and global Writing Memory and attach PDFs, data or images to tasks."
+        },
+        "zh-CN": {
+          "title": "技能、写作记忆与附件",
+          "shortTitle": "技能、写作记忆与附件",
+          "summary": "复用内置与自定义 / 技能，配置三层作用域的持久化写作记忆（支持从审阅中提炼），并上传参考文件与图片附件。",
+          "description": "使用 Papilot 的内置与自定义斜杠技能、配置三层写作记忆，以及在任务中上传 PDF、数据或图片附件。"
+        }
+      }
+    },
+    {
+      "slug": "overleaf",
+      "group": "collaborate",
+      "locales": {
+        "en": {
+          "title": "Overleaf Sync",
+          "shortTitle": "Overleaf sync",
+          "summary": "Choose between one-time snapshots and live two-way Overleaf sync (~1 s), see coauthor cursors and resolve offline conflicts cleanly.",
+          "description": "Set up live two-way Overleaf synchronization in Papilot, compare snapshot imports with live sync, inspect coauthor presence and handle offline conflicts."
+        },
+        "zh-CN": {
+          "title": "Overleaf 同步",
+          "shortTitle": "Overleaf 同步",
+          "summary": "分清一次性快照导入与双向实时同步（约 1 秒互通），查看合作者实时光标与署名，并安全处理离线冲突。",
+          "description": "在 Papilot 中配置 Overleaf 双向实时同步，对比只读快照与实时协作，查看合作者光标并处理离线修改冲突。"
+        }
+      }
+    },
+    {
+      "slug": "git-and-history",
+      "group": "collaborate",
+      "locales": {
+        "en": {
+          "title": "Git and Version History",
+          "shortTitle": "Git & history",
+          "summary": "Inspect diffs, generate AI commit messages, sync with GitHub or GitLab, restore earlier versions and resolve merge conflicts.",
+          "description": "Use Version Management in Papilot to stage and commit changes, draft AI commit messages, sync with Git remotes, restore snapshots and resolve conflicts."
+        },
+        "zh-CN": {
+          "title": "Git 与版本历史",
+          "shortTitle": "Git 与版本历史",
+          "summary": "查看行级差异、AI 生成提交说明、与 GitHub/GitLab 同步、安全恢复历史版本以及借助智能体解决合并冲突。",
+          "description": "在 Papilot 版本管理中暂存提交、生成 AI 提交说明、与远端 Git 仓库同步、无损恢复历史版本并解决合并冲突。"
+        }
+      }
+    },
+    {
+      "slug": "remote-access",
+      "group": "collaborate",
+      "locales": {
+        "en": {
+          "title": "Phone and Tablet Access",
+          "shortTitle": "Phone & tablet",
+          "summary": "Open your host workspace privately over Tailscale or SSH to read the PDF, leave notes and accept changes away from your desk.",
+          "description": "Configure private Tailscale Serve or SSH port forwarding to read, annotate and review Papilot papers from an iPhone, iPad or Android device."
+        },
+        "zh-CN": {
+          "title": "手机与平板远程访问",
+          "shortTitle": "手机与平板",
+          "summary": "通过私有 Tailscale 或 SSH 打开主机上的同一个工作区，离开书桌也能读 PDF、加批注和拍板改动。",
+          "description": "配置私有 Tailscale Serve 或 SSH 端口转发，在手机或平板浏览器中安全访问桌面主机上的 Papilot 工作区。"
+        }
+      }
+    },
+    {
+      "slug": "troubleshooting",
+      "group": "reference",
+      "locales": {
+        "en": {
+          "title": "Troubleshooting",
+          "shortTitle": "Troubleshooting",
+          "summary": "Symptom-led fixes for missing Git/TeX tools, LaTeX build errors, agent sign-in, sync conflicts and remote access, plus logs and doctor.",
+          "description": "Recover from missing Git or TeX tools, LaTeX build errors, agent connection problems, sync conflicts and Tailscale errors using diagnostics and logs."
+        },
+        "zh-CN": {
+          "title": "故障排查",
+          "shortTitle": "故障排查",
+          "summary": "按症状快速解决工具缺失、LaTeX 编译报错、智能体连接异常、同步冲突与远程访问问题，并查阅日志与 doctor 诊断。",
+          "description": "按症状排查并恢复 Papilot 中的工具缺失、LaTeX 编译失败、智能体连接、同步冲突与 Tailscale 访问问题。"
+        }
+      }
+    },
+    {
+      "slug": "reference",
+      "group": "reference",
+      "locales": {
+        "en": {
+          "title": "CLI, Statistics and Configuration",
+          "shortTitle": "CLI, stats & config",
+          "summary": "CLI commands and macOS background service, local Activity Statistics, update channels and the complete environment variables reference.",
+          "description": "Reference for Papilot CLI flags, launchd background service, local Activity Statistics, Stable/Dev update channels and environment variables."
+        },
+        "zh-CN": {
+          "title": "命令行、统计与配置参考",
+          "shortTitle": "命令行、统计与配置",
+          "summary": "CLI 命令与 macOS 后台服务、本地活动统计面板、更新渠道说明，以及完整的环境变量速查表。",
+          "description": "查阅 Papilot 命令行参数、后台服务、本地活动统计、Stable/Dev 更新渠道及完整环境变量参考。"
+        }
+      }
+    },
+    {
+      "slug": "experiments",
+      "group": "reference",
+      "status": "experimental",
+      "locales": {
+        "en": {
+          "title": "Experimental Features",
+          "shortTitle": "Experiments",
+          "summary": "Opt-in workflows under active iteration: multi-model Collaboration mode, ChatGPT Pro (web) relay, PhiTeX incremental compilation and macOS Typeless voice notes.",
+          "description": "Enable and understand Papilot's opt-in experimental features: Collaboration mode, ChatGPT Pro web relay, PhiTeX compilation and Typeless voice notes."
+        },
+        "zh-CN": {
+          "title": "实验性功能",
+          "shortTitle": "实验性功能",
+          "summary": "快速演进中的可选功能：多智能体协作模式、ChatGPT Pro 网页接力、PhiTeX 增量编译与 macOS Typeless 语音批注。",
+          "description": "了解并开启 Papilot 的实验性功能：多模型协作模式、ChatGPT Pro 网页接力、PhiTeX 增量编译与 Typeless 语音批注。"
+        }
+      }
+    }
+  ]
+}
