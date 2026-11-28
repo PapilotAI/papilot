@@ -166,6 +166,46 @@ try {
   await expect(page.locator('.writer-models')).toContainText('Writing model');
   await f.context.close();
 
+  // Verify gateway-only mode UI across healthy, discovery-failed, and misconfigured states.
+  for (const scenario of [
+    { name: 'gateway-ready', auth: { providers: [{ id: 'model-gateway', name: 'Lab Gateway', kind: 'gateway', env: 'PAPILOT_WRITER_GATEWAY_KEY', configured: true, source: 'environment' }], logins: [], gatewayOnly: true }, rt: { ...runtime, account: 'Lab Gateway' }, expectConnected: true, expectAlert: null },
+    { name: 'gateway-failed', auth: { providers: [{ id: 'model-gateway', name: 'Lab Gateway', kind: 'gateway', env: 'PAPILOT_WRITER_GATEWAY_KEY', configured: true, source: 'environment' }], logins: [], gatewayOnly: true }, rt: { ...runtime, authenticated: false, error: 'gateway.example answered 503 for its model list.', models: [] }, expectConnected: false, expectAlert: '503' },
+    { name: 'gateway-missing', auth: { providers: [], logins: [], gatewayOnly: true }, rt: { ...runtime, authenticated: false, error: 'Papilot Writer is configured for gateway-only mode, but the model gateway URL or API key is missing or invalid.', models: [] }, expectConnected: false, expectAlert: 'missing or invalid' },
+  ]) {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-US', colorScheme: 'light' });
+    await context.addInitScript(() => { localStorage.setItem('papilot:language', 'en'); localStorage.setItem('papilot:setup-seen', '1'); });
+    await context.route('**/api/**', async route => {
+      const pathname = new URL(route.request().url()).pathname;
+      if (pathname.startsWith('/api/writer/')) return route.fulfill({ json: scenario.auth });
+      if (pathname === '/api/state') return route.fulfill({ json: { version: 'test', csrf: 'fixture', projects: [], tasks: [], requests: [], runtime: scenario.rt, runtimes: { papilot: scenario.rt, codex: runtime } } });
+      if (pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' });
+      if (pathname === '/api/runtime/requirements') return route.fulfill({ json: { platform: 'darwin', checks: ['git', 'latexmk', 'synctex', 'tex-engine'].map(id => ({ id, ok: true })) } });
+      if (pathname === '/api/diagnostics') return route.fulfill({ json: { checks: [], ok: true } });
+      if (pathname.endsWith('/skills')) return route.fulfill({ json: { skills: [] } });
+      if (pathname.startsWith('/api/updates')) return route.fulfill({ json: { currentVersion: 'test', phase: 'idle', canUpdate: false } });
+      return route.fulfill({ json: {} });
+    });
+    const gwPage = await context.newPage();
+    gwPage.on('pageerror', error => errors.push(error.message));
+    await gwPage.goto(origin);
+    await gwPage.locator('.settings-link').click();
+    await gwPage.locator('[data-settings-page="agents"]').click();
+    await gwPage.locator('[data-agent="papilot"] button').click();
+    const gwDrawer = gwPage.locator('.runtime-agent-writer');
+    const gwSetup = gwDrawer.locator('.writer-setup');
+    await gwSetup.waitFor();
+    await expect(gwSetup).not.toContainText('Sign in with a subscription or add an API key.');
+    await expect(gwSetup.locator('.writer-storage-note')).toHaveCount(0);
+    await expect(gwSetup.locator('.writer-connected')).toHaveCount(scenario.expectConnected ? 1 : 0);
+    if (scenario.expectAlert) {
+      await expect(gwDrawer.getByRole('alert')).toContainText(scenario.expectAlert);
+      await expect(gwDrawer.getByRole('button', { name: 'Refresh', exact: true })).toBeVisible();
+    }
+    await fits(gwPage, scenario.name);
+    await gwPage.locator('.settings-dialog').screenshot({ animations: 'disabled', path: `test-results/writer-${scenario.name}.png` });
+    await context.close();
+  }
+
   for (const language of ['en', 'zh-Hans', 'de']) {
     const f = await fixture(language, { hasTouch: true });
     for (const width of [320, 390, 768, 1280]) {

@@ -1,4 +1,5 @@
 import type { Api, Model } from '@mariozechner/pi-ai';
+import { GATEWAY_PROVIDER, parseGatewayApi, validateGatewayBaseUrl, type WriterGatewayConfig } from './auth.ts';
 import { toolError } from './policy.ts';
 
 // Papilot Writer offers the models each provider says the author can use
@@ -18,7 +19,7 @@ const TIMEOUT = 15000;
 const NOT_CHAT = /(embed|tts|whisper|transcri|audio|realtime|speech|image|dall-e|moderation|search|davinci|babbage|instruct|rerank|ocr|guard)/i;
 
 async function get(fetcher: Fetch, url: string, headers: Record<string, string>) {
-  const response = await fetcher(url, { headers: { Accept: 'application/json', ...headers }, signal: AbortSignal.timeout(TIMEOUT) });
+  const response = await fetcher(url, { headers: { Accept: 'application/json', ...headers }, redirect: 'error', signal: AbortSignal.timeout(TIMEOUT) });
   if (!response.ok) throw toolError(`${new URL(url).hostname} answered ${response.status} for its model list.`);
   return response.json() as Promise<any>;
 }
@@ -84,6 +85,63 @@ export function templateFor(entry: Listed, builtins: Model<Api>[]): Model<Api> {
   const pool = apis.length && builtins.some(model => apis.includes(model.api)) ? builtins.filter(model => apis.includes(model.api)) : builtins;
   // Ties go to the later entry, which is usually the newer model of a family.
   return pool.reduce((best, model) => shared(model.id, entry.id) >= shared(best.id, entry.id) ? model : best);
+}
+
+const positiveInt = (value: unknown, fallback: number) => {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? Math.floor(num) : fallback;
+};
+
+/** Lists models from an environment-configured unified model gateway (`/models`). */
+export async function listGatewayModels(gateway: WriterGatewayConfig, fetcher: Fetch): Promise<{ models: Model<Api>[]; efforts: Map<string, string[]> }> {
+  const gatewayRoot = trimSlash(gateway.baseUrl);
+  const gatewayOrigin = new URL(gatewayRoot).origin;
+  const body = await get(fetcher, `${gatewayRoot}/models`, { Authorization: `Bearer ${gateway.key}` });
+  const raw: any[] = Array.isArray(body?.data) ? body.data : Array.isArray(body?.models) ? body.models : [];
+  const seen = new Set<string>();
+  const models: Model<Api>[] = [];
+  const efforts = new Map<string, string[]>();
+  for (const item of raw) {
+    const rawId = typeof item?.id === 'string'
+      ? item.id.trim()
+      : typeof item?.name === 'string' && item.name.startsWith('models/')
+        ? item.name.replace(/^models\//, '').trim()
+        : '';
+    if (!rawId || rawId.length > 160 || /\s|[\u0000-\u001f\u007f?#&]|(?:\.\.)/.test(rawId) || seen.has(rawId)) continue;
+    const id = rawId;
+    seen.add(id);
+    const api = parseGatewayApi(item.api, gateway.api);
+    // @anthropic-ai/sdk appends `/v1/messages` to baseUrl, so strip a trailing
+    // `/v1` when deriving the default Anthropic base URL from an OpenAI-style
+    // `/v1` gateway root unless the model explicitly provides a same-origin baseUrl.
+    const defaultBase = api === 'anthropic-messages' ? gatewayRoot.replace(/\/v1$/, '') : gatewayRoot;
+    const baseUrl = validateGatewayBaseUrl(item.baseUrl, gatewayOrigin) || defaultBase;
+    const listedEfforts = Array.isArray(item.efforts)
+      ? item.efforts.filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0).map((value: string) => value.trim())
+      : [];
+    if (listedEfforts.length) efforts.set(id, listedEfforts);
+    const input: ('text' | 'image')[] = Array.isArray(item.input) && item.input.length
+      ? item.input.filter((kind: unknown): kind is 'text' | 'image' => kind === 'text' || kind === 'image')
+      : ['text', 'image'];
+    const displayName = (typeof item.name === 'string' && !item.name.startsWith('models/') && item.name.trim())
+      || (typeof item.displayName === 'string' && item.displayName.trim())
+      || (typeof item.display_name === 'string' && item.display_name.trim())
+      || id;
+    models.push({
+      id,
+      name: displayName,
+      api,
+      provider: GATEWAY_PROVIDER,
+      baseUrl,
+      reasoning: Boolean(item.reasoning || listedEfforts.length),
+      input: input.length ? input : ['text'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: positiveInt(item.contextWindow ?? item.context_window ?? item.inputTokenLimit, 128000),
+      maxTokens: positiveInt(item.maxTokens ?? item.max_tokens ?? item.outputTokenLimit, 16384),
+      ...(api === 'openai-completions' ? { compat: { supportsStore: false, supportsStrictMode: false } } : {}),
+    } as Model<Api>);
+  }
+  return { models, efforts };
 }
 
 /** Pi models for a provider's list, built from its built-in entries. */

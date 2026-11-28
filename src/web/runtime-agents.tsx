@@ -153,7 +153,12 @@ export function RuntimeAgents({ online, runtimes, report, busy, checkFailed, che
         <button type="button" className="icon-button" aria-label={t('Close agent details')} onClick={close}><Icon name="close" size={16}/></button>
       </header>
       {state === 'off' ? <p className="runtime-agent-note">{t('Off. Papilot does not start it or offer it for new tasks.')}</p> : selected === 'papilot' ? <>
-        {writer ? <WriterSetup writer={writer} online={online}/> : <p className="runtime-agent-note">{t('Connect to view account, models, and usage.')}</p>}
+        {writer ? <WriterSetup writer={writer} online={online} runtime={runtime}/> : <p className="runtime-agent-note">{t('Connect to view account, models, and usage.')}</p>}
+        {runtime && !runtime.authenticated && runtime.error && !runtime.error.includes('Sign in with ChatGPT') && <section className="runtime-agent-help" aria-label={t('Set up this agent')}>
+          <p className="runtime-agent-error" role="alert">{errorText(runtime.error)}</p>
+          <div className="runtime-setup-actions"><button type="button" className="button secondary compact" disabled={!online || reconnecting} onClick={() => void retry()}><Icon name="refresh" size={13}/>{reconnecting ? t('Refreshing…') : t('Refresh')}</button></div>
+          {reconnectError && <p role="alert">{t('Could not reconnect. Check the server connection and try again.')}</p>}
+        </section>}
         {current && <details className="writer-models"><summary>{t('Available models')}<span>{runtime.models.length}</span></summary><RuntimeModels key={selected} models={runtime.models} connected {...modelChoices(selected)}/></details>}
       </> : <>
       {blocked && guidance && <section className="runtime-agent-help" aria-label={t('Set up this agent')}>

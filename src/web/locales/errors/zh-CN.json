@@ -449,6 +449,7 @@
   "This file is not text that can be edited here.": "此文件不是可在此处编辑的文本。",
   "This folder belongs to a parent Git repository. Select its root folder, or upload a copy.": "此文件夹属于父级 Git 仓库。请选择其根文件夹，或上传副本。",
   "This folder has no zotero.sqlite. Choose Zotero's data directory, the folder with zotero.sqlite and storage.": "此文件夹中没有 zotero.sqlite。请选择 Zotero 的数据目录，即包含 zotero.sqlite 和 storage 的文件夹。",
+  "This host manages Papilot Writer through a configured model gateway.": "此主机通过已配置的模型网关管理 Papilot Writer。",
   "This image format is not supported.": "不支持此图片格式。",
   "This is a Claude subscription token. Papilot Writer can use Claude only with an Anthropic API key.": "这是 Claude 订阅令牌。Papilot Writer 只能通过 Anthropic API 密钥使用 Claude。",
   "This key cannot read any library. Create one with library access.": "此密钥无法读取任何文献库。请创建一个具有文献库访问权限的密钥。",

@@ -449,6 +449,7 @@
   "This file is not text that can be edited here.": "Este arquivo não contém texto que possa ser editado aqui.",
   "This folder belongs to a parent Git repository. Select its root folder, or upload a copy.": "Esta pasta pertence a um repositório Git superior. Selecione a pasta raiz ou envie uma cópia.",
   "This folder has no zotero.sqlite. Choose Zotero's data directory, the folder with zotero.sqlite and storage.": "Esta pasta não contém zotero.sqlite. Escolha o diretório de dados do Zotero, a pasta que contém zotero.sqlite e storage.",
+  "This host manages Papilot Writer through a configured model gateway.": "Este host gerencia o Papilot Writer por meio de um gateway de modelos configurado.",
   "This image format is not supported.": "Este formato de imagem não é suportado.",
   "This is a Claude subscription token. Papilot Writer can use Claude only with an Anthropic API key.": "Este é um token de assinatura do Claude. O Papilot Writer só pode usar o Claude com uma chave de API da Anthropic.",
   "This key cannot read any library. Create one with library access.": "Esta chave não pode ler nenhuma biblioteca. Crie uma com acesso à biblioteca.",

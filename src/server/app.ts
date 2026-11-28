@@ -97,11 +97,12 @@ async function settled(workspace: Workspace, taskId: string) {
 // Concurrent requests from browser tabs share the same queue.
 export function gitQueue() {
   const queue = new Map<string, Promise<unknown>>();
-  return function serialGit<T>(projectId: string, work: () => Promise<T>) {
+  const serialGit = function serialGit<T>(projectId: string, work: () => Promise<T>) {
     const run = (queue.get(projectId) || Promise.resolve()).catch(() => {}).then(work);
     queue.set(projectId, run);
     return run.finally(() => { if (queue.get(projectId) === run) queue.delete(projectId); });
   };
+  return Object.assign(serialGit, { get busy() { return queue.size > 0; } });
 }
 
 // Quick notes as one person saved them: up to eight, each with a unique id.
@@ -358,7 +359,19 @@ export async function buildApp(options: AppOptions) {
     return { ...state, document: scopeDocument.document, annotations, inFlightMarks, ...(scope ? { noteSections: scope.sections, unplacedSectionNotes: scope.unplaced, ...(scope.pageLayouts && Object.keys(scope.pageLayouts).length ? { notePageLayouts: scope.pageLayouts } : {}) } : {}) };
   }
 
-  app.get('/api/health', () => ({ ok: true, name: 'Papilot', version: options.version, ...(options.desktopInstance ? { desktopInstance: options.desktopInstance } : {}), ...(options.updateInstance ? { updateInstance: options.updateInstance } : {}) }));
+  app.get<{ Querystring: { busy?: string } }>('/api/health', request => {
+    const includeBusy = request.query?.busy === '1' || request.query?.busy === 'true';
+    const status = includeBusy ? workspace.busyStatus() : null;
+    const updating = Boolean(options.updates && ['installing', 'waiting', 'restarting'].includes(options.updates.snapshot().phase));
+    return {
+      ok: true,
+      name: 'Papilot',
+      version: options.version,
+      ...(options.desktopInstance ? { desktopInstance: options.desktopInstance } : {}),
+      ...(options.updateInstance ? { updateInstance: options.updateInstance } : {}),
+      ...(status ? { busy: { computing: status.computing || manuscripts.busyForUpdate || changes.busyForUpdate || serialGit.busy || updating, waitingForUser: status.waitingForUser } } : {}),
+    };
+  });
   app.get('/api/runtime/requirements', () => (options.systemRequirements || systemRequirements)());
   // Detection starts host processes. All tabs and personal remote connections
   // share one budget and one in-flight probe; polling other routes is unaffected.

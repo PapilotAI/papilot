@@ -119,26 +119,65 @@ async function filesIn(root: string): Promise<string[]> {
   return (await Promise.all(items.map((e) => e.isDirectory() ? filesIn(path.join(root, e.name)) : [path.join(root, e.name)]))).flat();
 }
 // Output that latexmk kept from an earlier build folder still names that
-// folder. Build folders differ only in their equal-length key, so the paths
-// are replaced in place without moving anything else in the file.
+// folder. When folders differ only in their equal-length key, paths are
+// replaced in place; when moved across parent directories of different lengths,
+// text/gzipped SyncTeX and log files are rewritten with the new prefix.
 export async function relocate(file: string, from: string, to: string) {
   // Cache keys are ASCII even when TeX writes the shared parent directory in
   // a Windows ANSI code page. Match that unique path component so relocation
   // preserves the original encoding, including in files reused without TeX.
-  const keys = path.dirname(from) === path.dirname(to)
-    && [path.basename(from), path.basename(to)].every(name => /^[a-f0-9]{32}$/.test(name));
-  const old = Buffer.from((keys ? "/" + path.basename(from) : from.replaceAll("\\", "/")) + "/"),
-    next = Buffer.from((keys ? "/" + path.basename(to) : to.replaceAll("\\", "/")) + "/");
-  if (old.length !== next.length || old.equals(next)) return;
+  const cleanFrom = from.replaceAll("\\", "/").replace(/\/+$/, ""),
+    cleanTo = to.replaceAll("\\", "/").replace(/\/+$/, "");
+  if (!cleanFrom || !cleanTo || /^[a-zA-Z]:$/.test(cleanFrom) || /^[a-zA-Z]:$/.test(cleanTo)) return;
+  const keys = path.dirname(cleanFrom) === path.dirname(cleanTo)
+    && [path.basename(cleanFrom), path.basename(cleanTo)].every(name => /^[a-f0-9]{32}$/.test(name));
+  const old = Buffer.from((keys ? "/" + path.basename(cleanFrom) : cleanFrom) + "/"),
+    next = Buffer.from((keys ? "/" + path.basename(cleanTo) : cleanTo) + "/");
+  if (old.equals(next)) return;
   let data: Buffer;
   try { data = await fs.promises.readFile(file); }
   catch { return; }
   const zipped = file.endsWith(".gz");
   if (zipped) data = await unzip(data);
+  const suffixDelta = next.length > old.length && next.subarray(next.length - old.length).equals(old)
+    ? next.length - old.length
+    : 0;
+  const boundary = (at: number) => {
+    if (keys) return true;
+    if (suffixDelta && at >= suffixDelta && data.subarray(at - suffixDelta, at + old.length).equals(next)) return false;
+    if (at === 0 || old[0] !== 0x2f /* '/' */) return true;
+    const prev = data[at - 1];
+    // Allow file/log/SyncTeX delimiters before a leading '/', treating path
+    // characters (including non-ASCII UTF-8 bytes) as part of an existing path.
+    return prev <= 0x20 || prev === 0x22 || prev === 0x27 || prev === 0x28 || prev === 0x3a || prev === 0x3b || prev === 0x3c || prev === 0x3d || prev === 0x7c;
+  };
   let at = data.indexOf(old);
-  if (at < 0) return;
-  for (; at >= 0; at = data.indexOf(old, at + next.length)) next.copy(data, at);
-  await fs.promises.writeFile(file, zipped ? await zip(data, { level: 1 }) : data);
+  let matched = false;
+  let out: Buffer;
+  if (old.length === next.length) {
+    for (; at >= 0; at = data.indexOf(old, at + (boundary(at) ? next.length : 1))) {
+      if (!boundary(at)) continue;
+      next.copy(data, at);
+      matched = true;
+    }
+    if (!matched) return;
+    out = data;
+  } else {
+    const chunks: Buffer[] = [];
+    let cursor = 0;
+    for (; at >= 0; at = data.indexOf(old, at + 1)) {
+      if (!boundary(at)) continue;
+      if (at > cursor) chunks.push(data.subarray(cursor, at));
+      chunks.push(next);
+      cursor = at + old.length;
+      at = cursor - 1;
+      matched = true;
+    }
+    if (!matched) return;
+    if (cursor < data.length) chunks.push(data.subarray(cursor));
+    out = Buffer.concat(chunks);
+  }
+  await fs.promises.writeFile(file, zipped ? await zip(out, { level: 1 }) : out);
 }
 /** How much a build matters to the person waiting: the PDF on screen comes
  *  first, a speculative build last. */
