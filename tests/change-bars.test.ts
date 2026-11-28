@@ -24,3 +24,15 @@ test('a save moves the bars\' base without replacing them, so anything reading t
   const typed = after.update({ changes: { from: 0, insert: 'ONE ' } }).state;
   assert.deepEqual(barChanges(typed), [{ kind: 'modified', from: 0, to: 1 }], 'typing after a save compares with the saved text');
 });
+
+test('one reader finds the bars in every state the editor shows: a reloaded file and a moved base alike', () => {
+  // A measure asked for in one state can run in the next; the bars' field
+  // must be the same one in a state built anew, as loading a file does.
+  const read = barChanges;
+  const first = EditorState.create({ doc: 'a\nB', extensions: changeBars(text('a\nb')) });
+  const reloaded = EditorState.create({ doc: 'A\nb', extensions: changeBars(text('a\nb')) });
+  const moved = first.update({ effects: setBase.of(text('a\nc')) }).state;
+  assert.deepEqual(read(first), [{ kind: 'modified', from: 1, to: 2 }]);
+  assert.deepEqual(read(reloaded), [{ kind: 'modified', from: 0, to: 1 }]);
+  assert.deepEqual(read(moved), [{ kind: 'modified', from: 1, to: 2 }]);
+});
